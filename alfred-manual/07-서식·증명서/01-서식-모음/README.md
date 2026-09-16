@@ -18,7 +18,7 @@
 
 서식 리스트에서 필요한 서식을 찾아 바로 내려받을 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Acdd54c15-0724-411e-8f29-c9e4b327e05f%3Aimage.png&blockId=39de8268-560a-80c6-bbe0-fd6e64c95302)
+> ![](../../images/ce9379af8f70344e663d.webp)
 
 ### 다운로드 가능한 서식
 

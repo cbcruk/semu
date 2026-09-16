@@ -15,7 +15,7 @@
 
 > 세무 기장 고객은 세무신고 기관 연동도 함께 진행해 주세요.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A619531bc-a889-4f17-a81c-5f64c31d930f%3Aimage.png&blockId=39ee8268-560a-8002-b493-d6ac73331a97)
+> ![](../../images/678127912664b4d12684.webp)
 
 ---
 
@@ -23,11 +23,11 @@
 
 연동 목적과 Alfred 메뉴에 따라 연동 기관이 분류되어 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A701ce799-5411-40d6-8df8-bbb66bb37f4a%3Aimage.png&blockId=39ee8268-560a-80ee-a473-ed5a311c200d)
+> ![](../../images/e42e17feabcdbc82632a.webp)
 
 #### 홈택스 연동 - 세금계산서 발급
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Af82ac579-f00e-4adc-8ad7-a71a718fec3e%3AFrame_121321489.png&blockId=39ee8268-560a-8017-add0-ff1dfe083779)
+![](../../images/8712b57a02faa0a11f78.webp)
 
 - 홈택스는 **인증서 혹은 ID/PW로 연동**할 수 있습니다.
 - ID/PW 로그인을 통한 연동 시에는 매출 / 매입 내역 조회만 가능하며, **인증서를 연동하면 세금계산서 발행까지 가능합니다.**
@@ -41,7 +41,7 @@
 
 #### 올라(쇼핑몰) 연동
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2F25826273-5d06-416c-9aa7-b179678bfdea%2FFrame_9279.png&blockId=39ee8268-560a-8073-8088-d77e992bc860)
+![](../../images/df7d1cb36fa04ed0cb4b.webp)
 
 - 가입하신 **올라 계정의 ID/PW 연동**을 통해 쇼핑몰 매출을 연동할 수 있습니다
   - 쿠팡 윙, 쿠팡 로켓, 스마트 스토어 매출을 제공합니다
@@ -81,11 +81,11 @@
 
 [각 기관별 연동방법 신용카드 연동하기 https://helpdesk.heumtax.com/135e8268-560a-8059-8047-ee3e27f23f7e](https://helpdesk.heumtax.com/135e8268-560a-8059-8047-ee3e27f23f7e)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2F1a13f377-02e8-45e6-a787-763584519624%2F%25EC%2599%25B8%25EB%25B6%2580%25EA%25B8%25B0%25EA%25B4%2580%25EC%2597%25B0%25EB%258F%2599_%25EA%25B5%25AC%25EB%25B6%2584.png&blockId=39ee8268-560a-805b-b6e0-fea02ea5c7e0)
+![](../../images/9bcc154fcddc4c4cc019.webp)
 
 #### 인증서 연동 방식 정리
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Afeb84272-6677-411c-a425-306b814befce%3AFrame_121321490.png&blockId=39ee8268-560a-80b3-8e54-f361d20d6832)
+![](../../images/e9926fc38b86150fa6ac.webp)
 
 ---
 

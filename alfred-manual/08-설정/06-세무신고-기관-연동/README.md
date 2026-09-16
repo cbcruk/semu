@@ -23,7 +23,7 @@
 
 >
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A61fb1429-93d1-4e58-ba41-2baf2e054543%3Aimage.png&blockId=39ee8268-560a-8009-96dc-c36a7639fabd)
+> ![](../../images/7c95a14b79f19c129886.webp)
 
 ---
 
@@ -31,7 +31,7 @@
 
 홈택스 및 카드매출(여신금융협회)은 계정 ID/PW를 입력하여 등록합니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A1d0b4ecf-32ad-460e-837e-aa854b4a08c6%3Aimage.png&blockId=39ee8268-560a-8063-bc65-f46e42dd789f)
+> ![](../../images/28cc6436d9d6f5b493de.webp)
 
 ---
 
@@ -41,23 +41,23 @@
 
 1. `사업용카드`를 선택한 후 `카드 등록하기` 버튼을 클릭합니다.
 
-  > ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A7973451a-0d6f-436f-bb13-df6b1b5e09b0%3Aimage.png&blockId=39ee8268-560a-80c3-ad72-c2333696edd1)
+  > ![](../../images/56aac4708b86170223d7.webp)
 
 1. 카드사·카드 종류를 선택한 후 ID/PW로 연동합니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A0c6bc953-bfd8-4e53-9671-0759bd1a48f4%3Aimage.png&blockId=39ee8268-560a-8029-87a9-ee896e52d9ad)
+> ![](../../images/9745354553bab373abfd.webp)
 
 최초 카드 등록 이후 사업용 카드가 추가될 때마다 추가 등록할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A999d0af9-9897-4664-91bf-b13ed73be423%3Aimage.png&blockId=39ee8268-560a-8054-a3dc-eb83c9f9e774)
+> ![](../../images/5f1ca9198ec3faf888ff.webp)
 
 > **세무신고용 카드정보를 직접 추가·수정할 수 있습니다.**
 >
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aa08fa2b6-e67d-4b58-bcf6-86e4fe5271ac%3Aimage.png&blockId=39ee8268-560a-809d-9b07-e206b3f1799c)
+> ![](../../images/ce2d67cf3a10efe7bb51.webp)
 >
 > 인증서로만 카드 연동이 된 경우나 카드번호가 일부만 연동된 경우, 안내에 따라 카드사를 추가 연동하거나 카드번호만 추가 입력할 수 있습니다.
 >
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A503807b9-662f-48ee-b832-50ad9324017f%3Aimage.png&blockId=39ee8268-560a-80d9-b0de-c37032574710)
+> ![](../../images/a9bbeed1cb9e66d270bd.webp)
 
 **>> 카드 연동 방법 자세히 보기 (인증서 / ID·PW)**
 
@@ -71,13 +71,13 @@
 
 >
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A6cf49d64-7e0b-4d14-a853-66343e3e1339%3Aimage.png&blockId=39ee8268-560a-8015-873c-fb8250f280bc)
+> ![](../../images/457f7d2de908da846ffc.webp)
 
 **계좌 추가 등록하기**
 
 빠른조회 계좌를 추가하거나, 기존에 연동된 인터넷뱅킹/빠른조회 서비스 계정에 등록된 계좌를 추가 등록할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A8b2e9db5-172a-4da7-be22-b38b2fb72c23%3Aimage.png&blockId=39ee8268-560a-809c-aa3f-f6f63245b62e)
+> ![](../../images/de77df0978929a7865da.webp)
 
 은행에 따라 연동 방식(빠른조회 / ID·PW)이 다릅니다. 아래에서 방식별 대상 은행을 확인해 주세요.
 

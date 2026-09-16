@@ -15,7 +15,7 @@
 
 ### [Alfred Universal Home 화면 미리 확인하기]
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A325faec6-108e-4f43-9867-8af14166fd7b%3Aimage.png&blockId=397e8268-560a-8065-8bfa-c44e957e0afd)
+![](../images/95dbc702e0900eb8be4a.webp)
 
 ---
 
@@ -24,29 +24,29 @@
 매일 업데이트되는 자금·손익·예상 부가세 등 사업 운영에 필요한 주요 정보를 카드로 확인할 수 있습니다. 
 카드를 누르면 해당 보고서로 이동해 자세한 내역까지 볼 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Afa4ccc4e-1a42-4413-9a47-28795f72923d%3Aimage.png&blockId=387e8268-560a-80f6-a44d-d1abe60023da)
+> ![](../images/a70a47f07e32a88dc052.webp)
 
 ### 2. 오늘의 할 일
 
 오늘 날짜를 기준으로 급여, 신고, 경리 관련 확인하거나 처리해야 할 업무가 카드로 표시됩니다. 
 카드에서 바로 업무를 처리하거나 필요한 화면으로 이동할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aa774b3aa-90bc-4ec6-bc53-e1356bd96edf%3Aimage.png&blockId=387e8268-560a-8057-b184-dbb341af288a)
+> ![](../images/fdaf272a2522646828c1.webp)
 
 ### 3. 진행 현황
 
 진행 중인 업무가 지금 어느 단계인지, 진행률은 얼마인지 확인할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ac1de3cae-0035-4f6a-afb9-37e87645cfd3%3Aimage.png&blockId=387e8268-560a-805e-bc33-e6a55f7ba58c)
+> ![](../images/b410445ee8215fcaf25f.webp)
 
 ### 4. 찾은 혜택
 
 사업에 도움이 되는 외부 서비스와 정보를 추천 받아 활용할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Af645aa72-27c2-4266-882d-d2c8a363dc8d%3Aimage.png&blockId=397e8268-560a-805b-8c4e-d53ea16d641a)
+> ![](../images/47dfd2022783bb2a246c.webp)
 
 ### 5. 경영 인사이트
 
 자주 묻는 질문이 카드로 모여 있습니다. 카드를 누르면 AI 비서가 바로 답변해 드립니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ae8e24d20-e63e-47cf-b384-ea8985cab05b%3Aimage.png&blockId=387e8268-560a-8042-8ba7-f2f2daf7f785)
+> ![](../images/01b46bef76a8b3a71595.webp)

@@ -26,14 +26,14 @@
 - 전년도 매출·매입의 항목별 추이를 비교할 수 있습니다.
 - [손익 현황 메뉴 자세히 알아보기 >>](01-메뉴-기준-가이드-현황-v.3/README.md)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A895243ab-3c9d-4196-ab99-79112210822d%3AGroup_1000004397.png&blockId=399e8268-560a-80b3-bead-e6b1f616712f)
+![](../../images/1f3d47d05914a245dca5.webp)
 
 #### 자금 현황
 
 - 일별·기간별 자금 흐름과 현재 잔액을 확인합니다.
 - [자금 현황 메뉴 자세히 알아보기 >>](01-메뉴-기준-가이드-현황-v.3/README.md)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A51258864-1a5b-4471-9735-e20e41d1483d%3AGroup_1000004399.png&blockId=399e8268-560a-809b-bb5c-da7e3effbbf9)
+![](../../images/00940cec2c548ce4687e.webp)
 
 #### 예상 부가세
 
@@ -41,7 +41,7 @@
 
 - [예상 부가세 메뉴 자세히 알아보기 >>](02-예상-부가세.md)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A2bad6d75-502b-4f75-a5cf-628035db5265%3AGroup_1000004400.png&blockId=399e8268-560a-80b3-aea2-c7f14ac3d9be)
+![](../../images/963e69b43d8d1bc1dad7.webp)
 
 ## 하위 페이지
 

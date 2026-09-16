@@ -31,7 +31,7 @@
 
 이미 납부한 세금이라면 `수동 완료하기`로, 숨기고 싶은 고지서는 상세보기를 통해 `이 고지서 숨기기`로 처리할 수 있습니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A4df47501-1b6f-4463-a335-2379392ecf32%3AGroup_1000004434_%281%29.png&blockId=39de8268-560a-80bf-988e-cc62bba12d02)
+![](../../images/218ca0cd907690fe2f95.webp)
 
 ### 2. 세금 납부하기
 
@@ -39,20 +39,20 @@
 
 (1) 납부가능 리스트에서 **납부하기를 클릭**합니다. 혹은 자세히보기를 클릭하여 세금의 상세내역을 확인한 뒤 납부할 수도 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A038fcc10-219d-4832-8fc2-741695b038c9%3Aai-edited-image.png&blockId=3a3e8268-560a-8038-b87d-c520be12513c)
+> ![](../../images/ecf2235750d3034a76b7.webp)
 
 (2) 납부할 금액을 확인 후 **출금계좌를 선택**합니다. **계좌 직접입력**을 클릭하여 등록되지 않은 계좌를 사용할 수도 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A4dcbe8fc-f44a-49e7-be47-d167a587cc64%3A%EC%84%B8%EA%B8%88_%EB%82%A9%EB%B6%80_%281%29.png&blockId=39de8268-560a-8028-921e-ccb0b22c49c5)
+> ![](../../images/57762d2572e4ae7a8003.webp)
 >
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ae558f8ec-25d6-45b7-bd22-8682b8c6b5d6%3Amodal.png&blockId=3a3e8268-560a-80f9-8742-f2cd133d8bf4)
+> ![](../../images/aa07f199ab307e078ad0.webp)
 
 - 최근 입력한 계좌가 있을 시 해당 계좌번호로 납부할 수 있습니다.
 - Alfred Business에 등록된 계좌가 있을 시 해당 계좌번호로 납부할 수 있습니다.
 
 (3) 출금계좌 선택 후 계좌 비밀번호를 입력하여 납부합니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ad42d2e25-5968-4007-9d67-695bbe82f320%3Amodal_%281%29.png&blockId=3a3e8268-560a-807f-8af2-e869567efa94)
+> ![](../../images/27841ecadef58982133c.webp)
 
 - 비밀번호는 저장되지 않습니다.
 
@@ -61,7 +61,7 @@
 > Alfred Business에서 직접 세금을 납부한 경우가 아니라면, 납부 완료 처리가 되지 않을 수 있습니다. 
 Alfred Business가 아닌 다른 방법으로 납부하신 경우 자세히 보기에서 `수동 완료하기`로 처리해 주세요.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A6b89eab1-82d5-4150-831f-656e9d333614%3A%EC%84%B8%EA%B8%88_%EB%82%A9%EB%B6%80_%282%29.png&blockId=3a3e8268-560a-8010-bf1b-efd506e0a734)
+> ![](../../images/e2f304ee946843dc95e2.webp)
 
 ---
 

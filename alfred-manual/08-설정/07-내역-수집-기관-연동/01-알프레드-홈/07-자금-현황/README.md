@@ -17,7 +17,7 @@
 - **현금 보유 추이**
   - 현금 잔고의 추이를 통해 기업의 현금 흐름 패턴 등을 파악 가능
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A50d364fe-aa07-4d73-b873-e7b3e38056eb%3A%EC%9E%90%EA%B8%88_1.png&blockId=2a9e8268-560a-807b-ab8c-f3f3bcd3b4b2)
+  ![](../../../../images/feffacc627a0f303f6a9.webp)
 
   - 연동된 입출금 계좌, 외화 계좌의 잔액을 통해 가용 현금 정보 제공
 
@@ -26,11 +26,11 @@
 - 특정 기간 발생한 입출금 내역에 대한 요약 정보 제공
   - 입출금 구분별 혹은 카테고리 (매출매입, 기타수익, 투자 등)별 내역 확인이 가능합니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A08d5106e-f23e-405a-8cb8-956dfa343baf%3A%EC%9E%90%EA%B8%88_2.png&blockId=2a9e8268-560a-80e6-81ff-c8d303ac3f12)
+![](../../../../images/b98738c7f70c1741fdbf.webp)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A1e8e6370-5b52-47bf-a707-7f5f12039371%3A%EC%9E%90%EA%B8%88_2.png&blockId=2a9e8268-560a-800c-aea7-fe459d98c42c)
+![](../../../../images/27bb050696c28d7423d0.webp)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A3a283dec-da5c-4101-86aa-bd18083d82d7%3A%EC%9E%90%EA%B8%88_3.png&blockId=2a9e8268-560a-8053-966d-f9a583fbd0ec)
+![](../../../../images/1eb45aac1b54a16d50a7.webp)
 
 ### 기능 사용 방법 안내
 

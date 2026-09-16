@@ -6,25 +6,25 @@
 
 [알프레드 - 올인원 금융 SaaS 경리부터 급여, 세무까지 이제, 알프레드 하나로 해결하세요 https://app.alfred.kr/settlement-reports/labor-cost](https://app.alfred.kr/settlement-reports/labor-cost)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A1eecb3f3-8f97-4b87-b029-e2bb4a419b0c%3AFrame_1410065542.png&blockId=246e8268-560a-805e-95b4-eba361bb609a)
+![](../../../../images/a33934449681cf102c36.webp)
 
 ### 인건비현황 보고서 살펴보기
 
 - **인건비현황 :** 근로, 일용, 사업, 기타 등 소득 형태별 인건비 및 총 인건비 현황을 파악할 수 있습니다.
   - **인건비현황의 모든 금액은 세전 금액을 기준으로 합니다.**
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Af533e1a7-6329-4a0f-bd7e-708a9d380aa1%3Af4ec6231-b3ab-4647-a1b4-2aea5b9b585d.png&blockId=21fe8268-560a-811a-9271-e88fc6ae17ce)
+![](../../../../images/9054f6c73bf5606f5909.webp)
 
 - **재직자 수 추이** : 알프레드 **직원관리 메뉴에 등록된 월별 근로소득 직원**의 재직, 입·퇴사 현황 및 연간 변화 추이를 한눈에 파악할 수 있습니다.
   - 휴직자는 재직자로 간주되어 재직자 수에 합산됩니다.
   - 급여카드 업데이트와 무관하게 직원관리 메뉴 데이터를 실시간 반영합니다.
   - 입사/퇴사자 반영에 대한 자세한 내용은 FAQ를 참고해주시기 바랍니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2Fd2ee89f1-3df0-451e-b708-8cfa59fa49c2%2F%25EC%259D%25B82.png&blockId=21fe8268-560a-81bc-b6e0-ffff11424fce)
+![](../../../../images/bdb8fb5511e5962c7ebe.webp)
 
 - **인건비내역 :** 각 소득 형태별 월 및 당기 인건비 총액과 지급 인원을 요약 제공합니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2F01589727-bad6-43db-9d06-8097fc63bab3%2F%25EC%259D%25B83.png&blockId=21fe8268-560a-8128-9253-c5dcb793f4a5)
+![](../../../../images/198eceae7542dd9b744f.webp)
 
 > #### 인건비현황 보고서 열람 권한 안내
 >
@@ -40,7 +40,7 @@
 
 - 인건비현황 보고서는 기장 담당자의 급여카드 계산 완료시 업데이트 됩니다.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2Fd4024b40-6b02-4a5c-b514-7c9621c6c89f%2FGroup_10777.png&blockId=21fe8268-560a-81e4-b29e-c9ce46a54736)
+  ![](../../../../images/c3c233c56d6a58c81ed2.webp)
 
 - 단 **급여계산 완료 후 재계산**하는 경우 보고서는 일시적으로 업데이트 이전 상태로 되돌려집니다.
   - 재계산 이후 다시 급여카드 계산 완료 시 재 계산된 내용으로 보고서에 반영됩니다.
@@ -48,7 +48,7 @@
 
   예시. 급여카드를 재계산 하는 경우
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2Fd48520f1-b3a3-47a1-aef9-1d6653781f39%2FFrame_2609370.png&blockId=21fe8268-560a-81df-8bc2-c94fda718f83)
+  ![](../../../../images/90bcceefd5c8a2538ee4.webp)
 
 ---
 

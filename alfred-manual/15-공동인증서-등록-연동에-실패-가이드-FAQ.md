@@ -8,11 +8,11 @@
 
 #### 1. 연동 화면에서 인증서들이 다 회색으로 노출되고 선택되지 않아요. 불가 라고 노출되어요.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A10b4f033-65f3-41a2-9517-24555cce9458%3A6d25db46-db38-4a97-8645-a44efa3cb981.png&blockId=39de8268-560a-8019-8d85-f68bdb5ea336)
+![](images/befa191e6502b5e9c0e1.webp)
 
 - 연동하려는 기관에 따라서 연동 가능한 공동인증서 종류가 다릅니다. 연동하시려는 기관과 공동 인증서의 구분을 확인해주세요.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A98e554a6-ebe0-4ef1-90ab-7c5025e32097%3A%EC%82%AC%EC%9A%A9_%EC%9D%B8%EC%A6%9D%EC%84%9C_%EC%95%88%EB%82%B4-2.png&blockId=39de8268-560a-80aa-9fdc-ed5c18d80144)
+  ![](images/1aa048906678ac7ffdbd.webp)
 
 #### 2. 인증서 프로그램이 실행되지 않거나 에러가 발생해요.
 
@@ -42,28 +42,28 @@
 - **인증서 업로드 프로그램 삭제 및 재설치 방법 (좌측 삼각형 클릭!)**
   1. 먼저 아래와 같이 윈도우 키를 입력 후, **프로그램 추가/제거 메뉴를 선택**해주세요.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F78364982-f04e-4849-a95c-4a39ddba4c9a%2FUntitled.png&blockId=39de8268-560a-80f0-a4e0-d93d0d6072cb)
+  ![](images/3dd794d38db5e7306808.png)
 
   1. 나타난 창에서 **ExAdapter, iftNxService 두 가지 단어를 모두 검색**합니다.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F93b617ea-ae41-4484-8a43-2f2797aa54c2%2FUntitled.png&blockId=39de8268-560a-8070-9c43-d512f51c4ba0)
+  ![](images/7be7337a35c83a1ce7dd.png)
 
   1. 검색된 프로그램을 **선택하고 제거** 합니다. (**ExAdapter, iftNxService 둘 다 삭제 해야 합니다.)**
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F62834a62-b45e-477d-bea3-1abc2b164b31%2FUntitled.png&blockId=39de8268-560a-80a5-8423-f8d0e7db52c6)
+  ![](images/e4fafbded4a2ca5d0efb.png)
 
   1. 제거 선택 시, 확인을 누르면 프로그램 삭제 프로세스가 진행됩니다. “완전히 제거되었습니다” 문구가 노출되면 제거가 완료되었습니다. 확인을 누릅니다.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F03303f49-0462-462a-a99f-7b5d1ba35b17%2FUntitled.png&blockId=39de8268-560a-8084-9c28-e612d5663859)
+  ![](images/e06bbc282a11ebfb70cd.png)
 
   1. **PC를 재시작해주세요. (반드시 재시작 후에 새로 설치해야합니다.)**
   1. 레포트 화면에서 **공동인증서 등록** 버튼을 눌러 새롭게 인증서 프로그램을 다운로드 받아주세요.
 
-    ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2F171f6be5-324c-45b7-9a19-70335a821786%2F%25E1%2584%2592%25E1%2585%25AA%25E1%2584%2586%25E1%2585%25A7%25E1%2586%25AB_%25E1%2584%258F%25E1%2585%25A2%25E1%2586%25B8%25E1%2584%258E%25E1%2585%25A5_2024-03-07_165621.png&blockId=39de8268-560a-80ff-a341-fcafbf061711)
+    ![](images/d8f94832d5a34948b13e.png)
 
   1. 다운로드 한 프로그램을 설치하고 완료를 확인합니다. 마침을 누릅니다.
 
-    ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F2d96186b-d6ab-440b-9136-5c5954d8d2c5%2FUntitled.png&blockId=39de8268-560a-8015-8a69-e1961d88bc19)
+    ![](images/ebb786c8b142081bac70.png)
 
   1. 레포트 화면을 새로고침 후 다시 등록을 시도해주세요.
 
@@ -119,30 +119,30 @@
 - **인증서 업로드 프로그램 삭제 및 재설치 방법 (좌측 삼각형 클릭!)**
   1. 먼저 아래와 같이 윈도우 키를 입력 후, **프로그램 추가/제거 메뉴를 선택**해주세요.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F78364982-f04e-4849-a95c-4a39ddba4c9a%2FUntitled.png&blockId=39de8268-560a-807e-a12a-f02127225256)
+  ![](images/7d69bdc976fb982d6c70.webp)
 
   1. 나타난 창에서 **ExAdapter, iftNxService 두 가지 단어를 모두 검색**합니다.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F93b617ea-ae41-4484-8a43-2f2797aa54c2%2FUntitled.png&blockId=39de8268-560a-80c9-a34b-ed487b9df05c)
+  ![](images/90ebc2fbff88d0da7ec4.webp)
 
   1. 검색된 프로그램을 **선택하고 제거** 합니다. (**ExAdapter, iftNxService 둘 다 삭제 해야 합니다.)**
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F62834a62-b45e-477d-bea3-1abc2b164b31%2FUntitled.png&blockId=39de8268-560a-80c0-9ba5-c50947331747)
+  ![](images/e83a5dde429bb8ddee0f.webp)
 
   1. 제거 선택 시, 확인을 누르면 프로그램 삭제 프로세스가 진행됩니다. “완전히 제거되었습니다” 문구가 노출되면 제거가 완료되었습니다. 확인을 누릅니다.
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F03303f49-0462-462a-a99f-7b5d1ba35b17%2FUntitled.png&blockId=39de8268-560a-80bb-85dc-d57ee1525e20)
+  ![](images/74be49d7104c6a1027bb.webp)
 
   1. **PC를 재시작해주세요. (반드시 재시작 후에 새로 설치해야합니다.)**
   1. 레포트 화면에서 **공동인증서 등록** 버튼을 눌러 새롭게 인증서 프로그램을 다운로드 받아주세요.
 
     ExAdapter_Web_Setup.zip 10.2 MiB
 
-    ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fprod-files-secure.s3.us-west-2.amazonaws.com%2F54720636-34a8-4aa9-9b58-588d29306c22%2F171f6be5-324c-45b7-9a19-70335a821786%2F%25E1%2584%2592%25E1%2585%25AA%25E1%2584%2586%25E1%2585%25A7%25E1%2586%25AB_%25E1%2584%258F%25E1%2585%25A2%25E1%2586%25B8%25E1%2584%258E%25E1%2585%25A5_2024-03-07_165621.png&blockId=39de8268-560a-8036-951a-dc95131ee85b)
+    ![](images/da5727cd43a40c059d4a.webp)
 
   1. 다운로드 한 프로그램을 설치하고 완료를 확인합니다. 마침을 누릅니다.
 
-    ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F2d96186b-d6ab-440b-9136-5c5954d8d2c5%2FUntitled.png&blockId=39de8268-560a-8057-a443-ec5627ea2fc6)
+    ![](images/63ca1c3aeaf51d56123e.webp)
 
   1. 레포트 화면을 새로고침 후 다시 등록을 시도해주세요.
 

@@ -14,7 +14,7 @@
 
 **세무 수임 고객 전용으로 제공되는 메뉴는 아래와 같습니다.**
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A7c9d05a7-65af-46b8-b2df-127abbb7cfa1%3AGroup_1000004254.png&blockId=2cee8268-560a-8036-9b98-f2e0e948ae63)
+![](../images/97751f8ac372af392fe5.png)
 
 #### 세무 수임이 궁금해요
 

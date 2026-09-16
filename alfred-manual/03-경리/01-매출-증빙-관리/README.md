@@ -14,7 +14,7 @@
 
 **노출 대상:** 전체 (구독 무관)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A09f8c91f-82ff-426f-8cab-33cdbaa07734%3AGroup_1000004419.png&blockId=39ce8268-560a-806c-8f85-db9bc44bd5a9)
+![](../../images/3e61f6e2529f6f888ce3.webp)
 
 ---
 
@@ -38,7 +38,7 @@
 - **개별 분류** : 각 매출 항목의 분류가 ‘계정과목 선택’ 상태일 경우 직접 계정과목을 선택 가능합니다.
   (선택 이후 변경 가능)
 
-  ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Afa7d1f18-e232-4b0e-ba57-94758919040d%3A%EA%B0%9C%EB%B3%84_%EB%B6%84%EB%A5%98.png&blockId=39ce8268-560a-8075-82b2-ed4692ac4780)
+  ![](../../images/796d68a887119abf9951.webp)
 
 - **규칙기반 자동분류** : 우리 회사의 규칙을 설정하여 매번 반복되는 거래의 분류를 한 번에 처리할 수 있습니다.
   - 매출 내역 왼쪽 상단 `[규칙 관리`] 버튼 클릭

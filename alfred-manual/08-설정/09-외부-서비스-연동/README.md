@@ -23,7 +23,7 @@
 
 시프티는 근태관리부터 HR 업무를 위한 기능을 갖춘 통합 인력관리 솔루션입니다. 100종 이상의 근태 항목을 자동으로 집계해, 복잡한 근태 집계를 자동화할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A12856e7d-2e49-4941-90e4-7c7bf041d9fa%3Aimage.png&blockId=39ee8268-560a-808c-8b88-da18b6890e33)
+> ![](../../images/c45767e6ea8f17bd2297.webp)
 
 **연동 방법**
 
@@ -47,7 +47,7 @@
 
 쿼타북 연동을 통해 투자사에 보고할 기업 현황 데이터를 자동으로 제공할 수 있습니다. Alfred 데이터를 쿼타북(Quotabook)에 제공하는 방식입니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A0208069c-862d-401c-a01d-2dc7554c9e7c%3Aimage.png&blockId=39ee8268-560a-80a8-9920-f1d327975f83)
+> ![](../../images/d104bcf7ff77da19d1ad.webp)
 
 **연동 방법**
 

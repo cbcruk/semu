@@ -4,33 +4,33 @@
 
 ## Alfred 사용 안내서
 
-[![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aa96bffa3-a248-498d-adad-0c6c3e109c31%3AQDQD1.png&blockId=388e8268-560a-8020-8260-d5223a100964)](http://app.alfred.kr/)
+[![](images/d734aba265064de4648b.webp)](http://app.alfred.kr/)
 
-[![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A1bac2838-d914-4a00-ab74-07a759bd1bcd%3AQDQD5.png&blockId=388e8268-560a-8008-a488-dee6cb724e2d)](https://docs.channel.io/alfred)
+[![](images/85c9ceca8c4c4e0c612a.webp)](https://docs.channel.io/alfred)
 
-[![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Affe0961e-289c-4ee4-9161-b7ce111c68c8%3AQDQD3.png&blockId=388e8268-560a-805f-887a-cb5aaaf47865)](https://helpdesk.heumtax.com/)
+[![](images/bc71ed7ccb5a6546c7ca.webp)](https://helpdesk.heumtax.com/)
 
-[![알프레드 시작하기 v.2](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A6ec878c7-da4d-4323-9407-560b96b215a5%3AQDQD4.png&blockId=388e8268-560a-802d-b23b-fea1002df914)](01-알프레드-시작하기-v.2.md) — 알프레드 시작하기 v.2
+[![알프레드 시작하기 v.2](images/3ce396c794973d3dcf70.webp)](01-알프레드-시작하기-v.2.md) — 알프레드 시작하기 v.2
 
 ---
 
 ## Alfred 메뉴 소개
 
-[![홈(Universal Home)](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A4a5a6e83-3a93-4442-afab-b19fe734d75e%3AGroup_1000004281.png&blockId=388e8268-560a-80fb-907d-fd6ddfe79768)](02-홈-Universal-Home/README.md) — 홈(Universal Home)
+[![홈(Universal Home)](images/6a8f9d04a23074bd9dbd.webp)](02-홈-Universal-Home/README.md) — 홈(Universal Home)
 
-[![경리](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A473f60a7-9b7b-450b-a094-78834bb98068%3A%EA%B2%BD%EB%A6%AC%EB%B2%84%ED%8A%BC.png&blockId=388e8268-560a-807e-a891-d9fed92d1b29)](03-경리/README.md) — 경리
+[![경리](images/d853b8dda08b96522a22.webp)](03-경리/README.md) — 경리
 
-[![인사](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A88ae8799-96c5-4314-9191-07a09ae770d5%3A%EC%9D%B8%EC%82%AC_%EB%B2%84%ED%8A%BC.png&blockId=388e8268-560a-80a7-a639-e421003e89a4)](04-인사/README.md) — 인사
+[![인사](images/b8400bdb5206b7a9800b.webp)](04-인사/README.md) — 인사
 
-[![급여](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aba12e460-90d8-4671-b647-72f2d3f2d581%3A%EA%B8%89%EC%97%AC_%EB%B2%84%ED%8A%BC.png&blockId=398e8268-560a-806c-9b3c-e9491a7c357f)](05-급여/README.md) — 급여
+[![급여](images/e5b22fd715274fb7a65f.webp)](05-급여/README.md) — 급여
 
-[![세무](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ab9d74a4c-eb2a-49dd-a62e-5235619c50e4%3AGroup_1000004291.png&blockId=398e8268-560a-807b-b5b3-f557a1147c0b)](06-세무/README.md) — 세무
+[![세무](images/d5971bc2d96968ff9d4b.webp)](06-세무/README.md) — 세무
 
-[![서식·증명서](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A510e1a78-8bb8-4628-8ae5-faecb4a458f4%3A%EC%84%9C%EC%8B%9D%EC%A6%9D%EB%AA%85%EC%84%9C_%EB%B2%84%ED%8A%BC_%281%29.png&blockId=398e8268-560a-8074-88e9-dbff572ec977)](07-서식·증명서/README.md) — 서식·증명서
+[![서식·증명서](images/06d6bf5f144fb17574e3.webp)](07-서식·증명서/README.md) — 서식·증명서
 
-[![설정](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A61f77269-c18b-4c0c-a620-adac22a99348%3A%EC%84%A4%EC%A0%95_%EB%B2%84%ED%8A%BC.png&blockId=388e8268-560a-802e-a7a6-c20dd76ced0d)](08-설정/README.md) — 설정
+[![설정](images/1c19a9c196219f07007d.webp)](08-설정/README.md) — 설정
 
-[![Alfred Business 메뉴 구조](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A18fc030a-e720-4647-898c-f6846de348f9%3A%EC%9D%B4%EC%A0%84_%EB%A9%94%EB%89%B4_%EA%B0%80%EC%9D%B4%EB%93%9C_%EB%B2%84%ED%8A%BC_%281%29.png&blockId=398e8268-560a-80ae-9cfc-e3e1f067378f)](09-Alfred-Business-메뉴-구조.md) — Alfred Business 메뉴 구조
+[![Alfred Business 메뉴 구조](images/d96037e581105fd6ce23.webp)](09-Alfred-Business-메뉴-구조.md) — Alfred Business 메뉴 구조
 
 ---
 

@@ -19,7 +19,7 @@ Alfred Business에서 세금계산서를 직접 발급하시고 싶으신 경우
 **>>**[공동인증서 등록 방법 자세히 보기](01-공동인증서-연동-가이드.md)
 단, 이미 매출/매입 내역 조회의 홈택스 공동인증서 연동을 진행하셨을 경우, 세금계산서 발급을 위한 인증서 연동도 자동 완료됩니다. (추가 진행 불필요)
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aef5415db-6dc7-4b1d-9989-d6b66a1be728%3AGroup_1000004432.png&blockId=39de8268-560a-803e-9955-c17fffa82e85)
+![](../../images/d6fa0dbc095dc6322330.webp)
 
 ---
 
@@ -27,7 +27,7 @@ Alfred Business에서 세금계산서를 직접 발급하시고 싶으신 경우
 
 세금계산서는 거래명세서를 먼저 등록한 뒤, 등록한 명세서를 기반으로 발급됩니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aa3625313-834d-425f-8ce4-d1e3c02f423c%3AGroup_1000004431.png&blockId=39de8268-560a-8095-832d-d0877c4c1e22)
+![](../../images/9a8d171e918a2958aec1.webp)
 
 **1. 거래명세서 등록**
 

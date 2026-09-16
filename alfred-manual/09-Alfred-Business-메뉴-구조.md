@@ -10,7 +10,7 @@
 
 [>>세무 기장 대행 서비스 알아보기](https://www.heumtax.com/)
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A62222971-07ee-451b-80d7-928cef00ee6e%3AGroup_1000004290.png&blockId=388e8268-560a-8031-8716-fd2dc828b686)
+> ![](images/bd75455300bf37dc7a12.webp)
 
 ---
 
@@ -22,21 +22,21 @@
 - 확인이 필요한 업무를 '오늘의 할 일'에서 처리
 - 추천 질문으로 AI 비서에게 바로 질문
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ab0c23bf8-0f75-4612-a447-5e6a5d06c592%3Aimage.png&blockId=389e8268-560a-800e-97c9-e7abae278afa)
+> ![](images/5955215b50bff59adbfc.webp)
 
 #### AI 비서
 
 - 사업 현황, 세무, 자금 등을 대화로 질문하고 답변 확인
 - 구독과 상관없이 모든 사용자가 이용
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A0c6a2f6d-65a1-4537-a6b5-45f1d801340e%3Aimage.png&blockId=389e8268-560a-804d-bc07-c00aafac4895)
+> ![](images/046dff6eaeb4414d71a5.webp)
 
 #### 오늘의 할 일
 
 - 확인·결정이 필요한 업무를 카드로 확인
 - 카드에서 바로 처리하거나 관련 화면으로 이동
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A0db5dc1f-85b7-4cfb-83c9-7fc35d5230c4%3Aimage.png&blockId=389e8268-560a-80cd-9ed7-d382312fb76c)
+> ![](images/4a651a2adc4ded3bd8ca.webp)
 
 #### 실시간 보고서
 
@@ -44,7 +44,7 @@
 - **자금 현황:** 일별 자금과 기간별 추이 확인
 - **예상 부가세:** 예상 납부 세액 확인
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ac9c4005c-9831-47d8-91cc-22566b67dee9%3Aimage.png&blockId=389e8268-560a-80bb-948b-d33ab2f2fd6a)
+> ![](images/58f0c0ad17bcd7de22a5.webp)
 
 #### 세무 보고서
 
@@ -52,7 +52,7 @@
 - **자금 보고** : 자금 흐름과 미수·미지급금 확인
 - **재무상태표**
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A5c8ca210-ae16-4906-a1e5-a39d47cec352%3Aimage.png&blockId=389e8268-560a-8082-a9da-c315a5d33092)
+> ![](images/720fc16e9c39b3da786e.webp)
 
 #### 경리
 
@@ -64,7 +64,7 @@
 - **세금계산서 발급**
 - **세금 납부** : 인터넷 지로 고지서 조회 및 세금 납부
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A2b1dfc1c-575e-483c-950d-f9e6b59881af%3Aimage.png&blockId=389e8268-560a-806f-b19e-c3395f497d54)
+> ![](images/c870241c343efe278af7.webp)
 
 #### 인사(유료 버전 제공)
 
@@ -73,14 +73,14 @@
 - **전자서명** : 근로계약 관련 문서내 전자서명 발급
 - **제증명 발급 :** 표준 취업 규칙, 경력증명서, 재직증명서, 퇴직증명서 발급
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A8ae741e8-723f-4da8-bab6-be9c7e2bb750%3Aimage.png&blockId=389e8268-560a-80be-a469-c58b54555c93)
+> ![](images/cb267de089530fdb1e54.webp)
 
 #### 급여(유료 버전 제공)
 
 - **급여 정산**_`(급여 구독, 급여 구독&세무 기장시 노출)`
 - **급여 관리**_`(세무 기장시 노출)`
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A49b36b26-83b6-440e-8b58-c8b9918375e2%3Aimage.png&blockId=389e8268-560a-80fb-b236-df9226d5affb)
+> ![](images/49249867efaa58d4aa30.webp)
 
 #### 세무
 
@@ -92,14 +92,14 @@
 - **원천세**
 - **연말정산**
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Ad520d092-47eb-4c4b-8460-0bc1dae5dd11%3Aimage.png&blockId=389e8268-560a-80c2-9df6-cf64efdce1d9)
+> ![](images/08db985ae488b2d4b5d2.webp)
 
 #### 서식·증명서
 
 - **서식 모음** : 자주 사용하는 업무 서식 다운로드
 - **증명서 발급 :** 세무 관련 증명서 발급
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A9204d534-58d0-4d8f-a7c4-713747255a11%3Aimage.png&blockId=389e8268-560a-807c-ac24-f52aefee886a)
+> ![](images/7424c22de4e9a88960e6.webp)
 
 #### 설정
 
@@ -110,7 +110,7 @@
 - **서비스 이용 및 결제 관리** : 현재 이용 중인 Alfred 플랜과 계약서 조회
 - **계약서 및 동의서** : 세무 기장 계약서 및 수임 동의서 조회
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A43dcac48-f776-47dd-a655-30fb060b54d2%3Aai-edited-image.png&blockId=389e8268-560a-80f0-a74f-eb5698e3888a)
+> ![](images/168c8b2c6d59eac1015c.webp)
 
 ---
 

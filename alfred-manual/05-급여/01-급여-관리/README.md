@@ -38,7 +38,7 @@
 
 급여 관리 메뉴에서 처리할 **귀속월**을 확인하고 해당 급여대장을 선택합니다. 설정에 따라 자동 생성된 급여 카드를 확인할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F2d0623e5-1853-4539-b7e7-80ee8a96ff2c%2FUntitled.png&blockId=39de8268-560a-80b2-89fd-c77b21cd0813)
+> ![](../../images/aa80c23fbd7678a00963.webp)
 
 #### 2) 대상자 확인
 
@@ -58,7 +58,7 @@
 자동 생성된 급여 내용을 확인하고, 이번 달에 변동이 있으면 반영합니다.
 작성 중인 급여카드는 임시저장이 가능합니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A342ace9b-f126-4999-a966-8137ea3052e2%3Aimage.png&blockId=39de8268-560a-801d-b16c-cce0b2dcaf6d)
+> ![](../../images/d834b09a6f7c92b4caf5.webp)
 
 #### 근태 입력
 
@@ -101,7 +101,7 @@
 
 계산 요청 이후에는 담당자가 급여 계산과 확정을 진행합니다. (담당자 처리 단계)
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3Aa3b2d027-2176-4f61-9eb5-b377ccd0ce35%3Aimage.png&blockId=39de8268-560a-8006-bd63-f8ac121bbc16)
+> ![](../../images/65b5de8dee8b99a9c9ff.webp)
 
 ---
 
@@ -113,7 +113,7 @@
 - 각 구성원의 **차인지급액**(공제 후 실지급액)을 확인한 뒤 급여를 지급합니다.
 - 급여 화면 상단의 **특이사항** 항목에서 담당자가 해당 월에 남긴 주요 이슈를 확인할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A9dd1df6c-d86a-444d-a586-08e5831f2107%3A46d43da2-68de-465d-b7a9-c8280e9ba25d.png&blockId=39de8268-560a-8004-a00c-ec9f5c65a2a2)
+> ![](../../images/c8d02f5f5d9cce164a55.webp)
 
 ---
 
@@ -123,9 +123,9 @@
 
 급여대장에서 근로 탭의 `급여명세서 관리` 버튼을 선택합니다. 각 근로자의 수당 항목에 계산식 입력란이 나타나며, 수당 산출 방법을 텍스트로 입력합니다. (예: `16시간 × 17,000원 × 1.5`) 근로기준법 개정에 따라 급여명세서에 필수로 기재해야 하는 사항을 입력하는 단계입니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A69c5dde2-1130-4ea0-84ce-a3d4dfa7e2b4%3Aimage.png&blockId=39de8268-560a-80bb-887d-c93c922632c2)
+> ![](../../images/746d23ba22cb9a2a113b.webp)
 >
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A6f3aa55a-1da8-4d1e-a180-ca2bdd9a3b4a%3Aimage.png&blockId=39de8268-560a-8069-81f5-dbd120e25b86)
+> ![](../../images/d5abba0e97464d580fd9.webp)
 
 >
 > - [고용노동부 블로그 설명 링크(클릭)](https://blog.naver.com/molab_suda/222563786812)
@@ -143,11 +143,11 @@
 - `미리보기`로 발송될 명세서를 확인할 수 있습니다.
 - 명세서는 발송 후에도 재발송할 수 있습니다.
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A25d81a74-9592-4ac2-a733-58dbbcde8827%3Aimage.png&blockId=39de8268-560a-8075-9d03-dd715277cad0)
+> ![](../../images/fe61281a688752ac72a4.webp)
 
 > `미리보기` 버튼을 통해서 발송될 급여 명세서를 확인할 수 있습니다.
 >
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F97dcc433-7fef-4ff0-bcdf-f9d038f0d200%2FUntitled_%2811%29.png&blockId=39de8268-560a-80ef-88ed-c492de1ba6a0)
+> ![](../../images/a61a04e3ee03c2170633.webp)
 
 #### 3) 발송 상태 확인
 
@@ -155,7 +155,7 @@
 
 >
 
-> ![](https://oopy.lazyrockets.com/api/v2/notion/image?src=https%3A%2F%2Fs3-us-west-2.amazonaws.com%2Fsecure.notion-static.com%2F8777c9eb-aab8-4db1-94d8-4ed4c9a7a9a7%2FUntitled_%2813%29.png&blockId=39de8268-560a-8030-a87d-c5095f2eca50)
+> ![](../../images/425f3820c2c73c1072b8.webp)
 
 ---
 
@@ -188,7 +188,7 @@
 **입력되지 않은 소득 유형 안내 문구가 발생해요.**
 근로, 일용, 사업, 기타 소득 유형 중에 입력되지 않은 항목이 있다면 우측과 같이 안내문이 먼저 노출됩니다. 해당 사항이 없다면 바로 계산 요청하시면 됩니다.
 
-![](https://oopy.lazyrockets.com/api/v2/notion/image?src=attachment%3A4de750fe-ce0d-47df-8e97-33df2750c765%3Aimage.png&blockId=39de8268-560a-8013-8fef-c33ecf58b1e4)
+![](../../images/e5d9eccffa4dc70a951b.webp)
 
 ## 하위 페이지
 
