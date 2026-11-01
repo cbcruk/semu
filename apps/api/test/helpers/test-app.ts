@@ -85,3 +85,7 @@ export function fileForm(bytes: Uint8Array, name: string, fields: Record<string,
 
 export const CORP = SEED.companies.corp
 export const USERS = SEED.users
+
+export function grantPayrollPlan(db: DatabaseSync, companyId: string): void {
+  db.prepare('UPDATE companies SET has_payroll_plan = 1 WHERE id = ?').run(companyId)
+}
