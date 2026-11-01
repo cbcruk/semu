@@ -1,8 +1,8 @@
-# 급여 도메인 설계 (1부: 계산 엔진, 기준표, 급여 설정)
+# 급여 도메인 설계 (1부: 계산 엔진, 기준표, 급여 설정 · 2부: 급여대장, 명세서, 퇴직금, 원천세 연계)
 
-> 상태: v0.1 · 2026-11-01 · 구현: `apps/api/src/modules/payroll/**`, 마이그레이션 `0030-payroll-settings.sql`
+> 상태: v0.2 · 2026-11-01 · 구현: `apps/api/src/modules/payroll/**`, 마이그레이션 `0030-payroll-settings.sql`, `0031-payroll-cards.sql`
 >
-> 근거는 [`spec-notes/payroll.md`](../spec-notes/payroll.md)(이하 "스펙")이고, 공통 규약은 [`api-architecture.md`](../api-architecture.md)를 따릅니다. 2부(급여대장·BPO 흐름·명세서·퇴직금 정산)는 다음 담당자가 이 엔진 위에 씁니다.
+> 근거는 [`spec-notes/payroll.md`](../spec-notes/payroll.md)(이하 "스펙")이고, 공통 규약은 [`api-architecture.md`](../api-architecture.md)를 따릅니다. 2부(급여대장·BPO 흐름·명세서·퇴직금 정산)는 9절부터입니다.
 
 ## 1. 범위와 구조
 
@@ -258,7 +258,7 @@ section(5, '급여', 'payroll', [
 leaf(9xx, '급여 설정', 'payroll_setting', '/payroll-setting/conditions-of-employment'),
 ```
 
-퇴직금 정산(`/severance-pay-settlement`, 메뉴 트리 버전 `2026.08_퇴직금정산`)은 2부 담당자가 `severance_pay_settlement` 같은 코드로 추가합니다(급여 구독 추정).
+퇴직금 정산(`/severance-pay-settlement`, 메뉴 트리 버전 `2026.08_퇴직금정산`)은 2부에서 `severance_pay_settlement`(급여 구독 추정)로 추가했습니다. 20절을 보세요.
 
 ## 8. 미해결 질문
 
@@ -275,3 +275,178 @@ leaf(9xx, '급여 설정', 'payroll_setting', '/payroll-setting/conditions-of-em
 11. 메뉴 코드 실제 값과 `payroll_management`에 세무 약관 게이트가 필요한지.
 12. `usage-status` GET 응답 형태, `payroll-payment-categories`가 평탄 목록인지 분류 묶음인지.
 13. 엑셀 업로드 원본 양식(xlsx) 열 정의. 지금은 CSV로 대신합니다.
+
+---
+
+# 2부: 급여대장, 명세서, 퇴직금, 원천세 연계
+
+## 9. 범위와 구조
+
+| 폴더 | 내용 | DB (`0031-payroll-cards.sql`) |
+| --- | --- | --- |
+| `cards/` | 카드·행·항목·명세서·특이사항·시프티. BPO 라우트(`bpo.routes.ts`)와 legacy 라우트(`legacy.routes.ts`)가 같은 서비스를 씁니다 | `payroll_cards`, `payroll_rows`, `payroll_card_items`, `payroll_payslips`, `payroll_payslip_notifications`, `payroll_manager_memos`, `payroll_legacy_preferences`, `payroll_external_integrations` |
+| `severance/` | 퇴직금 정산(퇴직·중간) | `severance_settlements`, `severance_monthly_wages` |
+| `withholding/` | 원천세 신고 요건 연동, 지급월 집계 | `filing_requirements`(기존) |
+| `reports/` | 인건비 보고서 | 없음 |
+| `adapters/` | 데스크 내보내기, 시프티. 명세서는 HR 어댑터를 다시 씁니다 | 없음 |
+
+- 직원 정보는 HR `employees.repository`, `contracts.repository` 함수로만 읽습니다. 행에는 계산을 다시 할 수 있도록 HR 값의 스냅숏(`snapshot`)을 남깁니다.
+- 서비스는 트랜잭션을 열지 않고 라우트가 감쌉니다. 어댑터를 부르는 단계(명세서 발송, 데스크 내보내기, 시프티)만 "트랜잭션 → 어댑터 → 트랜잭션"으로 나눕니다.
+
+## 10. 카드 상태 기계
+
+`card-status.ts`의 `CARD_TRANSITIONS` 한 곳에서 정합니다.
+
+| 전이 | 출발 | 도착 | 행위자 | 원천세 신고 후 |
+| --- | --- | --- | --- | --- |
+| `confirmInput` (PUT `status: calculated`, legacy `calculate`) | `inputting` | `calculated` | 고객, 담당자 | 409 |
+| `reopenInput` (PUT `status: inputting`) | `calculated` | `inputting` | 담당자 | 409 |
+| `requestApproval` | `calculated` | `approval_requested` | 담당자 | 허용 |
+| `approve` | `approval_requested` | `approved` | 고객 | 허용 |
+| `reject` | `approval_requested` | `calculated` | 고객 | 409 |
+| `withdrawApprovalRequest` (`cancel-approval`, 승인 전) | `approval_requested` | `calculated` | 담당자 | 409 |
+| `cancelApproval` (`cancel-approval`, 승인 후) | `approved`, `payslips_sent` | `approval_requested` | 고객 | 409 |
+| `sendPayslips` | 승인 이후 | `payslips_sent` (`exported`는 유지) | 고객, 담당자 | 허용 |
+| `exportToDesk` | 승인 이후 | `exported` | 담당자 | 허용 |
+| `legacyFix` (확장) | `calculated` | `approved` | 담당자 | 허용 |
+| `legacyRelease` (확장) | `calculated`, `approved`, `payslips_sent` | `inputting` | 담당자 | 409 |
+
+- 버전: 전이마다 `version`이 1씩 오르고 `ETag: "n"`으로 내려갑니다. BPO 전이는 `If-Match`가 없으면 428, 다르면 412 `VERSION_CONFLICT`입니다. legacy 클라이언트는 `If-Match`를 보내지 않으므로 legacy 라우트는 현재 버전을 씁니다.
+- 입력 편집: `inputting`은 고객·담당자, `calculated`는 담당자만, 그 뒤는 아무도 못 합니다.
+- `confirmInput`은 모든 행을 다시 계산합니다. 행을 고치면 계산 결과는 남기고 `is_calculated: false`로 표시합니다.
+- legacy 상태 문자열(`card-status`)은 `inputting → input_available`, `calculated`·`approval_requested → calculating`, 승인 이후 `→ done`입니다(스펙 6절 "추정").
+
+## 11. 추가 카드
+
+같은 귀속월의 첫 카드가 `default`, 나머지가 `addition`입니다. 생성할 수 없는 사유(`can-create-additional-card`의 `reason`, 생성 시 409 `ADDITIONAL_CARD_NOT_ALLOWED`의 `reason`):
+
+1. `no_default_card`, `parent_not_calculated`: 부모 카드가 `계산중`·`완료`가 아닙니다.
+2. `input_card_exists`: 같은 세대(BPO/legacy)에 `inputting` 카드가 있습니다.
+3. `withholding_filed`: 지급월 원천세가 신고되었습니다(이 경우만 코드가 `WITHHOLDING_FILED`).
+4. `withholding_deadline_near`: 지급월 다음 달 10일의 5일 전(그 달 5일)부터입니다. 매뉴얼 예시가 모순이라 기준일은 미확정입니다.
+
+추가 카드에는 근로소득 행을 넣을 수 없습니다(409 `WAGE_INCOME_ON_ADDITIONAL_CARD`). 삭제는 `inputting`일 때만 됩니다.
+
+## 12. 소득 구분과 계산
+
+| BPO `:segment` | legacy 키 | 엔진 `incomeType` | 입력 |
+| --- | --- | --- | --- |
+| `wage-monthly`, `wage-daily`, `wage-hourly` | `wage_salary` (`wage-salary`) | `wage_*` | HR 명부 후보(`candidates`)에서 추가. 기본급·시급·일급은 급여 계약, 일할은 입·퇴사·휴직에서 |
+| `daily` | `daily` | `daily` | 이름·주민번호 직접 입력 또는 HR 일용직, `work_dates` 또는 `work_days` |
+| `business` | `business` | `business` | 업종 코드, 세전/세후 |
+| `other` | `other_labor` (`other-labor`) | `other` | 지급사유 코드(기본 `60`), 필요경비 |
+
+- 4대보험은 귀속월 기준표, 소득세는 지급일 기준표로 계산합니다(1부 미해결 4번을 이렇게 정했습니다).
+- 공제 방식이 `notice`인 보험은 행의 `insurance_notice` 금액을 씁니다. 고지 금액을 받는 연동이 없으므로 기본값은 0입니다.
+- 손으로 넣은 금액(`overrides`)은 계산 뒤에 덮어쓰고 `reset-calculation`이 지웁니다.
+- legacy `data`의 `taxable_incomes`·`other_deductions`는 지급·공제 항목 ID를 키로 하는 원본 맵이고, 저장할 때 행의 항목 금액에 합칩니다.
+
+## 13. 명세서
+
+- 다운로드와 발송은 승인 이후에만 됩니다. 그 전에는 409 `INVALID_TRANSITION`입니다.
+- 발송: 행마다 `in_flight`를 기록한 트랜잭션을 닫고, PDF를 만들어 HR `NotificationAdapter`(템플릿 `payroll_payslip`, PDF 첨부)로 보낸 뒤 `success`/`fail`을 기록합니다. 이메일이 없으면 `fail`(`no_email`)입니다. 다시 보낼 수 있습니다.
+- 수당별 계산식(`payment_formulas`)은 legacy `POST cards/:c/payslip`으로 저장하고, `copy-payment-formulas`는 직전 완료 카드에서 직원별로 가져옵니다.
+
+## 14. 원천세 연계
+
+- 원천세 신고의 `payroll_ledger_closed` 요건(`auto_linked = 1`)은 신고 기간에 지급일이 있는 카드(두 세대 모두)가 하나 이상이고 모두 승인 이후이면 `provided`, 아니면 `pending`입니다. 카드 생성·삭제·지급일 변경·상태 전이와 `scheduleFilings`의 신고 생성 때 다시 계산합니다.
+- 카드가 없는 지급월은 `pending`입니다. 급여가 없는 달을 `not_applicable`로 바꾸는 흐름은 세무 쪽 결정이 필요합니다.
+- 신고가 `filed`·`settled`이면 그 지급월 카드는 재계산·입력 되돌리기·반려·승인 취소·추가 카드·지급일 이동이 409 `WITHHOLDING_FILED`입니다(`payment_month` 포함).
+- `GET /payroll/withholding-summary/:paymentMonth`(담당자 전용)는 완료 카드와 완료 퇴직 정산을 `A01`·`A03`·`A21`·`A25`·`A40`으로 묶습니다. 코드 대응을 확인하지 못해 모든 줄에 `verified: false`를 붙입니다.
+
+## 15. 퇴직금 정산
+
+- 경로 `/payroll/bpo/severance/settlements/**`, 메뉴 `severance_pay_settlement`(급여 구독, 추정). 고객은 읽기, 담당자는 쓰기입니다.
+- 상태는 `in_progress → completed`이고 `exclude`/`include`로 `excluded`와 오갑니다. `complete`·`reopen`·`exclude`·`include`는 `If-Match`가 필요합니다. 퇴직 정산의 상태는 HR `setSeveranceSettlementStatus`로 HR 퇴직 정보에 반영합니다.
+- 중간정산 사유는 9개입니다(`filter-options`의 `interim_reasons`). 완료된 중간정산이 있으면 다음 정산의 근속 시작일은 그 기준일 다음 날이고, 퇴직일이 그보다 이르면 400 `LEAVE_DATE_BEFORE_INTERIM`입니다.
+- 3개월 임금은 기준일 이전 3개 역월입니다. 그 달의 계산된 급여 행이 있으면 그 금액(`source: payroll`), 없으면 급여 계약 금액(`source: contract`)입니다. 담당자가 `temp-save`·`complete`로 고칠 수 있습니다.
+- 기준표 시작(2026-01) 이전 기준일은 가장 오래된 기준표로 계산합니다.
+
+## 16. 인건비 보고서
+
+`/report/labor-cost/:year`(+`/export`, CSV·BOM)는 경리 메뉴 `settlement_reports_profit_loss_labor_cost`를 씁니다. 급여가 경리보다 먼저 마운트되므로 경리의 404 자리표시자를 대신합니다. 귀속월별로 `calculated` 이후 카드의 소득 구분별 지급 총액, 사업주 부담 4대보험, 합계와 누계, HR 명부의 재직·입사·퇴사 인원을 냅니다.
+
+## 17. 엔드포인트
+
+### 17.1 BPO `/api/company/:id/payroll/bpo` (메뉴 `payroll_settlement`)
+
+| 동사 | 경로 | 비고 |
+| --- | --- | --- |
+| GET | `payment-date-list?attribution_month` | 당월·익월 지급일, 신고된 지급월은 `available: false` |
+| GET | `card-summary?year&status&limit&offset` | DRF 페이지 |
+| POST | `card` | 기본 또는 추가 카드 |
+| GET, PUT, DELETE | `card/:c` | PUT의 `status` 변경만 `If-Match` 필요 |
+| GET | `card/:c/status` | |
+| POST | `card/:c/{request-approval,approve,reject,cancel-approval}` | `If-Match` |
+| POST | `card/:c/export-to-desk?export_type=payroll_ledger\|journal` | 담당자, `If-Match`. `export_type` 값은 추정 |
+| GET, POST | `card/:c/{payment,deduction}-items`, `…/bulk` | `employment_type` 필터 |
+| GET, POST | `card/:c/:segment/payroll-input/candidates` | |
+| GET, POST | `card/:c/:segment/payroll-input` | POST는 일용·사업·기타 |
+| POST | `card/:c/:segment/payroll-input/{excel,update,calculate,delete,refresh-employee-info,reset-calculation}` | `excel`은 CSV multipart `file` |
+| GET | `card/:c/:segment/payroll-input/:r/{work-infos,payroll-info}` | |
+| PUT | `card/:c/:segment/payroll-input/:r` | 근로 행 |
+| GET, POST | `card/:c/:segment/work-input` | 근무 시트 |
+| GET | `card/:c/:group/payslip`, `card/:c/:group/payslip/:r` | `group`: `wage`, `daily`, `business`, `other` |
+| POST | `card/:c/payslip/download` | `application/pdf` |
+| POST | `card/:c/payslip/send` | 행별 `notification_status` |
+| GET, POST | `manager-memo` | 쓰기는 담당자 |
+| GET, POST, DELETE | `shiftee-integration` | 해제 후 재연동은 409 `SHIFTEE_RELINK_BLOCKED` |
+| … | `severance/settlements/**` | 15절. 스펙 5.9의 15개를 모두 구현 |
+
+### 17.2 legacy `/api/company/:id/payroll` (메뉴 `payroll_management`)
+
+스펙 5.1의 1~24번을 모두 구현했습니다. 25~30번은 1부의 계정 경로입니다. 다음은 스펙에 없는 확장입니다.
+
+| 동사 | 경로 | 이유 |
+| --- | --- | --- |
+| POST | `cards` | 운영의 월간 자동 생성 배치를 대신합니다. 기본 카드면 HR 명부의 근로자로 채웁니다 |
+| POST | `cards/:c/extensions/fix` | 담당자가 desk에서 하는 확정(`계산중 → 완료`) |
+| POST | `cards/:c/extensions/release` | 확정 해제(`→ 입력가능`) |
+
+`GET/POST /api/company/new-payroll/maintain-payroll/:id`는 회사 마운트 밖이라 public 라우터에서 인증·회사 범위·메뉴를 직접 검사합니다.
+
+### 17.3 기타
+
+| 동사 | 경로 | 비고 |
+| --- | --- | --- |
+| GET | `/api/company/:id/payroll/withholding-summary/:paymentMonth` | 담당자 전용 |
+| GET | `/api/company/:id/report/labor-cost/:year`, `…/export` | 16절 |
+
+## 18. 오류 코드
+
+| 코드 | 상태 | 뜻 |
+| --- | --- | --- |
+| `WITHHOLDING_FILED` | 409 | 지급월 원천세 신고 완료 (`payment_month`) |
+| `ADDITIONAL_CARD_NOT_ALLOWED` | 409 | 11절 사유 (`reason`) |
+| `WAGE_INCOME_ON_ADDITIONAL_CARD` | 409 | 추가 카드에 근로소득 |
+| `SHIFTEE_RELINK_BLOCKED` | 409 | 해제 후 재연동 |
+| `LEAVE_DATE_BEFORE_INTERIM` | 400 | 퇴직일이 완료된 중간정산 기준일 이전 |
+| `INVALID_TRANSITION`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `PERMISSION_DENIED` | 409, 412, 428, 403 | 공통 |
+
+## 19. 추정 응답
+
+| 응답 | 형태 | 근거 |
+| --- | --- | --- |
+| 카드 | `{id, generation, kind, parent_card_id, title, name, attribution_month, payment_date, period_start, period_end, status, legacy_status, step, step_count, version, …_at, export_type, headcount_by_type, total_by_type, gross_total, net_total, uncalculated_count, withholding_filed}` | 목록 화면의 `n/3`, 소득별 인원·합계 |
+| 행 | `{id, income_type, legacy_income_type, employee_id, name, resident_number(마스킹), …입력값, overrides, is_calculated, gross_pay, taxable_pay, non_taxable_pay, income_tax, local_income_tax, employee_insurance_total, employer_insurance_total, deduction_total, net_pay, calculation}` | `calculation`은 급여계산기 응답과 같은 형태 |
+| legacy 카드 | 카드 + `{attr_date, status(input_available\|calculating\|done), card_status, headcount, net_pay_total_by_type, wage_salary[], daily[], business[], other_labor[]}`, 행에 `taxable_incomes`·`other_deductions` | 스펙 5.1 5번 |
+| 명세서 발송 | `{results: [{row_id, notification_status, fail_reason}], card}` | 스펙 3.5 |
+
+## 20. 메뉴 트리
+
+`default-menu-tree.ts`(공유 파일)에 7절 제안에 더해 다음 leaf가 필요합니다.
+
+```ts
+leaf(514, '퇴직금 정산', 'severance_pay_settlement', '/severance-pay-settlement'),
+```
+
+## 21. 미해결 질문 (2부)
+
+1. 세액 감면(중소기업 취업자 감면 등)은 지원하지 않습니다.
+2. 보험 `notice` 방식의 고지 금액 연동이 없어 기본값이 0입니다.
+3. 퇴직금 3개월 임금은 급여 행 또는 계약 금액의 근사치입니다. 휴직 기간 제외, 상여·연차수당 3개월분 안분은 담당자 입력에 맡깁니다.
+4. `export-to-desk`의 `export_type` 값(`payroll_ledger`, `journal`)과 데스크 응답은 확인되지 않았습니다.
+5. 카드가 없는 지급월의 `payroll_ledger_closed`는 `pending`입니다. 자동 `not_applicable` 여부는 세무 쪽 결정이 필요합니다.
+6. 추가 카드 마감 기준일(11절 4번)과 legacy `card-status` 문자열.
+7. 원천세 집계 코드 대응(A01·A03·A21·A25·A40)과 일용 소액부징수 판정 단위.
+8. legacy 자동 생성 배치의 실행 시점. 지금은 확장 `POST cards`로 대신합니다.

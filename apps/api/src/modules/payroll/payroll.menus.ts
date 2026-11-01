@@ -7,6 +7,7 @@ import { PROMOTION_URL } from '../access/promotion'
  * - `payroll_settlement` (급여 정산, BPO): payroll subscription.
  * - `payroll_management` (급여 관리, legacy cards): tax bookkeeping customers.
  * - `payroll_setting` (설정 > 급여 설정): payroll subscription.
+ * - `severance_pay_settlement` (퇴직금 정산): payroll subscription (spec 1.1, 추정).
  * - `salary_calculator` (급여 계산기): free for everyone.
  *
  * Codes are proposals; the live menu tree's codes for these leaves are not in
@@ -32,6 +33,14 @@ export const PAYROLL_MENUS = {
   },
   payroll_setting: {
     path: '/payroll-setting',
+    requiredPlans: ['payroll'],
+    applicableTo: null,
+    requiresPermission: true,
+    requiresTaxTerms: false,
+    promotionUrl: PROMOTION_URL,
+  },
+  severance_pay_settlement: {
+    path: '/severance-pay-settlement',
     requiredPlans: ['payroll'],
     applicableTo: null,
     requiresPermission: true,
