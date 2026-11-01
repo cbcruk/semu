@@ -5,6 +5,7 @@ import type { Cipher } from './lib/crypto/crypto.types'
 import type { FileStorage } from './lib/file-storage/file-storage.types'
 import type { AccessContext, UserType } from './modules/access/access.types'
 import type { CompanyRow } from './modules/companies/companies.types'
+import type { IdentityVerifier, NotificationAdapter, PdfRenderer } from './modules/hr/adapters/adapters.types'
 import type { TaxType } from './modules/tax-calendar/tax-calendar.types'
 
 /** Dependencies the services need, injected so tests can swap the clock and storage. */
@@ -24,6 +25,12 @@ export interface AppDeps extends ServiceDeps {
   taxTermsVersion: string
   /** Largest accepted upload body in bytes. */
   maxUploadBytes: number
+  /** Sends HR emails and 알림톡; the HR module uses an in-memory fake when omitted. */
+  notifier?: NotificationAdapter
+  /** Renders e-sign and certificate PDFs; the HR module uses a deterministic fake when omitted. */
+  pdfRenderer?: PdfRenderer
+  /** Verifies e-sign and certificate signers; the HR module compares name and birth date when omitted. */
+  identityVerifier?: IdentityVerifier
 }
 
 /** The authenticated user, loaded from the JWT subject. */

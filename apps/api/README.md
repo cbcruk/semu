@@ -59,3 +59,13 @@ pnpm test
 | `u-other` | `c-ind`에만 배정된 담당자 |
 
 JWT 페이로드는 `{ sub, company_id? }`입니다. 고객 API는 `company_id`가 경로의 회사와 같아야 하고, 담당자 API(`/api/desk`)는 `company_id` 없이 씁니다.
+
+## 인사(HR)
+
+설계와 추정 응답은 [`docs/design/hr.md`](../../docs/design/hr.md)에 있습니다.
+
+- 구성원 정보, 전자서명, 제증명은 급여 플랜 메뉴입니다. 데모 `c-corp`는 급여 플랜이 꺼져 있어 403이 납니다. 로컬에서 쓰려면 `UPDATE companies SET has_payroll_plan = 1 WHERE id = 'c-corp'`를 실행하세요.
+- 시드 직원: 김민준(정규직), 이서연(육아휴직), 박지훈(퇴사), 최유진(기간제, 20일 뒤 만료).
+- 상태가 바뀌는 쓰기(휴직, 퇴사일, 전자서명 발송·취소, 증명서)는 `If-Match`가 필요합니다. 직원 상세 응답의 `ETag`를 그대로 보내면 됩니다.
+- 근로자 서명 링크(`/api/employment/e-sign/:token/*`)와 증명서 링크(`/api/employment/certificates/:token/*`)는 JWT 없이 동작합니다. 본인 확인 뒤 받은 세션을 `X-ESign-Session`(증명서는 `X-Certificate-Session`) 헤더로 보냅니다.
+- 알림, PDF 렌더링, 본인 확인은 `AppDeps`의 `notifier`, `pdfRenderer`, `identityVerifier`로 바꿀 수 있습니다. 넘기지 않으면 가짜 구현을 씁니다.
