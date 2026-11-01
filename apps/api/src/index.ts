@@ -22,5 +22,5 @@ const app = createApp({
 })
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-  console.log(`tax-api listening on http://localhost:${info.port}`)
+  console.log(`api listening on http://localhost:${info.port}`)
 })

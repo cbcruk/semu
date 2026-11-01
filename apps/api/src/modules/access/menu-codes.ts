@@ -1,42 +1,41 @@
+import { BOOKKEEPING_MENUS } from '../bookkeeping/bookkeeping.menus'
+import { HR_MENUS } from '../hr/hr.menus'
+import { PAYROLL_MENUS } from '../payroll/payroll.menus'
+import { PLATFORM_MENUS } from '../platform/platform.menus'
 import type { TaxType } from '../tax-calendar/tax-calendar.types'
-import type { MenuCode, MenuDefinition } from './access.types'
+import type { MenuCode, MenuDefinition, MenuRule } from './access.types'
+import { PROMOTION_URL } from './promotion'
 
-const TAX_PROMOTION_URL = '/settings/plan/detail'
-
-/** Access rules for every menu code. */
-export const MENU_DEFINITIONS: Record<MenuCode, MenuDefinition> = {
-  tax_surtax: taxMenu('tax_surtax', '/tax/surtax', null),
-  tax_withholding: taxMenu('tax_withholding', '/tax/withholding-tax', null),
-  tax_corporation: taxMenu('tax_corporation', '/tax/corporation-tax', 'corporate'),
-  tax_aggr_income: taxMenu('tax_aggr_income', '/tax/aggr-income-tax', 'individual'),
+const TAX_MENUS = {
+  tax_surtax: taxMenu('/tax/surtax', null),
+  tax_withholding: taxMenu('/tax/withholding-tax', null),
+  tax_corporation: taxMenu('/tax/corporation-tax', 'corporate'),
+  tax_aggr_income: taxMenu('/tax/aggr-income-tax', 'individual'),
   estimated_vat: {
-    code: 'estimated_vat',
     path: '/reports/estimated-vat',
-    requiredPlan: null,
+    requiredPlans: [],
     applicableTo: null,
     requiresPermission: true,
     requiresTaxTerms: false,
     promotionUrl: null,
   },
   today: {
-    code: 'today',
     path: '/today',
-    requiredPlan: null,
+    requiredPlans: [],
     applicableTo: null,
     requiresPermission: false,
     requiresTaxTerms: false,
     promotionUrl: null,
   },
-  employee_management: {
-    code: 'employee_management',
-    path: '/employee',
-    requiredPlan: 'taxation',
-    applicableTo: null,
-    requiresPermission: true,
-    requiresTaxTerms: false,
-    promotionUrl: TAX_PROMOTION_URL,
-  },
-}
+} as const satisfies Record<string, MenuRule>
+
+/** Menu rules of every domain, keyed by menu code. Each domain owns its entries in `<domain>.menus.ts`. */
+export const MENU_RULES = { ...TAX_MENUS, ...PLATFORM_MENUS, ...HR_MENUS, ...PAYROLL_MENUS, ...BOOKKEEPING_MENUS }
+
+/** Access rules for every menu code. */
+export const MENU_DEFINITIONS = Object.fromEntries(
+  Object.entries(MENU_RULES).map(([code, rule]) => [code, { ...rule, code }]),
+) as Record<MenuCode, MenuDefinition>
 
 /** Menu code that guards each tax type. */
 export const TAX_TYPE_MENU_CODE: Record<TaxType, MenuCode> = {
@@ -67,14 +66,13 @@ export function isMenuCode(value: string): value is MenuCode {
   return Object.hasOwn(MENU_DEFINITIONS, value)
 }
 
-function taxMenu(code: MenuCode, path: string, applicableTo: MenuDefinition['applicableTo']): MenuDefinition {
+function taxMenu(path: string, applicableTo: MenuRule['applicableTo']): MenuRule {
   return {
-    code,
     path,
-    requiredPlan: 'taxation',
+    requiredPlans: ['taxation'],
     applicableTo,
     requiresPermission: true,
     requiresTaxTerms: true,
-    promotionUrl: TAX_PROMOTION_URL,
+    promotionUrl: PROMOTION_URL,
   }
 }

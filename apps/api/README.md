@@ -1,4 +1,4 @@
-# @semu/tax-api
+# @semu/api
 
 세무(부가세·원천세·법인세/종합소득세) 백엔드 API입니다. Hono와 Node 내장 `node:sqlite`로 만들었습니다. 설계는 [`docs/tax-api-design.md`](../../docs/tax-api-design.md)를 따릅니다.
 
@@ -13,7 +13,7 @@
 pnpm install
 export JWT_SECRET=$(openssl rand -hex 32)
 
-pnpm seed       # data/tax-api.sqlite 생성, 데모 데이터와 신고 건 예약, 테스트용 JWT 출력
+pnpm seed       # data/api.sqlite 생성, 데모 데이터와 신고 건 예약, 테스트용 JWT 출력
 pnpm dev        # http://localhost:8787 (watch)
 pnpm start
 pnpm schedule   # 신고 건 예약 배치 (멱등)
@@ -29,7 +29,7 @@ curl -H "Authorization: Bearer <admin token>" localhost:8787/api/company/c-corp/
 | --- | --- | --- |
 | `JWT_SECRET` | (필수) | HS256 서명 키, 32자 이상 |
 | `PORT` | `8787` | |
-| `DATABASE_PATH` | `./data/tax-api.sqlite` | |
+| `DATABASE_PATH` | `./data/api.sqlite` | |
 | `STORAGE_DIR` | `./storage` | 업로드 파일 저장 위치 |
 | `TAX_TERMS_VERSION` | `2026-01` | 세무 약관 동의 확인 버전 |
 | `MAX_UPLOAD_BYTES` | `20971520` | 업로드 크기 상한 |

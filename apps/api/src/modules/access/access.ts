@@ -1,4 +1,4 @@
-import type { AccessContext, AccessDecision, AccessDenialReason, MenuCode } from './access.types'
+import type { AccessContext, AccessDecision, AccessDenialReason, MenuCode, Plan } from './access.types'
 import { MENU_DEFINITIONS } from './menu-codes'
 
 /**
@@ -21,6 +21,7 @@ import { MENU_DEFINITIONS } from './menu-codes'
  * decide(
  *   {
  *     userId: 'u1',
+ *     actor: 'client',
  *     isAdmin: true,
  *     roleMenuCodes: new Set(),
  *     businessType: 'corporate',
@@ -40,7 +41,7 @@ export function decide(context: AccessContext, code: MenuCode): AccessDecision {
   if (definition.requiresPermission && !context.isAdmin && !context.roleMenuCodes.has(code)) {
     return deny('PERMISSION_DENIED')
   }
-  if (definition.requiredPlan !== null && context.taxPlan !== definition.requiredPlan) {
+  if (definition.requiredPlans.length > 0 && !definition.requiredPlans.some((plan) => holdsPlan(context, plan))) {
     return deny('ENTITLEMENT_REQUIRED', definition.promotionUrl)
   }
   if (definition.requiresTaxTerms && context.taxPlan === 'taxation' && !context.taxTermsAgreed) {
@@ -52,6 +53,11 @@ export function decide(context: AccessContext, code: MenuCode): AccessDecision {
 /** Lists the menu codes a user may open. */
 export function accessibleMenuCodes(context: AccessContext, codes: readonly MenuCode[]): MenuCode[] {
   return codes.filter((code) => decide(context, code).ok)
+}
+
+/** Checks whether the company holds a plan. */
+export function holdsPlan(context: AccessContext, plan: Plan): boolean {
+  return plan === 'taxation' ? context.taxPlan === 'taxation' : context.hasPayrollPlan
 }
 
 function deny(reason: AccessDenialReason, promotionUrl: string | null = null): AccessDecision {

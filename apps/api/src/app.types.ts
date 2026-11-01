@@ -1,3 +1,4 @@
+import type { Hono } from 'hono'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Clock } from './lib/clock.types'
 import type { FileStorage } from './lib/file-storage/file-storage.types'
@@ -41,4 +42,20 @@ export interface AppVariables {
 /** Hono environment shared by every route. */
 export interface AppEnv {
   Variables: AppVariables
+}
+
+/**
+ * Routers a domain contributes to {@linkcode createApp}.
+ *
+ * - `public`: mounted at the root before authentication (login, signup, worker e-sign links).
+ * - `account`: mounted at the root after authentication, outside any company (`/api/user/me`).
+ * - `company`: mounted under `/api/company/:companyId` after the company scope check.
+ *
+ * Each router declares full paths relative to its mount point and must not
+ * register catch-all middleware, because sibling domains share the mount.
+ */
+export interface DomainRoutes {
+  public?: Hono<AppEnv>
+  account?: Hono<AppEnv>
+  company?: Hono<AppEnv>
 }

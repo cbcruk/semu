@@ -31,6 +31,7 @@ describe('money', () => {
 describe('decide', () => {
   const base: AccessContext = {
     userId: 'u',
+    actor: 'client',
     isAdmin: false,
     roleMenuCodes: new Set(['tax_surtax']),
     businessType: 'corporate',

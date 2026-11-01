@@ -1,6 +1,6 @@
 # 세무 API 설계 (Hono + SQLite)
 
-> 상태: 초안 v0.4 · 2026-11-01 · 구현: [`apps/tax-api`](../apps/tax-api/README.md)
+> 상태: 초안 v0.4 · 2026-11-01 · 구현: [`apps/api`](../apps/api/README.md)
 > 근거:
 > - `alfred-manual/`: Alfred Business 매뉴얼 크롤링본
 > - `app-alfred-kr/reverse/`: 현행 웹 클라이언트 엔트리 번들 분석
@@ -795,10 +795,10 @@ CREATE TABLE tax_rules (
 
 ## 10. 코드 구조
 
-실제 구현(`apps/tax-api`)의 구조입니다. 타입과 유틸은 `*.types.ts`, `*.utils.ts`로 분리했습니다.
+실제 구현(`apps/api`)의 구조입니다. 타입과 유틸은 `*.types.ts`, `*.utils.ts`로 분리했습니다.
 
 ```
-apps/tax-api/
+apps/api/
 ├── src/
 │   ├── index.ts                       # @hono/node-server serve
 │   ├── app.ts                         # createApp(deps): new Hono({ strict: false })
@@ -946,7 +946,7 @@ export const PROCESS_STEPS = {
 
 ### v0.4: 구현 반영
 
-`apps/tax-api` 구현 과정에서 바뀐 결정입니다.
+`apps/api` 구현 과정에서 바뀐 결정입니다.
 
 | 변경 | 이유 |
 | --- | --- |

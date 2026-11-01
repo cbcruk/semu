@@ -1,5 +1,9 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { DEFAULT_MENU_TREE } from '../modules/menu-tree/default-menu-tree'
+import { seedBookkeepingDemo } from '../modules/bookkeeping/bookkeeping.seed'
+import { seedHrDemo } from '../modules/hr/hr.seed'
+import { seedPayrollDemo } from '../modules/payroll/payroll.seed'
+import { seedPlatformDemo } from '../modules/platform/platform.seed'
 import { execute, transaction } from './query'
 
 /** Fixed IDs of the demo fixtures, shared by tests and the seed script. */
@@ -44,7 +48,7 @@ export const DEMO_HOLIDAYS: readonly [string, string, string][] = [
   ['2027-01-01', '신정', 'public'],
 ]
 
-/** Inserts demo companies, users, roles, menu trees, holidays and VAT evidence. */
+/** Inserts demo companies, users, roles, menu trees, holidays and VAT evidence, then each domain's fixtures. */
 export function seedDemoData(db: DatabaseSync, now: string, taxTermsVersion: string): void {
   transaction(db, () => {
     const { companies, users } = SEED
@@ -125,6 +129,11 @@ export function seedDemoData(db: DatabaseSync, now: string, taxTermsVersion: str
       companies.corp,
       now,
     ])
+
+    seedPlatformDemo(db, now)
+    seedHrDemo(db, now)
+    seedPayrollDemo(db, now)
+    seedBookkeepingDemo(db, now)
   })
 }
 

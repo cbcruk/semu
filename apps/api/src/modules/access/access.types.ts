@@ -1,21 +1,14 @@
 import type { BusinessType } from '../tax-calendar/tax-calendar.types'
+import type { MENU_RULES } from './menu-codes'
 
-/** Menu codes known to the API. Tax codes follow the assumed `tax_*` naming. */
-export type MenuCode =
-  | 'tax_surtax'
-  | 'tax_withholding'
-  | 'tax_corporation'
-  | 'tax_aggr_income'
-  | 'estimated_vat'
-  | 'today'
-  | 'employee_management'
+/** Menu codes known to the API, collected from every domain's menu rules. */
+export type MenuCode = keyof typeof MENU_RULES
 
-/** Rules that decide who may open a menu. */
-export interface MenuDefinition {
-  code: MenuCode
+/** Rules that decide who may open a menu, keyed by menu code in each domain's `*.menus.ts`. */
+export interface MenuRule {
   path: string
-  /** Plan the company must hold, or `null` when the menu is free. */
-  requiredPlan: 'taxation' | null
+  /** Plans that unlock the menu; any one is enough. Empty when the menu is free. */
+  requiredPlans: readonly Plan[]
   /** Business type the menu applies to, or `null` for both. */
   applicableTo: BusinessType | null
   /** Whether non-admin users need the code in one of their permission roles. */
@@ -26,9 +19,22 @@ export interface MenuDefinition {
   promotionUrl: string | null
 }
 
+/** A {@linkcode MenuRule} together with its code. */
+export interface MenuDefinition extends MenuRule {
+  code: MenuCode
+}
+
+/** A paid subscription a company can hold. */
+export type Plan = 'taxation' | 'payroll'
+
+/** Whether the caller acts as the company's own user or as assigned agency staff. */
+export type Actor = 'client' | 'agency'
+
 /** Everything {@linkcode decide} needs to know about the user and company. */
 export interface AccessContext {
   userId: string
+  /** `agency` for assigned tax agency staff, who see every menu and skip the client consent gate. */
+  actor: Actor
   isAdmin: boolean
   roleMenuCodes: ReadonlySet<string>
   businessType: BusinessType

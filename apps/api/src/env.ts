@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8787),
-  DATABASE_PATH: z.string().default('./data/tax-api.sqlite'),
+  DATABASE_PATH: z.string().default('./data/api.sqlite'),
   STORAGE_DIR: z.string().default('./storage'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters.'),
   TAX_TERMS_VERSION: z.string().default('2026-01'),

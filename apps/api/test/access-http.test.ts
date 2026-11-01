@@ -70,6 +70,13 @@ describe('access control over HTTP', () => {
     expect(queue.next).toContain('offset=2')
   })
 
+  it('lets assigned agency staff act on company routes without a company claim', async () => {
+    expect((await status(USERS.agent, undefined, 'GET', `/api/company/${CORP}/tax/surtax`))[0]).toBe(200)
+    expect((await status(USERS.manager, undefined, 'GET', `/api/company/${CORP}/tax/surtax`))[0]).toBe(200)
+    expect(await status(USERS.otherAgent, undefined, 'GET', `/api/company/${CORP}/tax/surtax`)).toEqual([403, 'PERMISSION_DENIED'])
+    expect(await status(USERS.plainMember, undefined, 'GET', `/api/company/${CORP}/tax/surtax`)).toEqual([403, 'COMPANY_MISMATCH'])
+  })
+
   it('builds the menu tree with promotion nodes only for free companies', async () => {
     const free = await ctx.call(await ctx.token(USERS.freeAdmin, SEED.companies.free), 'GET', `/api/company/${SEED.companies.free}/menu/menu-tree/latest/`)
     const freeLeaves = leaves((await free.json()) as MenuNode[])
