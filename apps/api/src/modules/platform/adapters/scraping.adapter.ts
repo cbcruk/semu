@@ -1,3 +1,5 @@
+import type { ScrapedRecord } from '../../bookkeeping/ingestion/ingestion.types'
+
 /** Institution kinds a company can connect, matching the legacy `IntegrationType` enum. */
 export type IntegrationType = 'hometax' | 'giro' | 'cardsales' | 'bank' | 'creditcard' | 'allra' | 'speedbank' | 'pg' | 'delivery'
 
@@ -54,15 +56,13 @@ export interface CandidateQuery extends CredentialCheck {
   subCode: string
 }
 
-/** One scraped record forwarded to the bookkeeping domain. */
-export interface ScrapRecord {
-  kind: 'sales' | 'purchase' | 'bank_transaction' | 'card_approval' | 'giro_bill'
-  externalId: string
-  occurredOn: string
-  /** Amount in whole won; negative for cancellations and withdrawals. */
-  amount: number
-  description: string
-}
+/**
+ * One scraped record forwarded to the bookkeeping domain.
+ *
+ * The shape is bookkeeping's normalized {@linkcode ScrapedRecord}, because
+ * bookkeeping owns the tables the records land in.
+ */
+export type ScrapRecord = ScrapedRecord
 
 /** Input of {@linkcode ScrapingAdapter.scrape}. */
 export interface ScrapJob {

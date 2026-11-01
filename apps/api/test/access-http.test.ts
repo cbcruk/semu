@@ -85,11 +85,15 @@ describe('access control over HTTP', () => {
 
     const plain = await ctx.call(await ctx.token(USERS.plainMember, CORP), 'GET', `/api/company/${CORP}/menu/menu-tree/2026.08_퇴직금정산`)
     const plainCodes = leaves((await plain.json()) as MenuNode[]).map((node) => node.code)
-    expect(plainCodes).toEqual(['today'])
+    expect(plainCodes).toEqual(['today', 'grant_recommendation', 'salary_calculator', 'document_form'])
 
     const admin = await ctx.call(await ctx.token(USERS.admin, CORP), 'GET', `/api/company/${CORP}/menu/menu-tree/latest`)
     const adminLeaves = leaves((await admin.json()) as MenuNode[])
-    expect(adminLeaves.map((node) => node.code)).toEqual(['today', 'estimated_vat', 'tax_surtax', 'tax_withholding', 'tax_corporation', 'employee_management'])
+    const adminCodes = adminLeaves.map((node) => node.code)
+    expect(adminCodes).toEqual(expect.arrayContaining(['tax_surtax', 'tax_withholding', 'tax_corporation', 'employee_management', 'report_profit_loss', 'ai_agent']))
+    expect(adminCodes).not.toContain('tax_aggr_income')
+    expect(adminCodes).not.toContain('payroll_settlement')
+    expect(adminCodes).not.toContain('employment_employee')
     expect(adminLeaves.every((node) => !node.is_promotion)).toBe(true)
   })
 

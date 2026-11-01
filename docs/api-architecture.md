@@ -1,6 +1,6 @@
 # Alfred Business API 아키텍처
 
-> 상태: v0.1 · 2026-11-01 · 구현: [`apps/api`](../apps/api/README.md)
+> 상태: v0.2 · 2026-11-01 · 구현: [`apps/api`](../apps/api/README.md)
 >
 > 도메인별 근거는 `docs/spec-notes/*.md`, 세무 도메인 설계는 [`tax-api-design.md`](tax-api-design.md)에 있습니다.
 
@@ -56,9 +56,21 @@
 | 급여 대장 마감 | 세무 원천세 | `payroll_ledger_closed` 항목 자동 연계. 지급월의 대장이 모두 마감되면 `provided`가 됩니다. 원천세가 `filed` 이상이면 해당 지급월 대장의 승인 취소·반려·재계산·추가 카드를 막습니다 |
 | 급여 인건비 집계 | 경리 인건비 보고서 | 급여 도메인이 `/report/labor-cost` 계열 엔드포인트를 직접 제공합니다 |
 | 플랫폼 구독 | 접근 판정 | `companies.tax_plan`, `companies.has_payroll_plan`을 구독 변경 시 함께 갱신해 `decide()`가 그대로 동작하게 합니다 |
-| 플랫폼 연동 수집 | 경리 증빙 | 수집 결과는 경리 테이블에 쌓입니다. 수집 실행은 어댑터 뒤에 두고, 테스트용 가짜 어댑터가 증빙 행을 만듭니다 |
+| 플랫폼 연동 수집 | 경리 증빙 | 수집 레코드 형식은 경리의 `ScrapedRecord`입니다(경리가 테이블을 소유하므로). 플랫폼의 `ScrapResultSink` 기본값은 경리의 `createBookkeepingScrapResultSink`이고, 이것이 `ingestScrapedRecords`를 부릅니다. 같은 `external_key`는 한 행으로 갱신됩니다 |
+| 경리 사업자 상태·업종 | 플랫폼 지원금 추천 | 사업자 상태조회 어댑터 인터페이스는 플랫폼의 `BusinessStatusAdapter` 하나를 씁니다. 업태·종목은 경리의 `company_business_types`가 원천이고, 플랫폼은 `listBusinessTypes`로 읽습니다 |
 
-## 5. 공통 구현 규약
+## 5. 정기 작업
+
+`src/jobs/run-periodic-jobs.ts`의 `runPeriodicJobs`가 정기 작업을 한 번씩 실행합니다(`pnpm jobs`). 모든 작업이 멱등이라 외부 cron이 몇 분마다 불러도 됩니다. 실행 순서는 다음과 같습니다.
+
+1. 구독 갱신: 플랜이 신고 건 예약을 정하므로 가장 먼저 실행합니다.
+2. 월 청구
+3. 신고 건 예약
+4. 수집 큐 처리
+5. 전자서명 기한 만료
+6. 고아 파일 정리
+
+## 6. 공통 구현 규약
 
 - **와이어.** JSON은 snake_case이고 목록은 DRF 봉투(`lib/drf-pagination`)를 씁니다. 오류는 `DomainError` → `{detail, code}` 형식입니다(`lib/domain-error`).
 - **검증.** zod 스키마를 `<module>.schema.ts`에 두고 `validationHook`으로 검증합니다. 실패하면 422입니다.
@@ -71,7 +83,7 @@
 - **시드.** 데모 데이터는 `<domain>.seed.ts`에 둡니다. 공용 회사와 사용자(`SEED`) 위에 쌓습니다.
 - **파일 규칙.** kebab-case 파일명, `*.types.ts`·`*.utils.ts` 분리, 명시적 반환 타입, 내보내는 심볼의 JSDoc, 인라인·배너 주석 금지(`~/.claude/CLAUDE.md`).
 
-## 6. 응답 형태를 모를 때
+## 7. 응답 형태를 모를 때
 
 엔트리 번들에는 화면 컴포넌트가 없습니다. 그래서 여러 엔드포인트의 응답 형태가 확인되지 않았습니다. 이런 경우의 우선순위는 다음과 같습니다.
 

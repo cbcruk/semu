@@ -71,6 +71,24 @@ describe('institution integrations', () => {
     expect(await polled.json()).toMatchObject({ status: 'SUCCESS' })
   })
 
+  it('stores collected card sales in the bookkeeping evidence by default, once per record', async () => {
+    const ctx = await createPlatformTestContext()
+    const deps = resolvePlatformDeps({ ...ctx, jwtSecret: 'unused', taxTermsVersion: '2026-01', maxUploadBytes: 1 })
+    const admin = await ctx.token(USERS.admin, CORP)
+    const count = (): number =>
+      queryOne<{ n: number }>(ctx.db, "SELECT COUNT(*) AS n FROM sales_evidence WHERE company_id = ? AND source = 'card'", [CORP])?.n ?? 0
+    const before = count()
+    await ctx.call(admin, 'POST', `/api/company/${CORP}/integrations/cardsales`, { json: { account_id: 'crefia-id', account_pw: 'secret-1' } })
+    await ctx.call(admin, 'POST', `/api/company/${CORP}/integrations/request-scrapping/cardsales`, { json: {} })
+    await processScrapQueue(deps)
+    expect(count()).toBe(before + 2)
+
+    ctx.setNow('2026-11-01T10:00:00+09:00')
+    await ctx.call(admin, 'POST', `/api/company/${CORP}/integrations/request-scrapping/cardsales`, { json: {} })
+    await processScrapQueue(deps)
+    expect(count()).toBe(before + 2)
+  })
+
   it('refuses to collect from an institution that is not connected', async () => {
     const ctx = await createPlatformTestContext()
     const admin = await ctx.token(USERS.admin, CORP)

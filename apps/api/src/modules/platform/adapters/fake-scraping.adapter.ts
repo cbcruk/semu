@@ -1,3 +1,4 @@
+import type { SalesSource } from '../../estimated-vat/estimated-vat.types'
 import { createHash } from 'node:crypto'
 import type {
   CandidateQuery,
@@ -9,7 +10,7 @@ import type {
   ScrapingAdapter,
   ScrapJob,
   ScrapOutcome,
-  ScrapResultSink,
+  ScrapRecord,
 } from './scraping.adapter'
 
 const WRONG_PREFIX = 'wrong'
@@ -52,13 +53,7 @@ export function createFakeScrapingAdapter(): ScrapingAdapter {
       const seed = digest(`${job.integrationId}:${job.itemExternalKey ?? ''}`)
       return Promise.resolve({
         status: 'success',
-        records: [1, 2].map((index) => ({
-          kind: recordKind(job.type),
-          externalId: `${job.integrationId}-${job.itemExternalKey ?? 'all'}-${index}`,
-          occurredOn: '2026-10-31',
-          amount: (Number.parseInt(seed.slice(index, index + 4), 16) % 900 + 100) * 1000,
-          description: `${job.type} record ${index}`,
-        })),
+        records: fakeRecords(job, seed),
       })
     },
     checkCertificatePassword(material: CertificateMaterial): Promise<boolean> {
@@ -71,10 +66,6 @@ export function createFakeScrapingAdapter(): ScrapingAdapter {
   }
 }
 
-/** Creates a {@linkcode ScrapResultSink} that drops every batch, used until bookkeeping wires its writer. */
-export function createNoopScrapResultSink(): ScrapResultSink {
-  return { ingest: (): Promise<void> => Promise.resolve() }
-}
 
 function checkSecrets(check: CredentialCheck): CredentialCheckResult {
   const { credential } = check
@@ -107,21 +98,60 @@ function candidate(query: CandidateQuery, index: number): ScrapCandidate {
   return { externalKey: `${query.subCode}-store-${index}`, name: `매장 ${index}`, number: null, subCode: query.subCode }
 }
 
-function recordKind(type: ScrapJob['type']): 'sales' | 'purchase' | 'bank_transaction' | 'card_approval' | 'giro_bill' {
-  switch (type) {
+function fakeRecords(job: ScrapJob, seed: string): ScrapRecord[] {
+  const key = job.itemExternalKey ?? 'all'
+  const amountAt = (index: number): number => ((Number.parseInt(seed.slice(index, index + 4), 16) % 900) + 100) * 1000
+  const id = (index: number): string => `${job.integrationId}-${key}-${index}`
+  switch (job.type) {
     case 'bank':
-    case 'speedbank':
-      return 'bank_transaction'
+    case 'speedbank': {
+      const account = { bank_code: job.subCode ?? '004', account_number: String(Number.parseInt(seed.slice(0, 8), 16)).padStart(11, '0') }
+      return [
+        { kind: 'bank_account', ...account, account_type: '01', external_key: `${job.integrationId}-${key}` },
+        ...[1, 2].map(
+          (index): ScrapRecord => ({
+            kind: 'bank_transaction',
+            ...account,
+            external_key: id(index),
+            transacted_at: `2026-10-31T1${index}:00:00+09:00`,
+            amount: index === 1 ? amountAt(index) : -amountAt(index),
+            summary: `fake transfer ${index}`,
+          }),
+        ),
+      ]
+    }
     case 'creditcard':
-      return 'card_approval'
-    case 'giro':
-      return 'giro_bill'
+      return [1, 2].map((index) => ({
+        kind: 'card_transaction',
+        card_number_masked: '1234-****-****-5678',
+        approval_no: id(index),
+        approved_at: `2026-10-31T1${index}:00:00+09:00`,
+        merchant_name: `가맹점 ${index}`,
+        total_amount: amountAt(index),
+      }))
     case 'hometax':
-      return 'purchase'
+      return [1, 2].map((index) => ({
+        kind: 'purchase_evidence',
+        source: 'tax_invoice',
+        external_key: id(index),
+        issued_on: '2026-10-31',
+        supply_amount: amountAt(index),
+        vat_amount: amountAt(index) / 10,
+      }))
+    case 'giro':
+      return [{ kind: 'giro_bills', bills: [] }]
     default:
-      return 'sales'
+      return [1, 2].map((index) => ({
+        kind: 'sales_evidence',
+        source: SALES_SOURCE[job.type] ?? 'card',
+        external_key: id(index),
+        issued_on: '2026-10-31',
+        total_amount: amountAt(index),
+      }))
   }
 }
+
+const SALES_SOURCE: Partial<Record<ScrapJob['type'], SalesSource>> = { cardsales: 'card', pg: 'pg', delivery: 'delivery', allra: 'mall' }
 
 function digest(value: string): string {
   return createHash('sha256').update(value).digest('hex')

@@ -47,7 +47,7 @@ export interface AppDeps extends ServiceDeps {
   identityVerifier?: IdentityVerifier
   /** Vendor gateway for institution scraping; defaults to a deterministic fake. */
   scraping?: ScrapingAdapter
-  /** Receives scraped records for the bookkeeping domain; defaults to a no-op. */
+  /** Receives scraped records; defaults to the bookkeeping ingestion writer. */
   scrapResultSink?: ScrapResultSink
   /** Sends mail and SMS; defaults to an in-memory outbox. */
   messenger?: Messenger
