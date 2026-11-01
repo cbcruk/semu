@@ -16,20 +16,22 @@ import { isAgencyUser, USER_TYPE } from './user-type'
  * @returns The context, or `null` when the user may not act for the company.
  */
 export function loadAccessContext(db: DatabaseSync, user: AuthUser, company: CompanyRow, taxTermsVersion: string): AccessContext | null {
+  const agency = queryOne<{ agency_type: string | null }>(db, 'SELECT agency_type FROM companies WHERE id = ?', [company.id])
   const base = {
     userId: user.id,
     businessType: company.business_type,
     taxPlan: company.tax_plan,
     hasPayrollPlan: company.has_payroll_plan === 1,
+    agencyType: agency?.agency_type ?? null,
   }
-  const membership = queryOne<{ role: 'admin' | 'member' }>(
+  const membership = queryOne<{ role: 'admin' | 'member'; is_system_admin: 0 | 1 }>(
     db,
-    'SELECT role FROM memberships WHERE company_id = ? AND user_id = ?',
+    'SELECT role, is_system_admin FROM memberships WHERE company_id = ? AND user_id = ?',
     [company.id, user.id],
   )
   if (membership === undefined) {
     if (!isAgencyUser(user.userType) || !isAssigned(db, user, company.id)) return null
-    return { ...base, actor: 'agency', isAdmin: true, roleMenuCodes: new Set(), taxTermsAgreed: true }
+    return { ...base, actor: 'agency', isAdmin: true, roleMenuCodes: new Set(), taxTermsAgreed: true, isSystemAdmin: false }
   }
   const roles = queryAll<{ menu_codes: string }>(
     db,
@@ -49,6 +51,7 @@ export function loadAccessContext(db: DatabaseSync, user: AuthUser, company: Com
     isAdmin: membership.role === 'admin',
     roleMenuCodes: new Set(roles.flatMap((role) => parseCodes(role.menu_codes))),
     taxTermsAgreed: agreement !== undefined,
+    isSystemAdmin: membership.is_system_admin === 1,
   }
 }
 

@@ -16,6 +16,12 @@ export const ERROR_STATUS: Record<ErrorCode, ContentfulStatusCode> = {
   PRECONDITION_REQUIRED: 428,
   UNSUPPORTED_MEDIA_TYPE: 415,
   PAYLOAD_TOO_LARGE: 413,
+  CONFLICT: 409,
+  GONE: 410,
+  RATE_LIMITED: 429,
+  CSRF_FAILED: 403,
+  INVALID_CREDENTIALS: 401,
+  CERT_NOT_ALLOWED_FOR_SERVICE: 422,
 }
 
 /** An expected failure that maps to a DRF-style error response. */

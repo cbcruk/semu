@@ -2,17 +2,9 @@ import type { DatabaseSync } from 'node:sqlite'
 import { queryOne } from '../../db/query'
 import { notFound } from '../../lib/domain-error'
 import { decide } from '../access/access'
-import type { AccessContext, MenuCode } from '../access/access.types'
+import type { AccessContext } from '../access/access.types'
+import { excludedMenuCodes, showsPromotion } from '../access/menu-exclusions'
 import type { MenuNode, MenuNodeSource } from './menu-tree.types'
-
-interface ExclusionRule {
-  codes: readonly MenuCode[]
-  when: (context: AccessContext) => boolean
-}
-
-const MENU_EXCLUSION_RULES: readonly ExclusionRule[] = [
-  { codes: ['employee_management'], when: (context) => context.hasPayrollPlan },
-]
 
 /**
  * Loads a menu tree version, falling back to nothing so the client can retry with `latest`.
@@ -32,17 +24,18 @@ export function loadMenuTree(db: DatabaseSync, version: string): MenuNodeSource[
  * Filters a menu tree for one user.
  *
  * Leaves the user may open are kept; leaves blocked only by a missing plan
- * become promotion nodes for free companies; every other blocked leaf is
- * removed, along with sections left empty.
+ * become promotion nodes for free companies (and HQ agency companies for the
+ * `pb_*` promotions); leaves hidden by the exclusion rules and every other
+ * blocked leaf are removed, along with sections left empty.
  */
 export function buildMenuTree(source: readonly MenuNodeSource[], context: AccessContext, isFreeCompany: boolean): MenuNode[] {
-  const excluded = new Set(MENU_EXCLUSION_RULES.filter((rule) => rule.when(context)).flatMap((rule) => rule.codes))
+  const excluded = excludedMenuCodes(context)
   const visit = (node: MenuNodeSource): MenuNode | null => {
     if (node.code !== null) {
       if (excluded.has(node.code)) return null
       const decision = decide(context, node.code)
       if (decision.ok || decision.reason === 'TAX_TERMS_REQUIRED') return toNode(node, [], null)
-      if (decision.reason === 'ENTITLEMENT_REQUIRED' && isFreeCompany) return toNode(node, [], decision.promotionUrl)
+      if (decision.reason === 'ENTITLEMENT_REQUIRED' && showsPromotion(context, node.code, isFreeCompany)) return toNode(node, [], decision.promotionUrl)
       return null
     }
     const children = node.children.map(visit).filter((child): child is MenuNode => child !== null)
