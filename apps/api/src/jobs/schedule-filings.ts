@@ -7,6 +7,7 @@ import { listCompanies } from '../modules/companies/companies.repository'
 import { toCalendarCompany } from '../modules/companies/companies.utils'
 import { closeAllCardsOfSource } from '../modules/action-cards/action-cards.repository'
 import {
+  findFiling,
   insertEvent,
   insertFilingIfAbsent,
   listScheduledInWindow,
@@ -14,6 +15,7 @@ import {
   updateFilingStatus,
 } from '../modules/filings/filings.repository'
 import { requirementsFor } from '../modules/filings/requirement-templates'
+import { syncPayrollLedgerForFiling } from '../modules/payroll/withholding/withholding-link'
 import { resolveFilingPeriods } from '../modules/tax-calendar/tax-calendar'
 
 /** Counts of what one scheduling run changed. */
@@ -48,8 +50,12 @@ export function scheduleFilings(db: DatabaseSync, clock: Clock, horizonDays = 12
     transaction(db, () => {
       for (const period of periods) {
         const templates = requirementsFor(period.taxType, period.kind, company.has_payroll_plan === 1)
-        if (insertFilingIfAbsent(db, company.id, period, templates, now) !== null) result.created++
-        else if (refreshDeadlines(db, company.id, period, now)) result.updated++
+        const filingId = insertFilingIfAbsent(db, company.id, period, templates, now)
+        if (filingId !== null) {
+          result.created++
+          const filing = period.taxType === 'withholding_tax' && company.has_payroll_plan === 1 ? findFiling(db, company.id, filingId) : undefined
+          if (filing !== undefined) syncPayrollLedgerForFiling(db, filing, now)
+        } else if (refreshDeadlines(db, company.id, period, now)) result.updated++
       }
       const expected = new Set(periods.map((period) => `${period.taxType}:${period.taxPeriodKey}`))
       for (const filing of listScheduledInWindow(db, company.id, today, to)) {

@@ -68,6 +68,12 @@ JWT 페이로드는 `{ sub, company_id? }`입니다. 고객 API는 `company_id`�
 - 기준표의 값마다 확인 여부(`verification`)가 있습니다. 미확인 값(장기요양 요율, 간이세액 산식 계수 등)이 있으므로 **근로소득세는 공식 간이세액표를 넣기 전까지 추정치**입니다.
 - 급여 설정은 `/api/company/:id/employment/settings/*`이고 급여 구독(`has_payroll_plan`)이 필요합니다. 회사의 첫 요청 때 기본 설정을 만듭니다.
 - 참조 코드, `/api/tax-rates/*`, 급여계산기(`POST /api/payroll/calculator/simulate`)는 회사 경로가 아닌 인증 경로입니다.
+- 급여대장은 한 테이블(`payroll_cards`, `payroll_rows`)을 두 화면이 씁니다. BPO 급여 정산(`/payroll/bpo/**`, 메뉴 `payroll_settlement`)과 구 급여 관리(`/payroll/cards*`, `/payroll/card-summary*`, 메뉴 `payroll_management`)입니다. 상태는 `inputting → calculated → approval_requested → approved → payslips_sent → exported`이고, BPO 상태 변경은 `If-Match`가 필요합니다.
+- 고객과 담당자는 같은 경로를 쓰고 `c.var.access.actor`로 구분합니다. 승인 요청·데스크 내보내기·특이사항 작성은 담당자, 승인·반려·승인 취소는 고객만 할 수 있습니다.
+- 원천세 신고(`withholding_tax`)의 `payroll_ledger_closed` 요건은 지급월의 카드가 모두 승인 이후 상태이면 `provided`, 아니면 `pending`입니다. 신고가 `filed`/`settled`가 되면 그 지급월의 카드는 승인 취소·반려·재계산·추가 카드가 409 `WITHHOLDING_FILED`입니다.
+- 퇴직금 정산은 `/payroll/bpo/severance/settlements/**`(메뉴 `severance_pay_settlement`, 담당자만 쓰기)이고, 인건비 보고서 `/report/labor-cost/:year`(+`/export`)는 급여 카드에서 계산합니다.
+- 명세서 발송과 PDF는 HR의 `NotificationAdapter`·`PdfRenderer`를, 데스크 내보내기와 시프티 연동은 `deskExport`·`shiftee` 어댑터(기본값은 결정적 가짜)를 씁니다.
+- 시드는 `c-corp`에 2026년 10월 승인 카드와 11월 입력중 카드를 만듭니다. 급여 플랜은 꺼진 채이므로 BPO 화면을 보려면 위의 `has_payroll_plan` 업데이트가 필요합니다.
 
 ```sh
 curl -X POST -H "Authorization: Bearer <token>" -H 'Content-Type: application/json' \

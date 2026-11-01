@@ -210,6 +210,6 @@ describe('settlement tax reports', () => {
     for (const path of ['/report/cost-details/2026/export', '/report/receivable-payable/2026/export', '/report/cash-flow/2026/export', '/report/balance-sheet/2026/export']) {
       expect((await ctx.call(admin, 'GET', `${base}${path}`)).status).toBe(200)
     }
-    expect((await ctx.call(admin, 'GET', `${base}/report/labor-cost/2026/export`)).status).toBe(404)
+    expect((await ctx.call(admin, 'GET', `${base}/report/labor-cost/2026/export`)).headers.get('Content-Type')).toBe('text/csv; charset=utf-8')
   })
 })

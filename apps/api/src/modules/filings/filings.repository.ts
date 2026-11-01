@@ -307,6 +307,45 @@ export function updateRequirementResponse(
   )
 }
 
+/**
+ * Lists a company's filings of a tax type whose period contains a date, latest revision first.
+ *
+ * Cancelled filings are left out. Payroll uses this to find the withholding
+ * return of a payment month, which may be monthly or semiannual.
+ */
+export function listFilingsCovering(db: DatabaseSync, companyId: string, taxType: TaxType, date: string): FilingRow[] {
+  return queryAll<FilingRow>(
+    db,
+    `SELECT * FROM tax_filings
+     WHERE company_id = ? AND tax_type = ? AND period_start <= ? AND period_end >= ? AND status <> 'cancelled'
+     ORDER BY revision DESC, id`,
+    [companyId, taxType, date, date],
+  )
+}
+
+/**
+ * Sets the response of an automatically linked requirement, such as `payroll_ledger_closed`.
+ *
+ * @returns Whether the response changed.
+ */
+export function setAutoLinkedResponse(
+  db: DatabaseSync,
+  companyId: string,
+  filingId: string,
+  code: string,
+  response: RequirementResponse,
+  now: string,
+): boolean {
+  return (
+    execute(
+      db,
+      `UPDATE filing_requirements SET response = ?, updated_at = ?
+       WHERE company_id = ? AND filing_id = ? AND code = ? AND auto_linked = 1 AND response <> ?`,
+      [response, now, companyId, filingId, code, response],
+    ) > 0
+  )
+}
+
 /** Counts client-answerable items that are still pending. */
 export function countPendingClientItems(db: DatabaseSync, companyId: string, filingId: string): number {
   return (

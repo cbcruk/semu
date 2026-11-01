@@ -8,6 +8,7 @@ import type { GiroPaymentAdapter } from './modules/bookkeeping/giros/giros.types
 import type { HometaxInvoiceAdapter } from './modules/bookkeeping/transaction-sales/transaction-sales.types'
 import type { CompanyRow } from './modules/companies/companies.types'
 import type { IdentityVerifier, NotificationAdapter, PdfRenderer } from './modules/hr/adapters/adapters.types'
+import type { DeskExportAdapter, ShifteeAdapter } from './modules/payroll/adapters/payroll-adapters.types'
 import type { AssistantAdapter } from './modules/platform/adapters/assistant.adapter'
 import type { BillingAdapter } from './modules/platform/adapters/billing.adapter'
 import type { BusinessStatusAdapter } from './modules/platform/adapters/business-status.adapter'
@@ -57,6 +58,10 @@ export interface AppDeps extends ServiceDeps {
   socialLogin?: SocialLoginAdapter
   /** LLM backend of the AI assistant; defaults to a deterministic fake. */
   assistant?: AssistantAdapter
+  /** Bookkeeping desk that receives closed payroll ledgers (`export-to-desk`); defaults to a deterministic fake. */
+  deskExport?: DeskExportAdapter
+  /** Shiftee (근태) company linking for payroll; defaults to a deterministic fake. */
+  shiftee?: ShifteeAdapter
 }
 
 /** The authenticated user, loaded from the JWT subject. */

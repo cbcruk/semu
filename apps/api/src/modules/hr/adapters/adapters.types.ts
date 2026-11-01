@@ -8,6 +8,7 @@ export type NotificationTemplate =
   | 'e_sign_expired'
   | 'e_sign_completed_copy'
   | 'certificate_issued'
+  | 'payroll_payslip'
 
 /** A file attached to an email. */
 export interface NotificationAttachment {
