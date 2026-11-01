@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Clock } from './lib/clock.types'
+import type { Cipher } from './lib/crypto/crypto.types'
 import type { FileStorage } from './lib/file-storage/file-storage.types'
 import type { AccessContext, UserType } from './modules/access/access.types'
 import type { CompanyRow } from './modules/companies/companies.types'
@@ -11,6 +12,8 @@ export interface ServiceDeps {
   db: DatabaseSync
   clock: Clock
   storage: FileStorage
+  /** Encrypts personal and credential data at rest. */
+  cipher: Cipher
 }
 
 /** Everything {@linkcode createApp} needs. */

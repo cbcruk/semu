@@ -8,11 +8,14 @@ import { SEED, seedDemoData } from '../../src/db/seed'
 import { scheduleFilings } from '../../src/jobs/schedule-filings'
 import { fixedClock } from '../../src/lib/clock'
 import type { Clock } from '../../src/lib/clock.types'
+import { createAesGcmCipher } from '../../src/lib/crypto/aes-gcm-cipher'
+import type { Cipher } from '../../src/lib/crypto/crypto.types'
 import { createMemoryFileStorage } from '../../src/lib/file-storage/memory-file-storage'
 
 export const JWT_SECRET = 'test-secret-test-secret-test-secret'
 export const TAX_TERMS_VERSION = '2026-01'
 export const NOW = '2026-11-01T09:00:00+09:00'
+export const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64')
 
 export interface RequestOptions {
   json?: unknown
@@ -25,6 +28,7 @@ export interface TestContext {
   db: DatabaseSync
   clock: Clock
   storage: ReturnType<typeof createMemoryFileStorage>
+  cipher: Cipher
   token(userId: string, companyId?: string): Promise<string>
   call(token: string, method: string, path: string, options?: RequestOptions): Promise<Response>
 }
@@ -34,12 +38,14 @@ export async function createTestContext(options: { schedule?: boolean; maxUpload
   migrate(db)
   const clock = fixedClock(NOW)
   const storage = createMemoryFileStorage()
-  seedDemoData(db, clock.now(), TAX_TERMS_VERSION)
+  const cipher = createAesGcmCipher(ENCRYPTION_KEY)
+  seedDemoData(db, { now: clock.now(), taxTermsVersion: TAX_TERMS_VERSION, cipher })
   if (options.schedule !== false) scheduleFilings(db, clock)
   const app = createApp({
     db,
     clock,
     storage,
+    cipher,
     jwtSecret: JWT_SECRET,
     taxTermsVersion: TAX_TERMS_VERSION,
     maxUploadBytes: options.maxUploadBytes ?? 1024 * 1024,
@@ -49,6 +55,7 @@ export async function createTestContext(options: { schedule?: boolean; maxUpload
     db,
     clock,
     storage,
+    cipher,
     token: (userId, companyId) =>
       sign({ sub: userId, ...(companyId === undefined ? {} : { company_id: companyId }), exp: 4_102_444_800 }, JWT_SECRET, 'HS256'),
     call: (token, method, path, requestOptions = {}) => {

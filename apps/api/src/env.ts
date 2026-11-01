@@ -5,6 +5,9 @@ const envSchema = z.object({
   DATABASE_PATH: z.string().default('./data/api.sqlite'),
   STORAGE_DIR: z.string().default('./storage'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters.'),
+  ENCRYPTION_KEY: z
+    .string()
+    .refine((value) => Buffer.from(value, 'base64').length === 32, 'ENCRYPTION_KEY must be 32 bytes, base64-encoded.'),
   TAX_TERMS_VERSION: z.string().default('2026-01'),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(20 * 1024 * 1024),
 })

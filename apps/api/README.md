@@ -1,6 +1,6 @@
 # @semu/api
 
-세무(부가세·원천세·법인세/종합소득세) 백엔드 API입니다. Hono와 Node 내장 `node:sqlite`로 만들었습니다. 설계는 [`docs/tax-api-design.md`](../../docs/tax-api-design.md)를 따릅니다.
+Alfred Business 백엔드 API입니다. 세무, 플랫폼·연동, 인사, 급여, 경리·보고서 도메인을 한 앱에서 제공합니다. Hono와 Node 내장 `node:sqlite`로 만들었습니다. 공통 설계는 [`docs/api-architecture.md`](../../docs/api-architecture.md), 세무 설계는 [`docs/tax-api-design.md`](../../docs/tax-api-design.md)에 있습니다.
 
 ## 요구 사항
 
@@ -12,6 +12,7 @@
 ```sh
 pnpm install
 export JWT_SECRET=$(openssl rand -hex 32)
+export ENCRYPTION_KEY=$(openssl rand -base64 32)
 
 pnpm seed       # data/api.sqlite 생성, 데모 데이터와 신고 건 예약, 테스트용 JWT 출력
 pnpm dev        # http://localhost:8787 (watch)
@@ -28,6 +29,7 @@ curl -H "Authorization: Bearer <admin token>" localhost:8787/api/company/c-corp/
 | 이름 | 기본값 | 설명 |
 | --- | --- | --- |
 | `JWT_SECRET` | (필수) | HS256 서명 키, 32자 이상 |
+| `ENCRYPTION_KEY` | (필수) | 주민등록번호·자격 증명 암호화 키(AES-256-GCM, base64 32바이트) |
 | `PORT` | `8787` | |
 | `DATABASE_PATH` | `./data/api.sqlite` | |
 | `STORAGE_DIR` | `./storage` | 업로드 파일 저장 위치 |

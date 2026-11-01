@@ -5,6 +5,7 @@ import { seedHrDemo } from '../modules/hr/hr.seed'
 import { seedPayrollDemo } from '../modules/payroll/payroll.seed'
 import { seedPlatformDemo } from '../modules/platform/platform.seed'
 import { execute, transaction } from './query'
+import type { SeedContext } from './seed.types'
 
 /** Fixed IDs of the demo fixtures, shared by tests and the seed script. */
 export const SEED = {
@@ -49,7 +50,8 @@ export const DEMO_HOLIDAYS: readonly [string, string, string][] = [
 ]
 
 /** Inserts demo companies, users, roles, menu trees, holidays and VAT evidence, then each domain's fixtures. */
-export function seedDemoData(db: DatabaseSync, now: string, taxTermsVersion: string): void {
+export function seedDemoData(db: DatabaseSync, context: SeedContext & { taxTermsVersion: string }): void {
+  const { now, taxTermsVersion } = context
   transaction(db, () => {
     const { companies, users } = SEED
     insertCompany(db, companies.corp, 'n-1', '주식회사 데모', '110-81-00001', 'corporate', 'taxation', now)
@@ -130,10 +132,10 @@ export function seedDemoData(db: DatabaseSync, now: string, taxTermsVersion: str
       now,
     ])
 
-    seedPlatformDemo(db, now)
-    seedHrDemo(db, now)
-    seedPayrollDemo(db, now)
-    seedBookkeepingDemo(db, now)
+    seedPlatformDemo(db, context)
+    seedHrDemo(db, context)
+    seedPayrollDemo(db, context)
+    seedBookkeepingDemo(db, context)
   })
 }
 

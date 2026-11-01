@@ -65,7 +65,7 @@
 - **동시성.** 상태 전이 요청은 `If-Match` + `version`을 씁니다(`middleware/if-match`). 단순 필드 수정은 마지막 쓰기 우선으로 처리합니다.
 - **값 타입.** 금액은 원 단위 정수(`lib/money`), 날짜는 `PlainDate`(`lib/plain-date`)입니다. 시각은 주입받은 `Clock`에서만 읽습니다.
 - **파일.** `lib/file-storage`와 `files` 테이블을 재사용합니다. 업로드 순서는 `tax-api-design.md` 8절을 따릅니다.
-- **민감정보.** 주민등록번호, 계좌번호, 연동 자격 증명은 `lib/crypto`(플랫폼 도메인이 제공)로 암호화해 저장하고 응답에서는 마스킹합니다.
+- **민감정보.** 주민등록번호, 계좌번호, 연동 자격 증명은 `lib/crypto`의 `Cipher`(`deps.cipher`)로 암호화해 저장하고, 응답에서는 `lib/masking`으로 가립니다.
 - **외부 연동.** 홈택스, 은행, 카드, PG, 메일·알림톡, PDF, 본인확인 같은 외부 연동은 도메인 폴더의 `*.adapter.ts` 인터페이스 뒤에 둡니다. 기본 구현은 결정적인 가짜(fake)이고 `AppDeps`로 주입합니다.
 - **메뉴.** 도메인 메뉴 규칙은 `<domain>.menus.ts`에 둡니다. `menu-codes.ts`가 모든 도메인의 규칙을 합칩니다.
 - **시드.** 데모 데이터는 `<domain>.seed.ts`에 둡니다. 공용 회사와 사용자(`SEED`) 위에 쌓습니다.

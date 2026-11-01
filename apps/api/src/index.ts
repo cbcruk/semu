@@ -5,6 +5,7 @@ import { createApp } from './app'
 import { migrate, openDatabase } from './db/client'
 import { loadEnv } from './env'
 import { systemClock } from './lib/clock'
+import { createAesGcmCipher } from './lib/crypto/aes-gcm-cipher'
 import { createLocalFileStorage } from './lib/file-storage/local-file-storage'
 
 const env = loadEnv()
@@ -16,6 +17,7 @@ const app = createApp({
   db,
   clock: systemClock(),
   storage: createLocalFileStorage(env.STORAGE_DIR),
+  cipher: createAesGcmCipher(env.ENCRYPTION_KEY),
   jwtSecret: env.JWT_SECRET,
   taxTermsVersion: env.TAX_TERMS_VERSION,
   maxUploadBytes: env.MAX_UPLOAD_BYTES,
