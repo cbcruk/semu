@@ -11,6 +11,7 @@ import type { Clock } from '../../src/lib/clock.types'
 import { createAesGcmCipher } from '../../src/lib/crypto/aes-gcm-cipher'
 import type { Cipher } from '../../src/lib/crypto/crypto.types'
 import { createMemoryFileStorage } from '../../src/lib/file-storage/memory-file-storage'
+import { createFakeNotificationAdapter, type FakeNotificationAdapter } from '../../src/modules/hr/adapters/fake-adapters'
 
 export const JWT_SECRET = 'test-secret-test-secret-test-secret'
 export const TAX_TERMS_VERSION = '2026-01'
@@ -88,4 +89,54 @@ export const USERS = SEED.users
 
 export function grantPayrollPlan(db: DatabaseSync, companyId: string): void {
   db.prepare('UPDATE companies SET has_payroll_plan = 1 WHERE id = ?').run(companyId)
+}
+
+export interface HrRequestOptions extends RequestOptions {
+  headers?: Record<string, string>
+}
+
+export interface HrTestContext extends TestContext {
+  notifier: FakeNotificationAdapter
+  call(token: string, method: string, path: string, options?: HrRequestOptions): Promise<Response>
+  anonymous(method: string, path: string, options?: HrRequestOptions): Promise<Response>
+}
+
+export async function createHrTestContext(options: { payrollPlan?: boolean } = {}): Promise<HrTestContext> {
+  const base = await createTestContext({ schedule: false })
+  if (options.payrollPlan !== false) base.db.prepare('UPDATE companies SET has_payroll_plan = 1 WHERE id = ?').run(CORP)
+  const notifier = createFakeNotificationAdapter()
+  const app = createApp({
+    db: base.db,
+    clock: base.clock,
+    storage: base.storage,
+    cipher: base.cipher,
+    jwtSecret: JWT_SECRET,
+    taxTermsVersion: TAX_TERMS_VERSION,
+    maxUploadBytes: 20 * 1024 * 1024,
+    notifier,
+  })
+  const send = (token: string | null, method: string, path: string, requestOptions: HrRequestOptions = {}): Promise<Response> => {
+    const headers: Record<string, string> = { ...requestOptions.headers }
+    if (token !== null) headers['Authorization'] = `Bearer ${token}`
+    if (requestOptions.ifMatch !== undefined) headers['If-Match'] = `"${requestOptions.ifMatch}"`
+    let body: string | FormData | undefined
+    if (requestOptions.form !== undefined) body = requestOptions.form
+    else if (requestOptions.json !== undefined) {
+      headers['Content-Type'] = 'application/json'
+      body = JSON.stringify(requestOptions.json)
+    }
+    return Promise.resolve(app.request(path, { method, headers, ...(body === undefined ? {} : { body }) }))
+  }
+  return {
+    ...base,
+    app,
+    notifier,
+    call: (token, method, path, requestOptions) => send(token, method, path, requestOptions),
+    anonymous: (method, path, requestOptions) => send(null, method, path, requestOptions),
+  }
+}
+
+export function pngBytes(label: string): Uint8Array {
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+  return new Uint8Array([...signature, ...new TextEncoder().encode(label)])
 }

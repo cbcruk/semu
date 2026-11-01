@@ -84,3 +84,13 @@ curl -X POST -H "Authorization: Bearer <token>" -H 'Content-Type: application/js
 - 스크래퍼가 모은 데이터는 `ingestScrapedRecords(db, companyId, records, { now, cipher })`로 넣습니다. 같은 `external_key`는 한 행으로 갱신하고, 새 행은 분류 규칙으로 바로 분류합니다.
 - 외부 연동(홈택스 발급, 지로 납부, 사업자 상태 조회)은 `AppDeps`의 `hometaxInvoice`, `giroPayment`, `businessStatus` 어댑터로 바꿀 수 있습니다. 비우면 결정적인 가짜 구현을 씁니다.
 - 데모 시드는 `c-corp`의 2026년 10월에 거래처 3곳, 계좌 3개, 입출금 8건, 분류 규칙 5개를 넣습니다. 이때 10월 실시간 순이익은 23,030,000원입니다.
+
+## 인사(HR)
+
+설계와 추정 응답은 [`docs/design/hr.md`](../../docs/design/hr.md)에 있습니다.
+
+- 구성원 정보, 전자서명, 제증명은 급여 플랜 메뉴입니다. 데모 `c-corp`는 급여 플랜이 꺼져 있어 403이 납니다. 로컬에서 쓰려면 `UPDATE companies SET has_payroll_plan = 1 WHERE id = 'c-corp'`를 실행하세요.
+- 시드 직원: 김민준(정규직), 이서연(육아휴직), 박지훈(퇴사), 최유진(기간제, 20일 뒤 만료).
+- 상태가 바뀌는 쓰기(휴직, 퇴사일, 전자서명 발송·취소, 증명서)는 `If-Match`가 필요합니다. 직원 상세 응답의 `ETag`를 그대로 보내면 됩니다.
+- 근로자 서명 링크(`/api/employment/e-sign/:token/*`)와 증명서 링크(`/api/employment/certificates/:token/*`)는 JWT 없이 동작합니다. 본인 확인 뒤 받은 세션을 `X-ESign-Session`(증명서는 `X-Certificate-Session`) 헤더로 보냅니다.
+- 알림, PDF 렌더링, 본인 확인은 `AppDeps`의 `notifier`, `pdfRenderer`, `identityVerifier`로 바꿀 수 있습니다. 넘기지 않으면 가짜 구현을 씁니다.
