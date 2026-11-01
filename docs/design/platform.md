@@ -46,7 +46,7 @@
 - #82·#83 홈택스 수임동의는 경로에 회사가 없어 `company_id`(쿼리/본문) 또는 JWT의 `company_id`로 회사를 정합니다.
 - #74 `/nexus-api/company/:id/subscriptions`는 프록시 대신 직접 응답합니다.
 - 비밀번호 재설정 토큰을 다시 쓰면 404가 아니라 410 `GONE`입니다.
-- 추가 엔드포인트: `PUT /api/company/:id/perm/subscription/:code`(담당자), `POST /api/company/:id/payment/:paymentId/retry`(담당자), `GET /api/settings/company/:id/attachments/download`, `/api/company/:id/ai-agent/{conversations,messages}`, `GET /api/company/:id/grants/recommendations`, `GET /api/company/:id/share-histories/recent`.
+- 추가 엔드포인트: `PUT /api/company/:id/perm/subscription/:code`(담당자), `POST /api/company/:id/payment/:paymentId/retry`(담당자), `GET /api/settings/company/:id/attachments/download`, `/api/company/:id/ai-agent/{conversations,messages}`, `GET /api/company/:id/grants/recommendations`.
 
 ## 추정 응답
 
@@ -107,7 +107,7 @@
 
 ## 다른 도메인과 겹치는 부분
 
-기장 스펙도 `partner/scrap/business-status`, `partner/share-company/send`, `share-histories/recent`, 업종 조회·갱신을 나열합니다(그쪽 #31–35). 플랫폼이 `integrations.routes.ts`에서 구현했고 응답 모양은 기장 쪽 추정에 맞췄습니다. 병합할 때 한쪽만 남겨야 합니다.
+`partner/scrap/business-status`, `partner/share-company/send`, `share-histories/recent`, 업종 조회·갱신(기장 스펙 #31–35)은 경리 도메인이 제공합니다. 병합하면서 플랫폼의 중복 구현과 `share_histories` 테이블, `companies.business_types` 열을 지웠습니다. 지원금 추천은 경리의 `listBusinessTypes`로 업종을 읽고, 사업자 상태조회 어댑터는 플랫폼의 `BusinessStatusAdapter` 하나를 함께 씁니다([`api-architecture.md`](../api-architecture.md) 4절).
 
 ## 열린 질문
 
