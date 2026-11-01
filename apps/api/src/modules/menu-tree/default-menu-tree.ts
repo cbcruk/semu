@@ -52,6 +52,7 @@ export const DEFAULT_MENU_TREE: MenuNodeSource[] = [
     group(71, '급여', [
       leaf(711, '급여 정산', 'payroll_settlement', '/payroll-settlement'),
       leaf(712, '급여 관리', 'payroll_management', '/company/payroll'),
+      leaf(714, '퇴직금 정산', 'severance_pay_settlement', '/severance-pay-settlement'),
       leaf(713, '급여 계산기', 'salary_calculator', '/salary-calculator/wage'),
     ]),
   ]),
