@@ -222,7 +222,8 @@ export async function lookupBusinessStatus(deps: AppDeps, businessNumber: string
   if (cached !== undefined && addDays(toPlainDate(cached.checked_at.slice(0, 10)), BUSINESS_STATUS_TTL_DAYS) > today) {
     return { business_status: cached.business_status ?? 'unknown', taxation_type: cached.taxation_type, closed_on: cached.closed_on }
   }
-  const result = await (deps.businessStatus ?? createFakeBusinessStatusAdapter()).lookup(businessNumber)
+  const status = await (deps.businessStatus ?? createFakeBusinessStatusAdapter()).lookup(businessNumber)
+  const result: BusinessStatusResult = { business_status: status.businessStatus, taxation_type: status.taxationType, closed_on: status.closedOn }
   cacheBusinessStatus(deps.db, businessNumber, result, deps.clock.now())
   execute(deps.db, 'UPDATE partners SET business_status = ? WHERE business_number = ? AND deleted_at IS NULL', [result.business_status, businessNumber])
   return result

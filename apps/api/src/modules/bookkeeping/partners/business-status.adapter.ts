@@ -1,4 +1,4 @@
-import type { BusinessStatusAdapter, BusinessStatusResult } from './partners.types'
+import type { BusinessStatus, BusinessStatusAdapter } from '../../platform/adapters/business-status.adapter'
 
 /**
  * Creates a deterministic {@linkcode BusinessStatusAdapter} standing in for the NTS business status lookup.
@@ -8,11 +8,11 @@ import type { BusinessStatusAdapter, BusinessStatusResult } from './partners.typ
  */
 export function createFakeBusinessStatusAdapter(): BusinessStatusAdapter {
   return {
-    async lookup(businessNumber): Promise<BusinessStatusResult> {
+    async lookup(businessNumber): Promise<BusinessStatus> {
       const last = businessNumber.at(-1)
-      if (last === '9') return { business_status: 'closed', taxation_type: '일반과세자', closed_on: '2025-12-31' }
-      if (last === '8') return { business_status: 'suspended', taxation_type: '일반과세자', closed_on: null }
-      return { business_status: 'registered', taxation_type: '일반과세자', closed_on: null }
+      if (last === '9') return { businessStatus: 'closed', taxationType: '일반과세자', closedOn: '2025-12-31' }
+      if (last === '8') return { businessStatus: 'suspended', taxationType: '일반과세자', closedOn: null }
+      return { businessStatus: 'registered', taxationType: '일반과세자', closedOn: null }
     },
   }
 }

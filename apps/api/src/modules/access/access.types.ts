@@ -17,6 +17,8 @@ export interface MenuRule {
   requiresTaxTerms: boolean
   /** Upsell page shown when the plan is missing. */
   promotionUrl: string | null
+  /** Whether only the company's system admin may open the menu, regardless of roles. */
+  requiresSystemAdmin?: boolean
 }
 
 /** A {@linkcode MenuRule} together with its code. */
@@ -41,6 +43,10 @@ export interface AccessContext {
   taxPlan: 'taxation' | null
   hasPayrollPlan: boolean
   taxTermsAgreed: boolean
+  /** Whether the member is the company's system admin (owner account); agency staff never are. */
+  isSystemAdmin?: boolean
+  /** Type of the tax agency serving the company, such as `hq`, or `null` when none. */
+  agencyType?: string | null
 }
 
 /** Why access was denied, in the order checks are made. */

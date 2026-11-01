@@ -8,12 +8,6 @@ export interface BusinessStatusResult {
   closed_on: string | null
 }
 
-/** Looks up whether a business is open, suspended or closed. */
-export interface BusinessStatusAdapter {
-  /** Queries the status of a ten-digit business number without hyphens. */
-  lookup(businessNumber: string): Promise<BusinessStatusResult>
-}
-
 /** A row of `partners`. */
 export interface PartnerRow {
   id: string

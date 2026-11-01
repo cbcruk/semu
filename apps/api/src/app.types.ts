@@ -5,10 +5,15 @@ import type { Cipher } from './lib/crypto/crypto.types'
 import type { FileStorage } from './lib/file-storage/file-storage.types'
 import type { AccessContext, UserType } from './modules/access/access.types'
 import type { GiroPaymentAdapter } from './modules/bookkeeping/giros/giros.types'
-import type { BusinessStatusAdapter } from './modules/bookkeeping/partners/partners.types'
 import type { HometaxInvoiceAdapter } from './modules/bookkeeping/transaction-sales/transaction-sales.types'
 import type { CompanyRow } from './modules/companies/companies.types'
 import type { IdentityVerifier, NotificationAdapter, PdfRenderer } from './modules/hr/adapters/adapters.types'
+import type { AssistantAdapter } from './modules/platform/adapters/assistant.adapter'
+import type { BillingAdapter } from './modules/platform/adapters/billing.adapter'
+import type { BusinessStatusAdapter } from './modules/platform/adapters/business-status.adapter'
+import type { Messenger } from './modules/platform/adapters/messenger.adapter'
+import type { ScrapingAdapter, ScrapResultSink } from './modules/platform/adapters/scraping.adapter'
+import type { SocialLoginAdapter } from './modules/platform/adapters/social-login.adapter'
 import type { TaxType } from './modules/tax-calendar/tax-calendar.types'
 
 /** Dependencies the services need, injected so tests can swap the clock and storage. */
@@ -40,6 +45,18 @@ export interface AppDeps extends ServiceDeps {
   pdfRenderer?: PdfRenderer
   /** Verifies e-sign and certificate signers; the HR module compares name and birth date when omitted. */
   identityVerifier?: IdentityVerifier
+  /** Vendor gateway for institution scraping; defaults to a deterministic fake. */
+  scraping?: ScrapingAdapter
+  /** Receives scraped records for the bookkeeping domain; defaults to a no-op. */
+  scrapResultSink?: ScrapResultSink
+  /** Sends mail and SMS; defaults to an in-memory outbox. */
+  messenger?: Messenger
+  /** CMS withdrawal gateway for subscription billing; defaults to a deterministic fake. */
+  billing?: BillingAdapter
+  /** OAuth code exchange for social login; defaults to a deterministic fake. */
+  socialLogin?: SocialLoginAdapter
+  /** LLM backend of the AI assistant; defaults to a deterministic fake. */
+  assistant?: AssistantAdapter
 }
 
 /** The authenticated user, loaded from the JWT subject. */
@@ -56,6 +73,8 @@ export interface AppVariables {
   access: AccessContext
   taxType: TaxType
   expectedVersion: number
+  /** Session ID when the request authenticated with the session cookie, otherwise `null`. */
+  sessionId: string | null
 }
 
 /** Hono environment shared by every route. */

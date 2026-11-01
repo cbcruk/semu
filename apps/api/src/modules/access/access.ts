@@ -7,7 +7,7 @@ import { MENU_DEFINITIONS } from './menu-codes'
  * Checks run in a fixed order so that the reason drives the UI:
  *
  * 1. applicability to the business type → `NOT_FOUND` (menu hidden)
- * 2. permission roles → `PERMISSION_DENIED` (menu hidden)
+ * 2. permission roles, and the system admin flag for owner-only menus → `PERMISSION_DENIED` (menu hidden)
  * 3. plan → `ENTITLEMENT_REQUIRED` (promotion node)
  * 4. tax terms consent → `TAX_TERMS_REQUIRED` (menu shown, data blocked)
  *
@@ -39,6 +39,9 @@ export function decide(context: AccessContext, code: MenuCode): AccessDecision {
     return deny('NOT_FOUND')
   }
   if (definition.requiresPermission && !context.isAdmin && !context.roleMenuCodes.has(code)) {
+    return deny('PERMISSION_DENIED')
+  }
+  if (definition.requiresSystemAdmin === true && context.isSystemAdmin !== true) {
     return deny('PERMISSION_DENIED')
   }
   if (definition.requiredPlans.length > 0 && !definition.requiredPlans.some((plan) => holdsPlan(context, plan))) {

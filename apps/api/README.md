@@ -94,3 +94,12 @@ curl -X POST -H "Authorization: Bearer <token>" -H 'Content-Type: application/js
 - 상태가 바뀌는 쓰기(휴직, 퇴사일, 전자서명 발송·취소, 증명서)는 `If-Match`가 필요합니다. 직원 상세 응답의 `ETag`를 그대로 보내면 됩니다.
 - 근로자 서명 링크(`/api/employment/e-sign/:token/*`)와 증명서 링크(`/api/employment/certificates/:token/*`)는 JWT 없이 동작합니다. 본인 확인 뒤 받은 세션을 `X-ESign-Session`(증명서는 `X-Certificate-Session`) 헤더로 보냅니다.
 - 알림, PDF 렌더링, 본인 확인은 `AppDeps`의 `notifier`, `pdfRenderer`, `identityVerifier`로 바꿀 수 있습니다. 넘기지 않으면 가짜 구현을 씁니다.
+
+## 플랫폼(인증·가입·연동)
+
+- **인증.** `Authorization: Bearer <HS256 JWT>` 또는 세션 쿠키(`sessionid`) 둘 다 받습니다. 쿠키로 인증한 `GET`·`HEAD`·`OPTIONS` 외 요청은 `X-CSRFToken`(또는 `X-XSRF-TOKEN`) 헤더가 `csrftoken`/`nexus_csrftoken` 쿠키, 세션의 CSRF 토큰과 모두 같아야 합니다.
+- **로그인.** 시드 사용자는 모두 `<ID>@example.com` / `alfred1234`로 로그인합니다. 데모 계정은 `GET /api/member/demo/`가 돌려주는 `u-demo@example.com` / `demo1234`입니다.
+- **회사 JWT.** `POST /api/user/me/jwt/ {company_id}`가 `{sub, company_id, sf_company_id, user_type, iat, exp}`(1시간) 토큰을 발급합니다. 회사 멤버와 배정된 담당자만 받을 수 있습니다.
+- **어댑터.** 스크래핑, 메일·SMS, CMS 출금, 카카오 로그인, 사업자 상태 조회, AI 비서는 `AppDeps`의 선택 필드이고, 비우면 결정적인 가짜 구현이 쓰입니다. 가짜 스크래핑은 `wrong`으로 시작하는 비밀번호를 거절합니다.
+- **시드 픽스처.** 가입 초대 토큰 `signup-invite-demo`, 상담 채널 토큰 `chat-channel-demo`, 파트너 `partner-demo`(API 키 `partner-demo-key`), 홈택스 수임동의 `htd-corp`가 있습니다. 값은 `PLATFORM_SEED`(`src/modules/platform/platform.seed.ts`)에 모여 있습니다.
+- **작업.** 수집 큐는 `processScrapQueue`, 구독 상태 갱신은 `refreshSubscriptions`, 월 청구는 `runBillingCycle`(`modules/platform`)입니다. 스케줄러에는 아직 연결하지 않았습니다.

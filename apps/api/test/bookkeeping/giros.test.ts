@@ -80,7 +80,7 @@ describe('giros', () => {
     for (const { name } of tables) {
       for (const row of ctx.db.prepare(`SELECT * FROM "${name}"`).all() as Record<string, unknown>[]) {
         for (const [column, value] of Object.entries(row)) {
-          expect(column).not.toMatch(/password/)
+          if (!(name === 'users' && column === 'password_hash')) expect(column).not.toMatch(/password/)
           expect(String(value), `${name}.${column}`).not.toBe(PASSWORD)
           expect(String(value), `${name}.${column}`).not.toContain(`"${PASSWORD}"`)
         }
