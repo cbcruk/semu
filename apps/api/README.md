@@ -59,3 +59,13 @@ pnpm test
 | `u-other` | `c-ind`에만 배정된 담당자 |
 
 JWT 페이로드는 `{ sub, company_id? }`입니다. 고객 API는 `company_id`가 경로의 회사와 같아야 하고, 담당자 API(`/api/desk`)는 `company_id` 없이 씁니다.
+
+## 경리·보고서
+
+경리(증빙, 입출금, 거래처, 세금계산서 발급, 지로 납부)와 실시간·세무 보고서 API입니다. 결정과 추정은 [`docs/design/bookkeeping.md`](../../docs/design/bookkeeping.md)에 있습니다.
+
+- 고객 API는 `/api/company/:companyId` 아래에 있습니다. 예: `/evidence/:side`, `/bank/transactions`, `/classification-rules`, `/partners`, `/reports/profit-loss/status`, `/report/profit-loss/:year`.
+- 결산 업로드는 담당자 API `PUT /api/desk/companies/:companyId/settlements/:year/:scope`입니다.
+- 스크래퍼가 모은 데이터는 `ingestScrapedRecords(db, companyId, records, { now, cipher })`로 넣습니다. 같은 `external_key`는 한 행으로 갱신하고, 새 행은 분류 규칙으로 바로 분류합니다.
+- 외부 연동(홈택스 발급, 지로 납부, 사업자 상태 조회)은 `AppDeps`의 `hometaxInvoice`, `giroPayment`, `businessStatus` 어댑터로 바꿀 수 있습니다. 비우면 결정적인 가짜 구현을 씁니다.
+- 데모 시드는 `c-corp`의 2026년 10월에 거래처 3곳, 계좌 3개, 입출금 8건, 분류 규칙 5개를 넣습니다. 이때 10월 실시간 순이익은 23,030,000원입니다.
