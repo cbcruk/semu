@@ -4,6 +4,9 @@ import type { Clock } from './lib/clock.types'
 import type { Cipher } from './lib/crypto/crypto.types'
 import type { FileStorage } from './lib/file-storage/file-storage.types'
 import type { AccessContext, UserType } from './modules/access/access.types'
+import type { GiroPaymentAdapter } from './modules/bookkeeping/giros/giros.types'
+import type { BusinessStatusAdapter } from './modules/bookkeeping/partners/partners.types'
+import type { HometaxInvoiceAdapter } from './modules/bookkeeping/transaction-sales/transaction-sales.types'
 import type { CompanyRow } from './modules/companies/companies.types'
 import type { TaxType } from './modules/tax-calendar/tax-calendar.types'
 
@@ -24,6 +27,12 @@ export interface AppDeps extends ServiceDeps {
   taxTermsVersion: string
   /** Largest accepted upload body in bytes. */
   maxUploadBytes: number
+  /** NTS business status lookup for partners; defaults to a deterministic fake. */
+  businessStatus?: BusinessStatusAdapter
+  /** Hometax e-tax invoice issuing and business type lookup; defaults to a deterministic fake. */
+  hometaxInvoice?: HometaxInvoiceAdapter
+  /** Internet giro bill payment; defaults to a deterministic fake. */
+  giroPayment?: GiroPaymentAdapter
 }
 
 /** The authenticated user, loaded from the JWT subject. */
