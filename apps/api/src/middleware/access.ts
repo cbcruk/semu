@@ -37,7 +37,7 @@ export function assertAllowed(decision: AccessDecision): void {
     case 'PERMISSION_DENIED':
       throw new DomainError('PERMISSION_DENIED', 'You do not have access to this menu.')
     case 'ENTITLEMENT_REQUIRED':
-      throw new DomainError('ENTITLEMENT_REQUIRED', 'This menu requires a tax bookkeeping plan.', {
+      throw new DomainError('ENTITLEMENT_REQUIRED', 'This menu requires a paid plan the company does not hold.', {
         promotion_url: decision.promotionUrl,
       })
     case 'TAX_TERMS_REQUIRED':
