@@ -165,7 +165,7 @@ GET    /esign-templates?purpose=SIGNATURE|CERTIFICATE&q=&active=
 GET    /esign-templates/{esignTemplateId}
 PATCH  /esign-templates/{esignTemplateId}         { title?, body?, fieldDefaults?, active?, defaultCompanySealId? }
 GET    /company-seals
-POST   /company-seals                              multipart { image, source: UPLOAD|DRAWN }
+POST   /company-seals                              { name, source: UPLOAD|DRAWN, imageFileId }
 DELETE /company-seals/{companySealId}
 GET    /company-seals/{companySealId}/image
 GET    /esign-notification-recipients
@@ -173,6 +173,8 @@ PUT    /esign-notification-recipients              [{ name, positionId?, phone, 
 ```
 
 - **템플릿은 제품 기본본과 회사별 덮어쓰기를 합친 하나의 리소스로 보입니다.** 현행 `template_type`을 없애고, 응답에 `customized: boolean`만 둡니다. 기본본을 처음 고치면 서버가 회사 덮어쓰기를 만듭니다
+- **도장 이미지는 먼저 파일로 올리고 `imageFileId`로 등록합니다.** 현행은 multipart로 이미지를 받았습니다. 서명 이미지와 같은 방식으로 맞췄고, 파일 저장소(D7, [review.md](review.md#결정-필요))가 생기면 그 파일이 같은 회사 것인지도 확인합니다
+- 도장은 회사 범위입니다. 목록·삭제·전자서명 요청 모두 행위자 회사의 도장만 보이고, 다른 회사 도장 ID는 없는 것과 같습니다(404 `COMPANY_SEAL_NOT_FOUND`, 요청에서는 422 위반)
 - 도장·사인은 회사당 5개까지입니다(409 `COMPANY_SEAL_LIMIT_EXCEEDED`). 삭제는 소프트 삭제이고, 발송된 요청은 발송 시점 이미지를 스냅샷으로 가집니다 ([esign-settings-limits](../reference/rules/esign-settings-limits.md))
 - 알림 수신자는 3명까지입니다(422 `NOTIFICATION_RECIPIENT_LIMIT_EXCEEDED`)
 
@@ -344,7 +346,7 @@ GET /document-forms/{documentFormCode}/file
 | 서명자 흐름 (`GET /esign-links/{token}`, `:verify`, `:complete`) | 구현, HTTP 테스트. 서명 이미지는 본문 대신 가짜 파일 ID로 받습니다. 서명자용 문서 조회·서명 업로드·파일 다운로드는 미구현 |
 | 제증명 (`GET/POST /certificate-issuances`, `GET /{id}`, `:send`, `:void`) | 구현, HTTP 테스트 |
 | 템플릿 조회 (`GET /esign-templates`, `GET /esign-templates/{id}`) | 구현(기본 템플릿 5종) |
-| 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만). 도장은 회사 확인용 저장소(`CompanySealRepository`, 데모 회사 도장 하나)만 있고 API는 없습니다 |
+| 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만). 도장은 `GET/POST /company-seals`, `DELETE /company-seals/{id}`(회사 범위, 5개 한도, 소프트 삭제)만 구현했고 이미지 내려받기·발송 시점 스냅샷은 미구현입니다. 데모 법인에 도장 하나가 들어 있습니다 |
 | 기한 만료 스케줄러 | 미구현. 저장 상태는 바꾸지 않고 읽을 때 만료를 반영합니다 |
 | 이벤트 outbox, 멱등성 키 재응답 | 미구현. `DocumentEvents.layerMemory`가 이벤트를 메모리에 모읍니다 |
 

@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Effect, Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppLive, CiphersLive, SqliteLive } from './app.ts'
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DEMO_PAYROLL_ACCOUNT_NUMBER } from './modules/hr/hr-demo-seed.ts'
@@ -26,21 +26,23 @@ describe('CiphersLive', () => {
     const { token, plain, hashes } = run(
       Effect.gen(function* () {
         const cipher = yield* PersonalDataCipher
-        const token = yield* cipher.encrypt(REGISTRATION_NUMBER)
+        const token = yield* cipher.encrypt('registrationNumber', REGISTRATION_NUMBER)
         return {
           token,
-          plain: yield* cipher.decrypt(token),
+          plain: yield* cipher.decrypt('registrationNumber', token),
           hashes: [yield* cipher.hash(REGISTRATION_NUMBER), yield* cipher.hash(REGISTRATION_NUMBER)],
         }
       }),
     )
 
-    expect(token).toMatch(/^v1:/)
+    expect(token).toMatch(/^v2:/)
     expect(token).not.toContain('900101')
     expect(plain).toBe(REGISTRATION_NUMBER)
     expect(hashes[0]).toBe(hashes[1])
     const tampered = token.slice(0, -2) + (token.endsWith('A') ? 'B' : 'A')
-    expect(() => run(Effect.flatMap(PersonalDataCipher, (cipher) => cipher.decrypt(tampered)))).toThrow()
+    expect(() =>
+      run(Effect.flatMap(PersonalDataCipher, (cipher) => cipher.decrypt('registrationNumber', tampered))),
+    ).toThrow()
   })
 
   it('round-trips account numbers and refuses a tampered value', () => {
@@ -51,7 +53,7 @@ describe('CiphersLive', () => {
       }),
     )
 
-    expect(token).toMatch(/^v1:/)
+    expect(token).toMatch(/^v2:/)
     expect(token).not.toContain('110123456789')
     expect(plain).toBe('110123456789')
     expect(() =>
@@ -143,7 +145,7 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
     const rows = storedRows(filename)
     const employee = rows.find((row) => row.table === 'hr_employees' && row.data.includes(created.body.id))
     expect(employee).toBeDefined()
-    expect(JSON.parse(employee!.data).registrationNumberEncrypted).toMatch(/^v1:/)
+    expect(JSON.parse(employee!.data).registrationNumberEncrypted).toMatch(/^v2:/)
     for (const plain of [
       REGISTRATION_NUMBER,
       REGISTRATION_NUMBER.replace('-', ''),
@@ -163,6 +165,39 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
       headers: { 'x-access-reason': 'PAYROLL' },
     })
     expect(revealed).toMatchObject({ status: 200, body: { registrationNumber: '9001011234567' } })
+  })
+
+  it('logs why decryption failed when the database is opened with another key', async () => {
+    const filename = tempDatabase()
+    const app = sqliteApp(filename, new Uint8Array(randomBytes(32)))
+    opened.push(app)
+    const token = String((await app.signIn('owner@semu.example'))['accessToken'])
+    const created = await app.request('POST', '/v1/employees', {
+      token,
+      body: { kind: 'WAGE', name: '홍길동', registrationNumber: REGISTRATION_NUMBER, joinDate: '2024-01-02' },
+    })
+    await app.dispose()
+    opened.length = 0
+
+    const logs: string[] = []
+    const capture = (...args: unknown[]) => void logs.push(args.map(String).join(' '))
+    const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(capture),
+    )
+    const wrongKey = sqliteApp(filename, new Uint8Array(randomBytes(32)))
+    opened.push(wrongKey)
+    const again = String((await wrongKey.signIn('owner@semu.example'))['accessToken'])
+    const revealed = await wrongKey.request('POST', `/v1/employees/${created.body.id}/registration-number:reveal`, {
+      token: again,
+      headers: { 'x-access-reason': 'PAYROLL' },
+    })
+
+    for (const spy of spies) spy.mockRestore()
+    expect(revealed).toMatchObject({ status: 500, body: { code: 'INTERNAL' } })
+    const logged = logs.join('\n')
+    expect(logged).toContain('DecryptionFailed')
+    expect(logged).toContain('hr/registrationNumber')
+    expect(logged).not.toContain('1234567')
   })
 
   it('stores access and onboarding tokens only as hashes and expires the onboarding token', async () => {

@@ -2,6 +2,9 @@ import { createHmac } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
 import { DataKey, decryptString, encryptString } from '../../../shared/crypto/data-key.ts'
 
+/** 암호화하는 개인정보 필드입니다. 필드마다 하위 키와 AAD가 달라, 한 필드의 암호문을 다른 필드로 옮기면 열리지 않습니다. */
+export type PersonalDataField = 'registrationNumber' | 'accountNumber'
+
 /**
  * 주민등록번호·계좌번호 암호화와 중복 판정용 해시입니다.
  *
@@ -11,8 +14,8 @@ import { DataKey, decryptString, encryptString } from '../../../shared/crypto/da
 export class PersonalDataCipher extends Context.Service<
   PersonalDataCipher,
   {
-    encrypt(plain: string): Effect.Effect<string>
-    decrypt(cipherText: string): Effect.Effect<string>
+    encrypt(field: PersonalDataField, plain: string): Effect.Effect<string>
+    decrypt(field: PersonalDataField, cipherText: string): Effect.Effect<string>
     /** 같은 값이면 같은 결과가 나오는 키 해시입니다. */
     hash(plain: string): Effect.Effect<string>
   }
@@ -21,8 +24,9 @@ export class PersonalDataCipher extends Context.Service<
   static readonly layerFake = Layer.succeed(
     PersonalDataCipher,
     PersonalDataCipher.of({
-      encrypt: (plain) => Effect.succeed(`enc:${Buffer.from(plain, 'utf8').toString('base64')}`),
-      decrypt: (cipherText) => Effect.succeed(Buffer.from(cipherText.replace(/^enc:/, ''), 'base64').toString('utf8')),
+      encrypt: (_field, plain) => Effect.succeed(`enc:${Buffer.from(plain, 'utf8').toString('base64')}`),
+      decrypt: (_field, cipherText) =>
+        Effect.succeed(Buffer.from(cipherText.replace(/^enc:/, ''), 'base64').toString('utf8')),
       hash: (plain) => Effect.succeed(createHmac('sha256', 'semu-fake-hmac-key').update(plain).digest('hex')),
     }),
   )
@@ -30,17 +34,22 @@ export class PersonalDataCipher extends Context.Service<
   /**
    * AES-256-GCM 암호화와 HMAC-SHA256 해시입니다. 서버(`SqliteLive`)가 씁니다.
    *
-   * 암호문은 `v1:<iv>:<tag>:<ciphertext>`이고, 바뀐 값이나 다른 키의 암호문은 결함(defect)으로 끝납니다.
+   * 암호문은 `v2:<iv>:<tag>:<ciphertext>`이고 필드 용도(`hr/<field>`)를 AAD로 묶습니다.
+   * 바뀐 값, 다른 키, 다른 필드의 암호문은 `DecryptionFailed` 결함(defect)으로 끝납니다.
    */
   static readonly layerAesGcm = Layer.effect(
     PersonalDataCipher,
     Effect.gen(function* () {
       const dataKey = yield* DataKey
-      const encryptionKey = dataKey.subkey('hr/personal-data/aes-256-gcm')
+      const purposeOf = (field: PersonalDataField) => `hr/${field}/aes-256-gcm`
+      const keys: Record<PersonalDataField, Uint8Array> = {
+        registrationNumber: dataKey.subkey(purposeOf('registrationNumber')),
+        accountNumber: dataKey.subkey(purposeOf('accountNumber')),
+      }
       const hashKey = dataKey.subkey('hr/personal-data/hmac-sha256')
       return PersonalDataCipher.of({
-        encrypt: (plain) => Effect.sync(() => encryptString(encryptionKey, plain)),
-        decrypt: (cipherText) => Effect.sync(() => decryptString(encryptionKey, cipherText)),
+        encrypt: (field, plain) => Effect.sync(() => encryptString(keys[field], purposeOf(field), plain)),
+        decrypt: (field, cipherText) => Effect.sync(() => decryptString(keys[field], purposeOf(field), cipherText)),
         hash: (plain) => Effect.sync(() => createHmac('sha256', hashKey).update(plain).digest('hex')),
       })
     }),

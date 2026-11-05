@@ -7,6 +7,7 @@ import { EsignRequestRepository } from './esign/esign-request.ts'
 import { EsignRequests } from './esign/esign-requests.ts'
 import { EsignRequestsHttpLive } from './esign/esign-requests.http.ts'
 import { CompanySealRepository } from './seals/company-seal.ts'
+import { CompanySealsHttpLive } from './seals/company-seals.http.ts'
 import { DocumentEvents, DocumentNotifier, PdfRenderer, SignerIdentityVerifier } from './shared/documents-ports.ts'
 import { EsignLinksHttpLive } from './signing/esign-links.http.ts'
 import { Signing } from './signing/signing.ts'
@@ -23,6 +24,7 @@ export const DocumentsHttpLive = Layer.mergeAll(
   EsignRequestsHttpLive,
   EsignLinksHttpLive,
   EsignTemplatesHttpLive,
+  CompanySealsHttpLive,
   CertificatesHttpLive,
 ).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer)))
 

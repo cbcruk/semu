@@ -40,7 +40,7 @@ const SystemLive = HttpApiBuilder.group(Api, 'system', (handlers) =>
 )
 
 /**
- * 일치하는 경로가 없거나 예상하지 못한 오류(defect)가 나면 Problem Details로 응답합니다.
+ * 일치하는 경로가 없거나 예상하지 못한 오류(defect)가 나면 Problem Details로 응답합니다. 결함은 오류 이름과 메시지를 로그에 남깁니다.
  *
  * 엔드포인트에 선언한 오류는 여기까지 오지 않고, 해당 경로가 직접 응답으로 바꿉니다.
  */
@@ -48,10 +48,21 @@ const ProblemFallback = HttpRouter.middleware(
   (httpEffect) =>
     httpEffect.pipe(
       Effect.catchIf(isRouteNotFound, () => HttpServerRespondable.toResponse(new NotFound({}))),
-      Effect.catchDefect(() => HttpServerRespondable.toResponse(new Internal({}))),
+      Effect.catchDefect((defect) =>
+        Effect.logError('Unhandled defect', describeDefect(defect)).pipe(
+          Effect.andThen(HttpServerRespondable.toResponse(new Internal({}))),
+        ),
+      ),
     ),
   { global: true },
 )
+
+/**
+ * 로그에 남길 결함 요약입니다. 오류 이름과 메시지만 남깁니다. 복호화 실패(`DecryptionFailed`)는 용도와 원인만 담고 원문·키는 담지 않습니다.
+ */
+function describeDefect(defect: unknown): string {
+  return defect instanceof Error ? `${defect.name}: ${defect.message}` : String(defect)
+}
 
 function isRouteNotFound(error: unknown): boolean {
   return error instanceof HttpServerError.HttpServerError && error.reason._tag === 'RouteNotFound'

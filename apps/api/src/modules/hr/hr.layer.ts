@@ -62,7 +62,10 @@ export const HrHttpLive = Layer.mergeAll(
 /** 데모 급여계약 계좌번호를 그 환경의 `PersonalDataCipher`로 암호화해 시드로 넣습니다. */
 const DemoPayrollContractRepositoryLive = Layer.unwrap(
   Effect.gen(function* () {
-    const accountNumberEncrypted = yield* (yield* PersonalDataCipher).encrypt(DEMO_PAYROLL_ACCOUNT_NUMBER)
+    const accountNumberEncrypted = yield* (yield* PersonalDataCipher).encrypt(
+      'accountNumber',
+      DEMO_PAYROLL_ACCOUNT_NUMBER,
+    )
     return PayrollContractRepository.layer(demoPayrollContracts(accountNumberEncrypted))
   }),
 )

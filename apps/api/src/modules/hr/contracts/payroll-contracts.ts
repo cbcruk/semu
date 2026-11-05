@@ -111,7 +111,10 @@ export class PayrollContracts extends Context.Service<
             : {
                 account: {
                   bankCode: account.bankCode,
-                  accountNumberEncrypted: yield* cipher.encrypt(account.accountNumber.replace(/\D/g, '')),
+                  accountNumberEncrypted: yield* cipher.encrypt(
+                    'accountNumber',
+                    account.accountNumber.replace(/\D/g, ''),
+                  ),
                   accountNumberMasked: maskAccountNumber(account.accountNumber),
                   accountHolder: account.accountHolder,
                 },
@@ -195,7 +198,7 @@ export class PayrollContracts extends Context.Service<
         revealAccountNumber: Effect.fn('PayrollContracts.revealAccountNumber')(function* (actor, id, reason) {
           const contract = yield* findContract(actor, id)
           if (contract.account === undefined) return yield* new PayrollContractNotFound({})
-          const accountNumber = yield* cipher.decrypt(contract.account.accountNumberEncrypted)
+          const accountNumber = yield* cipher.decrypt('accountNumber', contract.account.accountNumberEncrypted)
           yield* accessLog.record({
             companyId: actor.companyId,
             userId: actor.userId,

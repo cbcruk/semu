@@ -23,14 +23,15 @@ export class AccountNumberCipher extends Context.Service<
     }),
   )
 
-  /** AES-256-GCM 암호화입니다. 암호문은 `v1:<iv>:<tag>:<ciphertext>`이고, 바뀐 값은 예외로 거부합니다. */
+  /** AES-256-GCM 암호화입니다. 암호문은 `v2:<iv>:<tag>:<ciphertext>`이고 용도를 AAD로 묶습니다. 바뀐 값은 `DecryptionFailed`로 거부합니다. */
   static readonly layerAesGcm = Layer.effect(
     AccountNumberCipher,
     Effect.gen(function* () {
-      const key = (yield* DataKey).subkey('bookkeeping/account-number/aes-256-gcm')
+      const purpose = 'bookkeeping/account-number/aes-256-gcm'
+      const key = (yield* DataKey).subkey(purpose)
       return AccountNumberCipher.of({
-        encrypt: (plaintext) => encryptString(key, plaintext),
-        decrypt: (token) => decryptString(key, token),
+        encrypt: (plaintext) => encryptString(key, purpose, plaintext),
+        decrypt: (token) => decryptString(key, purpose, token),
       })
     }),
   )

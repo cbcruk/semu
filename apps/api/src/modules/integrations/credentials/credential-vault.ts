@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
-import { DataKey } from '../../../shared/crypto/data-key.ts'
+import { DataKey, DecryptionFailed } from '../../../shared/crypto/data-key.ts'
 
 /** 봉투 암호화한 자격 증명입니다. 원문(ID/PW, PG 비밀 키, 인증서 개인키·서명 비밀번호)은 이 형태로만 저장합니다. */
 export interface SealedSecret {
@@ -16,10 +16,14 @@ export type SecretFields = Readonly<Record<string, string>>
 /** 테스트용 고정 키입니다. 서버는 쓰지 않고 {@link CredentialVault.layerDataKey}로 {@link DataKey}의 하위 키를 씁니다. */
 export const DEMO_VAULT_KEY: Uint8Array = createHash('sha256').update('semu-demo-credential-vault').digest()
 
-/** `key`로 AES-256-GCM 암호화합니다. 값마다 IV를 새로 뽑습니다. */
+/** 봉한 값의 AAD입니다. 용도와 `keyVersion`을 묶어, 다른 용도의 암호문이나 바꾼 `keyVersion`은 열리지 않습니다. */
+const sealPurpose = (keyVersion: number) => `integrations/credential-vault:v${keyVersion}`
+
+/** `key`로 AES-256-GCM 암호화합니다. 값마다 IV를 새로 뽑고 용도·`keyVersion`을 AAD로 묶습니다. */
 export function sealSecret(key: Uint8Array, fields: SecretFields, keyVersion = 1): SealedSecret {
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', key, iv)
+  cipher.setAAD(Buffer.from(sealPurpose(keyVersion), 'utf8'))
   const ciphertext = Buffer.concat([cipher.update(JSON.stringify(fields), 'utf8'), cipher.final()])
   return {
     keyVersion,
@@ -29,12 +33,18 @@ export function sealSecret(key: Uint8Array, fields: SecretFields, keyVersion = 1
   }
 }
 
-/** {@link sealSecret}로 만든 값을 엽니다. 키가 다르거나 값이 바뀌었으면 예외입니다. */
+/** {@link sealSecret}로 만든 값을 엽니다. 키가 다르거나 값·`keyVersion`이 바뀌었으면 {@link DecryptionFailed}입니다. */
 export function openSecret(key: Uint8Array, sealed: SealedSecret): SecretFields {
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(sealed.iv, 'base64'), { authTagLength: 16 })
-  decipher.setAuthTag(Buffer.from(sealed.tag, 'base64'))
-  const plain = Buffer.concat([decipher.update(Buffer.from(sealed.ciphertext, 'base64')), decipher.final()])
-  return JSON.parse(plain.toString('utf8')) as SecretFields
+  const purpose = sealPurpose(sealed.keyVersion)
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(sealed.iv, 'base64'), { authTagLength: 16 })
+    decipher.setAAD(Buffer.from(purpose, 'utf8'))
+    decipher.setAuthTag(Buffer.from(sealed.tag, 'base64'))
+    const plain = Buffer.concat([decipher.update(Buffer.from(sealed.ciphertext, 'base64')), decipher.final()])
+    return JSON.parse(plain.toString('utf8')) as SecretFields
+  } catch {
+    throw new DecryptionFailed(purpose, 'AUTHENTICATION')
+  }
 }
 
 /**
