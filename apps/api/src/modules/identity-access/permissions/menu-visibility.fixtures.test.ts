@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { actorPermissions } from '../access/actor-permissions.ts'
 import { hasPermission } from '../actor.ts'
 import type { Permission, Plan } from '../actor.types.ts'
 import { decideAccess } from '../authorization.ts'
@@ -15,6 +16,9 @@ import { promotedPlans } from './promotions.ts'
  * 옮기지 않는 케이스:
  * - 사업자 형태별 신고 메뉴(법인의 종합소득세 등): 신고 종류는 Tax가 회사의 `businessType`으로 판정합니다
  * - 급여 구독 시 `employee_management` 숨김, 빈 그룹 정리: 같은 `employee` 리소스를 두 메뉴로 그리는 화면 트리 규칙입니다
+ *
+ * 대리인 케이스(`assigned agency staff see every applicable menu ...`)는 사업자 형태 규칙 때문에 옮기지 않았고,
+ * 옮기더라도 `user_management`는 D5로 바뀝니다. 대리인은 `member:*`가 없어 숨김입니다(현행은 보임).
  */
 const NOT_PORTED = new Set([
   'corporation never sees the individual income tax menu',
@@ -46,10 +50,12 @@ function node(menu: string, input: LegacyInput): Record<string, unknown> {
   const promotionPlan = PROMOTION_MENUS[menu]
   if (promotionPlan !== undefined) return { node: promotions.includes(promotionPlan) ? 'promotion' : 'hidden' }
 
-  const everything = input.user.actor === 'agency' || input.user.isAdmin
-  const permissions = new Set<Permission>(
-    everything ? ['*'] : [...BASE_PERMISSIONS, ...permissionsForLegacyMenus(input.user.roleMenuCodes)],
-  )
+  const permissions =
+    input.user.actor === 'agency'
+      ? actorPermissions({ kind: 'AGENCY' })
+      : new Set<Permission>(
+          input.user.isAdmin ? ['*'] : [...BASE_PERMISSIONS, ...permissionsForLegacyMenus(input.user.roleMenuCodes)],
+        )
   const actor = testActor({
     kind: input.user.actor === 'agency' ? 'AGENCY' : 'CLIENT',
     permissions,

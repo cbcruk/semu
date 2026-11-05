@@ -81,7 +81,7 @@ sequenceDiagram
 
 - **담당 회사만 보입니다.** 담당은 본인 배정, 팀장이면 팀원 배정까지입니다(회사 범위 행위자 계산과 같은 규칙). Tax는 배정을 모르고, Identity & Access가 넘긴 회사만 읽습니다
 - 고객 사용자는 대리인 범위 토큰을 받을 수 없으므로(403 `AGENCY_SCOPE_NOT_ALLOWED`) `/agency/*`에 닿는 길이 없습니다
-- 권한은 지금 대리인 모두 `*`입니다. D5에서 대리인 권한을 나누면 `authorizeAgency`의 권한 검사가 그대로 그 권한을 봅니다
+- 권한은 회사 범위의 대리인 행위자와 같은 대리인 기본 권한(`AGENT_PERMISSIONS`, D5)입니다. 고객 업무 리소스와 대리인 전용 동작이 있고, 구성원 관리와 AI 비서는 없습니다. 큐의 세 권한(`company:read`, `filing:read`, `action-card:read`)은 모두 들어 있습니다 ([identity-access.md](identity-access.md#행위자와-권한-계산))
 
 ## 컨텍스트 경계
 
@@ -112,7 +112,7 @@ flowchart LR
 | 401 | `UNAUTHENTICATED` | 토큰이 없거나 만료·폐기, 대리인이 비활성 |
 | 403 | `TOKEN_SCOPE_MISMATCH` | 회사 범위 토큰으로 `/agency/*`, 대리인 범위 토큰으로 회사 경로(`requiredScope`) |
 | 403 | `AGENCY_SCOPE_NOT_ALLOWED` | 고객 사용자의 `:switch-agency` |
-| 403 | `PERMISSION_DENIED` | 대리인 권한 밖(D5 이후) |
+| 403 | `PERMISSION_DENIED` | 대리인 기본 권한(D5) 밖. 지금 `/agency/*`의 세 권한은 모두 대리인 기본 권한이라 큐에서는 나오지 않습니다 |
 | 404 | `COMPANY_NOT_FOUND` | `companyId`가 배정되지 않은 회사 |
 | 400 | `VALIDATION_FAILED` | 잘못된 날짜·enum·`limit` |
 
@@ -135,6 +135,6 @@ flowchart LR
 
 ## 열린 질문
 
-1. **다른 컨텍스트의 큐.** 급여대장 승인 대기, 수집 실패처럼 대리인이 챙길 일이 Payroll·Integrations에도 있습니다. 같은 방식(`/agency/payroll-ledgers` 등 각 컨텍스트 소유)으로 늘릴지, 할 일 카드를 공개 포트로 열어 한 큐로 모을지([tax.md](tax.md#열린-질문) 7번) 정해야 합니다
+1. **다른 컨텍스트의 큐.** 급여대장 승인 대기, 수집 실패처럼 대리인이 챙길 일이 Payroll·Integrations에도 있습니다. 같은 방식(`/agency/payroll-ledgers` 등 각 컨텍스트 소유)으로 늘릴지, 할 일 카드를 공개 포트로 열어 한 큐로 모을지([tax.md](tax.md#열린-질문) 7번) 정해야 합니다. 권한은 D5로 정리되어 새 큐는 `authorizeAgency`에 `payroll-ledger:read`·`scrap-request:read`처럼 대리인 기본 권한에 이미 있는 문자열을 쓰면 됩니다
 2. **팀장의 범위.** 팀장은 팀원 배정을 모두 봅니다. 지점·팀 단위로 더 넓히거나(본사 관리자) 좁힐지는 대리인 조직 모델이 정해지면 다시 봅니다
 3. **목록 기한 기준.** 큐의 기한은 `dueDate ?? paymentDue`입니다. 자료 제출 마감(`submitDue`)으로 정렬하는 보기가 필요한지 업무 확인이 필요합니다

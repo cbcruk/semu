@@ -15,7 +15,7 @@
 | 매일 작업이 `pending→active`, `cancelled→ended`를 바꿔야 플랜이 바뀜 | 작업이 늦으면 시작일에 플랜이 없음 | 상태를 읽을 때 오늘 날짜로 다시 계산(`refreshedStatus`). 날짜로 정해지는 전이는 작업에 기대지 않음 |
 | 구독 목록이 nexus `perm/subscription`과 sf `/nexus-api/.../subscriptions` 두 경로 | 같은 데이터를 sf가 프록시 (P3) | `GET /subscriptions` 하나 |
 | 구독 변경 `PUT perm/subscription/:code`가 상태·날짜를 통째로 덮어씀 | 어떤 전이인지 경로에 안 드러남 | `POST /subscriptions`, `:cancel`, `:resume` 커맨드 |
-| 고객 관리자도 회사 API 권한이 모두 있음 | 담당자 전용 동작(구독 변경, 결제 재시도)을 권한 문자열로 막을 수 없음 | 담당자 커맨드는 `actor.kind === 'AGENCY'`를 함께 봄(`authorizeAgency`) |
+| 고객 관리자도 회사 API 권한이 모두 있음 | 담당자 전용 동작(구독 변경, 결제 재시도)을 권한 문자열로 막을 수 없음 | 담당자 커맨드는 대리인 전용 권한(`subscription:manage`, `payment:retry`, `payment:refund`)으로 봄. 카탈로그의 `agentOnly`라 관리자의 `*`가 덮지 않고 대리인 기본 권한에만 있음 (D5) |
 | 결제 내역이 DRF `limit/offset` 봉투, `isScheduled` 플래그, 숫자 ID | P4 | 커서 페이지, `status` enum 하나, `pay_` ID + 화면용 `number` |
 | CMS 출금 동의가 로그인 없는 공개 API(`/public/api/alfred/withdrawal-consent`)로 사업자번호만 받아 회사에 붙음 | 남의 사업자번호로 계좌를 등록할 수 있음 (P5) | 로그인한 회사의 `POST /billing-mandates`. 비로그인 경로가 필요하면 담당자가 보낸 일회용 링크로만 (열린 질문 3) |
 | 출금 계좌번호 원문을 암호화해 저장 | 저장할 이유가 없는 민감 정보 | 원문은 CMS 게이트웨이에만 넘기고 마스킹 값과 게이트웨이 참조만 저장 |

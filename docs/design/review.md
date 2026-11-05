@@ -9,7 +9,7 @@
 | 업무 범위 | 현행 세 백엔드(nexus·sf·remittance)가 다루는 업무는 모두 대응 리소스가 있습니다. 세무 대리인 데스크 화면, 엑셀 내보내기, 일부 설정 화면처럼 [구현 상태](#구현-상태)에 적은 항목은 설계만 있습니다 |
 | 가장 큰 개선 | 급여대장 마감 → 원천세, 전자서명 완료 → 계약, 수집 → 증빙이 서버 안 연계가 되어 "대장은 마감됐는데 신고 항목은 미제출" 같은 불일치가 구조적으로 사라집니다 |
 | 가장 큰 위험 | **현행 클라이언트를 그대로 쓸 수 없습니다.** 경로·키·enum·오류 형식이 모두 바뀌었습니다. 호환 계층([bff.md](bff.md))이 인증·회사 전환·구성원 화면부터 덮기 시작했고, 나머지 화면은 조각마다 더해야 합니다. 그리고 급여 요율·간이세액 다수가 미확인이라 계산 결과가 실제와 다를 수 있습니다 |
-| 가장 큰 남은 일 | 현행 클라이언트용 BFF(D2)의 나머지 화면, 실제 외부 연동(현재 가짜), 대리인 권한 분리(D5) |
+| 가장 큰 남은 일 | 현행 클라이언트용 BFF(D2)의 나머지 화면, 실제 외부 연동(현재 가짜), 대리인 큐를 Payroll·Integrations로 늘릴지 |
 
 ## 엔드포인트 대응
 
@@ -45,15 +45,16 @@
 | Identity & Access | `member:*`, `role:*`, `invitation:*`, `audit-log:read`, `company:read/update` | — |
 | Billing | `subscription:read`, `payment:read`, `billing-mandate:*`, `service-contract:*` (대리인 전용: `subscription:manage`, `payment:retry/refund`) | `service-contract`는 TAXATION |
 | Integrations | `integration:*`, `certificate:*`, `scrap-request:*`, `hometax-delegation:*`, `business-status:read` | `hometax-delegation`은 TAXATION |
-| Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 `filing:process`, `action-card:read/complete`, `estimated-vat:read` | TAXATION + 약관 |
+| Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 전용 `filing:process`, `action-card:read/complete`, `estimated-vat:read` | TAXATION + 약관 |
 | HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update` | PAYROLL 또는 TAXATION |
 | Documents | `esign-request:*`, `esign-template:read`, `certificate-issuance:*`, `document-form:read` | PAYROLL |
 | Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (인건비는 PAYROLL 또는 TAXATION) |
 | Bookkeeping | `evidence:*`, `account-title:*`, `classification-rule:*`, `bank-account:*`, `bank-transaction:*`, `partner:*`, `sales-transaction:*`, `tax-invoice:read/issue`, `giro:read/update/pay`, `report:read`, `settlement-report:read` | 결산 보고서는 TAXATION |
 
-- 관리자와 배정된 세무 대리인은 `*`를 받습니다. 역할은 권한 묶음 프리셋입니다
-- 대리인 전용 권한(`filing:process`, `subscription:manage`)은 지금 컨텍스트마다 `actor.kind`로 따로 판정합니다. 카탈로그에 "대리인 전용" 표시를 두는 것이 [결정 필요](#결정-필요) D5입니다
-- 대리인 범위 토큰(`/agency/*`)은 `authorizeAgency`로 같은 권한 문자열(`company:read`, `filing:read`, `action-card:read`)을 보고, 플랜은 거절 대신 담당 회사를 거릅니다
+- 관리자는 `*`를 받습니다. 역할은 권한 묶음 프리셋입니다
+- 대리인 전용 권한(`filing:process`, `subscription:manage`, `payment:retry/refund`)은 카탈로그의 `agentOnly` 표시로 정합니다. `*`·`resource:*` 와일드카드가 이 권한을 덮지 않으므로 고객 관리자의 `*`에도 들지 않고, 컨텍스트가 `actor.kind`를 따로 보지 않습니다 ([결정](#결정) D5)
+- 배정된 세무 대리인은 `*` 대신 대리인 기본 권한(`AGENT_PERMISSIONS`)을 받습니다. 구성원 관리와 AI 비서는 없습니다 (D5, [identity-access.md](identity-access.md#행위자와-권한-계산))
+- 대리인 범위 토큰(`/agency/*`)은 `authorizeAgency`로 회사 범위의 대리인과 같은 권한 표를 보고, 플랜은 거절 대신 담당 회사를 거릅니다
 
 ## 일부러 바꾼 것과 그 대가
 
@@ -122,13 +123,13 @@
 | D2 | 현행 클라이언트를 어떻게 옮기는가 | **단계적.** `apps/api/legacy/`의 경로·응답 형태 지식으로 얇은 BFF를 두고, 화면을 새 API로 하나씩 옮깁니다 | BFF는 별도 앱 `apps/bff`이고 새 API를 HTTP 계약으로 부릅니다. 첫 조각(로그인·로그아웃·내 정보·회사 전환·회사 상세, 구성원 목록·탭 건수·상세)이 있습니다([bff.md](bff.md)). `legacy/`는 나머지 조각을 옮길 때까지 둡니다 |
 | D3 | 세무 대리인이 여러 회사를 한 번에 다루는 작업 큐 | **대리인 전용 범위의 토큰**과 `/agency/*` 리소스. 회사 리소스는 그대로 회사 토큰으로만 접근합니다 | **구현.** `POST /auth/sessions:switch-agency`가 `scope: AGENCY` 토큰을 주고, 범위가 틀리면 403 `TOKEN_SCOPE_MISMATCH`입니다. 담당 회사는 토큰에 넣지 않고 요청마다 배정에서 계산합니다. `/agency/companies`(Identity & Access), `/agency/filings`·`/agency/action-cards`(Tax)는 읽기 전용이고 처리는 회사 토큰으로 합니다. 회사별 일감 개수는 Tax 공개 서비스 `AgencyWorkloadQuery`를 `AgencyWorkload` 포트로 받습니다 ([agency-queue.md](agency-queue.md), [identity-access.md](identity-access.md#토큰-범위)) |
 | D4 | 공식 간이세액표 | **산식(`MIDPOINT_FORMULA`) 유지.** 결과는 추정치이므로 미확인 표시를 유지합니다 | 300만원·1인 기준 공식 표(74,350원)와 약 1만 4천원 차이. 전략이 기준표 데이터라 나중에 코드 변경 없이 표로 바꿀 수 있습니다 |
+| D5 | 대리인 권한 범위 | **분리.** 대리인은 구성원 관리·AI 비서를 기본으로 갖지 않습니다. 권한 카탈로그에 대리인 전용(`agentOnly`) 표시를 두고, 대리인 기본 권한 `AGENT_PERMISSIONS`는 구성원 관리(`member`·`role`·`invitation`·`audit-log`)와 AI 비서(`conversation`·`grant`)를 뺀 카탈로그 리소스 전부를 `resource:*`로, 대리인 전용 동작 `filing:process`·`subscription:manage`·`payment:retry`·`payment:refund`를 하나씩 적습니다 (2026-11-06) | **구현.** 회사 범위의 대리인 행위자와 대리인 범위 토큰(`authorizeAgency`)이 같은 표를 봅니다. 와일드카드는 대리인 전용 권한을 덮지 않아 Billing의 `actor.kind` 검사를 권한 문자열로 바꿨습니다. 대리인은 `/users`·`/roles`·`/invitations`·`/audit-logs`와 `/conversations`·`/grants`가 403이고 `/me`의 `permissions`가 `*` 대신 이 목록입니다. 고객 쪽 판정은 그대로이고, 고객이 대리인 신고 커맨드를 부를 때의 오류 코드(`FILING_ACTOR_NOT_ALLOWED`)도 유지합니다. 고객 사용자의 역할 화면에는 카탈로그에 새로 올린 리소스(`filing`, `organization`, `payroll-workflow` …)가 부여 가능 권한으로 더해집니다 ([identity-access.md](identity-access.md#권한-카탈로그), [rule-decisions/assistant.md](rule-decisions/assistant.md#assistant-tool-access)) |
 | 공휴일 | 5월 1일(근로자의 날) | **휴일로 둡니다.** 국세 기한과 CMS 출금일 모두 다음 영업일로 미룹니다 | 공용 공휴일 표(`shared/time/public-holidays.ts`) 그대로 |
 
 ## 결정 필요
 
 | # | 질문 | 선택지 | 권장 |
 |---|---|---|---|
-| D5 | 대리인 권한 범위 | `*` 그대로 / 대리인 전용 권한과 고객 관리 권한 분리 | 분리. 대리인은 구성원 관리·AI 비서를 기본으로 갖지 않음 |
 | D6 | 플랜 변경 반영 시점 | 토큰 만료까지 지연 / `subscription.changed`로 즉시 토큰 폐기 | 즉시 폐기 |
 | D7 | 파일 저장소(`fle_`) 소유와 다운로드 권한 | 컨텍스트별 / 공통 Files 모듈 | 공통 모듈. 다운로드 권한은 파일을 붙인 리소스의 읽기 권한을 따름 |
 | D8 | AI 비서 데이터 정책 | | 대화 보존 기간, 외부 모델 전송, 회사 공유 여부를 약관과 함께 정함 ([compliance.md](compliance.md#ai-비서)) |
@@ -138,7 +139,7 @@
 
 1. **공식 기준표 확인.** 급여 기준표의 미확인 값을 법령·고시 원문으로 채웁니다. 간이세액표는 산식을 유지합니다 (D4). 2026-11-05에 대부분 확인했고(2026-03·2026-07 기준표 추가), 장기요양 비율 반올림과 고용·산재보험 절사 단위만 미확인입니다
 2. **남은 보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개 중 11개는 법령 원문으로, Payroll 6개는 급여 기준표 원문으로 정했습니다. 남은 33개 중 Payroll 8개와 HR 보육수당 비과세 나이는 남은 기준표 확인(1번)과 함께 정합니다. 나머지는 상시 근로자 수 같은 새 입력, 내부 자료(약관·메뉴 코드, CMS 계약), 외부 서비스 자료(수집 업체, 메신저 브리지, 홈택스 발급)가 있어야 정할 수 있습니다
-3. **대리인 권한 분리 (D5).** 대리인 범위 토큰과 `/agency/*`는 구현했습니다(D3). 남은 것은 `Agent.permissions`를 `*`에서 대리인 전용 권한으로 좁히는 일이고, `authorizeAgency`와 회사 범위의 대리인 행위자가 같은 권한 표를 보게 합니다. 이어서 Payroll·Integrations의 대리인 큐를 같은 방식으로 늘릴지 정합니다([agency-queue.md](agency-queue.md#열린-질문))
+3. **대리인 큐 확장.** 대리인 범위 토큰과 `/agency/*`(D3), 대리인 권한 분리(D5)를 구현했습니다. 대리인 범위와 회사 범위가 같은 `AGENT_PERMISSIONS`를 보므로 새 큐도 권한 문자열만 고르면 됩니다. 남은 것은 Payroll·Integrations의 대리인 큐를 같은 방식으로 늘릴지 정하는 일입니다([agency-queue.md](agency-queue.md#열린-질문) 1번). 대리인에게 구성원 관리나 AI 비서를 회사별로 열어 줄 필요가 생기면 배정에 권한 추가를 두는 방식을 그때 정합니다
 4. **BFF 다음 조각 (D2).** D9 순서대로 인사 하위 리소스(계약·휴직·퇴직) → 급여대장 → 원천세 신고를 [bff.md](bff.md)에 더합니다. 그 전에 첫 조각이 드러낸 빈 필드(다른 회사의 플랜·관리자 여부, 사번·담당업무, 현재 계약 요약)를 새 API에 더할지 정합니다. 스테이징에서 BFF 404를 경로별로 모아 남은 조각을 셉니다
 5. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 6. **이전 구현 정리.** BFF가 모든 조각을 덮고 화면이 새 API로 옮겨 가면 `apps/bff/`와 `apps/api/legacy/`를 함께 지웁니다. 그 전까지 `legacy/`는 BFF 조각의 경로·응답 형태 근거입니다

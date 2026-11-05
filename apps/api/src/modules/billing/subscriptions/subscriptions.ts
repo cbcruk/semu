@@ -2,6 +2,7 @@ import { Clock, Context, Effect, Layer } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
+import { hasPermission } from '../../identity-access/actor.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { nowIso, today } from '../billing-access.ts'
 import {
@@ -22,7 +23,7 @@ import {
 } from './subscription.ts'
 import type { Subscription, SubscriptionId, SubscriptionRecord } from './subscription.ts'
 
-/** 오늘 날짜로 상태를 다시 계산한 응답입니다. 담당자에게만 `allowedActions`를 채웁니다. */
+/** 오늘 날짜로 상태를 다시 계산한 응답입니다. 대리인 전용 `subscription:manage`가 있을 때만 `allowedActions`를 채웁니다. */
 export function toSubscription(record: SubscriptionRecord, actor: Actor, date: string): Subscription {
   const status = refreshedStatus(record, date)
   return {
@@ -34,7 +35,7 @@ export function toSubscription(record: SubscriptionRecord, actor: Actor, date: s
     ...(record.endsOn === undefined ? {} : { endsOn: record.endsOn }),
     monthlyFee: record.monthlyFee,
     ...(record.serviceContractId === undefined ? {} : { serviceContractId: record.serviceContractId }),
-    allowedActions: actor.kind === 'AGENCY' ? allowedSubscriptionCommands(status) : [],
+    allowedActions: hasPermission(actor, 'subscription:manage') ? allowedSubscriptionCommands(status) : [],
     createdAt: record.createdAt,
     version: record.version,
   }

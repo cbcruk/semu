@@ -4,7 +4,7 @@
 
 | 규칙 | 질문 | 따름 | 바꿈 | 보류 |
 |---|---:|---:|---:|---:|
-| [assistant-tool-access](../../reference/rules/assistant-tool-access.md) | 6 | 2 | 4 | 0 |
+| [assistant-tool-access](../../reference/rules/assistant-tool-access.md) | 6 | 3 | 3 | 0 |
 | [grant-recommendation](../../reference/rules/grant-recommendation.md) | 5 | 0 | 3 | 2 |
 
 ## assistant-tool-access
@@ -16,7 +16,7 @@
 | 3 | 직원·급여 조회가 세무 기장(매뉴얼) vs 급여 플랜(레거시) | 바꿈 | `TAXATION` 또는 `PAYROLL` 중 하나 + `payroll-ledger:read` |
 | 4 | 멤버의 역할이 읽기 도구를 좁히는지 | 따름 | 레거시처럼 좁힘. 도구마다 같은 일을 하는 일반 API의 권한을 요구 |
 | 5 | 쓰기 도구의 확인·감사 | 따름 | 비서는 제안만(`requiresConfirmation`). 실행은 클라이언트가 확인 후 일반 API로 하므로 감사·멱등성이 일반 요청과 같음 |
-| 6 | 대화가 개인 것인지 회사 공유인지 | 바꿈 | 레거시대로 개인 것이지만, 세무 대리인도 자기 대화를 가짐 (레거시는 대리인 진입 불가) |
+| 6 | 대화가 개인 것인지 회사 공유인지 | 따름 | 레거시대로 개인 것. 세무 대리인은 기본으로 비서에 들어오지 못함(D5, 레거시와 같음) |
 
 ### 바뀌는 케이스
 
@@ -26,7 +26,8 @@
 | bundle: general member is sent to /dashboard | `/dashboard` | 진입 |
 | legacy: free admin gets knowledge and finance summary only | 2개 | + `issue_tax_invoice` |
 | legacy: taxation admin gets invoice and certificate tools | 4개 | + `lookup_payroll` |
-| legacy: assigned agency staff cannot open the assistant menu | `PERMISSION_DENIED` | 진입 |
+
+`legacy: assigned agency staff cannot open the assistant menu`는 D5(2026-11-06) 전까지 진입으로 바꿨다가, 대리인 기본 권한에서 `conversation:*`를 빼면서 현행 기대값(`PERMISSION_DENIED`)으로 돌아왔습니다.
 
 옮기지 않은 케이스: 홈 추천 질문 prefill(화면), 세금계산서 전제 조건(발행 API가 판정), 학습 외 답변 금지(모델 동작).
 
@@ -55,10 +56,10 @@
 
 **대화 소유 (6)**
 
-- 결정: 대화는 만든 사용자만 봅니다. 세무 대리인도 고객 회사에서 자기 대화를 가집니다
-- 검토한 대안: 회사 공유 대화
-- 선택 이유: 대화에 개인적인 질문이 섞이고, 레거시도 개인 것으로 저장했습니다
-- 가정과 되돌릴 조건: 회사 안에서 대화를 넘겨 볼 요구가 생기면 공유 커맨드를 추가합니다
+- 결정: 대화는 만든 사용자만 봅니다. 세무 대리인은 기본으로 비서에 들어오지 못합니다(D5). 대리인 기본 권한에 `conversation:*`·`grant:read`가 없어 `POST /conversations`가 403 `PERMISSION_DENIED`입니다
+- 검토한 대안: 회사 공유 대화. 대리인도 고객 회사에서 자기 대화를 가짐(D5 전의 결정)
+- 선택 이유: 대화에 개인적인 질문이 섞이고, 레거시도 개인 것으로 저장했습니다. 비서는 고객용 기능이고 레거시도 대리인에게 열지 않았으므로 대리인 권한을 고객 업무와 대리인 전용 동작으로 좁힌 D5([review.md](../review.md#결정))를 따릅니다
+- 가정과 되돌릴 조건: 회사 안에서 대화를 넘겨 볼 요구가 생기면 공유 커맨드를 추가합니다. 대리인에게 비서가 필요해지면 `AGENT_EXCLUDED_RESOURCES`에서 `conversation`을 빼면 됩니다
 
 ## grant-recommendation
 

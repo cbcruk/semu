@@ -21,8 +21,8 @@ export const PERMISSION_CATALOG = {
   invitation: { area: 'SETTINGS', actions: ['read', 'create', 'cancel'], adminOnly: ['create', 'cancel'] },
   'audit-log': { area: 'SETTINGS', actions: ['read'], adminOnly: ['read'] },
 
-  subscription: { area: 'BILLING', actions: ['read'] },
-  payment: { area: 'BILLING', actions: ['read'] },
+  subscription: { area: 'BILLING', actions: ['read', 'manage'], agentOnly: ['manage'] },
+  payment: { area: 'BILLING', actions: ['read', 'retry', 'refund'], agentOnly: ['retry', 'refund'] },
   'billing-mandate': { area: 'BILLING', actions: ['read', 'create'] },
   'service-contract': { area: 'BILLING', actions: ['read'], plans: ['TAXATION'] },
   'company-document': { area: 'BILLING', actions: ['read', 'upload'], plans: ['TAXATION'] },
@@ -40,6 +40,7 @@ export const PERMISSION_CATALOG = {
   grant: { area: 'ASSISTANT', actions: ['read'] },
 
   employee: { area: 'HR', actions: CRUD, plans: ['TAXATION', 'PAYROLL'] },
+  organization: { area: 'HR', actions: ['read', 'update'], plans: ['TAXATION', 'PAYROLL'] },
   'document-form': { area: 'DOCUMENTS', actions: ['read'] },
   'esign-request': { area: 'DOCUMENTS', actions: ['read', 'create', 'send', 'cancel'], plans: ['PAYROLL'] },
   'esign-template': { area: 'DOCUMENTS', actions: CRUD, plans: ['PAYROLL'] },
@@ -52,6 +53,9 @@ export const PERMISSION_CATALOG = {
   'severance-settlement': { area: 'PAYROLL', actions: CRUD, plans: ['PAYROLL'] },
   'labor-cost-report': { area: 'PAYROLL', actions: ['read'], plans: ['TAXATION'] },
   'salary-calculation': { area: 'PAYROLL', actions: ['create'] },
+  'payroll-workflow': { area: 'PAYROLL', actions: ['update'], plans: ['PAYROLL'] },
+  'payroll-rate-table': { area: 'PAYROLL', actions: ['read'], plans: ['PAYROLL'] },
+  'payroll-calculator': { area: 'PAYROLL', actions: ['simulate'], plans: ['PAYROLL'] },
 
   evidence: { area: 'BOOKKEEPING', actions: [...CRUD, 'classify'] },
   'bank-account': { area: 'BOOKKEEPING', actions: ['read', 'update'] },
@@ -63,12 +67,19 @@ export const PERMISSION_CATALOG = {
   'account-title': { area: 'BOOKKEEPING', actions: ['read', 'update'] },
   'classification-rule': { area: 'BOOKKEEPING', actions: CRUD },
   'realtime-report': { area: 'BOOKKEEPING', actions: ['read'] },
+  report: { area: 'BOOKKEEPING', actions: ['read'] },
   'settlement-report': { area: 'BOOKKEEPING', actions: ['read'], plans: ['TAXATION'] },
 
   'vat-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
   'withholding-tax-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
   'corporate-tax-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
   'income-tax-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
+  filing: {
+    area: 'TAX',
+    actions: ['read', 'update', 'submit', 'confirm-ledger', 'pay', 'process'],
+    agentOnly: ['process'],
+    plans: ['TAXATION'],
+  },
   'estimated-vat': { area: 'TAX', actions: ['read'] },
   'action-card': { area: 'TAX', actions: ['read', 'update'] },
 } as const satisfies Record<string, ResourcePermissions>
@@ -95,6 +106,41 @@ export const BASE_PERMISSIONS: ReadonlyArray<Permission> = [
   'messenger-channel:link',
   'consultation:create',
 ]
+
+/**
+ * 세무 대리인이 기본으로 갖지 않는 리소스입니다(D5). 구성원 관리(구성원·권한 그룹·초대·감사 로그)와 AI 비서(대화·지원금 추천)입니다.
+ *
+ * 구성원 관리는 고객 회사의 내부 통제라 대리인 업무가 아니고, AI 비서는 고객용 기능이라 현행도 대리인에게 열지 않았습니다.
+ */
+export const AGENT_EXCLUDED_RESOURCES: ReadonlyArray<PermissionResource> = [
+  'member',
+  'role',
+  'invitation',
+  'audit-log',
+  'conversation',
+  'grant',
+]
+
+/**
+ * 세무 대리인의 기본 권한입니다(D5). 회사 범위의 대리인 행위자와 대리인 범위 토큰(`authorizeAgency`)이 같은 이 표를 봅니다.
+ *
+ * 고객 업무 리소스는 `resource:*`로, 대리인 전용 동작은 하나씩 적습니다. 와일드카드는 대리인 전용 동작을 덮지 않으므로
+ * `filing:*`가 있어도 `filing:process`를 따로 적어야 합니다. 카탈로그에 리소스를 더하면 이 표에도 자동으로 들어가니
+ * 대리인에게 주지 않을 리소스는 {@link AGENT_EXCLUDED_RESOURCES}에 넣습니다.
+ *
+ * @example
+ * ```ts
+ * AGENT_PERMISSIONS.includes('filing:process') // true
+ * AGENT_PERMISSIONS.includes('member:*') // false
+ * ```
+ */
+export const AGENT_PERMISSIONS: ReadonlyArray<Permission> = (
+  Object.entries(PERMISSION_CATALOG) as Array<[PermissionResource, ResourcePermissions]>
+).flatMap(([resource, entry]): Permission[] =>
+  AGENT_EXCLUDED_RESOURCES.includes(resource)
+    ? []
+    : [`${resource}:*`, ...(entry.agentOnly ?? []).map((action): Permission => `${resource}:${action}`)],
+)
 
 /** 권한 그룹 템플릿입니다. 회사는 템플릿을 복사해 권한 그룹을 만듭니다. */
 export const ROLE_TEMPLATES: ReadonlyArray<RoleTemplate> = [
@@ -189,13 +235,15 @@ export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>
 /**
  * 권한 그룹에 넣을 수 있는 권한인지입니다.
  *
- * `*`, 카탈로그에 없는 리소스·동작, 관리자 전용 동작은 넣을 수 없습니다. 관리자 전용 동작이 있는 리소스는
+ * `*`, 카탈로그에 없는 리소스·동작, 관리자 전용 동작, 대리인 전용 동작은 넣을 수 없습니다. 관리자 전용 동작이 있는 리소스는
  * `resource:*`로도 줄 수 없습니다. 현행 매뉴얼의 "일반 사용자는 초대·권한 생성 불가"를 권한으로 표현한 것입니다.
+ * 대리인 전용 동작이 있는 리소스는 `resource:*`로 줄 수 있습니다. 와일드카드가 대리인 전용 동작을 덮지 않기 때문입니다.
  *
  * @example
  * ```ts
  * isGrantable('employee:*') // true
  * isGrantable('member:*') // false, member:update는 관리자 전용
+ * isGrantable('filing:process') // false, 대리인 전용
  * ```
  */
 export function isGrantable(permission: string): boolean {
@@ -205,7 +253,26 @@ export function isGrantable(permission: string): boolean {
   if (entry === undefined) return false
   const adminOnly: ReadonlyArray<string> = entry.adminOnly ?? []
   if (action === '*') return adminOnly.length === 0
-  return entry.actions.includes(action) && !adminOnly.includes(action)
+  const agentOnly: ReadonlyArray<string> = entry.agentOnly ?? []
+  return entry.actions.includes(action) && !adminOnly.includes(action) && !agentOnly.includes(action)
+}
+
+/**
+ * 세무 대리인만 가질 수 있는 권한인지입니다. 이런 권한은 `*`·`resource:*`로 덮이지 않고 정확히 같은 문자열로만 갖습니다.
+ *
+ * 그래서 고객 관리자의 `*`는 대리인 전용 동작을 포함하지 않고, 컨텍스트마다 `actor.kind`를 따로 볼 필요가 없습니다.
+ *
+ * @example
+ * ```ts
+ * isAgentOnly('filing:process') // true
+ * isAgentOnly('filing:read') // false
+ * ```
+ */
+export function isAgentOnly(permission: string): boolean {
+  const [resource, action] = permission.split(':')
+  if (resource === undefined || action === undefined) return false
+  const agentOnly: ReadonlyArray<string> = catalogEntry(resource)?.agentOnly ?? []
+  return agentOnly.includes(action)
 }
 
 /** 권한이 속한 영역입니다. 카탈로그에 없는 리소스면 `undefined`입니다. */
