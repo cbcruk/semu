@@ -19,8 +19,11 @@ const timeoutMs = Number(process.env['BFF_UPSTREAM_TIMEOUT_MS'] ?? 10_000)
 /** 로그인·갱신·회사 전환의 제한 시간(ms)입니다. refresh 쿠키 회전을 놓치지 않게 길게 둡니다. */
 const authTimeoutMs = Number(process.env['BFF_AUTH_TIMEOUT_MS'] ?? 30_000)
 
+/** 새 API 응답 본문 하나의 최대 크기(바이트)입니다. 넘으면 502 `UPSTREAM_RESPONSE_TOO_LARGE`입니다. */
+const maxResponseBytes = Number(process.env['BFF_UPSTREAM_MAX_RESPONSE_BYTES'] ?? 10 * 1024 * 1024)
+
 const bff = createBff({
-  upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request), timeoutMs, authTimeoutMs },
+  upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request), timeoutMs, authTimeoutMs, maxResponseBytes },
   publicBaseUrl,
   allowedOrigins,
 })

@@ -33,3 +33,4 @@ pnpm format        # 또는 format:check
 | `BFF_ALLOWED_ORIGINS` | `BFF_PUBLIC_URL`의 출처 | 로그인을 받는 브라우저 출처(쉼표로 여럿) |
 | `BFF_UPSTREAM_TIMEOUT_MS` | `10000` | 새 API 요청 하나(본문까지)의 제한 시간 |
 | `BFF_AUTH_TIMEOUT_MS` | `30000` | 로그인·갱신·회사 전환의 제한 시간 |
+| `BFF_UPSTREAM_MAX_RESPONSE_BYTES` | `10485760` (10MB) | 새 API 응답 본문 하나의 최대 크기. 넘으면 502 `UPSTREAM_RESPONSE_TOO_LARGE` |

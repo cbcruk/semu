@@ -172,6 +172,7 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
   - 어댑터와 핸들러는 컨텍스트마다 하나뿐인 저장소 인스턴스를 함께 씁니다. 각 컨텍스트의 `<Context>MemoryLive`에 있는 다른 컨텍스트 포트의 가짜는 그 컨텍스트 단위 테스트에서만 씁니다
 - **저장은 `src/shared/persistence/`를 거칩니다.**
   - 저장소는 `TableFactory.make('<context>_<collection>', { seed, companyOf })`로 표를 만듭니다. 표는 `(id, company_id, data JSON)`이고 메모리·SQLite 구현이 같은 동작을 합니다. 레코드는 불변 순수 데이터여야 합니다(`Set`·`Map`·`bigint`까지 보존)
+  - SQLite는 시드를 표마다 한 번만 넣고 `semu_meta`에 `seeded:<표>`를 남깁니다. 데모 행을 모두 지워도 재시작 때 되살아나지 않습니다. 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣습니다
   - 요청 하나가 트랜잭션 하나입니다(`UnitOfWorkMiddleware`). 응답이 4xx·5xx이면 되돌립니다. 저장소와 유스케이스는 트랜잭션을 직접 열지 않습니다
   - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
   - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다

@@ -142,6 +142,6 @@
 4. **BFF 다음 조각 (D2).** D9 순서대로 인사 하위 리소스(계약·휴직·퇴직) → 급여대장 → 원천세 신고를 [bff.md](bff.md)에 더합니다. 그 전에 첫 조각이 드러낸 빈 필드(다른 회사의 플랜·관리자 여부, 사번·담당업무, 현재 계약 요약)를 새 API에 더할지 정합니다. 스테이징에서 BFF 404를 경로별로 모아 남은 조각을 셉니다
 5. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 6. **이전 구현 정리.** BFF가 모든 조각을 덮고 화면이 새 API로 옮겨 가면 `apps/bff/`와 `apps/api/legacy/`를 함께 지웁니다. 그 전까지 `legacy/`는 BFF 조각의 경로·응답 형태 근거입니다
-7. **보안 후속 (PR #8 리뷰).**
-   - onboarding token은 회사를 등록한 뒤에도 소비되지 않아, 만료(1시간) 전에는 같은 토큰으로 회사를 여러 개 등록할 수 있습니다. 등록에 성공하면 세션의 `onboardingTokenHash`를 지웁니다 ([identity-access.md](identity-access.md))
+7. **보안 후속 (PR #8 리뷰).** 아래 하나만 남았습니다
    - 세무 신고에 붙는 파일 ID(`ledgerFileId`, `returnFileId`, `paymentSlipFileId`, `noticeFileId`, `fileId`)는 회사 확인 없이 저장됩니다. 파일 저장소(D7)가 생기면 파일 소유 회사를 확인하고, ID만으로 내려받지 못하게 합니다 ([tax.md](tax.md))
+   - 2026-11-06에 고친 것: SQLite 시드는 표마다 한 번만 넣습니다(`semu_meta`의 `seeded:<표>`, [conventions.md](conventions.md#코드-구조)). 키 지문 없이 데이터가 있는 데이터베이스는 시작을 거부합니다. 결함 로그는 오류 이름과 코드 위치만 남기고 메시지는 `DecryptionFailed`만 남깁니다. 도장 이름은 50자까지입니다. Bookkeeping 계좌번호는 회사 계좌·거래처 계좌·지로 출금 계좌마다 용도(하위 키·AAD)가 다릅니다([compliance.md](compliance.md#개인정보-최소-노출)). onboarding token은 회사를 등록하면 지웁니다([identity-access.md](identity-access.md)). BFF는 업스트림 응답 본문을 10MB까지만 읽습니다([bff.md](bff.md))

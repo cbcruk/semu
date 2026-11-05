@@ -20,6 +20,11 @@ export interface UpstreamOptions {
    * 재사용 탐지에 걸려 세션을 잃습니다. 여유를 길게 두어 그 창을 줄입니다.
    */
   authTimeoutMs?: number
+  /**
+   * 응답 본문 하나의 최대 크기(바이트)입니다. 기본 10MB입니다. `send`는 본문을 메모리에 다 읽으므로,
+   * 넘으면 읽기를 멈추고 요청을 취소한 뒤 502 `UPSTREAM_RESPONSE_TOO_LARGE`로 응답합니다.
+   */
+  maxResponseBytes?: number
 }
 
 /** 기본 업스트림 제한 시간입니다. */
@@ -27,6 +32,9 @@ export const DEFAULT_UPSTREAM_TIMEOUT_MS = 10_000
 
 /** 기본 인증 호출 제한 시간입니다. */
 export const DEFAULT_AUTH_TIMEOUT_MS = 30_000
+
+/** 기본 업스트림 응답 본문 최대 크기(바이트)입니다. 10MB입니다. */
+export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 
 /** BFF 라우트가 공유하는 의존성입니다. */
 export interface BffDeps {
@@ -61,6 +69,7 @@ interface UpstreamRequest {
  * 제한 시간은 헤더뿐 아니라 본문을 다 읽을 때까지입니다. 지나면 요청을 취소(`AbortSignal`)하고 현행 504 `GATEWAY_TIMEOUT`을
  * 던집니다. 업스트림이 신호를 무시해도 기다림은 끝나므로, 이 호출을 감싼 세션 자물쇠도 풀립니다. 연결 실패는 502 `BAD_GATEWAY`입니다.
  * 돌려준 응답의 본문은 메모리에 있으므로 호출한 쪽이 읽다가 멈추지 않습니다.
+ * 본문이 {@link UpstreamOptions.maxResponseBytes}(기본 10MB)를 넘으면 더 읽지 않고 요청을 취소한 뒤 502 `UPSTREAM_RESPONSE_TOO_LARGE`입니다.
  */
 export async function send(
   deps: BffDeps,
@@ -90,7 +99,7 @@ export async function send(
   })
   const exchange = async (): Promise<Response> => {
     const response = await deps.upstream.fetch(new Request(`${deps.upstream.baseUrl}${path}`, init))
-    const body = await response.arrayBuffer()
+    const body = await readCapped(response, deps.upstream.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES, controller)
     return new Response(response.status === 204 || response.status === 304 ? null : body, {
       status: response.status,
       statusText: response.statusText,
@@ -107,6 +116,41 @@ export async function send(
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * 본문을 `maxBytes`까지만 읽습니다. `Content-Length`가 이미 크거나 읽는 중에 넘으면 요청을 취소하고 502를 던집니다.
+ * `Content-Length`를 믿지 않고 읽은 바이트도 셉니다.
+ */
+async function readCapped(response: Response, maxBytes: number, controller: AbortController): Promise<Uint8Array> {
+  const tooLarge = (cancel: () => Promise<void>) => {
+    controller.abort()
+    void cancel().catch(() => {})
+    return new LegacyError(502, {
+      detail: 'The upstream API response is too large.',
+      code: 'UPSTREAM_RESPONSE_TOO_LARGE',
+    })
+  }
+  const declared = Number(response.headers.get('content-length') ?? 0)
+  if (declared > maxBytes) throw tooLarge(async () => response.body?.cancel())
+  if (response.body === null) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maxBytes) throw tooLarge(() => reader.cancel())
+    chunks.push(value)
+  }
+  const body = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return body
 }
 
 function upstreamTimeout(): LegacyError {

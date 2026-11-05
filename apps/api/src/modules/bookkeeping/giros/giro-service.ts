@@ -145,7 +145,7 @@ export class GiroService extends Context.Service<
             companyId,
             giroId: id,
             bankCode: input.bankCode,
-            accountNumberEncrypted: cipher.encrypt(accountDigits(input.accountNumber)),
+            accountNumberEncrypted: cipher.encrypt('giroAccount', accountDigits(input.accountNumber)),
             accountNumberLast4: accountDigits(input.accountNumber).slice(-4),
             amount: row.payAmount,
             status: result.ok ? 'SUCCEEDED' : 'FAILED',

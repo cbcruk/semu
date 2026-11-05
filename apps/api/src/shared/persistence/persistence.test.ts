@@ -1,10 +1,11 @@
+import { DatabaseSync } from 'node:sqlite'
 import { Effect, Fiber, Layer, Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { Outbox } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
-import { TableFactory, makeTenantTable } from './record-table.ts'
+import { TableFactory, makeSqliteRecordTable, makeTenantTable } from './record-table.ts'
 import { SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
 
 interface Row {
@@ -193,4 +194,42 @@ describe('sqlite unit of work', () => {
         expect(received).toEqual(['once'])
       }),
     ))
+})
+
+describe('sqlite seeds', () => {
+  const ids = (db: DatabaseSync) =>
+    db
+      .prepare(`SELECT id FROM test_seeded ORDER BY id`)
+      .all()
+      .map((row) => row['id'])
+
+  it('seeds a table once, so deleted seed rows do not come back on restart', async () => {
+    const db = new DatabaseSync(':memory:')
+    const table = makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+    expect(ids(db)).toEqual(['r1', 'r2'])
+
+    await Effect.runPromise(Effect.all([table.remove('r1'), table.remove('r2')]))
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual([])
+    expect(
+      db
+        .prepare(`SELECT name FROM semu_meta`)
+        .all()
+        .map((row) => row['name']),
+    ).toEqual(['seeded:test_seeded'])
+  })
+
+  it('marks a table that predates the marker without seeding it, and keeps it unseeded after it empties', () => {
+    const db = new DatabaseSync(':memory:')
+    db.exec(`CREATE TABLE test_seeded (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT`)
+    db.prepare(`INSERT INTO test_seeded (id, company_id, data) VALUES ('r9', NULL, ?)`).run(encodeRecord({ id: 'r9' }))
+
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+    expect(ids(db)).toEqual(['r9'])
+    db.exec(`DELETE FROM test_seeded`)
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual([])
+  })
 })

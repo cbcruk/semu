@@ -165,7 +165,7 @@ GET    /esign-templates?purpose=SIGNATURE|CERTIFICATE&q=&active=
 GET    /esign-templates/{esignTemplateId}
 PATCH  /esign-templates/{esignTemplateId}         { title?, body?, fieldDefaults?, active?, defaultCompanySealId? }
 GET    /company-seals
-POST   /company-seals                              { name, source: UPLOAD|DRAWN, imageFileId }
+POST   /company-seals                              { name(1–50자), source: UPLOAD|DRAWN, imageFileId }
 DELETE /company-seals/{companySealId}
 GET    /company-seals/{companySealId}/image
 GET    /esign-notification-recipients
