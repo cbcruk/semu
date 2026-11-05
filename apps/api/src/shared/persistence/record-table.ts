@@ -31,7 +31,7 @@ export interface RecordTable<T extends StoredRecord> {
 
 /** 표를 만들 때의 설정입니다. */
 export interface TableOptions<T extends StoredRecord> {
-  /** 처음 비어 있을 때 넣을 레코드입니다. SQLite는 같은 ID가 없을 때만 넣습니다. */
+  /** 표가 비어 있을 때 넣을 레코드입니다. SQLite는 이미 행이 있으면 넣지 않습니다(지운 시드가 되살아나지 않음). */
   readonly seed?: ReadonlyArray<T>
   /** 레코드의 회사입니다. 주면 `byCompany`가 색인으로 찾습니다. */
   readonly companyOf?: (record: T) => string | null
@@ -107,8 +107,12 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
     `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT;` +
       `CREATE INDEX IF NOT EXISTS ${name}_company ON ${name} (company_id, id);`,
   )
-  const insertSeed = db.prepare(`INSERT OR IGNORE INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
-  for (const record of options.seed ?? []) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
+  // 시드는 표가 비어 있을 때만 넣습니다. 지운 시드 행이 재시작 때 되살아나지 않게 합니다.
+  const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
+  if (isEmpty) {
+    const insertSeed = db.prepare(`INSERT INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
+    for (const record of options.seed ?? []) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
+  }
 
   const selectOne = db.prepare(`SELECT data FROM ${name} WHERE id = ?`)
   const selectAll = db.prepare(`SELECT data FROM ${name} ORDER BY id`)
