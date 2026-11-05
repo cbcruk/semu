@@ -1,0 +1,130 @@
+{
+  "rule": "certificate-issuance",
+  "description": "Certificate issue numbers YYYY-NNNN per company and year, and send/resend transitions; retirement certificates need a leave date.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/certificates/certificates.repository.ts",
+      "lines": "19-64"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/certificates/certificates.service.ts",
+      "lines": "35-65, 130-160, 185-200, 291-300"
+    },
+    {
+      "file": "alfred-manual/08-설정/05-전자서명·제증명-관리.md",
+      "lines": "10"
+    }
+  ],
+  "inputSchema": {
+    "check": "issueNumber | transition.",
+    "issued": "Issue numbers already used.",
+    "year": "Issue year.",
+    "from": "Status.",
+    "command": "SEND, VOID, DELIVERED, DELIVERY_FAILED."
+  },
+  "cases": [
+    {
+      "name": "first of the year",
+      "input": {
+        "check": "issueNumber",
+        "issued": [
+          "2025-0041"
+        ],
+        "year": 2026
+      },
+      "expected": "2026-0001",
+      "derivation": "traced"
+    },
+    {
+      "name": "next after highest",
+      "input": {
+        "check": "issueNumber",
+        "issued": [
+          "2026-0001",
+          "2026-0003",
+          "2026-0002"
+        ],
+        "year": 2026
+      },
+      "expected": "2026-0004",
+      "derivation": "traced"
+    },
+    {
+      "name": "beyond four digits",
+      "input": {
+        "check": "issueNumber",
+        "issued": [
+          "2026-9999"
+        ],
+        "year": 2026
+      },
+      "expected": "2026-10000",
+      "derivation": "traced"
+    },
+    {
+      "name": "send issued",
+      "input": {
+        "check": "transition",
+        "from": "ISSUED",
+        "command": "SEND"
+      },
+      "expected": "SENDING",
+      "derivation": "traced"
+    },
+    {
+      "name": "resend sent",
+      "input": {
+        "check": "transition",
+        "from": "SENT",
+        "command": "SEND"
+      },
+      "expected": "SENDING",
+      "derivation": "traced"
+    },
+    {
+      "name": "resend failed",
+      "input": {
+        "check": "transition",
+        "from": "SEND_FAILED",
+        "command": "SEND"
+      },
+      "expected": "SENDING",
+      "derivation": "traced"
+    },
+    {
+      "name": "send while sending refused",
+      "input": {
+        "check": "transition",
+        "from": "SENDING",
+        "command": "SEND"
+      },
+      "expected": "CERTIFICATE_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "delivery result",
+      "input": {
+        "check": "transition",
+        "from": "SENDING",
+        "command": "DELIVERED"
+      },
+      "expected": "SENT",
+      "derivation": "traced"
+    },
+    {
+      "name": "remove while sending",
+      "input": {
+        "check": "transition",
+        "from": "SENDING",
+        "command": "VOID"
+      },
+      "expected": "DELETED",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 증명서를 어떤 상태에서든 지웁니다(링크도 끊김). 발급번호 연속성을 위해 지우지 않고 무효(VOIDED)로 남길까요",
+    "무효로 한 번호를 다시 쓰지 않습니다. 맞습니까",
+    "링크 유효기간 30일을 회사 설정으로 둘까요"
+  ]
+}

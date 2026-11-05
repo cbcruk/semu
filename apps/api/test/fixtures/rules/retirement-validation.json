@@ -1,0 +1,149 @@
+{
+  "rule": "retirement-validation",
+  "description": "Rejects a resignation whose leave date precedes the interim settlement or join date, or whose leaving reason is unknown.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/retirement/retirement.service.ts",
+      "lines": "94-110"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/retirement/leaving-reasons.ts",
+      "lines": "9-50"
+    },
+    {
+      "file": "alfred-manual/04-인사/02-구성원-정보.md",
+      "lines": "74-80"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "651-652",
+      "origin": "B:73855"
+    }
+  ],
+  "inputSchema": {
+    "resignation": "leaveDate, leavingReasonCode, leavingDetailReasonCode.",
+    "context": "joinDate and retirement plan with interim settlement."
+  },
+  "cases": [
+    {
+      "name": "valid resignation",
+      "input": {
+        "resignation": {
+          "leaveDate": "2026-06-30",
+          "leavingReasonCode": "11",
+          "leavingDetailReasonCode": "11-1"
+        },
+        "context": {
+          "joinDate": "2024-01-02"
+        }
+      },
+      "expected": {
+        "rejection": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "leave date before join",
+      "input": {
+        "resignation": {
+          "leaveDate": "2023-12-31",
+          "leavingReasonCode": "11"
+        },
+        "context": {
+          "joinDate": "2024-01-02"
+        }
+      },
+      "expected": {
+        "rejection": "LEAVE_DATE_BEFORE_JOIN"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "leave date on join date",
+      "input": {
+        "resignation": {
+          "leaveDate": "2024-01-02",
+          "leavingReasonCode": "11"
+        },
+        "context": {
+          "joinDate": "2024-01-02"
+        }
+      },
+      "expected": {
+        "rejection": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "leave date before interim settlement",
+      "input": {
+        "resignation": {
+          "leaveDate": "2025-12-31",
+          "leavingReasonCode": "11"
+        },
+        "context": {
+          "joinDate": "2020-01-02",
+          "plan": {
+            "benefitType": "SEVERANCE_PAY",
+            "interimSettlement": {
+              "date": "2026-01-01",
+              "reasonCode": "HOME_PURCHASE"
+            }
+          }
+        }
+      },
+      "expected": {
+        "rejection": "LEAVE_DATE_BEFORE_INTERIM"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "unknown reason",
+      "input": {
+        "resignation": {
+          "leaveDate": "2026-06-30",
+          "leavingReasonCode": "99"
+        },
+        "context": {}
+      },
+      "expected": {
+        "rejection": "LEAVING_REASON_INVALID"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "detail of another reason",
+      "input": {
+        "resignation": {
+          "leaveDate": "2026-06-30",
+          "leavingReasonCode": "11",
+          "leavingDetailReasonCode": "23-2"
+        },
+        "context": {}
+      },
+      "expected": {
+        "rejection": "LEAVING_REASON_INVALID"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reason without detail",
+      "input": {
+        "resignation": {
+          "leaveDate": "2026-06-30",
+          "leavingReasonCode": "23"
+        },
+        "context": {}
+      },
+      "expected": {
+        "rejection": null
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "상세 사유 없이 사유 코드만 받아도 통과합니다. 상실신고에 상세 사유가 필요하면 필수로 바꿀까요",
+    "중간정산일과 퇴사일이 같은 날이면 허용합니다. 맞습니까",
+    "퇴직금 정산이 완료된 직원의 퇴사 취소·삭제를 막습니다(RETIREMENT_COMPLETED). 정산 상태는 급여 컨텍스트가 소유하는데, 이벤트로 받아도 될까요"
+  ]
+}

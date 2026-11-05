@@ -1,0 +1,310 @@
+{
+  "rule": "leave-validation",
+  "description": "Validates a leave of absence against the employment period, return date and other leaves, and fills expected return date and service-year inclusion.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/leaves/leaves.service.ts",
+      "lines": "16, 81-136"
+    },
+    {
+      "file": "alfred-manual/04-인사/02-구성원-정보.md",
+      "lines": "84-92"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "649-650"
+    }
+  ],
+  "inputSchema": {
+    "check": "validate | summarize.",
+    "terms": "reason, startDate, endDate, expectedReturnDate, actualReturnDate, paid, nhisNoticeDeferral.",
+    "context": "joinDate, leaveDate (퇴사일), otherLeaves."
+  },
+  "cases": [
+    {
+      "name": "valid illness leave",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31"
+        },
+        "context": {
+          "joinDate": "2025-01-02",
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "expectedReturnDate": "2026-06-01",
+        "includeInServiceYears": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "end before start",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-02-28"
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "END_BEFORE_START"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "starts before join",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31"
+        },
+        "context": {
+          "joinDate": "2026-03-02",
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "BEFORE_JOIN_DATE"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "ends after leave date",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31"
+        },
+        "context": {
+          "leaveDate": "2026-04-30",
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "AFTER_LEAVE_DATE"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "paid without allowance",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31",
+          "paid": {}
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "PAID_ALLOWANCE_REQUIRED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "return on start date",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31",
+          "actualReturnDate": "2026-03-01"
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "RETURN_DATE_OUT_OF_RANGE"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "return the day after end",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31",
+          "actualReturnDate": "2026-06-01"
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "expectedReturnDate": "2026-06-01",
+        "includeInServiceYears": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "nhis deferral on a short leave",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-03-30",
+          "nhisNoticeDeferral": true
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": "DEFERRAL_NEEDS_ONE_MONTH"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "nhis deferral on exactly one month",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-03-31",
+          "nhisNoticeDeferral": true
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "expectedReturnDate": "2026-04-01",
+        "includeInServiceYears": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "overlaps another leave",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31"
+        },
+        "context": {
+          "otherLeaves": [
+            {
+              "id": "lev_a",
+              "reason": "OTHER",
+              "startDate": "2026-05-31",
+              "endDate": "2026-06-30"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "firstViolation": "LEAVE_OVERLAP"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "early return frees the rest of the period",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "ILLNESS",
+          "startDate": "2026-05-01",
+          "endDate": "2026-05-31"
+        },
+        "context": {
+          "otherLeaves": [
+            {
+              "id": "lev_a",
+              "reason": "OTHER",
+              "startDate": "2026-03-01",
+              "endDate": "2026-06-30",
+              "actualReturnDate": "2026-05-01"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "expectedReturnDate": "2026-06-01",
+        "includeInServiceYears": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "parental leave counts toward service years",
+      "input": {
+        "check": "validate",
+        "terms": {
+          "reason": "PARENTAL",
+          "startDate": "2026-03-01",
+          "endDate": "2026-05-31",
+          "includeInServiceYears": false
+        },
+        "context": {
+          "otherLeaves": []
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "expectedReturnDate": "2026-06-01",
+        "includeInServiceYears": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "summary while on parental leave",
+      "input": {
+        "check": "summarize",
+        "asOf": "2026-03-10",
+        "leaves": [
+          {
+            "id": "lev_a",
+            "reason": "PARENTAL",
+            "startDate": "2026-03-01",
+            "endDate": "2026-08-31"
+          },
+          {
+            "id": "lev_b",
+            "reason": "PARENTAL",
+            "startDate": "2027-01-01",
+            "endDate": "2027-03-31"
+          }
+        ]
+      },
+      "expected": {
+        "isOnLeave": true,
+        "currentLeaveId": "lev_a",
+        "upcomingLeaveId": "lev_b",
+        "totalLeaveDays": 10,
+        "parentalLeaveDays": 274,
+        "parentalLeaveRemainingDays": 91
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 첫 위반에서 멈춥니다. 재설계는 모든 위반을 한 번에 돌려줘도 될까요",
+    "육아휴직 남은 일수를 사용 예정분까지 빼서 계산합니다(1년 = 365일 고정). 자녀별 한도·분할 횟수는 보지 않습니다. 볼까요",
+    "건강보험 납입고지유예를 \"시작일 + 1개월 ≤ 종료일 다음날\"로 판정합니다. 공단 기준과 같은지 확인할까요"
+  ]
+}

@@ -1,0 +1,582 @@
+{
+  "rule": "payroll-contract-wage",
+  "description": "Splits a payroll contract wage into base salary, base and ordinary hourly wages, fixed allowances and the minimum wage verdict.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/contracts/contracts.utils.ts",
+      "lines": "60-108"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "642-645, 666"
+    }
+  ],
+  "inputSchema": {
+    "wage": "wageType MONTHLY|DAILY|HOURLY, amount, monthlyWorkHours, paymentItems, fixed allowances (auto or manual), bonus, probationPayRatePpm, minimumHourlyWage."
+  },
+  "cases": [
+    {
+      "name": "monthly 3,000,000 over 209h",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 3000000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 3000000,
+        "baseHourlyWage": 14354.07,
+        "ordinaryHourlyWage": 14354.07,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 14354.07,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "monthly at the 2026 minimum",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 2156880,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 2156880,
+        "baseHourlyWage": 10320,
+        "ordinaryHourlyWage": 10320,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 10320,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "monthly one won below minimum",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 2156879,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 2156879,
+        "baseHourlyWage": 10320,
+        "ordinaryHourlyWage": 10320,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 10320,
+        "isBelowMinimumWage": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "meal allowance excluded from minimum wage",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 2356880,
+          "monthlyWorkHours": 209,
+          "paymentItems": [
+            {
+              "amount": 200000,
+              "enabled": true,
+              "ordinaryWage": true,
+              "countsTowardMinimumWage": false
+            }
+          ],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 2156880,
+        "baseHourlyWage": 10320,
+        "ordinaryHourlyWage": 11276.94,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 10320,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "disabled payment item is ignored",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 3000000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [
+            {
+              "amount": 200000,
+              "enabled": false
+            }
+          ],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 3000000,
+        "baseHourlyWage": 14354.07,
+        "ordinaryHourlyWage": 14354.07,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 14354.07,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "bonus in ordinary wage raises ordinary hourly",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 3000000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320,
+          "bonus": {
+            "amount": 2400000,
+            "inOrdinaryWage": true
+          }
+        }
+      },
+      "expected": {
+        "baseSalary": 3000000,
+        "baseHourlyWage": 14354.07,
+        "ordinaryHourlyWage": 15311,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 14354.07,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "auto fixed overtime 30h and night 5h",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 5250000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": true,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": true,
+              "hours": 30,
+              "amount": 0
+            },
+            "night": {
+              "enabled": true,
+              "hours": 5,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 4496926,
+        "baseHourlyWage": 21516.39,
+        "ordinaryHourlyWage": 21516.39,
+        "fixedAllowanceAmounts": {
+          "overtime": 645492,
+          "night": 107582,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 21516.39,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual fixed overtime",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 3000000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": true,
+              "hours": 10,
+              "amount": 300000
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 2700000,
+        "baseHourlyWage": 12918.66,
+        "ordinaryHourlyWage": 12918.66,
+        "fixedAllowanceAmounts": {
+          "overtime": 300000,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 12918.66,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hourly 10,320",
+      "input": {
+        "wage": {
+          "wageType": "HOURLY",
+          "amount": 10320,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320
+        }
+      },
+      "expected": {
+        "baseSalary": 2156880,
+        "baseHourlyWage": 10320,
+        "ordinaryHourlyWage": 10320,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 10320,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "daily 82,560 over 8h",
+      "input": {
+        "wage": {
+          "wageType": "DAILY",
+          "amount": 82560,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320,
+          "dailyWorkHours": 8
+        }
+      },
+      "expected": {
+        "baseSalary": 2156880,
+        "baseHourlyWage": 10320,
+        "ordinaryHourlyWage": 10320,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 10320,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "probation at 90%",
+      "input": {
+        "wage": {
+          "wageType": "MONTHLY",
+          "amount": 3000000,
+          "monthlyWorkHours": 209,
+          "paymentItems": [],
+          "fixedAllowanceAutoCalc": false,
+          "fixedAllowances": {
+            "overtime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "night": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holiday": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            },
+            "holidayOvertime": {
+              "enabled": false,
+              "hours": 0,
+              "amount": 0
+            }
+          },
+          "minimumHourlyWage": 10320,
+          "probationPayRatePpm": 900000
+        }
+      },
+      "expected": {
+        "baseSalary": 3000000,
+        "baseHourlyWage": 14354.07,
+        "ordinaryHourlyWage": 14354.07,
+        "probationHourlyWage": 12918.66,
+        "fixedAllowanceAmounts": {
+          "overtime": 0,
+          "night": 0,
+          "holiday": 0,
+          "holidayOvertime": 0
+        },
+        "minimumWageHourly": 14354.07,
+        "isBelowMinimumWage": false
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "고정연장·야간·휴일 가산율이 모두 1.0입니다(spec R10은 1.5/0.5/1.5/2.0). 스크린샷 값은 1.0과 맞습니다. 법정 가산율로 바꿀까요",
+    "최저시급(2026년 10,320원)을 상수로 두었습니다. 연도별 참조데이터로 옮길까요",
+    "수습 기준시급만 계산하고 수습 기간 최저임금 판정(90%)은 하지 않습니다. 판정에 넣을까요"
+  ]
+}

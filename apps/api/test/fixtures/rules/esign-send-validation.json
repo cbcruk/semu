@@ -1,0 +1,429 @@
+{
+  "rule": "esign-send-validation",
+  "description": "Checks an e-sign request before sending: recipient email and foreign visa, active templates, required admin fields, and the company seal to stamp.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign-requests.service.ts",
+      "lines": "348-385"
+    },
+    {
+      "file": "alfred-manual/04-인사/03-전자서명.md",
+      "lines": "76"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "656"
+    }
+  ],
+  "inputSchema": {
+    "input": "recipient, documents with template fields, fieldValues, hiddenFields, employee sourceValues, chosen companySealId."
+  },
+  "cases": [
+    {
+      "name": "ready to send with template seal",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "companySealId": "fle_seal"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "chosen seal wins",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {},
+          "companySealId": "fle_other"
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "companySealId": "fle_other"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "missing email",
+      "input": {
+        "input": {
+          "recipient": {
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "recipient.email",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "foreigner without visa",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "a@example.com",
+            "isForeigner": true,
+            "nationalityCode": "VN"
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "recipient.visaCode",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "no documents",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "documents",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "inactive template",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": false,
+              "fields": [],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "documents[0]",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "required field empty",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": ""
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "fieldValues.0.position",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hidden required field skipped",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "position",
+                  "label": "position",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {},
+          "hiddenFields": {
+            "0": [
+              "position"
+            ]
+          },
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "companySealId": "fle_seal"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "signer field skipped",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "address",
+                  "label": "address",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": true
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {},
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "companySealId": "fle_seal"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "employee source fills field",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": [
+                {
+                  "key": "joinDate",
+                  "label": "joinDate",
+                  "type": "TEXT",
+                  "required": true,
+                  "hideable": false,
+                  "signer": false,
+                  "source": "employee.joinDate"
+                }
+              ],
+              "defaultCompanySealId": "fle_seal"
+            }
+          ],
+          "fieldValues": {},
+          "hiddenFields": {},
+          "sourceValues": {
+            "employee.joinDate": "2026-01-02"
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "companySealId": "fle_seal"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "no seal anywhere",
+      "input": {
+        "input": {
+          "recipient": {
+            "email": "worker@example.com",
+            "isForeigner": false
+          },
+          "documents": [
+            {
+              "index": 0,
+              "templateActive": true,
+              "fields": []
+            }
+          ],
+          "fieldValues": {
+            "0": {
+              "position": "매니저"
+            }
+          },
+          "hiddenFields": {},
+          "sourceValues": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "companySealId",
+        "companySealId": null
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 첫 위반에서 멈춥니다. 재설계는 위반을 모두 돌려줘도 될까요",
+    "도장을 고르지 않으면 첫 템플릿부터 처음 나오는 기본 도장을 씁니다. 문서마다 다른 기본 도장이 있으면 문서별로 찍을까요",
+    "수신자가 직원이 아니면 `employee.*` 원천 값이 없어 필수 필드가 비어 거절됩니다. 맞습니까"
+  ]
+}

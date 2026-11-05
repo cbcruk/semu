@@ -1,0 +1,232 @@
+{
+  "rule": "contract-expiry-warning",
+  "description": "Lists the warnings behind the employee list warning icon: missing registration number, fixed-term contract expiring or expired, indefinite conversion target.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/employees/employees.utils.ts",
+      "lines": "49-64"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/employees/employee-view.sql.ts",
+      "lines": "25-47"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "639"
+    }
+  ],
+  "inputSchema": {
+    "employee": "kind, hasRegistrationNumber, status, work contracts and whether the indefinite-conversion check flags the employee.",
+    "asOf": "Company-local date.",
+    "warningDays": "Days before contract end that count as expiring soon (30)."
+  },
+  "cases": [
+    {
+      "name": "wage employee without registration number",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": false,
+          "status": "JOINED",
+          "contracts": [],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "MISSING_REGISTRATION_NUMBER"
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "business income earner without registration number has no warning",
+      "input": {
+        "employee": {
+          "kind": "BUSINESS",
+          "hasRegistrationNumber": false,
+          "status": "JOINED",
+          "contracts": [],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "fixed-term ends in 30 days",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-07-01",
+              "endDate": "2026-07-01"
+            }
+          ],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "CONTRACT_EXPIRING_SOON"
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "fixed-term ends in 31 days",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-07-01",
+              "endDate": "2026-07-02"
+            }
+          ],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "fixed-term ends today is expiring not expired",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-06-01",
+              "endDate": "2026-06-01"
+            }
+          ],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "CONTRACT_EXPIRING_SOON"
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "expired without renewal",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-05-01",
+              "endDate": "2026-04-30"
+            }
+          ],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "CONTRACT_EXPIRED"
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "expired but renewal starts later is not flagged",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-05-01",
+              "endDate": "2026-04-30"
+            },
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2026-07-01",
+              "endDate": "2027-06-30"
+            }
+          ],
+          "isIndefiniteConversionTarget": false
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "permanent contract never warns",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": true,
+          "status": "JOINED",
+          "contracts": [
+            {
+              "contractType": "PERMANENT",
+              "startDate": "2025-05-01"
+            }
+          ],
+          "isIndefiniteConversionTarget": true
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "INDEFINITE_CONVERSION_TARGET"
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "resigned employee only keeps registration warning",
+      "input": {
+        "employee": {
+          "kind": "WAGE",
+          "hasRegistrationNumber": false,
+          "status": "RESIGNED",
+          "contracts": [
+            {
+              "contractType": "FIXED_TERM",
+              "startDate": "2025-05-01",
+              "endDate": "2026-04-30"
+            }
+          ],
+          "isIndefiniteConversionTarget": true
+        },
+        "asOf": "2026-06-01",
+        "warningDays": 30
+      },
+      "expected": [
+        "MISSING_REGISTRATION_NUMBER"
+      ],
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "경고 기간 N을 30일로 고정했는데(spec \"N 미확인\"), 회사 설정으로 둘까요",
+    "갱신 계약이 만료일 다음날이 아니라 공백을 두고 시작해도 \"갱신 있음\"으로 보는데, 공백 기간을 경고할까요",
+    "계약이 끝난 날(종료일 당일)은 만료 임박으로 보고 다음날부터 만료입니다. 맞습니까"
+  ]
+}
