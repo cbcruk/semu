@@ -12,13 +12,16 @@ describe('/rate-tables', () => {
     expect(response.status).toBe(200)
     expect(response.body.items.map((item: { effectiveFrom: string }) => item.effectiveFrom)).toEqual([
       '2026-01',
+      '2026-03',
       '2026-07',
     ])
     expect(response.body.items[0]).toMatchObject({
       id: 'rtb_00000000000000000000202601',
       minimumWage: { hourly: 10_320, monthly: 2_156_880 },
     })
-    expect(response.body.items[0].unverifiedPaths.length).toBeGreaterThan(0)
+    expect(response.body.items[0].unverifiedPaths).toContain('longTermCare.ratioOfHealthPpm')
+    expect(response.body.items[2]).toMatchObject({ nationalPension: { baseMin: 410_000, baseMax: 6_590_000 } })
+    expect(response.body.items[2].unverifiedPaths).not.toContain('nationalPension.baseMax')
   })
 
   it('resolves the table in force in a month', async () => {

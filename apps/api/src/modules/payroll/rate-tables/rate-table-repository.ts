@@ -27,7 +27,7 @@ export class RateTableRepository extends Context.Service<
     resolve(month: string): Effect.Effect<Option.Option<RateTableRecord>>
   }
 >()('semu/payroll/RateTableRepository') {
-  /** 내장 기준표(2026-01, 2026-07)를 씁니다. `tables`로 다른 판을 넣을 수 있습니다. */
+  /** 내장 기준표(2026-01, 2026-03, 2026-07)를 씁니다. `tables`로 다른 판을 넣을 수 있습니다. */
   static readonly layerMemory = (tables: ReadonlyArray<PayrollRateTable> = BUILT_IN_RATE_TABLES) => {
     const records = [...tables]
       .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
