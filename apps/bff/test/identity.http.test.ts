@@ -313,6 +313,34 @@ describe('upstream failures', () => {
     await slow.dispose()
   })
 
+  it('bounds reading the body too, so a stalled company switch does not hold the session lock', async () => {
+    let stall = false
+    const stalled = makeHarness({
+      authTimeoutMs: 50,
+      intercept: (request, next) =>
+        stall && new URL(request.url).pathname === '/v1/auth/sessions:switch-company'
+          ? Promise.resolve(
+              new Response(new ReadableStream({ start: (controller) => controller.enqueue(new Uint8Array([123])) }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+            )
+          : next(request),
+    })
+    const legacy = stalled.client()
+    await legacy.login('owner@semu.example')
+    stall = true
+
+    const switched = await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.free}/`)
+    const me = await legacy.request('GET', '/api/user/me/')
+
+    expect(switched.status).toBe(504)
+    expect(await switched.json()).toMatchObject({ code: 'GATEWAY_TIMEOUT' })
+    expect(me.status).toBe(200)
+    expect((await me.json()).email).toBe('owner@semu.example')
+    await stalled.dispose()
+  })
+
   it('still clears the legacy session when the upstream sign-out fails', async () => {
     const broken = makeHarness({
       intercept: (request, next) =>

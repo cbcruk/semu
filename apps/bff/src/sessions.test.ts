@@ -31,6 +31,53 @@ describe('SessionLocks', () => {
     expect(events).toEqual(['shared-1 start', 'shared-2', 'shared-1 end', 'exclusive'])
   })
 
+  it('grants in arrival order and lets consecutive readers at the head run together', async () => {
+    const locks = new SessionLocks()
+    const events: string[] = []
+    const step = (name: string) => async () => {
+      events.push(`${name} start`)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      events.push(`${name} end`)
+    }
+
+    await Promise.all([
+      locks.shared('s', step('r1')),
+      locks.exclusive('s', step('w1')),
+      locks.shared('s', step('r2')),
+      locks.exclusive('s', step('w2')),
+      locks.shared('s', step('r3')),
+    ])
+
+    expect(events).toEqual([
+      'r1 start',
+      'r1 end',
+      'w1 start',
+      'w1 end',
+      'r2 start',
+      'r2 end',
+      'w2 start',
+      'w2 end',
+      'r3 start',
+      'r3 end',
+    ])
+  })
+
+  it('does not let a late reader overtake a waiting writer, but batches readers queued together', async () => {
+    const locks = new SessionLocks()
+    const events: string[] = []
+    const mark = (name: string) => async () => void events.push(name)
+
+    await Promise.all([
+      locks.exclusive('s', mark('w1')),
+      locks.shared('s', mark('r1')),
+      locks.shared('s', mark('r2')),
+      locks.exclusive('s', mark('w2')),
+      locks.shared('s', mark('r3')),
+    ])
+
+    expect(events).toEqual(['w1', 'r1', 'r2', 'w2', 'r3'])
+  })
+
   it('releases the lock when the task fails', async () => {
     const locks = new SessionLocks()
 

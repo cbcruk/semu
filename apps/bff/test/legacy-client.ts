@@ -51,6 +51,7 @@ export interface HarnessOptions {
   /** 새 API로 가는 요청을 가로챕니다. 응답을 늦추거나 바꿀 때 씁니다. `next`는 실제 새 API입니다. */
   intercept?: (request: Request, next: (request: Request) => Promise<Response>) => Promise<Response>
   timeoutMs?: number
+  authTimeoutMs?: number
   maxUpstreamPages?: number
 }
 
@@ -68,6 +69,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       baseUrl: 'http://api.internal',
       fetch: (request) => (options.intercept === undefined ? next(request) : options.intercept(request, next)),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.authTimeoutMs === undefined ? {} : { authTimeoutMs: options.authTimeoutMs }),
     },
     publicBaseUrl: PUBLIC_BASE_URL,
     allowedOrigins: [CLIENT_ORIGIN],

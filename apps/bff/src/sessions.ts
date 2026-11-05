@@ -124,56 +124,59 @@ export class SessionLocks {
   }
 }
 
-/** 쓰기가 기다리는 동안 새 읽기는 쓰기 뒤로 줄을 섭니다. 쓰기가 굶지 않습니다. */
+/**
+ * 도착 순서대로 내주는 읽기·쓰기 자물쇠입니다.
+ *
+ * 요청은 한 줄로 섭니다. 줄 맨 앞이 쓰기면 진행 중인 읽기가 모두 끝난 뒤 혼자 들어가고, 맨 앞이 읽기면 그 뒤로
+ * 이어진 읽기까지 함께 들어갑니다. 늦게 온 요청은 먼저 온 요청을 앞지르지 못하므로 읽기도 쓰기도 굶지 않습니다.
+ */
 class ReadWriteLock {
   #readers = 0
-  /** 앞선 쓰기를 기다리는 읽기입니다. 자물쇠를 맵에서 지워도 되는지 셀 때만 씁니다. */
-  #waiting = 0
-  #writers = 0
-  #writerTail: Promise<void> = Promise.resolve()
-  #drained: Array<() => void> = []
+  #writing = false
+  readonly #queue: Array<{ mode: 'read' | 'write'; grant: () => void }> = []
   readonly #onIdle: () => void
 
   constructor(onIdle: () => void) {
     this.#onIdle = onIdle
   }
 
-  async shared<A>(task: () => Promise<A>): Promise<A> {
-    // 줄 선 쓰기가 없으면 기다리지 않고 바로 읽기 수를 올립니다. 그래야 뒤에 온 쓰기가 이 읽기를 기다립니다(도착 순서).
-    if (this.#writers > 0) {
-      this.#waiting += 1
-      while (this.#writers > 0) await this.#writerTail
-      this.#waiting -= 1
-    }
-    this.#readers += 1
-    try {
-      return await task()
-    } finally {
-      this.#readers -= 1
-      if (this.#readers === 0) for (const resolve of this.#drained.splice(0)) resolve()
-      this.#releaseIfIdle()
-    }
+  shared<A>(task: () => Promise<A>): Promise<A> {
+    return this.#run('read', task)
   }
 
   exclusive<A>(task: () => Promise<A>): Promise<A> {
-    this.#writers += 1
-    const run = async (): Promise<A> => {
-      while (this.#readers > 0) await new Promise<void>((resolve) => this.#drained.push(resolve))
-      return task()
-    }
-    const result = this.#writerTail.then(run)
-    this.#writerTail = result.then(
-      () => undefined,
-      () => undefined,
-    )
-    void this.#writerTail.then(() => {
-      this.#writers -= 1
-      this.#releaseIfIdle()
-    })
-    return result
+    return this.#run('write', task)
   }
 
-  #releaseIfIdle(): void {
-    if (this.#readers === 0 && this.#waiting === 0 && this.#writers === 0) this.#onIdle()
+  async #run<A>(mode: 'read' | 'write', task: () => Promise<A>): Promise<A> {
+    await new Promise<void>((grant) => {
+      this.#queue.push({ mode, grant })
+      this.#dispatch()
+    })
+    try {
+      return await task()
+    } finally {
+      if (mode === 'read') this.#readers -= 1
+      else this.#writing = false
+      this.#dispatch()
+      if (this.#readers === 0 && !this.#writing && this.#queue.length === 0) this.#onIdle()
+    }
+  }
+
+  /** 줄 맨 앞부터 들어갈 수 있는 요청을 들여보냅니다. 앞이 막히면 뒤도 기다립니다. */
+  #dispatch(): void {
+    while (this.#queue.length > 0 && !this.#writing) {
+      const head = this.#queue[0]!
+      if (head.mode === 'write') {
+        if (this.#readers > 0) return
+        this.#queue.shift()
+        this.#writing = true
+        head.grant()
+        return
+      }
+      this.#queue.shift()
+      this.#readers += 1
+      head.grant()
+    }
   }
 }

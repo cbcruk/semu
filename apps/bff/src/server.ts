@@ -16,9 +16,11 @@ const allowedOrigins = (process.env['BFF_ALLOWED_ORIGINS'] ?? '')
   .filter((origin) => origin !== '')
 /** 새 API 요청 하나의 제한 시간(ms)입니다. */
 const timeoutMs = Number(process.env['BFF_UPSTREAM_TIMEOUT_MS'] ?? 10_000)
+/** 로그인·갱신·회사 전환의 제한 시간(ms)입니다. refresh 쿠키 회전을 놓치지 않게 길게 둡니다. */
+const authTimeoutMs = Number(process.env['BFF_AUTH_TIMEOUT_MS'] ?? 30_000)
 
 const bff = createBff({
-  upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request), timeoutMs },
+  upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request), timeoutMs, authTimeoutMs },
   publicBaseUrl,
   allowedOrigins,
 })

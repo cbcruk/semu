@@ -12,12 +12,21 @@ export interface UpstreamOptions {
   /** 예: `http://localhost:3000`. 끝 슬래시 없이 씁니다. */
   baseUrl: string
   fetch: (request: Request) => Promise<Response>
-  /** 요청 하나를 기다리는 최대 시간(ms)입니다. 넘으면 현행 504로 응답합니다. 기본 10초입니다. */
+  /** 요청 하나(헤더와 본문까지)를 기다리는 최대 시간(ms)입니다. 넘으면 현행 504로 응답합니다. 기본 10초입니다. */
   timeoutMs?: number
+  /**
+   * 로그인·갱신·회사 전환의 제한 시간(ms)입니다. 기본 30초로 일반 호출보다 깁니다.
+   * 이 호출이 시간 초과로 끝났는데 새 API가 그 뒤에 refresh 쿠키를 회전시키면, BFF는 새 쿠키를 받지 못해 다음 갱신에서
+   * 재사용 탐지에 걸려 세션을 잃습니다. 여유를 길게 두어 그 창을 줄입니다.
+   */
+  authTimeoutMs?: number
 }
 
 /** 기본 업스트림 제한 시간입니다. */
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 10_000
+
+/** 기본 인증 호출 제한 시간입니다. */
+export const DEFAULT_AUTH_TIMEOUT_MS = 30_000
 
 /** BFF 라우트가 공유하는 의존성입니다. */
 export interface BffDeps {
@@ -38,6 +47,8 @@ export interface BffDeps {
 const ACCESS_EXPIRY_SKEW_MS = 30_000
 
 interface UpstreamRequest {
+  /** 로그인·갱신·전환처럼 refresh 쿠키를 회전시키는 호출입니다. {@link UpstreamOptions.authTimeoutMs}를 씁니다. */
+  auth?: boolean
   token?: string | undefined
   cookie?: string | undefined
   body?: unknown
@@ -45,10 +56,11 @@ interface UpstreamRequest {
 }
 
 /**
- * 새 API에 요청 하나를 보냅니다.
+ * 새 API에 요청 하나를 보내고 본문까지 다 읽은 응답을 돌려줍니다.
  *
- * 제한 시간이 지나면 요청을 취소(`AbortSignal`)하고 현행 504 `GATEWAY_TIMEOUT`을 던집니다. 업스트림이 신호를 무시해도
- * 기다림은 끝나므로, 이 호출을 감싼 세션 자물쇠도 풀립니다. 연결 실패는 502 `BAD_GATEWAY`입니다.
+ * 제한 시간은 헤더뿐 아니라 본문을 다 읽을 때까지입니다. 지나면 요청을 취소(`AbortSignal`)하고 현행 504 `GATEWAY_TIMEOUT`을
+ * 던집니다. 업스트림이 신호를 무시해도 기다림은 끝나므로, 이 호출을 감싼 세션 자물쇠도 풀립니다. 연결 실패는 502 `BAD_GATEWAY`입니다.
+ * 돌려준 응답의 본문은 메모리에 있으므로 호출한 쪽이 읽다가 멈추지 않습니다.
  */
 export async function send(
   deps: BffDeps,
@@ -65,7 +77,10 @@ export async function send(
     headers.set('content-type', 'application/json')
     init.body = JSON.stringify(options.body)
   }
-  const timeoutMs = deps.upstream.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
+  const timeoutMs =
+    options.auth === true
+      ? (deps.upstream.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS)
+      : (deps.upstream.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS)
   let timer: ReturnType<typeof setTimeout> | undefined
   const timedOut = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
@@ -73,8 +88,17 @@ export async function send(
       reject(upstreamTimeout())
     }, timeoutMs)
   })
+  const exchange = async (): Promise<Response> => {
+    const response = await deps.upstream.fetch(new Request(`${deps.upstream.baseUrl}${path}`, init))
+    const body = await response.arrayBuffer()
+    return new Response(response.status === 204 || response.status === 304 ? null : body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
   try {
-    return await Promise.race([deps.upstream.fetch(new Request(`${deps.upstream.baseUrl}${path}`, init)), timedOut])
+    return await Promise.race([exchange(), timedOut])
   } catch (error) {
     if (error instanceof LegacyError) throw error
     if (controller.signal.aborted) throw upstreamTimeout()
@@ -129,7 +153,7 @@ export async function signIn(
   deps: BffDeps,
   input: { email?: unknown; password?: unknown; staySignedIn?: unknown; companyId?: unknown },
 ): Promise<{ token: string; session: BffSession }> {
-  const response = await send(deps, 'POST', '/v1/auth/sessions', { body: input })
+  const response = await send(deps, 'POST', '/v1/auth/sessions', { body: input, auth: true })
   const grant = await readJson<SessionGrant>(response)
   const token = randomToken()
   const now = deps.now()
@@ -198,8 +222,9 @@ export function ensureAccess(
       ? await send(deps, 'POST', '/v1/auth/sessions:switch-company', {
           cookie: session.refreshCookie,
           body: { companyId },
+          auth: true,
         })
-      : await send(deps, 'POST', '/v1/auth/sessions:refresh', { cookie: session.refreshCookie })
+      : await send(deps, 'POST', '/v1/auth/sessions:refresh', { cookie: session.refreshCookie, auth: true })
     if (response.status === 401) {
       await deps.store.delete(sessionId)
       throw legacyErrors.unauthenticated({ endsSession: true })
