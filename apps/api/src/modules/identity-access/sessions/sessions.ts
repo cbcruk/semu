@@ -1,3 +1,4 @@
+import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Clock, Context, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
@@ -150,6 +151,7 @@ export class Sessions extends Context.Service<
         const found = yield* users.findByEmail(normalizeEmail(input.email))
         if (Option.isNone(found) || found.value.status !== 'ACTIVE' || found.value.isDemo) {
           yield* audit.record({ action: 'SIGN_IN_FAILED', detail: 'unknown or inactive account' })
+          yield* keepChanges
           return yield* new InvalidCredentials({})
         }
         const user = found.value
@@ -161,6 +163,7 @@ export class Sessions extends Context.Service<
             action: failed >= MAX_FAILED_SIGN_INS ? 'ACCOUNT_LOCKED' : 'SIGN_IN_FAILED',
             actorUserId: user.id,
           })
+          yield* keepChanges
           return yield* failed >= MAX_FAILED_SIGN_INS
             ? Effect.fail(new AccountLocked({}))
             : Effect.fail(new InvalidCredentials({}))
@@ -188,6 +191,7 @@ export class Sessions extends Context.Service<
         if (session.rotatedSecretHashes.includes(hash)) {
           yield* revoke(session, 'REFRESH_REUSED')
           yield* audit.record({ action: 'SESSION_REUSE_DETECTED', actorUserId: session.userId, targetId: session.id })
+          yield* keepChanges
           return yield* new SessionInvalid({})
         }
         if (hash !== session.refreshSecretHash) return yield* new SessionInvalid({})

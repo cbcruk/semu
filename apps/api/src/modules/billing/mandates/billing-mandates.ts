@@ -1,3 +1,4 @@
+import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Clock, Context, Effect, Layer } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
@@ -56,6 +57,7 @@ export class BillingMandates extends Context.Service<
           }
           if (!result.accepted) {
             yield* repository.save({ ...base, status: 'REJECTED', rejectionReason: result.reason })
+            yield* keepChanges
             return yield* new MandateRejected({ mandateId: base.id, reason: result.reason })
           }
           const previous = yield* repository.listByCompany(actor.companyId)
