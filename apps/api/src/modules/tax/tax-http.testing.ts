@@ -1,7 +1,5 @@
-import { Layer } from 'effect'
-import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, TestStoreLive } from '../../app.ts'
-import { AccessTokens } from '../identity-access/access-tokens.ts'
+import { httpTestApp } from '../../shared/testing/http-test-app.ts'
+import type { HttpTestResponse } from '../../shared/testing/http-test-app.ts'
 import { testActor } from '../identity-access/testing.ts'
 import { taxMemoryLayer } from './tax.layer.ts'
 import type { TaxMemorySeed } from './tax.layer.ts'
@@ -24,9 +22,7 @@ export interface TaxTestRequest {
 }
 
 /** 테스트 응답입니다. 본문을 단언하기 쉽게 `json()`을 느슨하게 둡니다. */
-export interface TaxTestResponse extends Response {
-  json(): Promise<any>
-}
+export type TaxTestResponse = HttpTestResponse
 
 /** 테스트 앱입니다. 요청 사이에 메모리 저장소 상태가 이어집니다. */
 export interface TaxTestApp {
@@ -36,26 +32,15 @@ export interface TaxTestApp {
 
 /** 세무 저장소를 `seed`로 채운 앱 전체를 띄웁니다. 다른 컨텍스트는 `TestStoreLive`를 씁니다. */
 export function taxTestApp(seed: TaxMemorySeed = {}): TaxTestApp {
-  const app = HttpRouter.toWebHandler(
-    AppLive.pipe(
-      Layer.provide([
-        TestStoreLive,
-        taxMemoryLayer(seed),
-        AccessTokens.layerMemory(Object.entries(TEST_TOKENS)),
-        HttpServer.layerServices,
-      ]),
-    ),
-    { disableLogger: true },
-  )
+  const app = httpTestApp({
+    tokens: Object.entries(TEST_TOKENS),
+    layers: [taxMemoryLayer(seed)],
+    basePath: '/v1',
+    defaultToken: 'client',
+  })
   return {
-    send: (path, request = {}) => {
-      const headers: Record<string, string> = { authorization: `Bearer ${request.token ?? 'client'}` }
-      if (request.body !== undefined) headers['content-type'] = 'application/json'
-      if (request.ifMatch !== undefined) headers['if-match'] = request.ifMatch
-      const init: RequestInit = { method: request.method ?? (request.body === undefined ? 'GET' : 'POST'), headers }
-      if (request.body !== undefined) init.body = JSON.stringify(request.body)
-      return app.handler(new Request(`http://localhost/v1${path}`, init))
-    },
-    dispose: () => app.dispose(),
+    send: (path, { method, ...request } = {}) =>
+      app.request(method ?? (request.body === undefined ? 'GET' : 'POST'), path, request),
+    dispose: app.dispose,
   }
 }

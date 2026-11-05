@@ -1,6 +1,11 @@
 import type { FixedAllowanceKind, WageInput, WageResult } from './wage-calculation.types.ts'
 
-/** 2026년 최저시급(원)입니다. Payroll 기준표가 연결되기 전까지 기본값으로 씁니다. */
+/**
+ * 2026년 최저시급(원)입니다. Payroll 기준표가 연결되기 전까지 기본값으로 씁니다.
+ *
+ * 출처: 고용노동부고시 제2025-47호(2025. 8. 5.) 2026년 적용 최저임금, 시간급 10,320원.
+ * https://www.minimumwage.go.kr/minWage/policy/decisionMain.do
+ */
 export const MINIMUM_HOURLY_WAGE_2026 = 10_320
 
 const FIXED_KINDS: ReadonlyArray<FixedAllowanceKind> = ['overtime', 'night', 'holiday', 'holidayOvertime']

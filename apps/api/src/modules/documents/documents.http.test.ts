@@ -96,12 +96,85 @@ describe('e-sign requests', () => {
     expect(resent.body).toMatchObject({ status: 'PENDING' })
   })
 
+  it("refuses another company's seal", async () => {
+    const created = await app.json('POST', '/esign-requests', {
+      token: 'other-company',
+      body: {
+        title: '2026 근로계약',
+        recipient: { name: '김다른', email: 'kim@example.com' },
+        templateIds: [EMPLOYMENT_CONTRACT],
+        companySealId: SEAL,
+      },
+    })
+
+    expect(created.status).toBe(422)
+    expect(created.body).toMatchObject({
+      code: 'ESIGN_REQUEST_INVALID',
+      violations: [{ field: 'companySealId', code: 'NOT_FOUND' }],
+    })
+  })
+
   it('marks a failed mail as SEND_FAILED', async () => {
     const employeeId = await hire({ email: 'fail@example.com' })
     const created = await draft(employeeId)
     const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`)
 
     expect(sent.body).toMatchObject({ status: 'SEND_FAILED' })
+  })
+})
+
+describe('company seals', () => {
+  const register = (token: string, name = '직인') =>
+    app.json('POST', '/company-seals', {
+      token,
+      body: { name, source: 'UPLOAD', imageFileId: 'fle_01JBQ000000000000000000002' },
+    })
+
+  it('lets another company register its own seal and send with it', async () => {
+    const seal = await register('other-company')
+    expect(seal.status).toBe(201)
+
+    const listed = await app.json('GET', '/company-seals', { token: 'other-company' })
+    expect(listed.body.items.map((item: { id: string }) => item.id)).toEqual([seal.body.id])
+
+    const created = await app.json('POST', '/esign-requests', {
+      token: 'other-company',
+      body: {
+        title: '2026 근로계약',
+        recipient: { name: '김다른', email: 'kim@example.com' },
+        templateIds: [EMPLOYMENT_CONTRACT],
+        fieldValues: {
+          '0': { workPlace: '본사', jobDescription: '회계', employeeName: '김다른', startDate: '2026-12-01' },
+        },
+        companySealId: seal.body.id,
+      },
+    })
+    expect(created.status).toBe(201)
+    const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`, { token: 'other-company' })
+    expect(sent.body).toMatchObject({ status: 'PENDING', companySealId: seal.body.id })
+  })
+
+  it("does not show or delete another company's seal", async () => {
+    const listed = await app.json('GET', '/company-seals', { token: 'other-company' })
+    const removed = await app.json('DELETE', `/company-seals/${SEAL}`, { token: 'other-company' })
+
+    expect(listed.body.items).toEqual([])
+    expect(removed).toMatchObject({ status: 404, body: { code: 'COMPANY_SEAL_NOT_FOUND' } })
+  })
+
+  it('allows five active seals and frees a slot on delete', async () => {
+    const created = []
+    for (let index = 0; index < 5; index += 1) created.push(await register('other-company', `도장 ${index}`))
+    expect(created.map((seal) => seal.status)).toEqual([201, 201, 201, 201, 201])
+
+    expect(await register('other-company')).toMatchObject({
+      status: 409,
+      body: { code: 'COMPANY_SEAL_LIMIT_EXCEEDED' },
+    })
+    expect((await app.json('DELETE', `/company-seals/${created[0]!.body.id}`, { token: 'other-company' })).status).toBe(
+      204,
+    )
+    expect((await register('other-company')).status).toBe(201)
   })
 })
 

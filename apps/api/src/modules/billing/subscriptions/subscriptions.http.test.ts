@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEMO_COMPANY_IDS } from '../../identity-access/identity-access.public.ts'
+import { DEMO_SERVICE_CONTRACT_IDS } from '../billing-seed.ts'
 import { makeTestApp } from '../../identity-access/testing-http.ts'
 import type { TestApp } from '../../identity-access/testing-http.ts'
 
@@ -69,6 +70,23 @@ describe('agency subscription commands', () => {
     expect(await started.json()).toMatchObject({ status: 'PENDING', isEntitled: false, allowedActions: ['CANCEL'] })
     expect(again.status).toBe(409)
     expect(await again.json()).toMatchObject({ code: 'SUBSCRIPTION_ALREADY_EXISTS' })
+  })
+
+  it('refuses a service contract of another company', async () => {
+    const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
+    const start = (serviceContractId: string) =>
+      app.request('POST', '/v1/subscriptions', {
+        token,
+        body: { plan: 'PAYROLL', startsOn: '2099-01-01', monthlyFee: 330000, serviceContractId },
+      })
+
+    const foreign = await start(DEMO_SERVICE_CONTRACT_IDS.corporationBookkeeping)
+    expect(foreign.status).toBe(404)
+    expect(await foreign.json()).toMatchObject({ code: 'SERVICE_CONTRACT_NOT_FOUND' })
+
+    const own = await start(DEMO_SERVICE_CONTRACT_IDS.individualBookkeeping)
+    expect(own.status).toBe(201)
+    expect(await own.json()).toMatchObject({ serviceContractId: DEMO_SERVICE_CONTRACT_IDS.individualBookkeeping })
   })
 
   it('schedules a cancellation, keeps the plan until the end date and resumes it', async () => {

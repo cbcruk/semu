@@ -4,12 +4,13 @@ export type TaxType = 'VAT' | 'WITHHOLDING_TAX' | 'CORPORATE_TAX' | 'INCOME_TAX'
 /**
  * 신고 건의 주기·종류입니다.
  *
- * - `PRELIMINARY`·`FINAL`: 부가세 예정·확정 신고
- * - `NOTICE`: 부가세 예정고지. 신고서 없이 고지서로 납부합니다
+ * - `PRELIMINARY`·`FINAL`: 부가세 예정·확정 신고. 간이과세자의 `FINAL`은 1년 과세기간의 신고입니다
+ * - `NOTICE`: 신고서 없이 고지서로 납부합니다. 부가세 예정고지·간이과세자 예정부과, 종합소득세 중간예납입니다
  * - `MONTHLY`·`SEMIANNUAL`: 원천세 매월·반기 납부
+ * - `INTERIM`: 법인세 중간예납 신고·납부
  * - `ANNUAL`: 법인세·종합소득세
  */
-export type FilingKind = 'PRELIMINARY' | 'FINAL' | 'NOTICE' | 'MONTHLY' | 'SEMIANNUAL' | 'ANNUAL'
+export type FilingKind = 'PRELIMINARY' | 'FINAL' | 'NOTICE' | 'MONTHLY' | 'SEMIANNUAL' | 'INTERIM' | 'ANNUAL'
 
 /** 신고 건이 있는 단계입니다. 전이는 `filing-status.ts`의 표 하나가 정합니다. */
 export type FilingStatus =

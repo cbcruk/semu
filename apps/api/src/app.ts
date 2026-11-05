@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { Effect, Layer } from 'effect'
 import { HttpRouter, HttpServerError, HttpServerRespondable } from 'effect/http'
 import { HttpApiBuilder } from 'effect/http-api'
@@ -5,10 +6,13 @@ import { Api } from './api.ts'
 import { AssistantHttpLive, AssistantStoreLive } from './modules/assistant/assistant.layer.ts'
 import { BillingHttpLive, BillingStoreLive } from './modules/billing/billing.layer.ts'
 import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
+import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
 import { HrHttpLive, HrStoreLive } from './modules/hr/hr.layer.ts'
+import { PersonalDataCipher } from './modules/hr/shared/personal-data-cipher.ts'
 import { AgencyAuthenticationLive, AuthenticationLive } from './modules/identity-access/authentication.ts'
 import { IdentityAccessHttpLive, IdentityAccessStoreLive } from './modules/identity-access/identity-access.layer.ts'
+import { CredentialVault } from './modules/integrations/credentials/credential-vault.ts'
 import {
   IntegrationsHttpLive,
   IntegrationsStoreLive,
@@ -22,6 +26,7 @@ import {
   PersistenceSqliteLive,
   UnitOfWorkMiddleware,
 } from './shared/persistence/persistence.layer.ts'
+import { DataKey } from './shared/crypto/data-key.ts'
 import { Internal, NotFound } from './shared/problem/problem.ts'
 import { RequestValidationLive } from './shared/problem/request-validation.ts'
 import { PublicHolidayCalendar } from './shared/time/public-holidays.ts'
@@ -35,7 +40,7 @@ const SystemLive = HttpApiBuilder.group(Api, 'system', (handlers) =>
 )
 
 /**
- * 일치하는 경로가 없거나 예상하지 못한 오류(defect)가 나면 Problem Details로 응답합니다.
+ * 일치하는 경로가 없거나 예상하지 못한 오류(defect)가 나면 Problem Details로 응답합니다. 결함은 오류 이름과 메시지를 로그에 남깁니다.
  *
  * 엔드포인트에 선언한 오류는 여기까지 오지 않고, 해당 경로가 직접 응답으로 바꿉니다.
  */
@@ -43,10 +48,21 @@ const ProblemFallback = HttpRouter.middleware(
   (httpEffect) =>
     httpEffect.pipe(
       Effect.catchIf(isRouteNotFound, () => HttpServerRespondable.toResponse(new NotFound({}))),
-      Effect.catchDefect(() => HttpServerRespondable.toResponse(new Internal({}))),
+      Effect.catchDefect((defect) =>
+        Effect.logError('Unhandled defect', describeDefect(defect)).pipe(
+          Effect.andThen(HttpServerRespondable.toResponse(new Internal({}))),
+        ),
+      ),
     ),
   { global: true },
 )
+
+/**
+ * 로그에 남길 결함 요약입니다. 오류 이름과 메시지만 남깁니다. 복호화 실패(`DecryptionFailed`)는 용도와 원인만 담고 원문·키는 담지 않습니다.
+ */
+function describeDefect(defect: unknown): string {
+  return defect instanceof Error ? `${defect.name}: ${defect.message}` : String(defect)
+}
 
 function isRouteNotFound(error: unknown): boolean {
   return error instanceof HttpServerError.HttpServerError && error.reason._tag === 'RouteNotFound'
@@ -105,31 +121,65 @@ const ContextStoresLive = Layer.mergeAll(
 )
 
 /**
- * 저장소, 컨텍스트 사이 어댑터(`WiringLive`), 수집 큐를 `persistence`(표·트랜잭션·outbox) 위에 쌓습니다.
+ * 저장하는 개인정보·자격 증명의 실제 암호화입니다. 모두 AES-256-GCM이고, 키는 {@link DataKey}에서 용도마다 HKDF로 따로 만듭니다.
+ *
+ * - HR `PersonalDataCipher.layerAesGcm`: 주민등록번호·급여 계좌번호 암호화와 중복 판정용 HMAC-SHA256 해시
+ * - Bookkeeping `AccountNumberCipher.layerAesGcm`: 회사·거래처·지로 출금 계좌번호
+ * - Integrations `CredentialVault.layerDataKey`: 기관 연동 비밀번호·인증서 개인키와 서명 비밀번호
+ */
+export const CiphersLive = Layer.mergeAll(
+  PersonalDataCipher.layerAesGcm,
+  AccountNumberCipher.layerAesGcm,
+  CredentialVault.layerDataKey,
+)
+
+/** 테스트용 가짜 암호화입니다. 결정적이고 고정 키라 저장하는 실행에는 쓰지 않습니다. */
+const CiphersFakeLive = Layer.mergeAll(
+  PersonalDataCipher.layerFake,
+  AccountNumberCipher.layerFake,
+  CredentialVault.layerMemory(),
+)
+
+type Ciphers = PersonalDataCipher | AccountNumberCipher | CredentialVault
+
+/**
+ * 저장소, 컨텍스트 사이 어댑터(`WiringLive`), 수집 큐를 `persistence`(표·트랜잭션·outbox)와 암호화(`ciphers`) 위에 쌓습니다.
  *
  * 저장소는 컨텍스트마다 하나만 만들고, 핸들러와 어댑터가 같은 인스턴스를 씁니다. 한 컨텍스트에 쓴 값이 다른 컨텍스트에 바로 보입니다.
  * Integrations의 수집 큐는 Bookkeeping으로 가는 `ScrapedRecordSink`가 필요해 어댑터 위에 얹습니다.
  * `AccessTokens`는 넣지 않습니다. 테스트가 정한 토큰을 쓰도록 호출하는 쪽이 넣습니다.
  */
-const storesOn = <E>(persistence: Layer.Layer<TableFactory | UnitOfWork | Outbox, E>) =>
+const storesOn = <E>(persistence: Layer.Layer<TableFactory | UnitOfWork | Outbox, E>, ciphers: Layer.Layer<Ciphers>) =>
   ScrapQueueInlineLive.pipe(
     Layer.provideMerge(WiringLive),
     Layer.provideMerge(ContextStoresLive),
-    Layer.provideMerge(persistence),
+    Layer.provideMerge(Layer.merge(persistence, ciphers)),
   )
 
-/** 모든 저장소를 프로세스 메모리에 둡니다. 트랜잭션이 없고 이벤트는 바로 소비자에게 갑니다. 테스트와 로컬 개발용입니다. */
-export const MemoryLive = storesOn(PersistenceMemoryLive)
+/** {@link CiphersLive}에 `key`로 만든 {@link DataKey}를 넣습니다. */
+const ciphersWithKey = (key: Uint8Array) => CiphersLive.pipe(Layer.provide(DataKey.layerFromKey(key)))
 
 /**
- * `filename`의 SQLite에 저장합니다. 요청마다 한 트랜잭션이고, 컨텍스트 사이 이벤트는 outbox를 거쳐 커밋 뒤에 전달됩니다.
- * 시작할 때와 30초마다 밀린 이벤트를 다시 넘깁니다.
+ * 모든 저장소를 프로세스 메모리에 두고 가짜 암호화({@link CiphersFakeLive})를 씁니다. 트랜잭션이 없고 이벤트는 바로 소비자에게 갑니다.
+ * 테스트와 로컬 개발용입니다.
  */
-export const SqliteLive = (filename: string) =>
-  OutboxRelayLive().pipe(Layer.provideMerge(storesOn(PersistenceSqliteLive(filename))))
+export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
+
+/** 모든 저장소를 프로세스 메모리에 두되 실제 암호화({@link CiphersLive})를 `key`로 씁니다. `SEMU_DATABASE=memory` 서버가 씁니다. */
+export const EncryptedMemoryLive = (key: Uint8Array) => storesOn(PersistenceMemoryLive, ciphersWithKey(key))
+
+/**
+ * `filename`의 SQLite에 저장하고 실제 암호화({@link CiphersLive})를 데이터 키 `key`(32바이트)로 씁니다.
+ * 요청마다 한 트랜잭션이고, 컨텍스트 사이 이벤트는 outbox를 거쳐 커밋 뒤에 전달됩니다. 시작할 때와 30초마다 밀린 이벤트를 다시 넘깁니다.
+ *
+ * 키를 잃거나 바꾸면 이미 저장한 암호문을 열 수 없습니다.
+ */
+export const SqliteLive = (filename: string, key: Uint8Array) =>
+  OutboxRelayLive().pipe(Layer.provideMerge(storesOn(PersistenceSqliteLive(filename), ciphersWithKey(key))))
 
 /**
  * 테스트 앱의 저장소입니다. 기본은 {@link MemoryLive}이고, `SEMU_TEST_STORE=sqlite`면 테스트 앱마다 새 메모리 SQLite({@link SqliteLive})입니다.
- * `pnpm test:sqlite`가 같은 테스트를 SQLite로 한 번 더 돌립니다.
+ * SQLite일 때는 프로세스마다 새로 뽑은 데이터 키로 실제 암호화를 씁니다. `pnpm test:sqlite`가 같은 테스트를 SQLite로 한 번 더 돌립니다.
  */
-export const TestStoreLive = process.env['SEMU_TEST_STORE'] === 'sqlite' ? SqliteLive(':memory:') : MemoryLive
+export const TestStoreLive =
+  process.env['SEMU_TEST_STORE'] === 'sqlite' ? SqliteLive(':memory:', randomBytes(32)) : MemoryLive

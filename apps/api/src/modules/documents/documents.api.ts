@@ -1,6 +1,7 @@
 import { HttpApi } from 'effect/http-api'
 import { CertificatesApi } from './certificates/certificates.api.ts'
 import { EsignRequestsApi } from './esign/esign-requests.api.ts'
+import { CompanySealsApi } from './seals/company-seals.api.ts'
 import { EsignLinksApi } from './signing/esign-links.api.ts'
 import { EsignTemplatesApi } from './templates/esign-templates.api.ts'
 
@@ -13,4 +14,5 @@ export const DocumentsApi = HttpApi.make('documents')
   .add(EsignRequestsApi)
   .add(EsignLinksApi)
   .add(EsignTemplatesApi)
+  .add(CompanySealsApi)
   .add(CertificatesApi)

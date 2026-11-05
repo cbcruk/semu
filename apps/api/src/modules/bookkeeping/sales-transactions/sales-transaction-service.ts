@@ -1,5 +1,5 @@
 import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
-import { Context, Effect, Layer } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import { paginate } from '../../../shared/http/pagination.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
@@ -7,7 +7,13 @@ import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { newestFirstKey, nowAndToday, orFail } from '../common/lookup.ts'
-import { EvidenceRepository, SalesTransactionRepository, TaxInvoiceRepository } from '../common/repositories.ts'
+import {
+  EvidenceRepository,
+  PartnerRepository,
+  SalesTransactionRepository,
+  TaxInvoiceRepository,
+} from '../common/repositories.ts'
+import { PartnerNotFound } from '../evidence/evidence.ts'
 import type { EvidenceRecord } from '../evidence/evidence.types.ts'
 import { HometaxInvoiceIssuer } from '../ports/hometax-invoice-issuer.ts'
 import type { SalesTransactionRecord, TaxInvoiceRecord, TransactionParty } from './sales-transaction.types.ts'
@@ -71,7 +77,11 @@ export class SalesTransactionService extends Context.Service<
       page: PageQuery,
     ): Effect.Effect<PageOf<SalesTransaction>>
     get(companyId: Id<'company'>, id: Id<'salesTransaction'>): Effect.Effect<SalesTransaction, SalesTransactionNotFound>
-    create(companyId: Id<'company'>, input: StatementInput): Effect.Effect<SalesTransaction, SalesStatementInvalid>
+    /** `partnerId`는 같은 회사의 지워지지 않은 거래처여야 합니다. 아니면 {@link PartnerNotFound}입니다. */
+    create(
+      companyId: Id<'company'>,
+      input: StatementInput,
+    ): Effect.Effect<SalesTransaction, SalesStatementInvalid | PartnerNotFound>
     update(
       companyId: Id<'company'>,
       id: Id<'salesTransaction'>,
@@ -79,7 +89,7 @@ export class SalesTransactionService extends Context.Service<
       expectedVersion: number | undefined,
     ): Effect.Effect<
       SalesTransaction,
-      SalesTransactionNotFound | SalesStatementInvalid | SalesTransactionLocked | VersionMismatch
+      SalesTransactionNotFound | SalesStatementInvalid | SalesTransactionLocked | PartnerNotFound | VersionMismatch
     >
     remove(
       companyId: Id<'company'>,
@@ -118,6 +128,7 @@ export class SalesTransactionService extends Context.Service<
       const invoices = yield* TaxInvoiceRepository
       const evidence = yield* EvidenceRepository
       const issuer = yield* HometaxInvoiceIssuer
+      const partners = yield* PartnerRepository
 
       const find = (companyId: Id<'company'>, id: Id<'salesTransaction'>) =>
         Effect.flatMap(
@@ -133,6 +144,15 @@ export class SalesTransactionService extends Context.Service<
         const problems = statementProblems(statement)
         return problems.length === 0 ? Effect.void : Effect.fail(new SalesStatementInvalid({ problems }))
       }
+      /** 다른 회사의 거래처를 이어 두지 못하게 같은 회사 안에서만 찾습니다. */
+      const ensurePartner = (companyId: Id<'company'>, partnerId: Id<'partner'> | null) =>
+        partnerId === null
+          ? Effect.void
+          : Effect.flatMap(partners.findById(companyId, partnerId), (found) =>
+              Option.isSome(found) && found.value.deletedAt === null
+                ? Effect.void
+                : Effect.fail(new PartnerNotFound({})),
+            )
       const ensureEditable = (rows: ReadonlyArray<TaxInvoiceRecord>) => {
         const lock = statementLock(rows)
         return lock === 'EDITABLE' ? Effect.void : Effect.fail(new SalesTransactionLocked({ lock }))
@@ -162,6 +182,7 @@ export class SalesTransactionService extends Context.Service<
 
         create: Effect.fn('SalesTransactionService.create')(function* (companyId, input) {
           yield* validate(input)
+          yield* ensurePartner(companyId, input.partnerId)
           const { now } = yield* nowAndToday
           const record: SalesTransactionRecord = {
             ...input,
@@ -194,6 +215,7 @@ export class SalesTransactionService extends Context.Service<
             version: row.version + 1,
           }
           yield* validate(next)
+          if (changes.partnerId !== undefined) yield* ensurePartner(companyId, changes.partnerId)
           yield* repository.save(next)
           return toSalesTransaction(next, existing)
         }),

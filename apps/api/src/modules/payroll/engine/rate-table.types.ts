@@ -81,7 +81,7 @@ export interface NonTaxableLimit {
 
 /** 기준표 값 하나의 출처입니다. */
 export interface RateVerification {
-  /** 스펙 노트나 제품 화면으로 확인한 값만 `true`입니다. 법령을 기억해 넣은 값은 `false`입니다. */
+  /** 스펙 노트·제품 화면이나 법령·고시 원문으로 확인한 값만 `true`입니다. 원문으로 확인하지 못한 값은 `false`이고 `source`에 이유를 적습니다. */
   verified: boolean
   source: string
 }

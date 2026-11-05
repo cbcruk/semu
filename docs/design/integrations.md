@@ -84,7 +84,7 @@ DELETE /integrations/{integrationId}
 
 ### 자격 증명 보관
 
-- ID/PW, PG 비밀 키, 인증서 묶음·서명 비밀번호는 `CredentialVault`가 AES-256-GCM으로 봉해 저장합니다(`keyVersion` 포함). 운영에서는 KMS 데이터 키로 바꿉니다 ([compliance.md](compliance.md))
+- ID/PW, PG 비밀 키, 인증서 묶음·서명 비밀번호는 `CredentialVault`가 AES-256-GCM으로 봉해 저장합니다(`keyVersion` 포함). 서버는 `CredentialVault.layerDataKey`로 서버 데이터 키에서 HKDF로 파생한 키를 쓰고, 테스트와 `IntegrationsMemoryLive`만 고정 키(`layerMemory()`)를 씁니다. 데모 연동·인증서 자격 증명도 그 환경의 금고로 봉해 시드합니다. 운영에서는 KMS가 데이터 키를 감쌉니다 ([compliance.md](compliance.md#외부-기관-자격-증명))
 - 원문은 수집 워커 경계 안에서만 엽니다. 응답·로그·감사 기록에는 로그인 ID와 PG 공개 키만 남습니다
 - 인터넷지로 ID·비밀번호, 홈택스 수임동의용 대표자 로그인 정보는 어댑터로만 넘기고 저장하지 않습니다 (매뉴얼 약속)
 - 연동을 지우면 봉한 자격 증명도 함께 지웁니다
@@ -258,7 +258,7 @@ GET  /messenger-channels
 | `HometaxInvoiceClient` | 밖으로 | `issue(request)`, `fetchDetail(companyId, approvalNumber)` | 홈택스 전자세금계산서 발급. Bookkeeping 세금계산서 발행이 씀. 메모리는 결정적 가짜 |
 | `GiroPaymentClient` | 밖으로 | `pay(order)` | 금융결제원 인터넷지로 납부. Bookkeeping 지로 납부가 씀. 메모리는 결정적 가짜 |
 | `HometaxDelegationClient` | 밖으로 | `consent({ businessNumber, agencyName, hometaxLoginId, hometaxPassword })` | 홈택스 |
-| `CredentialVault` | 안 | `seal(fields)`, `open(sealed)` | KMS. 메모리는 고정 키 AES-GCM |
+| `CredentialVault` | 안 | `seal(fields)`, `open(sealed)` | 서버는 데이터 키 파생 AES-256-GCM(`layerDataKey`). 테스트는 고정 키 AES-GCM(`layerMemory()`) |
 
 | 이벤트 (예정) | payload |
 |---|---|

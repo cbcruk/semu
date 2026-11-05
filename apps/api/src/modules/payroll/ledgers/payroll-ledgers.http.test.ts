@@ -13,6 +13,8 @@ import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
 const DIRECT_COMPANY_ID = 'cmp_01JBQ000000000000000000002' as Id<'company'>
 const EMPLOYEE_ID = 'emp_01JBQ000000000000000000009' as Id<'employee'>
+/** `DIRECT_COMPANY_ID`에만 있는 직원입니다. 이미 퇴사해 그 회사의 근로 행 후보에도 들지 않습니다. */
+const FOREIGN_EMPLOYEE_ID = 'emp_01JBQ000000000000000000010' as Id<'employee'>
 
 const employee: PayrollEmployee = {
   id: EMPLOYEE_ID,
@@ -50,6 +52,10 @@ const app = payrollTestApp(
     PayrollEmployeeDirectory.layerMemory([
       { companyId: TEST_COMPANY_ID, employee },
       { companyId: DIRECT_COMPANY_ID, employee },
+      {
+        companyId: DIRECT_COMPANY_ID,
+        employee: { ...employee, id: FOREIGN_EMPLOYEE_ID, name: '남회사', leaveDate: '2024-06-30' },
+      },
     ]),
     PayrollSettingRepository.layerMemory([
       { companyId: TEST_COMPANY_ID, setting: { ...rateMethods, workflow: 'CLIENT_APPROVAL' } },
@@ -241,6 +247,23 @@ describe('/payroll-ledgers additional ledgers', () => {
 
     expect(response.status).toBe(422)
     expect(response.body).toMatchObject({ code: 'PAYROLL_ROW_PAYEE_INVALID', reason: 'PAYEE_NAME_REQUIRED' })
+  })
+
+  it('refuses to link a non-wage row to an employee of another company', async () => {
+    const foreign = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
+      body: {
+        employeeId: FOREIGN_EMPLOYEE_ID,
+        payeeName: '남회사',
+        input: { incomeType: 'BUSINESS', payAmount: 100_000 },
+      },
+    })
+    expect(foreign.status).toBe(422)
+    expect(foreign.body).toMatchObject({ code: 'EMPLOYEE_NOT_FOUND' })
+
+    const own = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
+      body: { employeeId: EMPLOYEE_ID, payeeName: '김하나', input: { incomeType: 'BUSINESS', payAmount: 100_000 } },
+    })
+    expect(own.status).toBe(201)
   })
 
   it('keeps the regular ledger while additional ledgers exist', async () => {

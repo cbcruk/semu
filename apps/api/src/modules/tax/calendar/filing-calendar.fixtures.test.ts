@@ -35,6 +35,7 @@ function profileOf(company: Record<string, any>): TaxCalendarProfile {
     withholdingCycle: company['withholdingSemiannual'] === true ? 'SEMIANNUAL' : 'MONTHLY',
     vatPreliminaryMode: company['vatPreliminaryMode'] === 'filing' ? 'FILING' : 'NOTICE',
     sincereFilingTarget: company['sincereFilingTarget'],
+    vatTaxpayerType: 'GENERAL',
   }
 }
 
@@ -66,6 +67,8 @@ function legacyKeyOf(obligation: FilingObligation): string {
       return `${obligation.periodKey}-payment`
     case 'SEMIANNUAL':
       return `${obligation.periodKey}-semiannual`
+    case 'INTERIM':
+      return `${year}-interim`
     case 'ANNUAL':
       return obligation.taxType === 'CORPORATE_TAX' ? `${year}-FY` : `${year}-annual`
   }

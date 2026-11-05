@@ -8,7 +8,8 @@ export class SessionRepository extends Context.Service<
   SessionRepository,
   {
     findById(id: Id<'session'>): Effect.Effect<Option.Option<SessionRecord>>
-    findByOnboardingToken(token: string): Effect.Effect<Option.Option<SessionRecord>>
+    /** onboarding token 해시가 같은 폐기되지 않은 세션입니다. 만료는 호출하는 쪽이 봅니다. */
+    findByOnboardingTokenHash(tokenHash: string): Effect.Effect<Option.Option<SessionRecord>>
     /** 폐기되지 않은 사용자 세션입니다. */
     listActiveByUser(userId: Id<'user'>): Effect.Effect<SessionRecord[]>
     save(session: SessionRecord): Effect.Effect<void>
@@ -22,9 +23,11 @@ export class SessionRepository extends Context.Service<
         const table = yield* (yield* TableFactory).make<SessionRecord>('iam_sessions', { seed })
         return SessionRepository.of({
           findById: (id) => table.get(id),
-          findByOnboardingToken: (token) =>
+          findByOnboardingTokenHash: (tokenHash) =>
             Effect.map(table.all(), (sessions) =>
-              Option.fromNullishOr(sessions.find((s) => s.onboardingToken === token && s.revokedAt === undefined)),
+              Option.fromNullishOr(
+                sessions.find((s) => s.onboardingTokenHash === tokenHash && s.revokedAt === undefined),
+              ),
             ),
           listActiveByUser: (userId) =>
             Effect.map(table.all(), (sessions) =>

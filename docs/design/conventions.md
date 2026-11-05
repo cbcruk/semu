@@ -175,7 +175,8 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
   - 요청 하나가 트랜잭션 하나입니다(`UnitOfWorkMiddleware`). 응답이 4xx·5xx이면 되돌립니다. 저장소와 유스케이스는 트랜잭션을 직접 열지 않습니다
   - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
   - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다
-  - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file)`(서버 기본 `data/semu.sqlite`, `SEMU_DATABASE`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
+  - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file, key)`(서버 기본 `data/semu.sqlite`·`data/semu.key`, `SEMU_DATABASE`·`SEMU_DATA_KEY`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
+- HTTP 테스트는 `src/shared/testing/http-test-app.ts`의 `httpTestApp({ tokens, layers, basePath, defaultToken })`으로 앱 전체를 `TestStoreLive` 위에 띄웁니다. 요청 옵션은 `body`, `token`, `cookie`, `ifMatch`, `idempotencyKey`, `headers`이고, `json()`은 상태·헤더·본문을 함께 돌려줍니다. 컨텍스트 도우미는 이것 위에 토큰 표와 포트 가짜 레이어만 얹습니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
   - `/agency/*` 그룹은 `.middleware(AgencyAuthentication)`을 붙이고 `authorizeAgency({ permission, plans })`가 돌려준 담당 회사만 읽습니다
 

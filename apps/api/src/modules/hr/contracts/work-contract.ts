@@ -5,13 +5,23 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
 import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
-import type { ContractType } from './work-contract-period.types.ts'
+import type { ContractType, TermLimitExemption as TermLimitExemptionCode } from './work-contract-period.types.ts'
 
 /** 수습 조건입니다. 지급률은 ppm(`1_000_000` = 100%)입니다. */
 export const Probation = Schema.Struct({
   months: Schema.optionalKey(Schema.Int),
   payRatePpm: Schema.optionalKey(Schema.Int),
 })
+
+/** 기간제 사용기간 제한의 예외 사유입니다(기간제법 제4조 ① 단서). */
+export const TermLimitExemption = Schema.Literals([
+  'PROJECT_COMPLETION',
+  'REPLACEMENT',
+  'STUDY_OR_TRAINING',
+  'PROFESSIONAL',
+  'GOVERNMENT_JOB_PROGRAM',
+  'OTHER_STATUTORY',
+])
 
 /** 근로계약 입력입니다. */
 export const WorkContractInput = Schema.Struct({
@@ -20,6 +30,9 @@ export const WorkContractInput = Schema.Struct({
   endDate: Schema.optionalKey(CalendarDate),
   weeklyWorkHours: Schema.optionalKey(Schema.Number),
   probation: Schema.optionalKey(Probation),
+  /** 한국표준직업분류 코드입니다. 대분류 9(단순노무)면 수습 감액을 받지 않습니다. */
+  standardOccupationCode: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\d{1,5}$/))),
+  termLimitExemption: Schema.optionalKey(TermLimitExemption),
 })
 
 /** 근로계약 응답입니다. */
@@ -40,7 +53,7 @@ export const IndefiniteConversionView = Schema.Struct({
   isTarget: Schema.Boolean,
   status: Schema.Literals(['NONE', 'APPROACHING', 'EXCEEDED']),
   isExempt: Schema.Boolean,
-  exemptReason: Schema.optionalKey(Schema.Literal('AGED_55_OR_OVER')),
+  exemptReason: Schema.optionalKey(Schema.Literals(['AGED_55_OR_OVER', ...TermLimitExemption.literals])),
   chainStartDate: Schema.optionalKey(CalendarDate),
   chainEndDate: Schema.optionalKey(CalendarDate),
   totalContractDays: Schema.Int,
@@ -58,6 +71,8 @@ export interface WorkContractRecord {
   endDate?: string | undefined
   weeklyWorkHours?: number | undefined
   probation?: { months?: number; payRatePpm?: number } | undefined
+  standardOccupationCode?: string | undefined
+  termLimitExemption?: TermLimitExemptionCode | undefined
   createdAt: string
 }
 

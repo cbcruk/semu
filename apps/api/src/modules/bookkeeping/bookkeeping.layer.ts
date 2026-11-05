@@ -85,18 +85,24 @@ export const BookkeepingPortFakesLive = Layer.mergeAll(
 const DemoSeedLive = Layer.effectDiscard(seedDemo).pipe(Layer.provide(BookkeepingPublicLive))
 
 /**
- * Bookkeeping이 소유한 저장소와 계좌번호 암호화입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 두고, 암호화는 아직 결정적인 가짜입니다.
+ * Bookkeeping이 소유한 저장소입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
+ *
+ * 계좌번호 암호화(`AccountNumberCipher`)는 호출하는 쪽이 넣습니다. 서버(`app.ts`의 `SqliteLive`)는 `AccountNumberCipher.layerAesGcm`,
+ * 테스트와 {@link BookkeepingMemoryStoreLive}는 `AccountNumberCipher.layerFake`를 넣습니다.
  *
  * 공개 서비스(`BookkeepingPublicLive`)도 같은 저장소 위에 만들어 내보내고, 데모 회사에 현행 데모 숫자를 넣어 둡니다.
  * 데모 데이터가 이미 있으면(SQLite 재시작) 다시 넣지 않습니다.
  * 다른 컨텍스트가 구현하는 포트는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
 export const BookkeepingStoreLive = Layer.mergeAll(BookkeepingPublicLive, DemoSeedLive).pipe(
-  Layer.provideMerge(Layer.mergeAll(BookkeepingRepositoriesLive, AccountNumberCipher.layerFake)),
+  Layer.provideMerge(BookkeepingRepositoriesLive),
 )
 
-/** {@link BookkeepingStoreLive}를 메모리 표로 채웁니다. */
-export const BookkeepingMemoryStoreLive = BookkeepingStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
+/** {@link BookkeepingStoreLive}를 메모리 표와 가짜 계좌번호 암호화로 채웁니다. */
+export const BookkeepingMemoryStoreLive = BookkeepingStoreLive.pipe(
+  Layer.provideMerge(AccountNumberCipher.layerFake),
+  Layer.provide(TableFactory.layerMemory),
+)
 
 /**
  * 증빙·계정과목·자동분류·입출금·거래처·세금계산서·지로·결산 보고서 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다.

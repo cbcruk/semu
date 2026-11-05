@@ -59,6 +59,7 @@ export const DEMO_TAX_PROFILE: TaxProfile = {
   withholdingCycle: 'MONTHLY',
   vatPreliminaryMode: 'FILING',
   sincereFilingTarget: false,
+  vatTaxpayerType: 'GENERAL',
   plans: ['TAXATION', 'PAYROLL'],
   taxableCardRatioPpm: 1_000_000,
 }

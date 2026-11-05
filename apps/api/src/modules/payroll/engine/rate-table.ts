@@ -28,7 +28,7 @@ export function resolveRateTable(tables: readonly PayrollRateTable[], month: Yea
   return match
 }
 
-/** 스펙으로 확인하지 못한 기준표 값의 경로 목록입니다. 예: `longTermCare.ratioOfHealthPpm` */
+/** 원문으로 확인하지 못한 기준표 값의 경로 목록입니다. 예: `longTermCare.ratioOfHealthPpm` */
 export function unverifiedRatePaths(table: PayrollRateTable): string[] {
   return Object.entries(table.verification)
     .filter(([, entry]) => !entry.verified)

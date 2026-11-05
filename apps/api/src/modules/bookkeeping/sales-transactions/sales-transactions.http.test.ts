@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { Id } from '../../../shared/ids/ids.types.ts'
+import { testActor } from '../../identity-access/testing.ts'
 import type { TestApp } from '../common/test-app.ts'
 import { testApp } from '../common/test-app.ts'
 import { FAKE_REJECTED_BUYER_NUMBER } from '../ports/hometax-invoice-issuer.ts'
 
 let app: TestApp
+/** 데모 거래처가 없는 다른 회사의 행위자입니다. */
+const OTHER_COMPANY_ID = 'cmp_01JBQ0000000000000000OTHER' as Id<'company'>
+
 beforeEach(() => {
-  app = testApp()
+  app = testApp({ other: testActor({ companyId: OTHER_COMPANY_ID }) })
 })
 afterEach(() => app.dispose())
 
@@ -76,6 +81,24 @@ describe('/v1/sales-transactions', () => {
         { code: 'AMOUNT_MISMATCH', field: 'totalAmount' },
       ],
     })
+  })
+
+  it('refuses a partner of another company on create', async () => {
+    const response = await app.send('POST', '/v1/sales-transactions', { token: 'other', body: STATEMENT })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'PARTNER_NOT_FOUND' })
+  })
+
+  it('refuses an unknown or foreign partner on update', async () => {
+    const created = await create({ partnerId: null })
+
+    const response = await app.send('PATCH', `/v1/sales-transactions/${created.id}`, {
+      body: { partnerId: 'ptn_01JBQ000000000000000000099' },
+    })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'PARTNER_NOT_FOUND' })
   })
 })
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Clock, Context, Effect, Layer, Option, Ref } from 'effect'
 import type { Actor, AgencyPrincipal } from './actor.types.ts'
 
@@ -18,6 +19,7 @@ export function isAgencyPrincipal(subject: TokenSubject): subject is AgencyPrinc
  *
  * 세션·로그인 흐름은 `identity-access`의 세션 서비스가 이 서비스로 토큰을 발급합니다.
  * 회사 범위와 대리인 범위 토큰은 같은 저장소를 쓰고, 검증하는 쪽이 범위를 골라 읽습니다.
+ * 세션에는 토큰 원문 대신 {@link hashAccessToken}만 남기고, 폐기도 그 해시로 합니다.
  */
 export class AccessTokens extends Context.Service<
   AccessTokens,
@@ -30,8 +32,8 @@ export class AccessTokens extends Context.Service<
     issue(actor: Actor): Effect.Effect<string>
     /** 대리인에게 대리인 범위 토큰을 발급합니다. */
     issueAgency(principal: AgencyPrincipal): Effect.Effect<string>
-    /** 토큰을 폐기합니다. 로그아웃·비밀번호 변경·회사 전환에 씁니다. */
-    revoke(token: string): Effect.Effect<void>
+    /** {@link hashAccessToken}으로 만든 해시의 토큰을 폐기합니다. 로그아웃·비밀번호 변경·회사 전환에 씁니다. */
+    revokeHash(tokenHash: string): Effect.Effect<void>
   }
 >()('semu/identity-access/AccessTokens') {
   /** 토큰을 프로세스 메모리에 둡니다. `seed`는 테스트에서 미리 정한 토큰입니다. */
@@ -39,7 +41,10 @@ export class AccessTokens extends Context.Service<
     Layer.effect(
       AccessTokens,
       makeTokenStore(
-        [...seed].map(([token, subject]) => [token, { subject, expiresAt: Number.POSITIVE_INFINITY }] as const),
+        Array.from(
+          seed,
+          ([token, subject]) => [hashAccessToken(token), { subject, expiresAt: Number.POSITIVE_INFINITY }] as const,
+        ),
         undefined,
       ),
     )
@@ -54,13 +59,19 @@ export class AccessTokens extends Context.Service<
     Layer.effect(AccessTokens, makeTokenStore([], options.ttlSeconds))
 }
 
+/** access token을 저장·비교할 때 쓰는 SHA-256(16진수)입니다. 원문 토큰은 응답으로만 내보냅니다. */
+export function hashAccessToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex')
+}
+
 interface TokenEntry {
   subject: TokenSubject
   expiresAt: number
 }
 
+/** 토큰 해시를 키로 주체를 둡니다. */
 function makeTokenStore(
-  seed: ReadonlyArray<readonly [string, TokenEntry]>,
+  seed: ReadonlyArray<readonly [tokenHash: string, entry: TokenEntry]>,
   ttlSeconds: number | undefined,
 ): Effect.Effect<AccessTokens['Service']> {
   return Effect.gen(function* () {
@@ -68,7 +79,7 @@ function makeTokenStore(
 
     const lookup = (token: string) =>
       Effect.gen(function* () {
-        const entry = (yield* Ref.get(store)).get(token)
+        const entry = (yield* Ref.get(store)).get(hashAccessToken(token))
         const now = yield* Clock.currentTimeMillis
         return entry === undefined || entry.expiresAt <= now ? Option.none<TokenSubject>() : Option.some(entry.subject)
       })
@@ -78,7 +89,7 @@ function makeTokenStore(
         const token = crypto.randomUUID()
         const expiresAt =
           ttlSeconds === undefined ? Number.POSITIVE_INFINITY : (yield* Clock.currentTimeMillis) + ttlSeconds * 1000
-        yield* Ref.update(store, (tokens) => new Map(tokens).set(token, { subject, expiresAt }))
+        yield* Ref.update(store, (tokens) => new Map(tokens).set(hashAccessToken(token), { subject, expiresAt }))
         return token
       })
 
@@ -95,10 +106,10 @@ function makeTokenStore(
         ),
       issue: put,
       issueAgency: put,
-      revoke: (token) =>
+      revokeHash: (tokenHash) =>
         Ref.update(store, (tokens) => {
           const next = new Map(tokens)
-          next.delete(token)
+          next.delete(tokenHash)
           return next
         }),
     })

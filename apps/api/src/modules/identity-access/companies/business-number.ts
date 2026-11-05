@@ -25,12 +25,13 @@ export function isValidBusinessNumber(digits: string): boolean {
   return (10 - (sum % 10)) % 10 === numbers[9]
 }
 
-/** 법인등록번호 13자리(하이픈 허용)의 검증 숫자가 맞는지입니다. */
+/**
+ * 법인등록번호가 13자리 숫자(하이픈 허용)인지입니다. 검증 숫자는 보지 않습니다.
+ *
+ * 2025-01-31부터 부여하는 번호는 등기관서 4자리 + 법인종류 2자리 + 일련번호 7자리이고 오류검색번호가 없습니다
+ * (법인 및 재외국민의 부동산등기용등록번호 부여에 관한 규칙 제2조 ①, 대법원규칙 제3173호 부칙). 그 전에 부여한 번호만
+ * 마지막 자리가 오류검색번호라 두 형식을 번호만으로 가를 수 없습니다.
+ */
 export function isValidCorporateRegistrationNumber(value: string): boolean {
-  const digits = value.replaceAll('-', '')
-  if (!/^\d{13}$/.test(digits)) return false
-  const numbers = [...digits].map(Number)
-  let sum = 0
-  for (let index = 0; index < 12; index += 1) sum += (numbers[index] ?? 0) * (index % 2 === 0 ? 1 : 2)
-  return (10 - (sum % 10)) % 10 === numbers[12]
+  return /^\d{13}$/.test(value.replaceAll('-', ''))
 }

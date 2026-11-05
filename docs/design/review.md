@@ -72,7 +72,7 @@
 
 ### 규칙 이전 시 동작 차이
 
-현행 규칙 68개를 번들과 매뉴얼에서 추적해 입력·출력 케이스 765건으로 정리했습니다 ([docs/reference/rules](../reference/rules/README.md)). hemr와 달리 화면 컴포넌트가 번들에 없어 원본 함수를 실행하지 못했으므로 **모든 케이스가 추적(`traced`)** 입니다. 열린 질문 233개의 결정은 [rule-decisions/](rule-decisions/README.md)에 있고, 그중 보류가 50개입니다.
+현행 규칙 68개를 번들과 매뉴얼에서 추적해 입력·출력 케이스 765건으로 정리했습니다 ([docs/reference/rules](../reference/rules/README.md)). hemr와 달리 화면 컴포넌트가 번들에 없어 원본 함수를 실행하지 못했으므로 **모든 케이스가 추적(`traced`)** 입니다. 열린 질문 233개의 결정은 [rule-decisions/](rule-decisions/README.md)에 있고, 그중 보류가 33개입니다(처음 50개 중 11개는 법령 원문으로, Payroll 6개는 급여 기준표 원문으로 정했습니다).
 
 | 결정이 필요한 대표 차이 | 규칙 |
 |---|---|
@@ -135,8 +135,11 @@
 
 ## 다음 단계
 
-1. **공식 기준표 확인.** 급여 기준표의 미확인 값을 법령·고시 원문으로 채웁니다. 간이세액표는 산식을 유지합니다 (D4)
-2. **보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개를 외부 사실 확인 후 정합니다
+1. **공식 기준표 확인.** 급여 기준표의 미확인 값을 법령·고시 원문으로 채웁니다. 간이세액표는 산식을 유지합니다 (D4). 2026-11-05에 대부분 확인했고(2026-03·2026-07 기준표 추가), 장기요양 비율 반올림과 고용·산재보험 절사 단위만 미확인입니다
+2. **남은 보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개 중 11개는 법령 원문으로, Payroll 6개는 급여 기준표 원문으로 정했습니다. 남은 33개 중 Payroll 8개와 HR 보육수당 비과세 나이는 남은 기준표 확인(1번)과 함께 정합니다. 나머지는 상시 근로자 수 같은 새 입력, 내부 자료(약관·메뉴 코드, CMS 계약), 외부 서비스 자료(수집 업체, 메신저 브리지, 홈택스 발급)가 있어야 정할 수 있습니다
 3. **대리인 권한 분리 (D5).** 대리인 범위 토큰과 `/agency/*`는 구현했습니다(D3). 남은 것은 `Agent.permissions`를 `*`에서 대리인 전용 권한으로 좁히는 일이고, `authorizeAgency`와 회사 범위의 대리인 행위자가 같은 권한 표를 보게 합니다. 이어서 Payroll·Integrations의 대리인 큐를 같은 방식으로 늘릴지 정합니다([agency-queue.md](agency-queue.md#열린-질문))
-4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로 모았습니다. 컨텍스트마다 중복된 테스트 도우미(`http-test-support`, `test-app`)를 모읍니다
+4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 5. **이전 구현 정리.** 이식이 끝난 뒤 `apps/api/legacy/`를 지웁니다. 지금은 D2의 BFF 근거로 둡니다
+6. **보안 후속 (PR #8 리뷰).**
+   - onboarding token은 회사를 등록한 뒤에도 소비되지 않아, 만료(1시간) 전에는 같은 토큰으로 회사를 여러 개 등록할 수 있습니다. 등록에 성공하면 세션의 `onboardingTokenHash`를 지웁니다 ([identity-access.md](identity-access.md))
+   - 세무 신고에 붙는 파일 ID(`ledgerFileId`, `returnFileId`, `paymentSlipFileId`, `noticeFileId`, `fileId`)는 회사 확인 없이 저장됩니다. 파일 저장소(D7)가 생기면 파일 소유 회사를 확인하고, ID만으로 내려받지 못하게 합니다 ([tax.md](tax.md))

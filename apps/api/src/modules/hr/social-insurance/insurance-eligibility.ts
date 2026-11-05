@@ -10,11 +10,25 @@ import type {
 /** 내국인처럼 고용보험 당연가입인 체류자격입니다(영주·결혼이민·거주, 비전문취업·방문취업). */
 export const EI_MANDATORY_VISAS: ReadonlyArray<string> = ['F-2', 'F-5', 'F-6', 'E-9', 'H-2']
 
-/** 국적국과의 상호주의로 고용보험 가입이 갈리는 체류자격입니다. */
-export const EI_RECIPROCITY_VISAS: ReadonlyArray<string> = [
-  'D-7',
-  'D-8',
-  'D-9',
+/**
+ * 본국법의 상호주의에 따라 고용보험 적용이 갈리는 체류자격입니다(주재·기업투자·무역경영).
+ *
+ * 고용보험법 시행령 제3조의3 제1호 가목: 법 전부를 적용하되, 고용보험에 상응하는 보험료와 급여에 관한 본국법이
+ * 대한민국 국민에게 적용되지 않으면 제외합니다. 국가 목록은 법령이 정하지 않으므로 서버는 가입을 권하고 본국법 확인을 안내합니다.
+ */
+export const EI_RECIPROCITY_VISAS: ReadonlyArray<string> = ['D-7', 'D-8', 'D-9']
+
+/**
+ * 신청하면 고용보험을 적용하는 체류자격입니다. 신청 전 기본값은 미적용입니다.
+ *
+ * 고용보험법 시행령 제3조의3 제2호: 재외동포(F-4)와 출입국관리법 시행령 제23조 ①의 취업활동 체류자격
+ * (단기취업 C-4, E-1~E-10, 방문취업 H-2)입니다. 관광취업(H-1)은 취업하면 같은 체류자격으로 봅니다(제23조 ⑤).
+ * E-9·H-2는 외국인고용법이 적용되어 {@link EI_MANDATORY_VISAS}가 먼저입니다. 이 목록과 당연가입·상호주의에 없는
+ * 체류자격(D-2 등)은 적용 대상이 아니라 신청 안내도 하지 않습니다.
+ */
+export const EI_OPT_IN_VISAS: ReadonlyArray<string> = [
+  'F-4',
+  'C-4',
   'E-1',
   'E-2',
   'E-3',
@@ -22,14 +36,11 @@ export const EI_RECIPROCITY_VISAS: ReadonlyArray<string> = [
   'E-5',
   'E-6',
   'E-7',
+  'E-8',
+  'E-9',
+  'E-10',
+  'H-1',
 ]
-
-/**
- * 고용보험 상호주의 국가(ISO 3166-1 alpha-2)입니다.
- *
- * 고용노동부 고시와 대조하지 못해 비어 있습니다. 비어 있는 동안 상호주의 체류자격은 모두 비협정으로 봅니다.
- */
-export const EI_RECIPROCITY_COUNTRIES: ReadonlyArray<string> = []
 
 const WEEKS_PER_MONTH = 365 / 7 / 12
 
@@ -49,7 +60,8 @@ export const DEFAULT_ENROLLMENT: Readonly<Record<Insurance, InsuranceEnrollment>
  * - 고용보험: 만 65세 이후 입사면 `EI_OVER_65_NEW_HIRE`로 제외. 대표자·임원·동거 친족 제외
  * - 산재보험: 대표자·임원·동거 친족만 제외
  * - 주 15시간 미만이면 국민연금·건강·고용보험 제외
- * - 외국인 고용보험: 당연가입 체류자격이 아니면 상호주의(비협정이면 제외) 또는 임의가입 안내
+ * - 외국인 고용보험: 주재·기업투자·무역경영은 가입을 권하고 본국 상호주의 확인을 안내, 당연가입 체류자격이 아니면
+ *   `EXEMPT_FOREIGNER`로 제외하고, 신청 가능 체류자격({@link EI_OPT_IN_VISAS})이면 `EI_FOREIGNER_OPTIONAL`로 안내
  *
  * 순서가 결과에 영향을 줍니다. 뒤 규칙이 앞 규칙의 제외 사유를 덮어씁니다(현행과 같음).
  *
@@ -111,12 +123,10 @@ export function determineEligibility(
   if (facts.isForeigner) {
     const visa = (facts.visaCode ?? '').toUpperCase()
     if (EI_RECIPROCITY_VISAS.includes(visa)) {
-      const agreed =
-        facts.nationalityCode !== undefined && EI_RECIPROCITY_COUNTRIES.includes(facts.nationalityCode.toUpperCase())
-      result.messages.push(agreed ? 'EI_FOREIGNER_RECIPROCITY_AGREEMENT' : 'EI_FOREIGNER_RECIPROCITY_NON_AGREEMENT')
-      if (!agreed) exclude('ei', 'EXEMPT_FOREIGNER')
+      result.messages.push('EI_FOREIGNER_RECIPROCITY_CHECK')
     } else if (!EI_MANDATORY_VISAS.includes(visa)) {
-      result.messages.push('EI_FOREIGNER_OPTIONAL')
+      if (EI_OPT_IN_VISAS.includes(visa)) result.messages.push('EI_FOREIGNER_OPTIONAL')
+      exclude('ei', 'EXEMPT_FOREIGNER')
     }
   }
   return result
