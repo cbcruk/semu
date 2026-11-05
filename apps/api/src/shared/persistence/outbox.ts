@@ -50,19 +50,33 @@ export class Outbox extends Context.Service<
         CREATE INDEX IF NOT EXISTS outbox_pending ON outbox (delivered_at, seq);`,
       )
       const insert = db.prepare('INSERT INTO outbox (id, channel, data, created_at) VALUES (?, ?, ?, ?)')
-      const markDelivered = db.prepare('UPDATE outbox SET delivered_at = ?, attempts = attempts + 1 WHERE seq = ?')
+      const markDelivered = db.prepare(
+        'UPDATE outbox SET delivered_at = ?, attempts = attempts + 1 WHERE seq = ? AND delivered_at IS NULL',
+      )
       const markFailed = db.prepare('UPDATE outbox SET attempts = attempts + 1, last_error = ? WHERE seq = ?')
+      const isPending = db.prepare('SELECT 1 AS pending FROM outbox WHERE seq = ? AND delivered_at IS NULL')
       const pending = db.prepare('SELECT seq, channel, data FROM outbox WHERE delivered_at IS NULL ORDER BY seq')
       const handlers = new Map<string, (event: unknown) => Effect.Effect<void>>()
 
+      /**
+       * 이벤트 하나를 넘깁니다. 아직 전달되지 않았는지 확인, 소비자 처리, 전달 표시를 한 트랜잭션에서 합니다.
+       * 그래서 커밋 뒤 전달과 릴레이가 겹쳐도 한 번만 처리되고, 소비자가 실패(결함)하면 소비자의 쓰기와 함께 되돌린 뒤 실패를 따로 남깁니다.
+       */
       const deliver = (seq: number, channel: string, event: unknown): Effect.Effect<void> => {
         const handler = handlers.get(channel)
         if (handler === undefined) return Effect.void
-        return unitOfWork.run(handler(event)).pipe(
-          Effect.andThen(Effect.sync(() => markDelivered.run(new Date().toISOString(), seq))),
-          Effect.catchDefect((defect) => Effect.sync(() => markFailed.run(String(defect), seq))),
-          Effect.asVoid,
-        )
+        return unitOfWork
+          .run(
+            Effect.gen(function* () {
+              if (isPending.get(seq) === undefined) return
+              yield* handler(event)
+              markDelivered.run(new Date().toISOString(), seq)
+            }),
+          )
+          .pipe(
+            Effect.catchDefect((defect) => unitOfWork.run(Effect.sync(() => markFailed.run(String(defect), seq)))),
+            Effect.asVoid,
+          )
       }
 
       return Outbox.of({
@@ -82,7 +96,8 @@ export class Outbox extends Context.Service<
           }),
         relay: () =>
           Effect.gen(function* () {
-            const rows = pending.all()
+            // 연결이 하나라 트랜잭션 안에서 읽어야 다른 요청이 아직 커밋하지 않은 이벤트를 보지 않습니다.
+            const rows = yield* unitOfWork.run(Effect.sync(() => pending.all()))
             for (const row of rows) {
               yield* deliver(Number(row['seq']), row['channel'] as string, decodeRecord(row['data'] as string))
             }

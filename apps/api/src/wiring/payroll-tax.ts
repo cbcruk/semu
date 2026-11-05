@@ -20,11 +20,12 @@ export const PayrollWithholdingFilingLockFromTax: Layer.Layer<WithholdingFilingL
   )
 
 /**
- * Payroll의 `PayrollEventPublisher` 포트를 같은 프로세스에서 Tax에 바로 넘기는 구현입니다. 아웃박스가 생기기 전까지 씁니다.
+ * Payroll의 `PayrollEventPublisher` 포트를 outbox 채널 `payroll_pay_month->tax`로 Tax에 넘기는 구현입니다.
  *
  * `payroll_pay_month.closed`·`payroll_pay_month.reopened`를 받으면 그 지급월의 원천세 신고 건을 Payroll의 현재 마감 현황으로
  * 다시 맞춥니다(`PayrollLedgerSync`). Tax에는 회사와 지급월만 넘기고, 원천세 집계 같은 급여 금액은 넘기지 않습니다.
- * 대장 커맨드와 같은 요청 안에서 동기로 돌기 때문에 Tax 쪽 반영이 끝나야 커맨드 응답이 나갑니다.
+ * SQLite에서는 대장 커맨드의 트랜잭션이 커밋된 뒤 Tax 반영이 자기 트랜잭션에서 돌고, 그 뒤에 커맨드 응답이 나갑니다.
+ * Tax 반영이 실패해도 커맨드는 이미 커밋되어 2xx로 끝나며, 실패한 이벤트는 릴레이가 다시 넘깁니다. 메모리 저장소에서는 커맨드 안에서 바로 부릅니다.
  */
 export const PayrollEventsToTax: Layer.Layer<PayrollEventPublisher, never, PayrollLedgerSync | Outbox> = Layer.effect(
   PayrollEventPublisher,
