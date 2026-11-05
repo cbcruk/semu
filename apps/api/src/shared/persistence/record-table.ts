@@ -114,8 +114,8 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
   const seed = options.seed ?? []
   if (seed.length > 0) {
     seedOnce(db, name, () => {
-      // 같은 파일을 연 다른 프로세스가 먼저 넣었어도 기본 키 충돌로 실패하지 않게 합니다.
-      const insertSeed = db.prepare(`INSERT OR IGNORE INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
+      // 시드 ID가 겹치면 시드 자체의 잘못이므로 조용히 넘기지 않고 실패합니다.
+      const insertSeed = db.prepare(`INSERT INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
       for (const record of seed) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
     })
   }
@@ -154,13 +154,17 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
  * 표 `name`에 시드를 한 번만 넣습니다. 넣었으면 `semu_meta`에 `seeded:<name>`을 남기고, 표시가 있으면 다시 넣지 않습니다.
  *
  * 시드가 있는 표만 부릅니다. 시드가 없는 표에는 표시를 남기지 않아, 나중에 시드를 더하면 이미 있는 데이터베이스에도 들어갑니다.
- * 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣고 표시를 남깁니다. 표시 확인·넣기·표시는 한 savepoint 안에서 하고,
- * 표시는 `INSERT OR IGNORE`라 같은 파일을 연 두 프로세스가 겹쳐도 실패하지 않습니다.
+ * 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣고 표시를 남깁니다.
+ *
+ * 트랜잭션 밖이면 `BEGIN IMMEDIATE`로 쓰기 잠금을 먼저 잡고 표시를 확인합니다. 같은 파일을 연 다른 프로세스는 busy timeout 동안
+ * 기다렸다가 표시를 보고 넘어갑니다. 읽은 뒤 쓰기로 올리는 지연 트랜잭션(savepoint)은 WAL에서 `SQLITE_BUSY_SNAPSHOT`으로 실패합니다.
+ * 이미 트랜잭션 안이면 그 트랜잭션의 savepoint로 합니다.
  */
 function seedOnce(db: import('node:sqlite').DatabaseSync, name: string, insertSeed: () => void): void {
   ensureMetaTable(db)
   const marker = seededMarker(name)
-  db.exec('SAVEPOINT semu_seed')
+  const nested = db.isTransaction
+  db.exec(nested ? 'SAVEPOINT semu_seed' : 'BEGIN IMMEDIATE')
   try {
     if (db.prepare(`SELECT 1 FROM ${META_TABLE} WHERE name = ?`).get(marker) === undefined) {
       const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
@@ -170,10 +174,14 @@ function seedOnce(db: import('node:sqlite').DatabaseSync, name: string, insertSe
         new Date().toISOString(),
       )
     }
-    db.exec('RELEASE semu_seed')
+    db.exec(nested ? 'RELEASE semu_seed' : 'COMMIT')
   } catch (error) {
-    db.exec('ROLLBACK TO semu_seed')
-    db.exec('RELEASE semu_seed')
+    if (nested) {
+      db.exec('ROLLBACK TO semu_seed')
+      db.exec('RELEASE semu_seed')
+    } else if (db.isTransaction) {
+      db.exec('ROLLBACK')
+    }
     throw error
   }
 }

@@ -2,13 +2,13 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import { createBff } from './app.ts'
-import { positiveIntegerEnv } from './env.ts'
+import { MAX_TIMER_MS, positiveIntegerEnv } from './env.ts'
 import { DEFAULT_AUTH_TIMEOUT_MS, DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_UPSTREAM_TIMEOUT_MS } from './upstream.ts'
 
-/** 숫자 환경 변수입니다. 비었으면 기본값이고, 숫자가 아니거나 0 이하이면 이유를 남기고 시작하지 않습니다. */
-function numericEnv(name: string, fallback: number): number {
+/** 숫자 환경 변수입니다. 비었으면 기본값이고, 숫자가 아니거나 0 이하이거나 `max`를 넘으면 이유를 남기고 시작하지 않습니다. */
+function numericEnv(name: string, fallback: number, max?: number): number {
   try {
-    return positiveIntegerEnv(process.env, name, fallback)
+    return positiveIntegerEnv(process.env, name, fallback, max)
   } catch (error) {
     console.error(`Refusing to start: ${error instanceof Error ? error.message : String(error)}`)
     process.exit(1)
@@ -27,9 +27,9 @@ const allowedOrigins = (process.env['BFF_ALLOWED_ORIGINS'] ?? '')
   .map((origin) => origin.trim())
   .filter((origin) => origin !== '')
 /** 새 API 요청 하나의 제한 시간(ms)입니다. */
-const timeoutMs = numericEnv('BFF_UPSTREAM_TIMEOUT_MS', DEFAULT_UPSTREAM_TIMEOUT_MS)
+const timeoutMs = numericEnv('BFF_UPSTREAM_TIMEOUT_MS', DEFAULT_UPSTREAM_TIMEOUT_MS, MAX_TIMER_MS)
 /** 로그인·갱신·회사 전환의 제한 시간(ms)입니다. refresh 쿠키 회전을 놓치지 않게 길게 둡니다. */
-const authTimeoutMs = numericEnv('BFF_AUTH_TIMEOUT_MS', DEFAULT_AUTH_TIMEOUT_MS)
+const authTimeoutMs = numericEnv('BFF_AUTH_TIMEOUT_MS', DEFAULT_AUTH_TIMEOUT_MS, MAX_TIMER_MS)
 
 /** 새 API 응답 본문 하나의 최대 크기(바이트)입니다. 넘으면 502 `UPSTREAM_RESPONSE_TOO_LARGE`입니다. */
 const maxResponseBytes = numericEnv('BFF_UPSTREAM_MAX_RESPONSE_BYTES', DEFAULT_MAX_RESPONSE_BYTES)

@@ -1,3 +1,7 @@
+import { execFile } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Effect, Fiber, Layer, Option } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
@@ -265,6 +269,46 @@ describe('sqlite seeds', () => {
       .prepare(`SELECT id FROM test_seeded ORDER BY id`)
       .all()
       .map((row) => row['id'])
+
+  it('fails on a duplicate seed ID and leaves the table unseeded and unmarked', () => {
+    const db = new DatabaseSync(':memory:')
+    const duplicated = [...seed, { ...seed[0]!, amount: 9 }]
+
+    expect(() => makeSqliteRecordTable<Row>(db, 'test_seeded', { seed: duplicated })).toThrow(/UNIQUE/)
+    expect(ids(db)).toEqual([])
+    expect(db.prepare(`SELECT name FROM semu_meta`).all()).toEqual([])
+    expect(db.isTransaction).toBe(false)
+  })
+
+  it('lets processes that open one file together seed each table once without failing', async () => {
+    const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
+    const module = new URL('./record-table.ts', import.meta.url).href
+    const startAt = Date.now() + 1500
+    const script =
+      `const { DatabaseSync } = await import('node:sqlite');` +
+      `const { makeSqliteRecordTable } = await import(${JSON.stringify(module)});` +
+      `const db = new DatabaseSync(${JSON.stringify(filename)});` +
+      `db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');` +
+      `const seed = Array.from({ length: 500 }, (_, i) => ({ id: 'r' + String(i).padStart(4, '0') }));` +
+      `while (Date.now() < ${startAt}) {}` +
+      `for (let t = 0; t < 20; t += 1) makeSqliteRecordTable(db, 'race_' + t, { seed });` +
+      `db.close()`
+    const run = () =>
+      new Promise<void>((resolve, reject) =>
+        execFile(process.execPath, ['--input-type=module', '-e', script], (error, _stdout, stderr) =>
+          error ? reject(new Error(stderr || error.message)) : resolve(),
+        ),
+      )
+
+    await Promise.all(Array.from({ length: 6 }, run))
+
+    const db = new DatabaseSync(filename, { readOnly: true })
+    const counts = Array.from({ length: 20 }, (_, t) => db.prepare(`SELECT count(*) AS n FROM race_${t}`).get()?.['n'])
+    const markers = db.prepare(`SELECT count(*) AS n FROM semu_meta WHERE name LIKE 'seeded:race_%'`).get()?.['n']
+    db.close()
+    expect(counts).toEqual(Array(20).fill(500))
+    expect(markers).toBe(20)
+  }, 30_000)
 
   it('seeds a table once, so deleted seed rows do not come back on restart', async () => {
     const db = new DatabaseSync(':memory:')
