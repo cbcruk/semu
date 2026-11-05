@@ -10,7 +10,7 @@ Backend API server for semu (Korean tax, HR, payroll and bookkeeping SaaS), rede
 | `docs/reference/spec/` | Evidence from the analysis: endpoints, fields and rules per domain, read from the client bundle |
 | `docs/reference/rules/` | Business rules of the current client, traced from the bundle and the manual (Korean). Index: [`docs/reference/rules/README.md`](docs/reference/rules/README.md) |
 | `docs/reference/legacy-design/` | Design of the earlier wire-compatible implementation, kept for its rule decisions |
-| `alfred-manual/` | The Alfred Business support manual converted to Markdown |
+| `alfred-manual/` | The existing service's support manual converted to Markdown (source material) |
 | `apps/api/` | The API server. Bounded contexts live in `apps/api/src/modules/` as modules of a modular monolith |
 | `apps/api/test/fixtures/rules/` | Input → output cases for each rule, used as server test data |
 | `scripts/alfred-manual/` | Crawler that produced `alfred-manual/` |
