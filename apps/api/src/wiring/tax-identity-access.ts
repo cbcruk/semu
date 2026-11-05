@@ -12,10 +12,11 @@ export const TAX_SETTINGS_WITHOUT_STORE = {
   fiscalYearEndMonth: 12,
   withholdingCycle: 'MONTHLY',
   sincereFilingTarget: false,
+  vatTaxpayerType: 'GENERAL',
   taxableCardRatioPpm: 1_000_000,
 } as const satisfies Pick<
   TaxProfile,
-  'fiscalYearEndMonth' | 'withholdingCycle' | 'sincereFilingTarget' | 'taxableCardRatioPpm'
+  'fiscalYearEndMonth' | 'withholdingCycle' | 'sincereFilingTarget' | 'vatTaxpayerType' | 'taxableCardRatioPpm'
 >
 
 /**
@@ -27,6 +28,7 @@ export const TAX_SETTINGS_WITHOUT_STORE = {
  * - 원천세 납부 주기: 매월(반기별 납부 승인을 모릅니다)
  * - 부가세 예정 기간: 법인은 신고(`FILING`), 개인은 고지(`NOTICE`)
  * - 성실신고확인 대상: 아님
+ * - 부가세 과세 유형: 일반과세자
  * - 카드 매출 과세 비율: 100%
  */
 export const TaxProfilesFromIdentityAccess: Layer.Layer<TaxProfiles, never, CompanyDirectory | CompanyPlans> =
