@@ -1,0 +1,232 @@
+{
+  "rule": "terms-reagreement",
+  "description": "Client-side terms consent check: which purposes are checked (signup always, tax only for taxation companies), per-term needsConsent (required terms need an agreement at the current version, optional terms are asked again on every new version) and the redirect it triggers.",
+  "sources": [
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "29-36, 204-215",
+      "origin": "index.pretty.js B:104680-104830, B:104689-104696"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/terms/terms.utils.ts",
+      "lines": "3-13"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/terms/terms.service.ts",
+      "lines": "34-71, 96-108"
+    },
+    {
+      "file": "alfred-manual/10-개인-설정-안내.md",
+      "lines": "9-24"
+    }
+  ],
+  "inputSchema": {
+    "check": "needsConsent | purposes | guard | record | visibleTerms.",
+    "term": "One item of GET /api/user/me/term-agreements/?purpose=: {isRequired, version, history: {isAgreed, version} | null}.",
+    "companies": "user.companies from GET /api/user/me/: [{id, taxPlan}].",
+    "items": "Term agreement items per purpose for the guard.",
+    "answers": "PATCH /api/user/me/term-agreements/ agreements (legacy server shape {term_id|code, is_agreed}).",
+    "terms": "Term catalog with audience (all | taxation) for the personal settings list."
+  },
+  "cases": [
+    {
+      "name": "required term never answered",
+      "input": { "check": "needsConsent", "term": { "isRequired": true, "version": "2026-01", "history": null } },
+      "expected": { "client": "TypeError (history.isAgreed on null)", "legacyServer": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "required term agreed at the current version",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": true, "version": "2026-01", "history": { "isAgreed": true, "version": "2026-01" } }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "required term agreed at an older version",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": true, "version": "2026-07", "history": { "isAgreed": true, "version": "2026-01" } }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "required term declined at the current version",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": true, "version": "2026-01", "history": { "isAgreed": false, "version": "2026-01" } }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "optional term never answered",
+      "input": { "check": "needsConsent", "term": { "isRequired": false, "version": "2026-01", "history": null } },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "optional term declined at the current version is not asked again",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": false, "version": "2026-01", "history": { "isAgreed": false, "version": "2026-01" } }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "optional term declined at an older version is asked again",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": false, "version": "2026-07", "history": { "isAgreed": false, "version": "2026-01" } }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "optional term agreed at an older version is asked again",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": false, "version": "2026-07", "history": { "isAgreed": true, "version": "2026-01" } }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "version compared with strict inequality across types",
+      "input": {
+        "check": "needsConsent",
+        "term": { "isRequired": true, "version": 2, "history": { "isAgreed": true, "version": "2" } }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "purposes for a user without a taxation company",
+      "input": { "check": "purposes", "companies": [{ "id": 1, "taxPlan": null }, { "id": 2, "taxPlan": null }] },
+      "expected": ["signup"],
+      "derivation": "traced"
+    },
+    {
+      "name": "purposes when any company is taxation",
+      "input": { "check": "purposes", "companies": [{ "id": 1, "taxPlan": null }, { "id": 2, "taxPlan": "taxation" }] },
+      "expected": ["signup", "tax"],
+      "derivation": "traced"
+    },
+    {
+      "name": "purposes for a user with no company yet",
+      "input": { "check": "purposes", "companies": [] },
+      "expected": ["signup"],
+      "derivation": "traced"
+    },
+    {
+      "name": "guard redirects to /agree-terms when a signup term needs consent",
+      "input": {
+        "check": "guard",
+        "next": "/today",
+        "companies": [{ "id": 1, "taxPlan": "taxation" }],
+        "items": {
+          "signup": [{ "isRequired": true, "version": "2026-07", "history": { "isAgreed": true, "version": "2026-01" } }],
+          "tax": [{ "isRequired": true, "version": "2026-01", "history": { "isAgreed": false, "version": "2026-01" } }]
+        }
+      },
+      "expected": { "redirect": "/agree-terms?next=/today" },
+      "derivation": "traced"
+    },
+    {
+      "name": "guard redirects to /tax-agree-terms when only tax terms are pending",
+      "input": {
+        "check": "guard",
+        "next": "/tax/surtax",
+        "companies": [{ "id": 1, "taxPlan": "taxation" }],
+        "items": {
+          "signup": [{ "isRequired": true, "version": "2026-01", "history": { "isAgreed": true, "version": "2026-01" } }],
+          "tax": [{ "isRequired": true, "version": "2026-01", "history": null }]
+        }
+      },
+      "expected": { "redirect": "/tax-agree-terms" },
+      "derivation": "traced"
+    },
+    {
+      "name": "guard ignores pending tax terms for a free customer",
+      "input": {
+        "check": "guard",
+        "next": "/today",
+        "companies": [{ "id": 1, "taxPlan": null }],
+        "items": {
+          "signup": [{ "isRequired": true, "version": "2026-01", "history": { "isAgreed": true, "version": "2026-01" } }],
+          "tax": [{ "isRequired": true, "version": "2026-01", "history": null }]
+        }
+      },
+      "expected": { "redirect": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "guard redirects for a new optional term version",
+      "input": {
+        "check": "guard",
+        "next": "/today",
+        "companies": [],
+        "items": {
+          "signup": [
+            { "isRequired": true, "version": "2026-01", "history": { "isAgreed": true, "version": "2026-01" } },
+            { "isRequired": false, "version": "2026-07", "history": { "isAgreed": false, "version": "2026-01" } }
+          ]
+        }
+      },
+      "expected": { "redirect": "/agree-terms?next=/today" },
+      "derivation": "traced"
+    },
+    {
+      "name": "guard throws on an empty term list",
+      "input": { "check": "guard", "next": "/today", "companies": [], "items": { "signup": [] } },
+      "expected": { "throws": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy server refuses to record a declined required term",
+      "input": {
+        "check": "record",
+        "currentTerms": [{ "code": "service", "version": "2026-01", "isRequired": true }],
+        "answers": [{ "code": "service", "is_agreed": false }]
+      },
+      "expected": { "status": 400, "code": "VALIDATION_FAILED", "field": "agreements.0.is_agreed" },
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy server refuses an answer to an outdated term id",
+      "input": {
+        "check": "record",
+        "currentTerms": [{ "id": "trm-2", "code": "service", "version": "2026-07", "isRequired": true }],
+        "answers": [{ "term_id": "trm-1", "is_agreed": true }]
+      },
+      "expected": { "status": 400, "code": "VALIDATION_FAILED", "field": "agreements.0.term_id" },
+      "derivation": "traced"
+    },
+    {
+      "name": "free customer does not see the tax firm terms",
+      "input": {
+        "check": "visibleTerms",
+        "companyTaxPlan": null,
+        "terms": [
+          { "code": "service", "audience": "all" },
+          { "code": "privacy", "audience": "all" },
+          { "code": "heum_tax_service", "audience": "taxation" }
+        ]
+      },
+      "expected": ["service", "privacy"],
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The bundle expression for required terms is quoted as `!history.isAgreed`, which throws when history is null; whether the real code guards null is not visible.",
+    "Optional terms trigger the /agree-terms redirect on every new version even when the user declined before; it is unclear whether this is intended for marketing consent.",
+    "Version comparison is a strict inequality on whatever type the server sends, so formatting changes (2 vs \"2\", \"2026-1\" vs \"2026-01\") force re-consent.",
+    "The tax purpose is checked when any of the user's companies is taxation, not only the selected company, so a user can be blocked in a free company.",
+    "The server cannot rely on the client guard: product APIs are reachable without passing /agree-terms, and the legacy server only gates tax menus on the tax terms.",
+    "Which terms belong to the taxation-only audience (세무법인 혜움 terms) is described only in the manual; the term catalog and its codes are not in the bundle."
+  ]
+}

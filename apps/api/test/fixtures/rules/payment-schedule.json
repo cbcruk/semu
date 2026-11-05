@@ -1,0 +1,172 @@
+{
+  "rule": "payment-schedule",
+  "description": "CMS auto-withdrawal of service fees: billing day moved past weekends and holidays, result reflected the next afternoon, D-1 notice, payment statuses and their transitions (retry is an agency action), and the 2025-12 payroll-only payment list.",
+  "sources": [
+    {
+      "file": "alfred-manual/08-설정/10-서비스-및-결제.md",
+      "lines": "29-88"
+    },
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "79-83, 226-234, 369-377"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/billing/billing.utils.ts",
+      "lines": "9-22, 40-53"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/billing/billing.service.ts",
+      "lines": "112-197"
+    }
+  ],
+  "inputSchema": {
+    "check": "billingDate | resultVisibleAt | noticeDate | transition | label | list | schedule.",
+    "month": "Billing month YYYY-MM; the legacy billing day is the 25th.",
+    "holidays": "Public holidays (YYYY-MM-DD) known to the bank network.",
+    "from": "Current payment status (scheduled | paid | failed | retrying | refunded).",
+    "event": "withdrawalSucceeded | withdrawalFailed | retryByAgency | refund."
+  },
+  "cases": [
+    {
+      "name": "billing day on a weekday stays",
+      "input": { "check": "billingDate", "month": "2026-11", "holidays": [] },
+      "expected": "2026-11-25",
+      "derivation": "traced"
+    },
+    {
+      "name": "billing day on Saturday moves to Monday",
+      "input": { "check": "billingDate", "month": "2026-04", "holidays": [] },
+      "expected": "2026-04-27",
+      "derivation": "traced"
+    },
+    {
+      "name": "billing day on Sunday moves to Monday",
+      "input": { "check": "billingDate", "month": "2026-10", "holidays": [] },
+      "expected": "2026-10-26",
+      "derivation": "traced"
+    },
+    {
+      "name": "billing day on a Monday substitute holiday moves to Tuesday",
+      "input": { "check": "billingDate", "month": "2026-05", "holidays": ["2026-05-25"] },
+      "expected": "2026-05-26",
+      "derivation": "traced"
+    },
+    {
+      "name": "billing day on Christmas Friday skips the weekend",
+      "input": { "check": "billingDate", "month": "2026-12", "holidays": ["2026-12-25"] },
+      "expected": "2026-12-28",
+      "derivation": "traced"
+    },
+    {
+      "name": "billing day inside a multi-day holiday",
+      "input": { "check": "billingDate", "month": "2026-09", "holidays": ["2026-09-24", "2026-09-25", "2026-09-26"] },
+      "expected": "2026-09-28",
+      "derivation": "traced"
+    },
+    {
+      "name": "result appears the next afternoon",
+      "input": { "check": "resultVisibleAt", "withdrawnOn": "2026-11-25" },
+      "expected": { "date": "2026-11-26", "time": "afternoon" },
+      "derivation": "traced"
+    },
+    {
+      "name": "amount notice one day before withdrawal",
+      "input": { "check": "noticeDate", "withdrawalDate": "2026-11-25" },
+      "expected": { "date": "2026-11-24", "channel": "알림톡" },
+      "derivation": "traced"
+    },
+    {
+      "name": "scheduled payment withdrawn",
+      "input": { "check": "transition", "from": "scheduled", "event": "withdrawalSucceeded" },
+      "expected": "paid",
+      "derivation": "traced"
+    },
+    {
+      "name": "scheduled payment fails for low balance",
+      "input": { "check": "transition", "from": "scheduled", "event": "withdrawalFailed" },
+      "expected": "failed",
+      "derivation": "traced"
+    },
+    {
+      "name": "agency retries a failed payment",
+      "input": { "check": "transition", "from": "failed", "event": "retryByAgency" },
+      "expected": "retrying",
+      "derivation": "traced"
+    },
+    {
+      "name": "retry succeeds",
+      "input": { "check": "transition", "from": "retrying", "event": "withdrawalSucceeded" },
+      "expected": "paid",
+      "derivation": "traced"
+    },
+    {
+      "name": "retry fails again",
+      "input": { "check": "transition", "from": "retrying", "event": "withdrawalFailed" },
+      "expected": "failed",
+      "derivation": "traced"
+    },
+    {
+      "name": "paid payment refunded",
+      "input": { "check": "transition", "from": "paid", "event": "refund" },
+      "expected": "refunded",
+      "derivation": "traced"
+    },
+    {
+      "name": "only failed payments can be retried",
+      "input": { "check": "transition", "from": "scheduled", "event": "retryByAgency" },
+      "expected": { "status": 409, "code": "INVALID_TRANSITION" },
+      "derivation": "traced"
+    },
+    {
+      "name": "status labels",
+      "input": { "check": "label", "statuses": ["scheduled", "paid", "failed", "retrying", "refunded"] },
+      "expected": ["결제 예정", "결제 완료", "결제 실패", "결제 재시도", "환불"],
+      "derivation": "traced"
+    },
+    {
+      "name": "payment list shows only payroll outsourcing as of 2025-12",
+      "input": {
+        "check": "list",
+        "payments": [
+          { "id": 101, "productCode": "payroll", "status": "paid" },
+          { "id": 102, "productCode": "tax", "status": "paid" },
+          { "id": 103, "productCode": "payroll", "status": "scheduled" }
+        ]
+      },
+      "expected": [
+        { "id": 101, "productName": "급여 아웃소싱", "isScheduled": false },
+        { "id": 103, "productName": "급여 아웃소싱", "isScheduled": true }
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "zero fee subscription schedules nothing",
+      "input": {
+        "check": "schedule",
+        "month": "2026-11",
+        "subscriptions": [{ "code": "payroll", "status": "active", "startedOn": "2026-01-01", "endedOn": null, "monthlyFee": 0 }]
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "running the billing job twice schedules once",
+      "input": {
+        "check": "schedule",
+        "month": "2026-11",
+        "runs": 2,
+        "subscriptions": [{ "code": "payroll", "status": "active", "startedOn": "2026-01-01", "endedOn": null, "monthlyFee": 330000 }]
+      },
+      "expected": [{ "code": "payroll", "amount": 330000, "scheduledOn": "2026-11-25", "status": "scheduled" }],
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The billing day (25th in the legacy server) is not stated in the manual; the real withdrawal day per contract is unknown.",
+    "Whether the D-1 notice counts calendar days or business days before the shifted withdrawal date is not stated.",
+    "The manual says only payroll outsourcing payments are listed as of 2025-12; whether tax outsourcing is excluded by the server or the client is not visible.",
+    "Payment numbers are self-assigned and may be non-consecutive; whether a retry keeps the same number or creates a child payment is unclear.",
+    "Whether a refund can be partial and what status a partially refunded payment shows is not documented.",
+    "Proration for subscriptions starting or ending mid-month is not described."
+  ]
+}

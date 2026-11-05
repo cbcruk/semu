@@ -1,0 +1,279 @@
+{
+  "rule": "menu-visibility",
+  "description": "Menu tree filtering per user: business-type applicability, role-group permission (admin sees all), system-admin-only menus, plan entitlement with promotion nodes for free (and HQ-agency) companies, the payroll-subscriber exclusion of employee_management, tax-terms gate that keeps the menu but blocks data, and pruning of empty groups.",
+  "sources": [
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "65-73, 312-319, 408-419",
+      "origin": "index.pretty.js B:77551, B:77553, B:77617-77630"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/access/access.ts",
+      "lines": "36-56"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/access/menu-exclusions.ts",
+      "lines": "1-35"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/menu-tree/menu-tree.service.ts",
+      "lines": "23-46"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/menu-tree/default-menu-tree.ts",
+      "lines": "1-92"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/access/menu-codes.ts",
+      "lines": "1-40"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/platform.menus.ts",
+      "lines": "1-55"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/hr.menus.ts",
+      "lines": "1-40"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/payroll/payroll.menus.ts",
+      "lines": "1-60"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/bookkeeping/bookkeeping.menus.ts",
+      "lines": "1-40"
+    },
+    {
+      "file": "alfred-manual/08-설정/02-사용자-관리.md",
+      "lines": "72-99"
+    },
+    {
+      "file": "alfred-manual/09-Alfred-Business-메뉴-구조.md",
+      "lines": "27-30, 71-81"
+    }
+  ],
+  "inputSchema": {
+    "menu": "Menu code of a 3-depth leaf, or a 2-depth group with its leaves.",
+    "company": "{businessType: corporate | individual, taxPlan: 'taxation' | null, hasPayrollPlan, isFree, agencyType: 'hq' | null}.",
+    "user": "{actor: client | agency, isAdmin, roleMenuCodes[], isSystemAdmin, taxTermsAgreed}.",
+    "expected": "node: visible | promotion | hidden, with the decide() reason or the exclusion rule that hid it."
+  },
+  "cases": [
+    {
+      "name": "admin of a taxation corporation sees VAT",
+      "input": {
+        "menu": "tax_surtax",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "free company admin gets a VAT promotion node",
+      "input": {
+        "menu": "tax_surtax",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "promotion", "reason": "ENTITLEMENT_REQUIRED", "promotionUrl": "/settings/plan/detail" },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporation never sees the individual income tax menu",
+      "input": {
+        "menu": "tax_aggr_income",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "hidden", "reason": "NOT_FOUND" },
+      "derivation": "traced"
+    },
+    {
+      "name": "member without the menu in any role group",
+      "input": {
+        "menu": "tax_surtax",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": ["bookkeeping_partners"], "isSystemAdmin": false, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "hidden", "reason": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "member gets the union of role groups",
+      "input": {
+        "menu": ["tax_surtax", "employee_management", "bookkeeping_partners"],
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": {
+          "actor": "client",
+          "isAdmin": false,
+          "roleGroups": { "세무": ["tax_surtax"], "인사": ["employee_management"] },
+          "roleMenuCodes": ["tax_surtax", "employee_management"],
+          "isSystemAdmin": false,
+          "taxTermsAgreed": true
+        }
+      },
+      "expected": { "tax_surtax": "visible", "employee_management": "visible", "bookkeeping_partners": "hidden" },
+      "derivation": "traced"
+    },
+    {
+      "name": "member without permission in a free company sees no promotion",
+      "input": {
+        "menu": "tax_surtax",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": [], "isSystemAdmin": false, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "hidden", "reason": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "payroll subscriber never sees employee_management",
+      "input": {
+        "menu": "employee_management",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": true, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "hidden", "reason": "EXCLUDED_FOR_PAYROLL_PLAN" },
+      "derivation": "traced"
+    },
+    {
+      "name": "taxation-only company sees employee_management",
+      "input": {
+        "menu": "employee_management",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "payroll subscriber with taxation still sees payroll_management",
+      "input": {
+        "menu": "payroll_management",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": true, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "paid company missing a plan sees no promotion",
+      "input": {
+        "menu": "payroll_settlement",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "hidden", "reason": "ENTITLEMENT_REQUIRED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "HQ agency company sees the pb_employment promotion despite a paid plan",
+      "input": {
+        "menu": "pb_employment",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": "hq" },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "promotion" },
+      "derivation": "traced"
+    },
+    {
+      "name": "non-HQ paid company does not see pb_payroll_management",
+      "input": {
+        "menu": "pb_payroll_management",
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": true }
+      },
+      "expected": { "node": "hidden" },
+      "derivation": "traced"
+    },
+    {
+      "name": "ai_agent hidden from an admin who is not the system admin",
+      "input": {
+        "menu": "ai_agent",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": false, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "hidden", "reason": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "ai_agent visible to the system admin on any plan",
+      "input": {
+        "menu": "ai_agent",
+        "company": { "businessType": "individual", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "grant_recommendation open to a member without roles",
+      "input": {
+        "menu": "grant_recommendation",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": [], "isSystemAdmin": false, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "pending tax terms keep the menu but block its data",
+      "input": {
+        "menu": "tax_withholding",
+        "company": { "businessType": "individual", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "visible", "dataAccess": { "status": 403, "reason": "TAX_TERMS_REQUIRED" } },
+      "derivation": "traced"
+    },
+    {
+      "name": "assigned agency staff see every applicable menu without the terms gate",
+      "input": {
+        "menu": ["tax_surtax", "tax_corporation", "tax_aggr_income", "user_management"],
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "agency", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": false, "taxTermsAgreed": true }
+      },
+      "expected": { "tax_surtax": "visible", "tax_corporation": "visible", "tax_aggr_income": "hidden", "user_management": "visible" },
+      "derivation": "traced"
+    },
+    {
+      "name": "group with no remaining leaves is pruned",
+      "input": {
+        "menu": { "group": "세무 신고", "leaves": ["tax_surtax", "tax_withholding", "tax_corporation", "tax_aggr_income"] },
+        "company": { "businessType": "corporate", "taxPlan": "taxation", "hasPayrollPlan": false, "isFree": false, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": ["bookkeeping_partners"], "isSystemAdmin": false, "taxTermsAgreed": true }
+      },
+      "expected": { "group": "hidden" },
+      "derivation": "traced"
+    },
+    {
+      "name": "free company admin gets a contract_consent promotion",
+      "input": {
+        "menu": "contract_consent",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": true, "roleMenuCodes": [], "isSystemAdmin": true, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "promotion", "reason": "ENTITLEMENT_REQUIRED", "promotionUrl": "/settings/plan/detail" },
+      "derivation": "traced"
+    },
+    {
+      "name": "user_management member can open the menu but not invite",
+      "input": {
+        "menu": "user_management",
+        "action": "invite",
+        "company": { "businessType": "corporate", "taxPlan": null, "hasPayrollPlan": false, "isFree": true, "agencyType": null },
+        "user": { "actor": "client", "isAdmin": false, "roleMenuCodes": ["user_management"], "isSystemAdmin": false, "taxTermsAgreed": false }
+      },
+      "expected": { "node": "visible", "action": { "status": 403, "reason": "PERMISSION_DENIED" } },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Menu codes other than the promotion codes (pb_employment, pb_payroll_management) are not in the entry bundle; the legacy server's codes are proposals.",
+    "The live menu tree puts permission before plan, so a member without the role never sees a promotion; whether that is intended for upselling is unclear.",
+    "isSystemAdmin gates ai_agent in the bundle while the manual says the AI assistant is open to every user regardless of plan; which is current is unknown.",
+    "The manual shows 급여 관리 only to tax bookkeeping customers, but the exclusion rule only hides employee_management for payroll subscribers, so payroll_management stays for companies with both plans.",
+    "Whether role groups store numeric menu ids or menu codes is not settled (favorites use menuId).",
+    "Promotion nodes for pb_* codes have no counterpart menu rules in the legacy server, so their plan requirement is assumed."
+  ]
+}
