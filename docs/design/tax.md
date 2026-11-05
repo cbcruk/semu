@@ -281,7 +281,8 @@ flowchart LR
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 내보냄(이벤트) | `filing.status_changed` | `{ companyId, filingId, taxType, kind, periodStart, periodEnd, fromStatus, toStatus, payableAmount, occurredAt }` |
-| 받음(이벤트) | Payroll `payroll_ledger.closed`·`payroll_ledger.reopened` | `app.ts`가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `Filings.syncPayrollLedger`를 부름 |
+| 받음(이벤트) | Payroll `payroll.pay-month.closed`·`payroll.pay-month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 같은 요청 안에서 부름 |
+| 공개 조회 | `VatEstimateQuery.current(companyId, businessType, asOf)` | `{ period, asOf, estimatedTax, dueDate }`. Bookkeeping 홈 카드가 씀 |
 | 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장 잠금에 씀 |
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
@@ -346,9 +347,8 @@ flowchart LR
 | 세무 일정 조회 | 구현 ([tax-calendar.ts](../../apps/api/src/modules/tax/calendar/tax-calendar.ts)) |
 | 일정 배치 | 서비스만 (`FilingSchedulerLive`). 매일 돌릴 실행기는 없음 |
 | 예상 부가세·추이 | 구현 ([vat-estimates.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimates.ts)) |
-| `WithholdingFilingLock` | 구현 (`WithholdingFilingLockLive`). Payroll 연결은 `app.ts`에서 할 일 |
-| `syncPayrollLedger` | 서비스만. Payroll 이벤트 구독은 `app.ts`에서 할 일 |
-| 포트 실제 구현(`PayrollLedgers`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | 메모리 가짜만 |
+| 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
+| 포트 연결(`PayrollLedgers`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 업무 큐, 수정신고, 감사 로그 | 없음 |
 

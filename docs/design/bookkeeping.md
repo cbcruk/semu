@@ -270,7 +270,7 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `GiroPaymentGateway` | Integrations | `pay({ companyId, giroId, electronicPaymentNumber, taxKind, bankCode, accountNumber, accountPassword, amount, idempotencyKey }) → { ok, resultCode, resultMessage }` |
 | `AccountNumberCipher` | 공유(KMS) | `encrypt(plaintext)`, `decrypt(token)` (동기) |
 
-모두 `ports/`에 있고 `layerFake`가 있습니다. 메모리 구성(`BookkeepingMemoryLive`)은 가짜를 씁니다.
+모두 `ports/`에 있고 `layerFake`가 있습니다. Bookkeeping만 시험할 때(`BookkeepingMemoryLive`)는 가짜를 쓰고, `app.ts`는 `src/wiring/bookkeeping-*.ts` 어댑터로 Integrations·Tax·Payroll에 연결합니다.
 
 ### 인건비 (Payroll → Bookkeeping)
 

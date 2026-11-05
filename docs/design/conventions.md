@@ -166,7 +166,8 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 | `<resources>.http.ts` | 핸들러(`HttpApiBuilder.group`) |
 | `*.test.ts`, `*.http.test.ts`, `*.fixtures.test.ts` | 규칙 단위 테스트, HTTP 테스트, 규칙 픽스처 테스트 |
 
-- **다른 컨텍스트의 저장소를 직접 읽지 않습니다.** 필요한 것은 쓰는 쪽이 포트(`Context.Service`)로 선언하고, 제공하는 쪽이 그 포트를 구현한 Layer를 내보냅니다. 연결은 `app.ts`에서 합니다
+- **다른 컨텍스트의 저장소를 직접 읽지 않습니다.** 필요한 것은 쓰는 쪽이 포트(`Context.Service`)로 선언하고, 제공하는 쪽이 공개 서비스(`<context>.public.ts`)를 내보냅니다. 둘을 잇는 어댑터는 `apps/api/src/wiring/<consumer>-<provider>.ts`에 두고, `wiring.layer.ts`의 `WiringLive`로 묶어 `app.ts`에서 연결합니다
+  - 어댑터와 핸들러는 컨텍스트마다 하나뿐인 저장소 인스턴스를 함께 씁니다. 각 컨텍스트의 `<Context>MemoryLive`에 있는 다른 컨텍스트 포트의 가짜는 그 컨텍스트 단위 테스트에서만 씁니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
 
 ## 예시 규칙
