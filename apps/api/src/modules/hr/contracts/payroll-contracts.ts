@@ -100,6 +100,7 @@ export class PayrollContracts extends Context.Service<
         const evaluation = evaluatePayrollContract(input, {
           minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026,
           probationPayRatePpm: workContract?.probation?.payRatePpm,
+          probationMonths: workContract?.probation?.months,
         })
         if (evaluation.violations.length > 0)
           return yield* new PayrollContractInvalid({ violations: evaluation.violations })

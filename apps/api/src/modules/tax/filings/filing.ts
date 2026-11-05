@@ -16,7 +16,15 @@ export const FilingDocumentId = IdSchema('filingDocument')
 export const TaxType = Schema.Literals(['VAT', 'WITHHOLDING_TAX', 'CORPORATE_TAX', 'INCOME_TAX'])
 
 /** 신고 건 주기·종류입니다. */
-export const FilingKind = Schema.Literals(['PRELIMINARY', 'FINAL', 'NOTICE', 'MONTHLY', 'SEMIANNUAL', 'ANNUAL'])
+export const FilingKind = Schema.Literals([
+  'PRELIMINARY',
+  'FINAL',
+  'NOTICE',
+  'MONTHLY',
+  'SEMIANNUAL',
+  'INTERIM',
+  'ANNUAL',
+])
 
 /** 신고 건 상태입니다. */
 export const FilingStatus = Schema.Literals([

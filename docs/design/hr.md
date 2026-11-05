@@ -142,7 +142,7 @@ WorkContract
 ├─ id, employeeId, origin: MANUAL | ESIGN, esignRequestId?
 ├─ contractType: PERMANENT | FIXED_TERM, startDate, endDate?
 ├─ workType, occupationCode?, weeklyWorkHours?, workSchedulePolicyId?, workConditionId?
-├─ probation?: { months, payRatePpm }
+├─ probation?: { months, payRatePpm }, standardOccupationCode?, termLimitExemption?
 ├─ jobDescription?, documentId?
 └─ status (파생): SCHEDULED | ACTIVE | EXPIRED
 ```
@@ -156,7 +156,8 @@ DELETE /work-contracts/{workContractId}
 GET    /employees/{employeeId}/indefinite-conversion?asOf=
 ```
 
-- 기간제는 종료일이 필수이고, 수습 감액(지급률 100% 미만)은 1년 이상 계약에만 허용합니다 ([work-contract-validation](../reference/rules/work-contract-validation.md))
+- 기간제는 종료일이 필수이고, 수습 감액(지급률 100% 미만)은 1년 이상 계약에만 허용합니다 ([work-contract-validation](../reference/rules/work-contract-validation.md)). 한국표준직업분류 코드(`standardOccupationCode`)가 대분류 9(단순노무)면 감액을 받지 않습니다
+- 기간제 사용기간 제한의 예외 사유(`termLimitExemption`, 기간제법 제4조 ① 단서)를 계약에 받고, 무기계약 전환 판정이 `exemptReason`으로 돌려줍니다. 예외 사유 없는 계약이 전환일을 넘기면 뒤의 예외 계약과 상관없이 전환입니다(제4조 ②)
 - 지급률은 ppm입니다(`90% = 900000`). 현행 정수 퍼센트(`90`)를 바꿉니다
 
 ### 급여계약
@@ -195,7 +196,7 @@ POST /employees/{employeeId}/social-insurance:determine   { 저장하지 않은 
 
 - **자격 판정은 순수 규칙입니다** ([social-insurance-eligibility](../reference/rules/social-insurance-eligibility.md)). 입력은 생년월일·입사일·내외국인·체류자격·주 소정근로시간·대표자/친족 여부이고, 출력은 판정 코드와 권장 가입 여부입니다
 - `:determine` 하나가 현행 `preview`(미저장 값)와 `redetermine`(저장값)을 대신합니다. 본문이 비면 저장된 값으로 판정합니다. 저장하지 않으므로 커맨드지만 멱등입니다
-- 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_AGREEMENT`, `EI_FOREIGNER_RECIPROCITY_NON_AGREEMENT`로 대문자를 맞춥니다
+- 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_CHECK`로 대문자를 맞춥니다. 상호주의 국가 목록은 두지 않습니다(D-7·D-8·D-9만 본국법 확인 안내). 당연가입이 아닌 그 밖의 체류자격은 신청 전 미적용으로 권합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
 - 제외 사유는 한글 문장 대신 코드(`AGE_60_OR_OVER`, `SHORT_PART_TIME`, …)로 받고, 표시 문자열은 `GET /reference/insurance-exclusion-reasons`가 줍니다
 - 판정 결과는 권장값입니다. 사용자가 다르게 저장할 수 있고, 그 차이는 `GET` 응답의 `warnings`(`ELIGIBILITY_MISMATCH`)로 보여 줍니다
 
@@ -249,7 +250,7 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 - 휴직 등록·수정·삭제는 직원 상태를 바꾸므로 휴직과 직원의 `version`을 함께 올립니다
 - **복직은 커맨드입니다.** 현행은 `PUT`에 `actual_return_date`를 넣었습니다. `:return`이 복직일을 기록하고 복직 신고(`RETURN`)를 엽니다
-- 기간 겹침은 422 `LEAVE_OVERLAP`(`overlappingLeaveId`)입니다. 육아휴직은 근속에 항상 포함하고, 건강보험 납입고지유예는 1개월 이상 휴직에만 허용합니다 ([leave-validation](../reference/rules/leave-validation.md))
+- 기간 겹침은 422 `LEAVE_OVERLAP`(`overlappingLeaveId`)입니다. 육아휴직은 근속에 항상 포함하고, 건강보험 납입고지유예는 유예되는 달이 있는 휴직에만 허용합니다(국민건강보험법 시행규칙 제50조 ④, [leave-validation](../reference/rules/leave-validation.md))
 - 육아휴직 누적 365일 초과는 막지 않고 `warnings`(`PARENTAL_LEAVE_LIMIT_EXCEEDED`)로 알립니다. 자녀별 한도라 자녀를 모르는 서버가 막을 수 없습니다
 - 휴직 등록이 휴직 신고(`LEAVE`)를 엽니다. 국민연금 납부예외·건강보험 고지유예 옵션은 신고 내용에 들어갑니다
 
@@ -462,8 +463,9 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 1. **급여대장에 들어간 직원 삭제:** 현행은 퇴직금 정산 완료만 막습니다. 확정 급여대장에 행이 있는 직원도 막으려면 Payroll이 `HrDirectory` 반대 방향 조회(`PayrollUsage.hasLedgerRows`)를 HR에 줘야 합니다. 포트를 HR에 둘지, 삭제 대신 보관(`ARCHIVED`)만 허용할지 정해야 합니다
 2. **같은 사람의 여러 `kind`:** 근로자를 기타소득자로도 등록할 때 인적 정보를 공유할지(Person 분리) 복사할지. 지금은 복사이고 중복 판정을 `kind`별로 합니다
 3. **고정임금제 가산율(R10):** 화면 값이 가산 없는 1.0배라 그대로 두었습니다. Payroll 계산 엔진과 맞춰야 합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md))
-4. **고용보험 상호주의 국가 목록:** 확인한 자료가 없어 비어 있습니다. 비어 있는 동안 상호주의 체류자격은 모두 가입 제외 권장입니다
+4. **고용보험 상호주의 국가 목록:** 두지 않기로 했습니다. 고용보험법 시행령 제3조의3은 국가 목록이 아니라 본국법 기준이라 D-7·D-8·D-9는 가입을 권하고 본국법 확인을 안내합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
 5. **계약 만료 경고 30일, 무기계약 전환 사전 알림 90일:** 제품 값을 확인하지 못했습니다. 회사 설정으로 둘지 정해야 합니다
 6. **4대보험 신고 처리 주체:** 세무 대리인 큐로 두었습니다. 급여 구독만 쓰는 회사(대리인 없음)에서 누가 처리하는지 정해야 합니다
 7. **ERP 이관 직원:** 현행 "임시저장"으로 들어오는 더존·세무사랑 직원은 `source: ERP_IMPORT` + `MISSING_REGISTRATION_NUMBER` 경고로 둡니다. 이관 작업의 형태(Job)는 [integrations.md](integrations.md)와 맞춰야 합니다
 8. **급여계약의 최저시급 출처:** 설계는 Payroll 기준표(`rateTable`)에서 계약 시작일 기준으로 읽지만, HR에서 Payroll로 가는 포트가 없어 지금은 HR 상수(2026년 10,320원)로 비교합니다. HR 포트(`MinimumWageSource`)와 `wiring/hr-payroll.ts` 어댑터를 둘지 정해야 합니다
+9. **기간제 예외 기간을 2년 계산에서 뺄지:** 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 계약 기간도 셉니다. 일반 18개월 → 예외 12개월 → 일반 2개월이면 전환으로 보지만, 예외 기간을 빼면 일반 사용기간이 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정해야 합니다([결정](rule-decisions/hr.md#indefinite-conversion-alert))

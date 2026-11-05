@@ -123,6 +123,7 @@ POST /v1/esign-requests/esr_01J...:send
 - 수정 가능한 리소스는 `version` 정수를 가집니다. 응답의 `ETag: "7"`을 다음 요청의 `If-Match: "7"`로 보내고, 어긋나면 412 `VERSION_MISMATCH`(`currentVersion`)를 돌려줍니다
 - 상태 커맨드는 `If-Match`를 받습니다. 헤더가 없으면 버전을 검사하지 않습니다
 - 사업자번호·이메일처럼 유일해야 하는 값은 저장소의 유일 제약으로 보장합니다. "검증 → 저장" 사이 경쟁 조건을 없앱니다
+  - **지금 구현:** 표가 `(id, company_id, data)`뿐이라 유일 제약이 없습니다. SQLite 연결 하나에서 요청 트랜잭션을 한 번에 하나씩 열기 때문에 "검증 → 저장"이 겹치지 않을 뿐입니다. 이메일 조회도 표 전체를 훑습니다. 인스턴스를 늘리거나 동시 쓰기를 열 때 그 값들을 열로 빼고 유일 색인을 둡니다
 - 구현은 `apps/api/src/shared/http/versioning.ts`(`expectedVersion`, `checkVersion`, `withEtag`)를 씁니다
 
 ## 비동기 작업
@@ -174,6 +175,7 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
   - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
   - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다
   - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file)`(서버 기본 `data/semu.sqlite`, `SEMU_DATABASE`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
+- HTTP 테스트는 `src/shared/testing/http-test-app.ts`의 `httpTestApp({ tokens, layers, basePath, defaultToken })`으로 앱 전체를 `TestStoreLive` 위에 띄웁니다. 요청 옵션은 `body`, `token`, `cookie`, `ifMatch`, `idempotencyKey`, `headers`이고, `json()`은 상태·헤더·본문을 함께 돌려줍니다. 컨텍스트 도우미는 이것 위에 토큰 표와 포트 가짜 레이어만 얹습니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
 
 ## 예시 규칙

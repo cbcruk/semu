@@ -1,4 +1,4 @@
-import { Effect, Layer, Option } from 'effect'
+import { Effect, Fiber, Layer, Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
@@ -39,6 +39,17 @@ describe('json codec', () => {
       big: 10n,
       list: [1],
     })
+  })
+})
+
+describe('json codec with $-prefixed user keys', () => {
+  it('keeps keys that look like tags as plain data', () => {
+    const value = {
+      keys: { $bigint: 'not-a-number' },
+      other: { $set: ['a'], $$x: 1, plain: 2 },
+      real: new Set(['z']),
+    }
+    expect(decodeRecord(encodeRecord(value))).toEqual(value)
   })
 })
 
@@ -145,6 +156,41 @@ describe('sqlite unit of work', () => {
         expect(yield* outbox.relay()).toBe(1)
         expect(received).toEqual(['committed', 'flaky'])
         expect(db.prepare('SELECT count(*) AS n FROM outbox WHERE delivered_at IS NULL').get()).toEqual({ n: 0 })
+      }),
+    ))
+
+  it('does not let the relay deliver an event from a transaction that later rolls back, and delivers once', () =>
+    run(
+      PersistenceSqliteLive(':memory:'),
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const outbox = yield* Outbox
+        const received: string[] = []
+        const publish = yield* outbox.channel<{ name: string }>('race.event->test', (event) =>
+          Effect.sync(() => {
+            received.push(event.name)
+          }),
+        )
+
+        const request = yield* Effect.forkChild(
+          Effect.exit(
+            unitOfWork.run(
+              Effect.gen(function* () {
+                yield* publish({ name: 'rolled-back' })
+                yield* Effect.sleep('20 millis')
+                return yield* Effect.fail('422')
+              }),
+            ),
+          ),
+        )
+        yield* Effect.sleep('5 millis')
+        yield* outbox.relay()
+        yield* Fiber.join(request)
+        expect(received).toEqual([])
+
+        yield* unitOfWork.run(publish({ name: 'once' }))
+        yield* outbox.relay()
+        expect(received).toEqual(['once'])
       }),
     ))
 })
