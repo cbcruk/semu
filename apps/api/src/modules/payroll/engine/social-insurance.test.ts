@@ -14,12 +14,17 @@ const RATE: Omit<SocialInsuranceInput, 'insurablePay'> = {
 describe('rate tables', () => {
   it('resolves the table in force by month', () => {
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-01').effectiveFrom).toBe('2026-01')
-    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-06').effectiveFrom).toBe('2026-01')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-02').effectiveFrom).toBe('2026-01')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-03').effectiveFrom).toBe('2026-03')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-06').effectiveFrom).toBe('2026-03')
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07').effectiveFrom).toBe('2026-07')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10').effectiveFrom).toBe('2026-07')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11').effectiveFrom).toBe('2026-11')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2027-01').effectiveFrom).toBe('2026-11')
     expect(() => resolveRateTable(BUILT_IN_RATE_TABLES, '2025-12')).toThrow(RangeError)
   })
 
-  it('records provenance for every rate group and flags spec-confirmed values as verified', () => {
+  it('records provenance for every rate group and flags source-confirmed values as verified', () => {
     const paths = Object.keys(rates.verification)
     for (const group of [
       'minimumWage',
@@ -35,9 +40,33 @@ describe('rate tables', () => {
     }
     const unverified = unverifiedRatePaths(rates)
     expect(unverified).toContain('longTermCare.ratioOfHealthPpm')
-    expect(unverified).toContain('nationalPension.baseMax')
+    expect(unverified).toContain('wageIncomeTax.simpleTaxStrategy')
+    expect(unverified).not.toContain('nationalPension.baseMax')
     expect(unverified).not.toContain('nationalPension.employeeRatePpm')
     expect(unverified).not.toContain('minimumWage.hourly')
+  })
+
+  it('versions the July 2026 pension base limits and the March 2026 child credits', () => {
+    const march = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-03')
+    const july = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07')
+
+    expect([rates.nationalPension.baseMin, rates.nationalPension.baseMax]).toEqual([400_000, 6_370_000])
+    expect([july.nationalPension.baseMin, july.nationalPension.baseMax]).toEqual([410_000, 6_590_000])
+    expect(rates.wageIncomeTax.childCreditMonthly).toEqual({ one: 12_500, two: 29_160, perAdditional: 25_000 })
+    expect(march.wageIncomeTax.childCreditMonthly).toEqual({ one: 20_830, two: 45_830, perAdditional: 33_330 })
+    expect(july.wageIncomeTax.childCreditMonthly).toEqual(march.wageIncomeTax.childCreditMonthly)
+    expect(BUILT_IN_RATE_TABLES.every((table) => unverifiedRatePaths(table).length > 0)).toBe(true)
+  })
+
+  it('confirms the long-term care ratio only from November 2026 (법률 제21690호 부칙 제3조)', () => {
+    const october = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10')
+    const november = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11')
+
+    expect(november.longTermCare.ratioOfHealthPpm).toBe(131_400)
+    expect(unverifiedRatePaths(october)).toContain('longTermCare.ratioOfHealthPpm')
+    expect(unverifiedRatePaths(november)).not.toContain('longTermCare.ratioOfHealthPpm')
+    expect(november.verification['longTermCare.ratioOfHealthPpm']?.source).toContain('부칙 제3조')
+    expect(november.nationalPension).toEqual(october.nationalPension)
   })
 })
 
@@ -72,6 +101,16 @@ describe('calculateSocialInsurance', () => {
       employee.longTermCare,
       employee.employmentInsurance,
     ]).toEqual(expected)
+  })
+
+  it('uses the July 2026 pension limits from that month', () => {
+    const july = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07')
+    const cap = calculateSocialInsurance({ ...RATE, insurablePay: 8_000_000 }, july)
+    const floor = calculateSocialInsurance({ ...RATE, insurablePay: 300_000 }, july)
+
+    // 6,590,000 × 4.75% = 313,025 → 313,020; 410,000 × 4.75% = 19,475 → 19,470
+    expect(cap.employee.nationalPension).toBe(313_020)
+    expect(floor.employee.nationalPension).toBe(19_470)
   })
 
   it('adds the employer stability rate and the industrial accident rate on the employer side only', () => {
