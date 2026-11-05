@@ -1,0 +1,728 @@
+{
+  "rule": "action-card-lifecycle",
+  "description": "Home to-do cards opened and closed by filing transitions, the status a user closing a card gets, and list ordering.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/filings/filing-cards.ts",
+      "lines": "9-61"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/action-cards/action-cards.repository.ts",
+      "lines": "9-118"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/action-cards/action-cards.service.ts",
+      "lines": "13-57"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/filings/filings.service.ts",
+      "lines": "281-310"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "381-408"
+    },
+    {
+      "file": "alfred-manual/02-홈-Universal-Home/03-오늘의-할-일.md",
+      "lines": "22-59"
+    },
+    {
+      "file": "alfred-manual/06-세무/01-부가세.md",
+      "lines": "22-24"
+    }
+  ],
+  "inputSchema": {
+    "check": "effects, complete, reopen, document-view, order or visibility.",
+    "transition": "Legacy transition name, or scheduleCancel for the scheduler.",
+    "filing": "Filing values after the transition.",
+    "completionReason": "done or skip.",
+    "today": "Asia/Seoul date when the user closes the card."
+  },
+  "cases": [
+    {
+      "name": "request opens the submission card",
+      "input": {
+        "check": "effects",
+        "transition": "request",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "submit_materials",
+            "dueDate": "2026-10-15"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reject reopens the submission card with the new deadline",
+      "input": {
+        "check": "effects",
+        "transition": "reject",
+        "filing": {
+          "submitDue": "2026-10-20",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "submit_materials",
+            "dueDate": "2026-10-20"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "unsubmit reopens the submission card",
+      "input": {
+        "check": "effects",
+        "transition": "unsubmit",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "submit_materials",
+            "dueDate": "2026-10-15"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "submit closes the submission card",
+      "input": {
+        "check": "effects",
+        "transition": "submit",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "submit_materials"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start review closes the submission card",
+      "input": {
+        "check": "effects",
+        "transition": "startReview",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "submit_materials"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "ledger upload opens confirmation three days before the due date",
+      "input": {
+        "check": "effects",
+        "transition": "uploadLedger",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "confirm_ledger",
+            "dueDate": "2026-10-23"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "ledger upload without a due date has no deadline",
+      "input": {
+        "check": "effects",
+        "transition": "uploadLedger",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": null,
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "confirm_ledger",
+            "dueDate": null
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "confirming the ledger closes the card",
+      "input": {
+        "check": "effects",
+        "transition": "confirmLedger",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "confirm_ledger"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "disputing the ledger closes the card",
+      "input": {
+        "check": "effects",
+        "transition": "disputeLedger",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "confirm_ledger"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "filing with tax to pay opens result and payment cards",
+      "input": {
+        "check": "effects",
+        "transition": "file",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": 482000
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "review_filing_result",
+            "dueDate": "2026-10-26"
+          },
+          {
+            "op": "open",
+            "kind": "pay_tax",
+            "dueDate": "2026-10-26"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "filing a refund opens only the result card",
+      "input": {
+        "check": "effects",
+        "transition": "file",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": -120000
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "review_filing_result",
+            "dueDate": "2026-10-26"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "a notice uses the payment deadline for the result card",
+      "input": {
+        "check": "effects",
+        "transition": "recordNotice",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": null,
+          "paymentDue": "2026-10-26",
+          "payableAmount": 300000
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "open",
+            "kind": "review_filing_result",
+            "dueDate": "2026-10-26"
+          },
+          {
+            "op": "open",
+            "kind": "pay_tax",
+            "dueDate": "2026-10-26"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "paying closes the payment card",
+      "input": {
+        "check": "effects",
+        "transition": "pay",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": 482000
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "pay_tax"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "closing a refund closes the payment card",
+      "input": {
+        "check": "effects",
+        "transition": "close",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": -120000
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close",
+            "kind": "pay_tax"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel closes every open card",
+      "input": {
+        "check": "effects",
+        "transition": "cancel",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close_all"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "the scheduler cancelling closes every open card",
+      "input": {
+        "check": "effects",
+        "transition": "scheduleCancel",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": [
+          {
+            "op": "close_all"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start preparing touches no card",
+      "input": {
+        "check": "effects",
+        "transition": "startPreparing",
+        "filing": {
+          "submitDue": "2026-10-15",
+          "dueDate": "2026-10-26",
+          "paymentDue": "2026-10-26",
+          "payableAmount": null
+        }
+      },
+      "expected": {
+        "effects": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "done before the deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "done",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-20"
+      },
+      "expected": {
+        "status": "done"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "done after the deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "done",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-30"
+      },
+      "expected": {
+        "status": "done"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "skip before the deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "skip",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-20"
+      },
+      "expected": {
+        "status": "done"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "skip on the deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "skip",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-26"
+      },
+      "expected": {
+        "status": "done"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "skip after the deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "skip",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-27"
+      },
+      "expected": {
+        "status": "skipped_overdue"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "skip a card without a deadline",
+      "input": {
+        "check": "complete",
+        "cardStatus": "open",
+        "completionReason": "skip",
+        "dueDate": null,
+        "today": "2026-10-27"
+      },
+      "expected": {
+        "status": "done"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "complete a closed card",
+      "input": {
+        "check": "complete",
+        "cardStatus": "done",
+        "completionReason": "done",
+        "dueDate": "2026-10-26",
+        "today": "2026-10-20"
+      },
+      "expected": {
+        "error": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reopen a closed card",
+      "input": {
+        "check": "reopen",
+        "existing": {
+          "status": "done",
+          "reopenCount": 0,
+          "dueDate": "2026-10-15"
+        },
+        "dueDate": "2026-10-20"
+      },
+      "expected": {
+        "status": "open",
+        "reopenCount": 1,
+        "dueDate": "2026-10-20",
+        "completedAt": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "open an already open card",
+      "input": {
+        "check": "reopen",
+        "existing": {
+          "status": "open",
+          "reopenCount": 1,
+          "dueDate": "2026-10-15"
+        },
+        "dueDate": "2026-10-20"
+      },
+      "expected": {
+        "status": "open",
+        "reopenCount": 1,
+        "dueDate": "2026-10-20",
+        "completedAt": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "client opens the return",
+      "input": {
+        "check": "document-view",
+        "docType": "return",
+        "viewer": "client"
+      },
+      "expected": {
+        "closesReviewCard": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "client opens the notice",
+      "input": {
+        "check": "document-view",
+        "docType": "notice",
+        "viewer": "client"
+      },
+      "expected": {
+        "closesReviewCard": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "client opens the payment slip",
+      "input": {
+        "check": "document-view",
+        "docType": "payment_slip",
+        "viewer": "client"
+      },
+      "expected": {
+        "closesReviewCard": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "client opens the ledger",
+      "input": {
+        "check": "document-view",
+        "docType": "ledger",
+        "viewer": "client"
+      },
+      "expected": {
+        "closesReviewCard": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "agency opens the return",
+      "input": {
+        "check": "document-view",
+        "docType": "return",
+        "viewer": "agency"
+      },
+      "expected": {
+        "closesReviewCard": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "active tab order",
+      "input": {
+        "check": "order",
+        "tab": "active",
+        "cards": [
+          {
+            "id": "a",
+            "dueDate": "2026-11-10",
+            "createdAt": "2026-11-01T09:00:00+09:00"
+          },
+          {
+            "id": "b",
+            "dueDate": null,
+            "createdAt": "2026-10-01T09:00:00+09:00"
+          },
+          {
+            "id": "c",
+            "dueDate": "2026-10-26",
+            "createdAt": "2026-10-20T09:00:00+09:00"
+          },
+          {
+            "id": "d",
+            "dueDate": "2026-10-26",
+            "createdAt": "2026-10-19T09:00:00+09:00"
+          }
+        ]
+      },
+      "expected": {
+        "ids": [
+          "d",
+          "c",
+          "a",
+          "b"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "archived tab order",
+      "input": {
+        "check": "order",
+        "tab": "archived",
+        "cards": [
+          {
+            "id": "a",
+            "completedAt": "2026-11-01T09:00:00+09:00"
+          },
+          {
+            "id": "b",
+            "completedAt": "2026-11-03T09:00:00+09:00"
+          },
+          {
+            "id": "c",
+            "completedAt": "2026-11-01T09:00:00+09:00"
+          }
+        ]
+      },
+      "expected": {
+        "ids": [
+          "b",
+          "c",
+          "a"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "card of a menu the user cannot open is hidden",
+      "input": {
+        "check": "visibility",
+        "cardMenuCode": "tax_surtax",
+        "accessibleMenuCodes": [
+          "today"
+        ]
+      },
+      "expected": {
+        "visible": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "card of an accessible menu is shown",
+      "input": {
+        "check": "visibility",
+        "cardMenuCode": "tax_surtax",
+        "accessibleMenuCodes": [
+          "today",
+          "tax_surtax"
+        ]
+      },
+      "expected": {
+        "visible": true
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "카드 제목(`2026년 4분기 부가세 자료 제출`)과 바로가기 경로(`/tax/surtax`)를 서버가 문구·화면 경로로 만드는 것을 바꿀까요",
+    "매입매출장 확인 카드 마감일을 신고 기한 −3일(영업일 보정 없음)로 두는 것을 따를까요",
+    "`done`으로 닫으면 마감일이 지나도 `done`인 것을 따를까요 (매뉴얼은 완료를 \"마감일 내에 정상적으로 완료\"로 설명)",
+    "결과 확인 카드를 신고서·고지서 열람으로만 닫고 납부서 열람으로는 닫지 않는 것을 따를까요",
+    "카드를 메뉴 접근 판정(`menu_code`)으로 거르는 것을 권한·플랜 요건으로 바꿀까요",
+    "세무 밖 카드(기관 연동 등)도 같은 저장소에 둘까요"
+  ]
+}

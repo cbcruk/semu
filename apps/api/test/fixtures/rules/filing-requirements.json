@@ -1,0 +1,318 @@
+{
+  "rule": "filing-requirements",
+  "description": "Requirement checklist copied into a filing, how client answers and attached files set each item, and the auto-linked payroll ledger item.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/filings/requirement-templates.ts",
+      "lines": "4-35"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/filings/filings.service.ts",
+      "lines": "103-183, 457-462"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/payroll/withholding/withholding-link.ts",
+      "lines": "1-18, 58-68"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "209-227, 739"
+    },
+    {
+      "file": "docs/reference/spec/payroll.md",
+      "lines": "705-730"
+    },
+    {
+      "file": "alfred-manual/06-세무/01-부가세.md",
+      "lines": "28-38"
+    },
+    {
+      "file": "alfred-manual/06-세무/02-원천세.md",
+      "lines": "22-38, 53-55"
+    }
+  ],
+  "inputSchema": {
+    "check": "template, answer, files or payroll-ledger.",
+    "response": "Answer the client chose (pending or not_applicable).",
+    "fileCount": "Files attached to the item.",
+    "ledgerStatuses": "Status of each payroll ledger paid within the filing period."
+  },
+  "cases": [
+    {
+      "name": "VAT checklist",
+      "input": {
+        "check": "template",
+        "taxType": "surtax",
+        "kind": "final",
+        "hasPayrollPlan": false
+      },
+      "expected": {
+        "codes": [
+          "pg_online_sales",
+          "export_fx",
+          "paper_tax_invoice",
+          "simple_receipt",
+          "ending_inventory",
+          "deposit_fund_accounts"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT notice has no checklist",
+      "input": {
+        "check": "template",
+        "taxType": "surtax",
+        "kind": "notice",
+        "hasPayrollPlan": false
+      },
+      "expected": {
+        "codes": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding without the payroll plan",
+      "input": {
+        "check": "template",
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "hasPayrollPlan": false
+      },
+      "expected": {
+        "codes": [
+          "business_income",
+          "other_income",
+          "daily_wage",
+          "retirement_income",
+          "interest_dividend",
+          "unreflected_bonus"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding with the payroll plan links the ledger first",
+      "input": {
+        "check": "template",
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "hasPayrollPlan": true
+      },
+      "expected": {
+        "codes": [
+          "payroll_ledger_closed",
+          "business_income",
+          "other_income",
+          "daily_wage",
+          "retirement_income",
+          "interest_dividend",
+          "unreflected_bonus"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "semiannual withholding uses the same checklist",
+      "input": {
+        "check": "template",
+        "taxType": "withholding_tax",
+        "kind": "semiannual",
+        "hasPayrollPlan": true
+      },
+      "expected": {
+        "codes": [
+          "payroll_ledger_closed",
+          "business_income",
+          "other_income",
+          "daily_wage",
+          "retirement_income",
+          "interest_dividend",
+          "unreflected_bonus"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax has no checklist",
+      "input": {
+        "check": "template",
+        "taxType": "corporation_tax",
+        "kind": "annual",
+        "hasPayrollPlan": false
+      },
+      "expected": {
+        "codes": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "income tax has no checklist",
+      "input": {
+        "check": "template",
+        "taxType": "aggr_income_tax",
+        "kind": "annual",
+        "hasPayrollPlan": false
+      },
+      "expected": {
+        "codes": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "mark an empty item not applicable",
+      "input": {
+        "check": "answer",
+        "response": "not_applicable",
+        "fileCount": 0,
+        "autoLinked": false
+      },
+      "expected": {
+        "ok": true,
+        "response": "not_applicable"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "mark an item with files not applicable",
+      "input": {
+        "check": "answer",
+        "response": "not_applicable",
+        "fileCount": 2,
+        "autoLinked": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "VALIDATION_FAILED",
+        "field": "response"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reset an empty item to pending",
+      "input": {
+        "check": "answer",
+        "response": "pending",
+        "fileCount": 0,
+        "autoLinked": false
+      },
+      "expected": {
+        "ok": true,
+        "response": "pending"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "pending on an item with files stays provided",
+      "input": {
+        "check": "answer",
+        "response": "pending",
+        "fileCount": 1,
+        "autoLinked": false
+      },
+      "expected": {
+        "ok": true,
+        "response": "provided"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "answer an auto-linked item",
+      "input": {
+        "check": "answer",
+        "response": "not_applicable",
+        "fileCount": 0,
+        "autoLinked": true
+      },
+      "expected": {
+        "ok": false,
+        "code": "VALIDATION_FAILED",
+        "field": "code"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "attach the first file",
+      "input": {
+        "check": "files",
+        "op": "attach",
+        "fileCountBefore": 0
+      },
+      "expected": {
+        "response": "provided"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "detach one of two files",
+      "input": {
+        "check": "files",
+        "op": "detach",
+        "fileCountBefore": 2
+      },
+      "expected": {
+        "response": "provided"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "detach the last file",
+      "input": {
+        "check": "files",
+        "op": "detach",
+        "fileCountBefore": 1
+      },
+      "expected": {
+        "response": "pending"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "every ledger of the period closed",
+      "input": {
+        "check": "payroll-ledger",
+        "ledgerStatuses": [
+          "approved",
+          "approved"
+        ]
+      },
+      "expected": {
+        "response": "provided"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "one ledger still open",
+      "input": {
+        "check": "payroll-ledger",
+        "ledgerStatuses": [
+          "approved",
+          "draft"
+        ]
+      },
+      "expected": {
+        "response": "pending"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "no ledger paid in the period",
+      "input": {
+        "check": "payroll-ledger",
+        "ledgerStatuses": []
+      },
+      "expected": {
+        "response": "pending"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "법인세·종합소득세에 제출 자료 체크리스트가 없는 것을 따를까요",
+    "항목 라벨(한글 문구)을 서버가 내려주는 것을 코드만 주도록 바꿀까요",
+    "파일이 붙은 항목에 `pending`을 고르면 `provided`로 남기는 것을 따를까요",
+    "기간에 지급한 급여대장이 하나도 없으면 `payroll_ledger_closed`를 `pending`으로 두는 것을 따를까요",
+    "자동 연계 항목을 제출 검사에서 빼는 것을 따를까요",
+    "항목 응답·파일 첨부에 `If-Match`를 받지 않고 상태(`requested`)로만 잠그는 것을 따를까요"
+  ]
+}

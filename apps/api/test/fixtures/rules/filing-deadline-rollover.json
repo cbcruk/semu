@@ -1,0 +1,178 @@
+{
+  "rule": "filing-deadline-rollover",
+  "description": "Moves a statutory tax deadline past weekends and listed holidays to the next business day.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/tax-calendar/tax-calendar.utils.ts",
+      "lines": "4-26"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "293-297, 314-326"
+    },
+    {
+      "file": "apps/api/legacy/test/tax-calendar.test.ts",
+      "lines": "38-55"
+    }
+  ],
+  "inputSchema": {
+    "statutoryDue": "Statutory deadline (YYYY-MM-DD).",
+    "holidays": "Holidays besides weekends (public, substitute, Workers Day)."
+  },
+  "cases": [
+    {
+      "name": "VAT 2026 H1 preliminary on a Saturday",
+      "input": {
+        "statutoryDue": "2026-04-25",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-04-27"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "income tax 2025 on a Sunday",
+      "input": {
+        "statutoryDue": "2026-05-31",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-06-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT 2026 H1 final on a Saturday",
+      "input": {
+        "statutoryDue": "2026-07-25",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-07-27"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT 2026 H2 preliminary on a Sunday",
+      "input": {
+        "statutoryDue": "2026-10-25",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-10-26"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding October 2026 on a weekday",
+      "input": {
+        "statutoryDue": "2026-11-10",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-11-10"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "semiannual withholding 2026 H2 on a Sunday",
+      "input": {
+        "statutoryDue": "2027-01-10",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2027-01-11"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT 2026 H2 final on a weekday",
+      "input": {
+        "statutoryDue": "2027-01-25",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2027-01-25"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax 2026 on a weekday",
+      "input": {
+        "statutoryDue": "2027-03-31",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2027-03-31"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT 2025 H2 final on a Sunday",
+      "input": {
+        "statutoryDue": "2026-01-25",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-01-26"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding September 2026 on a Saturday",
+      "input": {
+        "statutoryDue": "2026-10-10",
+        "holidays": []
+      },
+      "expected": {
+        "deadline": "2026-10-12"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "holiday right after a weekend",
+      "input": {
+        "statutoryDue": "2026-09-26",
+        "holidays": [
+          "2026-09-28"
+        ]
+      },
+      "expected": {
+        "deadline": "2026-09-29"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "holiday on a weekday then a weekend",
+      "input": {
+        "statutoryDue": "2026-05-01",
+        "holidays": [
+          "2026-05-01"
+        ]
+      },
+      "expected": {
+        "deadline": "2026-05-04"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "holiday that is not the deadline does not move it",
+      "input": {
+        "statutoryDue": "2026-11-10",
+        "holidays": [
+          "2026-11-09"
+        ]
+      },
+      "expected": {
+        "deadline": "2026-11-10"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "공휴일 표(대체공휴일·임시공휴일·근로자의 날 포함)를 누가 관리하고, 근로자의 날을 기한 연장일로 넣는 것을 따를까요",
+    "공휴일 표가 바뀌면 열린 신고 건의 기한을 다시 계산하는 범위를 `scheduled`·`requested`로 두는 것을 따를까요",
+    "납부 기한을 신고 기한과 같은 날로 두는 것을 따를까요 (법인세 분납 등 예외)"
+  ]
+}

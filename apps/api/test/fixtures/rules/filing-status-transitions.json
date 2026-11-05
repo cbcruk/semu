@@ -1,0 +1,677 @@
+{
+  "rule": "filing-status-transitions",
+  "description": "Tax filing status transitions: allowed source states, the actor (client or agency) and guards of each named transition.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/filings/filing-status.ts",
+      "lines": "4-19"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/filings/filings.service.ts",
+      "lines": "237-259, 319-414"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "229-274, 739"
+    },
+    {
+      "file": "alfred-manual/06-세무/01-부가세.md",
+      "lines": "20-46"
+    }
+  ],
+  "inputSchema": {
+    "status": "Current legacy status (scheduled, requested, submitted, reviewing, ledger_pending, preparing, filed, settled, cancelled).",
+    "transition": "Legacy transition name from TRANSITIONS.",
+    "actor": "client or agency.",
+    "taxType": "Legacy tax type (surtax, withholding_tax, corporation_tax, aggr_income_tax).",
+    "kind": "Legacy filing kind (preliminary, final, notice, monthly, semiannual, annual).",
+    "payableAmount": "Payable amount stored on the filing; negative is a refund.",
+    "pendingClientItems": "Client-answerable requirement items still pending.",
+    "hasReturnDocument": "An active return document is attached."
+  },
+  "cases": [
+    {
+      "name": "request scheduled by agency",
+      "input": {
+        "status": "scheduled",
+        "transition": "request",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "requested"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "request scheduled by client is denied",
+      "input": {
+        "status": "scheduled",
+        "transition": "request",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "PERMISSION_DENIED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "submit requested with every item answered",
+      "input": {
+        "status": "requested",
+        "transition": "submit",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "submitted"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "submit requested with pending items",
+      "input": {
+        "status": "requested",
+        "transition": "submit",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 2,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "VALIDATION_FAILED",
+        "field": "requirements"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "submit while reviewing",
+      "input": {
+        "status": "reviewing",
+        "transition": "submit",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "unsubmit submitted",
+      "input": {
+        "status": "submitted",
+        "transition": "unsubmit",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "requested"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start review from scheduled skips materials",
+      "input": {
+        "status": "scheduled",
+        "transition": "startReview",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "reviewing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start review from requested",
+      "input": {
+        "status": "requested",
+        "transition": "startReview",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "reviewing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start review from submitted",
+      "input": {
+        "status": "submitted",
+        "transition": "startReview",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "reviewing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start review while reviewing",
+      "input": {
+        "status": "reviewing",
+        "transition": "startReview",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reject reviewing back to requested",
+      "input": {
+        "status": "reviewing",
+        "transition": "reject",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "requested"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "upload ledger for VAT",
+      "input": {
+        "status": "reviewing",
+        "transition": "uploadLedger",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "ledger_pending"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "upload ledger for withholding",
+      "input": {
+        "status": "reviewing",
+        "transition": "uploadLedger",
+        "actor": "agency",
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "replace ledger while ledger pending",
+      "input": {
+        "status": "ledger_pending",
+        "transition": "uploadLedger",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "ledger_pending",
+        "via": "ledger_replaced"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "confirm ledger",
+      "input": {
+        "status": "ledger_pending",
+        "transition": "confirmLedger",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "preparing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "dispute ledger",
+      "input": {
+        "status": "ledger_pending",
+        "transition": "disputeLedger",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "reviewing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start preparing withholding",
+      "input": {
+        "status": "reviewing",
+        "transition": "startPreparing",
+        "actor": "agency",
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "preparing"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "start preparing VAT skips ledger",
+      "input": {
+        "status": "reviewing",
+        "transition": "startPreparing",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "file with a return document",
+      "input": {
+        "status": "preparing",
+        "transition": "file",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": true
+      },
+      "expected": {
+        "ok": true,
+        "to": "filed"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "file without a return document",
+      "input": {
+        "status": "preparing",
+        "transition": "file",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "VALIDATION_FAILED",
+        "field": "documents"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "record notice on a notice filing",
+      "input": {
+        "status": "scheduled",
+        "transition": "recordNotice",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "notice",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "filed"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "record notice on a preliminary filing",
+      "input": {
+        "status": "scheduled",
+        "transition": "recordNotice",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "preliminary",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "request materials for a notice filing",
+      "input": {
+        "status": "scheduled",
+        "transition": "request",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "notice",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "requested"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "pay a positive payable",
+      "input": {
+        "status": "filed",
+        "transition": "pay",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 482000,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "settled"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "pay with nothing to pay",
+      "input": {
+        "status": "filed",
+        "transition": "pay",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 0,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "close a refund",
+      "input": {
+        "status": "filed",
+        "transition": "close",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": -120000,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "settled"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "close with nothing to pay",
+      "input": {
+        "status": "filed",
+        "transition": "close",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 0,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "settled"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "close with tax still to pay",
+      "input": {
+        "status": "filed",
+        "transition": "close",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 100,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel scheduled",
+      "input": {
+        "status": "scheduled",
+        "transition": "cancel",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "cancelled"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel requested",
+      "input": {
+        "status": "requested",
+        "transition": "cancel",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": true,
+        "to": "cancelled"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel submitted",
+      "input": {
+        "status": "submitted",
+        "transition": "cancel",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel reviewing",
+      "input": {
+        "status": "reviewing",
+        "transition": "cancel",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "pay a settled filing",
+      "input": {
+        "status": "settled",
+        "transition": "pay",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 482000,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_TRANSITION"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "pay by agency is denied before the status check",
+      "input": {
+        "status": "settled",
+        "transition": "pay",
+        "actor": "agency",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": 482000,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "PERMISSION_DENIED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel by client is denied",
+      "input": {
+        "status": "scheduled",
+        "transition": "cancel",
+        "actor": "client",
+        "taxType": "surtax",
+        "kind": "final",
+        "payableAmount": null,
+        "pendingClientItems": 0,
+        "hasReturnDocument": false
+      },
+      "expected": {
+        "ok": false,
+        "code": "PERMISSION_DENIED"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "고객 커맨드(제출·매입매출장 확인·납부)를 대리인이 대신 보낼 수 없게 행위자를 엄격히 나누는 것을 따를까요",
+    "매입매출장 교체가 상태 전이가 아니라 업로드 경로 안의 별도 분기인 것을 하나의 커맨드로 합칠까요",
+    "예정고지(`notice`) 건도 자료 요청·검토·작업 흐름을 그대로 받는 것을 막을까요",
+    "`submitted`에서는 취소할 수 없는 것을 바꿀까요",
+    "신고서 업로드와 신고 완료가 따로 요청이라 신고서 없이 `file`하면 422인 것을 한 커맨드로 합칠까요",
+    "상태 전이 요청에 `If-Match`가 필수(없으면 428)인 것을 따를까요",
+    "행위자가 맞지 않는 커맨드를 다른 권한 오류와 같은 `PERMISSION_DENIED`로 돌려주는 것을 따를까요",
+    "신고 기한이 지난 뒤에도 자료 제출을 받고 `is_overdue`만 표시하는 것을 따를까요"
+  ]
+}
