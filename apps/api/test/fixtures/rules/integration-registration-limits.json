@@ -112,7 +112,7 @@
     {
       "name": "giro: giro_id/giro_pw passed for signup or first login are not stored",
       "input": { "type": "giro", "request": { "auth": { "cert_id": "crt-1", "sign_pw": "***" }, "giro_id": "myid", "giro_pw": "***" } },
-      "expected": { "ok": true, "storedCredential": null, "manual": "아이디, 비밀번호는 혜움에서 저장하지 않습니다." },
+      "expected": { "ok": true, "storedCredential": null, "manual": "아이디, 비밀번호는 서비스에서 저장하지 않습니다." },
       "derivation": "traced"
     },
     {

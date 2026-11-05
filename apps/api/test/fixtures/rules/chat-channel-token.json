@@ -17,7 +17,7 @@
     {
       "name": "link with action=chat-integration starts the flow",
       "input": { "check": "parseLink", "url": "/?action=chat-integration&token=t1&channel_name=%ED%98%9C%EC%9B%80%EC%83%81%EB%8B%B4&messenger_type=kakaotalk" },
-      "expected": { "start": true, "token": "t1", "channelName": "혜움상담", "messengerType": "kakaotalk" },
+      "expected": { "start": true, "token": "t1", "channelName": "세무상담", "messengerType": "kakaotalk" },
       "derivation": "traced"
     },
     {

@@ -78,14 +78,14 @@
 
 ### 1.6 서비스 및 결제 (M:08-설정/10, 이미지 3435ee67, 640b8a52)
 
-- 서비스 카드 3개: `무료 재무 프로그램`(모든 고객 이용중), `세무 아웃소싱`(혜움 기장 수임 고객), `급여 아웃소싱`(주식회사 혜움 급여 계약 고객). 미이용이면 `자세히 보기`, `도입 문의하기`(→ consult).
+- 서비스 카드 3개: `무료 재무 프로그램`(모든 고객 이용중), `세무 아웃소싱`(기장 수임 고객), `급여 아웃소싱`(급여 계약 고객). 미이용이면 `자세히 보기`, `도입 문의하기`(→ consult).
 - 결제 내역 표: `결제 번호`(자체 부여, 비연속 가능), `상품`, `금액`, `결제일`(+`예정` 배지), `결제 상태`, `결제 계좌`(예 `신한 000-000-000000`). 2025-12 기준 **급여 아웃소싱만** 노출. → nexus `GET /api/company/:id/payment/?limit=&offset=`.
 - 결제는 **CMS 자동출금**(은행망). 비영업일이면 다음 영업일. 결과는 출금 익일 오후 반영. 결제 1일 전 알림톡으로 예정 금액 안내. 실패 시 담당자가 재시도.
 
 ### 1.7 계약서 및 동의서 (M:08-설정/11, 이미지 cd849c25, 63e888a0)
 
 - 탭 `계약서`: 하위 탭 `온라인 수임 계약서`(본문 렌더: 제1조 목적 … 제5조 보수 — 월 기장보수 금액, 조정수수료 시기 법인 3월/개인 5월, 계약기간 1년 자동연장) / `실물 수임 계약서`(파일). → sf `GET /api/settings/company/:sfId/contract/?name=수임계약서|4대보험대행동의약관`.
-- 탭 `기장 서비스 자료`: `CMS동의서`(양식 다운받기 + 업로드), `4대보험 업무대행 동의서` 3종 다운로드(건강보험·국민연금·고용보험 — 혜움이 작성), `이전세무자료`(업로드, 예 `.sdb`), `저장하기`. → `GET attachments_form/`(양식), `GET attachments/?name=`, `PUT attachments/`(multipart).
+- 탭 `기장 서비스 자료`: `CMS동의서`(양식 다운받기 + 업로드), `4대보험 업무대행 동의서` 3종 다운로드(건강보험·국민연금·고용보험 — 세무 대리인이 작성), `이전세무자료`(업로드, 예 `.sdb`), `저장하기`. → `GET attachments_form/`(양식), `GET attachments/?name=`, `PUT attachments/`(multipart).
 - `AttachmentName`(B:73073): `CMS동의서, 건강보험대행동의서, 고용보험대행동의서, 국민연금대행동의서, 사업자등록증, 이전세무전산자료`. `ContractName`(B:73081): `수임계약서, 4대보험대행동의약관`. 이름 문자열이 그대로 쿼리 값.
 
 ### 1.8 기관 연동 화면 (M:08-설정/06, 07; 이미지 7c95a14b, 28cc6436, e42e17fe, 9bcc154f)
@@ -207,7 +207,7 @@ nexus 회사 객체(`GET /api/company/:id/`, B:72495-72520): `id, sfCompanyId, k
 - `GET /api/user/me/term-agreements/?purpose=signup|tax` → 항목 배열, 각 항목 형태(확인, B:104689-104696): `{ isRequired, version, history: { isAgreed, version } | null, … }`. 판정: 필수면 `!history.isAgreed || version !== history.version`, 선택이면 `version !== history?.version`(선택 약관도 **새 버전이 나오면 다시 묻는다**). 빈 배열이면 클라이언트가 예외를 던짐 → 서버는 purpose당 최소 1개 약관 보장.
 - `PATCH /api/user/me/term-agreements/` body(추정): `{ agreements: [{ term_id|code, version, is_agreed }] }`.
 - 게스트 동의 `GET/POST /public/api/terms/agreements {email, purposeCode}` — 비로그인(상담·출금 동의) 동의 기록.
-- 무료 고객에게는 세무법인 혜움 약관을 노출하지 않음(M:10-개인-설정) → terms에 `audience`(all | taxation) 컬럼.
+- 무료 고객에게는 세무 대리인 약관을 노출하지 않음(M:10-개인-설정) → terms에 `audience`(all | taxation) 컬럼.
 - 마케팅 수신 동의 = 선택 약관(purpose `marketing` 또는 signup 선택 항목)으로 모델링 권장.
 
 S: `term_agreements(user_id, term_type IN ('signup','tax'), version, agreed_at)` → 확장 필요:

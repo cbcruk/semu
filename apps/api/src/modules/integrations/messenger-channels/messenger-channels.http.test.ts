@@ -30,11 +30,11 @@ describe('messenger channels', () => {
     })
     const list = await (await app.request('GET', '/v1/messenger-channels', { token })).json()
 
-    expect(await preview.json()).toMatchObject({ messengerType: 'KAKAOTALK', channelName: '혜움상담' })
+    expect(await preview.json()).toMatchObject({ messengerType: 'KAKAOTALK', channelName: '세무상담' })
     expect(connected.status).toBe(201)
     expect(again.status).toBe(422)
     expect(await again.json()).toMatchObject({ code: 'CHAT_CHANNEL_TOKEN_USED' })
-    expect(list.items.map((item: { channelName: string }) => item.channelName)).toEqual(['#semu-tax', '혜움상담'])
+    expect(list.items.map((item: { channelName: string }) => item.channelName)).toEqual(['#semu-tax', '세무상담'])
   })
 
   it('answers each token failure with its own code', async () => {

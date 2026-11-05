@@ -84,7 +84,7 @@ function company(
 
 /** 데모 회사입니다. 사업자등록번호는 검증 숫자가 맞는 가짜 번호입니다. */
 export function demoCompanies(): Company[] {
-  const hq = { id: 'agc_01JBQ000000000000000000001' as Id<'agency'>, name: '세무법인 혜움', kind: 'HQ' as const }
+  const hq = { id: 'agc_01JBQ000000000000000000001' as Id<'agency'>, name: '세무법인 세무', kind: 'HQ' as const }
   return [
     company(DEMO_COMPANY_IDS.corporation, '주식회사 세무', '1238145600', 'CORPORATION', hq),
     company(DEMO_COMPANY_IDS.individual, '세무 상점', '2208162517', 'INDIVIDUAL', hq),

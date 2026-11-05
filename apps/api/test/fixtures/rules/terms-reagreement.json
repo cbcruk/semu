@@ -214,7 +214,7 @@
         "terms": [
           { "code": "service", "audience": "all" },
           { "code": "privacy", "audience": "all" },
-          { "code": "heum_tax_service", "audience": "taxation" }
+          { "code": "tax_agent_service", "audience": "taxation" }
         ]
       },
       "expected": ["service", "privacy"],
@@ -227,6 +227,6 @@
     "Version comparison is a strict inequality on whatever type the server sends, so formatting changes (2 vs \"2\", \"2026-1\" vs \"2026-01\") force re-consent.",
     "The tax purpose is checked when any of the user's companies is taxation, not only the selected company, so a user can be blocked in a free company.",
     "The server cannot rely on the client guard: product APIs are reachable without passing /agree-terms, and the legacy server only gates tax menus on the tax terms.",
-    "Which terms belong to the taxation-only audience (세무법인 혜움 terms) is described only in the manual; the term catalog and its codes are not in the bundle."
+    "Which terms belong to the taxation-only audience (tax agent terms) is described only in the manual; the term catalog and its codes are not in the bundle."
   ]
 }

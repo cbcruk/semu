@@ -121,7 +121,7 @@ export function demoDelegations(): DelegationRecord[] {
     {
       id: 'dlg_01JBQ000000000000000000001' as Id<'hometaxDelegation'>,
       companyId: DEMO_COMPANY_IDS.corporation,
-      agencyName: '세무법인 혜움',
+      agencyName: '세무법인 세무',
       status: 'AGREED',
       requestedAt: CREATED_AT,
       agreedAt: CREATED_AT,
@@ -130,7 +130,7 @@ export function demoDelegations(): DelegationRecord[] {
     {
       id: 'dlg_01JBQ000000000000000000002' as Id<'hometaxDelegation'>,
       companyId: DEMO_COMPANY_IDS.individual,
-      agencyName: '세무법인 혜움',
+      agencyName: '세무법인 세무',
       status: 'REQUESTED',
       requestedAt: CREATED_AT,
     },
@@ -145,7 +145,7 @@ export function demoChannelTokens(): ChannelTokenRecord[] {
     {
       tokenHash: hashChannelToken(DEMO_CHANNEL_TOKENS.valid),
       messengerType: 'KAKAOTALK',
-      channelName: '혜움상담',
+      channelName: '세무상담',
       expiresAt: farFuture,
     },
     {

@@ -29,7 +29,7 @@
 | 3 | 버전을 타입 섞어 엄격 비교 | **바꿈:** 버전은 문자열 하나로 저장·비교합니다 | 표기 차이로 재동의가 생기지 않게 합니다 |
 | 4 | 세무 약관 용도를 "소속 회사 중 하나라도"로 판정 | **바꿈:** 토큰이 묶인 지금 회사가 `TAXATION`일 때만 `TAX`를 적용합니다 | 토큰 하나 = 회사 하나라서 무료 회사에서 막힐 이유가 없습니다 |
 | 5 | 서버가 클라이언트 가드에 기댐 | **바꿈:** `authorize({ requiresTerms: true })`로 제품 API를 403 `TERMS_REAGREEMENT_REQUIRED`로 막습니다. 세무 대리인은 건너뜁니다 | 우회 경로를 없앱니다 |
-| 6 | 세무 기장 전용 약관(혜움 약관) 목록 | **보류:** 데모 시드의 `TAX_SERVICE` 하나로 둡니다 | 실제 약관 카탈로그와 코드를 받아야 합니다 |
+| 6 | 세무 기장 전용 약관 목록 | **보류:** 데모 시드의 `TAX_SERVICE` 하나로 둡니다 | 실제 약관 카탈로그와 코드를 받아야 합니다 |
 
 **바뀌는 케이스:** `version compared with strict inequality across types` → `false`. `purposes when any company is taxation`, `guard *`, `legacy server refuses *`는 서버 함수로 옮기지 않고 HTTP 테스트(`terms.http.test.ts`)가 422 `REQUIRED_TERM_DECLINED`·409 `TERM_VERSION_OUTDATED`로 확인합니다.
 
