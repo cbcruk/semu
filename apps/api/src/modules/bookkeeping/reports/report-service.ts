@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from 'effect'
+import { addDays } from '../../../shared/time/calendar.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { companyDateOf } from '../../../shared/time/date-format.ts'
 import type { BusinessType } from '../../identity-access/actor.types.ts'
@@ -39,8 +40,8 @@ export interface CashStatusView {
 /** 홈 경영 현황입니다. */
 export interface HomeSummaryView {
   date: string
-  profitLoss: { month: string; revenueAmount: number; netIncomeAmount: number }
-  cash: { closingAmount: number }
+  profitLoss: { month: string; revenueAmount: number; expenseAmount: number; netIncomeAmount: number }
+  cash: { date: string; depositAmount: number; withdrawalAmount: number; closingAmount: number }
   vat: { periodStart: string; periodEnd: string; estimatedTaxAmount: number; dueDate: string; daysUntilDue: number }
   giros: { todoCount: number; todoAmount: number }
 }
@@ -141,7 +142,7 @@ export class ReportService extends Context.Service<
           const month = today.slice(0, 7)
           const pl = yield* profitLoss(companyId, Number(today.slice(0, 4)), false)
           const monthFigures = pl.months.find((row) => row.month === month)
-          const cash = yield* cashStatus(companyId, today)
+          const cash = yield* cashStatus(companyId, addDays(today, -1))
           const estimate = yield* vat.current(companyId, businessType, today)
           const todo = (yield* giros.list(companyId)).filter((row) => row.status === 'TODO')
           return {
@@ -149,9 +150,18 @@ export class ReportService extends Context.Service<
             profitLoss: {
               month,
               revenueAmount: monthFigures?.revenueAmount ?? 0,
+              expenseAmount:
+                (monthFigures?.costOfSalesAmount ?? 0) +
+                (monthFigures?.sgaAmount ?? 0) +
+                (monthFigures?.nonOperatingExpenseAmount ?? 0),
               netIncomeAmount: monthFigures?.netIncomeAmount ?? 0,
             },
-            cash: { closingAmount: cash.figures.closingAmount },
+            cash: {
+              date: cash.date,
+              depositAmount: cash.figures.depositAmount,
+              withdrawalAmount: cash.figures.withdrawalAmount,
+              closingAmount: cash.figures.closingAmount,
+            },
             vat: {
               periodStart: estimate.period.start,
               periodEnd: estimate.period.end,

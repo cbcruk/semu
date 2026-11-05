@@ -1,0 +1,42 @@
+{
+  "rule": "vat-due-date-approximation",
+  "description": "Home summary VAT due date as the 25th of the month after the estimate period, without holiday adjustment.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/realtime-reports/realtime-reports.service.ts", "lines": "267-294" },
+    { "file": "apps/api/legacy/src/lib/plain-date.ts", "lines": "27-30" }
+  ],
+  "inputSchema": {
+    "periodEnd": "last day of the VAT estimate period",
+    "today": "company date"
+  },
+  "cases": [
+    {
+      "name": "fourth quarter is due in January",
+      "input": { "periodEnd": "2026-12-31", "today": "2026-10-31" },
+      "expected": { "dueDate": "2027-01-25", "daysUntilDue": 86 },
+      "derivation": "traced"
+    },
+    {
+      "name": "third quarter is due in October",
+      "input": { "periodEnd": "2026-09-30", "today": "2026-09-15" },
+      "expected": { "dueDate": "2026-10-25", "daysUntilDue": 40 },
+      "derivation": "traced"
+    },
+    {
+      "name": "a Saturday due date is not moved",
+      "input": { "periodEnd": "2026-03-31", "today": "2026-04-01" },
+      "expected": { "dueDate": "2026-04-25", "daysUntilDue": 24 },
+      "derivation": "traced"
+    },
+    {
+      "name": "a passed due date counts negative",
+      "input": { "periodEnd": "2026-06-30", "today": "2026-07-26" },
+      "expected": { "dueDate": "2026-07-25", "daysUntilDue": -1 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 주말·공휴일을 미루지 않아 2026-04-25(토) 같은 날을 기한으로 보입니다. 재설계는 Tax의 세무 일정이 준 기한을 포트(`VatEstimateSource`)로 받습니다.",
+    "예정 고지 대상 개인사업자의 4월·10월 납부는 근사에 들어 있지 않습니다."
+  ]
+}

@@ -1,0 +1,98 @@
+{
+  "rule": "giro-status-transitions",
+  "description": "Giro bill status changes from user commands and from a full internet giro refresh.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/giros/giros.service.ts", "lines": "44-102, 137-160, 212-231" }
+  ],
+  "inputSchema": {
+    "call": "'command' | 'refresh'",
+    "from": "'TODO' | 'UNKNOWN' | 'DONE' | 'HIDDEN' (command)",
+    "command": "'MARK_PAID' | 'HIDE' | 'PAY' (command)",
+    "current": "{ status, doneReason } | null for a new bill (refresh)",
+    "seen": "{ isPaid } | null when missing from the refresh (refresh)"
+  },
+  "cases": [
+    {
+      "name": "mark a todo bill paid",
+      "input": { "call": "command", "from": "TODO", "command": "MARK_PAID" },
+      "expected": { "to": "DONE", "action": "MARKED_PAID", "doneReason": "MARKED_BY_USER" },
+      "derivation": "traced"
+    },
+    {
+      "name": "hide an unknown bill",
+      "input": { "call": "command", "from": "UNKNOWN", "command": "HIDE" },
+      "expected": { "to": "HIDDEN", "action": "HIDDEN", "doneReason": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "pay a todo bill in the app",
+      "input": { "call": "command", "from": "TODO", "command": "PAY" },
+      "expected": { "to": "DONE", "action": "PAID", "doneReason": "PAID_IN_APP" },
+      "derivation": "traced"
+    },
+    {
+      "name": "an unknown bill cannot be paid in the app",
+      "input": { "call": "command", "from": "UNKNOWN", "command": "PAY" },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "a hidden bill cannot be restored or marked",
+      "input": { "call": "command", "from": "HIDDEN", "command": "MARK_PAID" },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "a done bill cannot be hidden",
+      "input": { "call": "command", "from": "DONE", "command": "HIDE" },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "a new unpaid bill is todo",
+      "input": { "call": "refresh", "current": null, "seen": { "isPaid": false } },
+      "expected": { "kind": "INSERT", "status": "TODO", "doneReason": null, "action": "CREATED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "a new paid bill is done",
+      "input": { "call": "refresh", "current": null, "seen": { "isPaid": true } },
+      "expected": { "kind": "INSERT", "status": "DONE", "doneReason": "SEEN_PAID", "action": "CREATED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "a todo bill seen paid is done",
+      "input": { "call": "refresh", "current": { "status": "TODO", "doneReason": null }, "seen": { "isPaid": true } },
+      "expected": { "kind": "UPDATE", "status": "DONE", "doneReason": "SEEN_PAID", "action": "SEEN_PAID" },
+      "derivation": "traced"
+    },
+    {
+      "name": "an unknown bill seen unpaid reopens",
+      "input": { "call": "refresh", "current": { "status": "UNKNOWN", "doneReason": null }, "seen": { "isPaid": false } },
+      "expected": { "kind": "UPDATE", "status": "TODO", "doneReason": null, "action": "REOPENED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "a missing todo bill becomes unknown",
+      "input": { "call": "refresh", "current": { "status": "TODO", "doneReason": null }, "seen": null },
+      "expected": { "kind": "UPDATE", "status": "UNKNOWN", "doneReason": null, "action": "MARKED_UNKNOWN" },
+      "derivation": "traced"
+    },
+    {
+      "name": "a hidden bill stays hidden when seen paid",
+      "input": { "call": "refresh", "current": { "status": "HIDDEN", "doneReason": null }, "seen": { "isPaid": true } },
+      "expected": { "kind": "UPDATE", "status": "HIDDEN", "doneReason": null, "action": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "a missing done bill is left alone",
+      "input": { "call": "refresh", "current": { "status": "DONE", "doneReason": "MARKED_BY_USER" }, "seen": null },
+      "expected": null,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "숨긴 고지서를 되돌리는 커맨드가 현행에 없습니다.",
+    "`UNKNOWN`(목록에서 사라짐)인 고지서를 앱에서 납부할 수 없습니다. 기한이 지난 고지서인지 이미 낸 고지서인지 구분할 방법이 없습니다."
+  ]
+}

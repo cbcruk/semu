@@ -1,0 +1,98 @@
+{
+  "rule": "bank-balance-snapshot",
+  "description": "Which daily closing balance wins, how a missing day carries the last balance, and how transactions derive a closing balance.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/bank/bank.repository.ts", "lines": "100-133" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/ingestion/ingest-scraped-records.ts", "lines": "319-330" }
+  ],
+  "inputSchema": {
+    "call": "'merge' | 'closing' | 'derived'",
+    "current": "'SCRAPED' | 'DERIVED' | null (merge)",
+    "incoming": "'SCRAPED' | 'DERIVED' (merge)",
+    "snapshots": "[{ date, closingBalance }] (closing)",
+    "date": "YYYY-MM-DD (closing)",
+    "transactions": "[{ transactedAt, externalKey, balanceAfter: number | null }] (derived)"
+  },
+  "cases": [
+    {
+      "name": "the first snapshot of a day is stored",
+      "input": { "call": "merge", "current": null, "incoming": "DERIVED" },
+      "expected": "REPLACE",
+      "derivation": "traced"
+    },
+    {
+      "name": "a bank balance replaces a derived one",
+      "input": { "call": "merge", "current": "DERIVED", "incoming": "SCRAPED" },
+      "expected": "REPLACE",
+      "derivation": "traced"
+    },
+    {
+      "name": "a derived balance never replaces a bank one",
+      "input": { "call": "merge", "current": "SCRAPED", "incoming": "DERIVED" },
+      "expected": "KEEP",
+      "derivation": "traced"
+    },
+    {
+      "name": "a newer derived balance replaces the old one",
+      "input": { "call": "merge", "current": "DERIVED", "incoming": "DERIVED" },
+      "expected": "REPLACE",
+      "derivation": "traced"
+    },
+    {
+      "name": "a day without a snapshot carries the last balance",
+      "input": {
+        "call": "closing",
+        "snapshots": [
+          { "date": "2026-10-28", "closingBalance": 1000000 },
+          { "date": "2026-10-30", "closingBalance": 1200000 }
+        ],
+        "date": "2026-10-29"
+      },
+      "expected": 1000000,
+      "derivation": "traced"
+    },
+    {
+      "name": "before the first snapshot the balance is zero",
+      "input": { "call": "closing", "snapshots": [{ "date": "2026-10-28", "closingBalance": 1000000 }], "date": "2026-10-27" },
+      "expected": 0,
+      "derivation": "traced"
+    },
+    {
+      "name": "the last transaction of the day sets the derived closing",
+      "input": {
+        "call": "derived",
+        "transactions": [
+          { "transactedAt": "2026-10-31T09:00:00+09:00", "externalKey": "a", "balanceAfter": 73750000 },
+          { "transactedAt": "2026-10-31T15:00:00+09:00", "externalKey": "b", "balanceAfter": 73450000 }
+        ]
+      },
+      "expected": 73450000,
+      "derivation": "traced"
+    },
+    {
+      "name": "same minute uses the larger external key",
+      "input": {
+        "call": "derived",
+        "transactions": [
+          { "transactedAt": "2026-10-31T15:00:00+09:00", "externalKey": "tx-01", "balanceAfter": 100 },
+          { "transactedAt": "2026-10-31T15:00:00+09:00", "externalKey": "tx-02", "balanceAfter": 200 }
+        ]
+      },
+      "expected": 200,
+      "derivation": "traced"
+    },
+    {
+      "name": "transactions without a balance derive nothing",
+      "input": {
+        "call": "derived",
+        "transactions": [{ "transactedAt": "2026-10-31T15:00:00+09:00", "externalKey": "a", "balanceAfter": null }]
+      },
+      "expected": null,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "같은 분에 거래가 여럿이면 수집 키 역순으로 마지막을 고릅니다. 수집 키가 시간 순서를 보장하는지는 Integrations 쪽 확인이 필요합니다.",
+    "시각 비교는 RFC 3339 문자열 비교입니다. 수집 시각의 오프셋이 섞여 오면 순서가 틀릴 수 있어 Integrations가 회사 시간대로 맞춰 보내야 합니다."
+  ]
+}

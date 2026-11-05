@@ -5,20 +5,21 @@ import type { IngestionRejection, ScrapedCardApproval, ScrapedEvidence, ScrapedR
 const KIND_ORDER: Record<ScrapedRecord['type'], number> = {
   BANK_ACCOUNT: 0,
   BANK_TRANSACTION: 1,
-  BANK_BALANCE: 2,
-  SALES_EVIDENCE: 3,
-  PURCHASE_EVIDENCE: 3,
-  CARD_APPROVAL: 3,
-  GIRO_BILLS: 4,
+  BANK_BALANCE: 1,
+  SALES_EVIDENCE: 1,
+  PURCHASE_EVIDENCE: 1,
+  CARD_APPROVAL: 1,
+  GIRO_BILLS: 1,
 }
 
 /** 매입 증빙이 가질 수 있는 원천입니다. */
 export const PURCHASE_SOURCES: ReadonlyArray<EvidenceSource> = ['TAX_INVOICE', 'CASH_RECEIPT', 'CARD']
 
 /**
- * 레코드를 처리할 순서입니다. 계좌가 거래·잔액보다, 거래가 잔액보다 먼저입니다. 같은 종류 안에서는 보낸 순서를 지킵니다.
+ * 레코드를 처리할 순서입니다. 계좌를 먼저, 나머지는 보낸 순서대로 처리합니다(현행과 같음).
  *
- * 계좌를 먼저 만들어야 같은 묶음의 거래가 그 계좌에 붙고, 은행 잔액이 거래로 만든 잔액을 덮을 수 있습니다.
+ * 계좌를 먼저 만들어야 같은 묶음의 거래·잔액이 그 계좌에 붙습니다. 은행 잔액과 거래로 만든 잔액의 우선순위는
+ * 순서가 아니라 `mergeSnapshot`이 정합니다.
  */
 export function processingOrder(records: ReadonlyArray<Pick<ScrapedRecord, 'type'>>): number[] {
   return records
@@ -41,6 +42,7 @@ export function cardApprovalEvidence(record: ScrapedCardApproval): ScrapedEviden
     ...(record.merchantBusinessNumber === undefined
       ? {}
       : { counterpartyBusinessNumber: record.merchantBusinessNumber }),
+    totalAmount: record.amount,
     supplyAmount: record.amount - vat,
     vatAmount: vat,
     card: {

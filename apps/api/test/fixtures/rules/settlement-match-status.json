@@ -1,0 +1,140 @@
+{
+  "rule": "settlement-match-status",
+  "description": "Evidence-link status of a bank transaction and the checks for replacing its settlement links.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/bank/bank.utils.ts", "lines": "46-50" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/bank/bank.repository.ts", "lines": "209-226" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/bank/bank.service.ts", "lines": "155-183" },
+    { "file": "docs/reference/spec/bookkeeping.md", "lines": "1-400", "origin": "spec" }
+  ],
+  "inputSchema": {
+    "call": "'status' | 'link'",
+    "groupCode": "level-one group code of the transaction's account, null when unclassified (status)",
+    "partnerId": "string | null (status)",
+    "amount": "signed transaction amount (status)",
+    "linkedAmount": "sum of linked amounts (status)",
+    "direction": "'DEPOSIT' | 'WITHDRAWAL' (link)",
+    "transactionAmount": "signed amount (link)",
+    "transactionPartnerId": "string | null (link)",
+    "links": "[{ evidenceSide, evidencePartnerId, evidenceTotal, linkedElsewhere, amount }] (link)",
+    "keptAmount": "links of this transaction that stay (link)"
+  },
+  "cases": [
+    {
+      "name": "unclassified is not applicable",
+      "input": { "call": "status", "groupCode": null, "partnerId": "p-1", "amount": 1000, "linkedAmount": 0 },
+      "expected": "NOT_APPLICABLE",
+      "derivation": "traced"
+    },
+    {
+      "name": "a non-trade account is not applicable",
+      "input": { "call": "status", "groupCode": "sga", "partnerId": "p-1", "amount": -1000, "linkedAmount": 0 },
+      "expected": "NOT_APPLICABLE",
+      "derivation": "traced"
+    },
+    {
+      "name": "trade without a partner needs one",
+      "input": { "call": "status", "groupCode": "trade", "partnerId": null, "amount": 1000, "linkedAmount": 0 },
+      "expected": "PARTNER_REQUIRED",
+      "derivation": "traced"
+    },
+    {
+      "name": "fully linked withdrawal matches",
+      "input": { "call": "status", "groupCode": "trade", "partnerId": "p-1", "amount": -2200000, "linkedAmount": 2200000 },
+      "expected": "MATCHED",
+      "derivation": "traced"
+    },
+    {
+      "name": "partially linked is unmatched",
+      "input": { "call": "status", "groupCode": "trade", "partnerId": "p-1", "amount": 33000000, "linkedAmount": 11000000 },
+      "expected": "UNMATCHED",
+      "derivation": "traced"
+    },
+    {
+      "name": "a deposit settles sales evidence only",
+      "input": {
+        "call": "link",
+        "direction": "DEPOSIT",
+        "transactionAmount": 1000,
+        "transactionPartnerId": null,
+        "links": [
+          { "evidenceSide": "PURCHASE", "evidencePartnerId": null, "evidenceTotal": 1000, "linkedElsewhere": 0, "amount": 1000 }
+        ],
+        "keptAmount": 0
+      },
+      "expected": "SIDE_MISMATCH",
+      "derivation": "traced"
+    },
+    {
+      "name": "partners on both sides must agree",
+      "input": {
+        "call": "link",
+        "direction": "DEPOSIT",
+        "transactionAmount": 1000,
+        "transactionPartnerId": "p-1",
+        "links": [
+          { "evidenceSide": "SALES", "evidencePartnerId": "p-2", "evidenceTotal": 1000, "linkedElsewhere": 0, "amount": 1000 }
+        ],
+        "keptAmount": 0
+      },
+      "expected": "PARTNER_MISMATCH",
+      "derivation": "traced"
+    },
+    {
+      "name": "a link cannot exceed what is left on the evidence",
+      "input": {
+        "call": "link",
+        "direction": "WITHDRAWAL",
+        "transactionAmount": -1000,
+        "transactionPartnerId": null,
+        "links": [
+          { "evidenceSide": "PURCHASE", "evidencePartnerId": null, "evidenceTotal": 1000, "linkedElsewhere": 400, "amount": 700 }
+        ],
+        "keptAmount": 0
+      },
+      "expected": "EXCEEDS_EVIDENCE",
+      "derivation": "traced"
+    },
+    {
+      "name": "links cannot exceed the transaction",
+      "input": {
+        "call": "link",
+        "direction": "DEPOSIT",
+        "transactionAmount": 1000,
+        "transactionPartnerId": null,
+        "links": [
+          { "evidenceSide": "SALES", "evidencePartnerId": null, "evidenceTotal": 5000, "linkedElsewhere": 0, "amount": 800 }
+        ],
+        "keptAmount": 300
+      },
+      "expected": "EXCEEDS_TRANSACTION",
+      "derivation": "traced"
+    },
+    {
+      "name": "a partial link with a missing evidence partner is accepted",
+      "input": {
+        "call": "link",
+        "direction": "DEPOSIT",
+        "transactionAmount": 33000000,
+        "transactionPartnerId": "p-1",
+        "links": [
+          {
+            "evidenceSide": "SALES",
+            "evidencePartnerId": null,
+            "evidenceTotal": 33000000,
+            "linkedElsewhere": 0,
+            "amount": 11000000
+          }
+        ],
+        "keptAmount": 0
+      },
+      "expected": null,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 상태를 컬럼에 저장하고 분류·연결이 바뀔 때마다 다시 계산합니다. 재설계는 읽을 때 계산해 상태가 어긋날 일이 없습니다.",
+    "현행 연결은 증빙별로 덮어쓰기(upsert)이고 해제는 따로입니다. 재설계는 거래의 연결 전체를 한 번에 바꿉니다.",
+    "금액 0 이하 연결은 현행 스키마가 막는지 확인하지 못했습니다. 재설계는 `AMOUNT_NOT_POSITIVE`로 막습니다."
+  ]
+}

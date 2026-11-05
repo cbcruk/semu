@@ -67,14 +67,19 @@ describe('GET /v1/reports/cash-status', () => {
 })
 
 describe('GET /v1/reports/home-summary', () => {
-  it('combines the month, cash, VAT estimate and open giros', async () => {
+  it('combines the month, yesterday cash, VAT estimate and open giros', async () => {
     const response = await app.send('GET', '/v1/reports/home-summary?date=2026-10-31')
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       date: '2026-10-31',
-      profitLoss: { month: '2026-10', revenueAmount: 44_000_000, netIncomeAmount: 23_030_000 },
-      cash: { closingAmount: 73_450_000 },
+      profitLoss: {
+        month: '2026-10',
+        revenueAmount: 44_000_000,
+        expenseAmount: 21_000_000,
+        netIncomeAmount: 23_030_000,
+      },
+      cash: { date: '2026-10-30', depositAmount: 0, withdrawalAmount: 0, closingAmount: 71_730_000 },
       vat: {
         periodStart: '2026-10-01',
         periodEnd: '2026-12-31',

@@ -68,8 +68,10 @@ export const CashStatus = Schema.Struct({
 /** 홈 경영 현황입니다. 현행 `/home/summary-cards`를 리소스로 바꿨습니다. */
 export const HomeSummary = Schema.Struct({
   date: CalendarDate,
-  profitLoss: Schema.Struct({ month: CalendarMonth, revenueAmount: Won, netIncomeAmount: Won }),
-  cash: Schema.Struct({ closingAmount: Won }),
+  /** 이번 달 손익입니다. 비용은 매출원가 + 판관비 + 영업외비용입니다. */
+  profitLoss: Schema.Struct({ month: CalendarMonth, revenueAmount: Won, expenseAmount: Won, netIncomeAmount: Won }),
+  /** 어제(마지막 수집이 끝난 날) 자금입니다. */
+  cash: Schema.Struct({ date: CalendarDate, depositAmount: Won, withdrawalAmount: Won, closingAmount: Won }),
   vat: Schema.Struct({
     periodStart: CalendarDate,
     periodEnd: CalendarDate,

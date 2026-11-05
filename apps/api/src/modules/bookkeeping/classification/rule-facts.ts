@@ -13,13 +13,13 @@ import { firstMatchingRule, planRuleUpdate } from './rule-matching.ts'
 /**
  * 증빙 한 건에서 규칙 조건이 볼 값을 모읍니다.
  *
- * `PARTNER`는 거래처 ID, `COUNTERPARTY`는 증빙에 적힌 상호, `ITEM`은 품목 요약, 금액은 {@link evidenceAmounts}로 채운 값입니다.
+ * `PARTNER`는 거래처 ID, `COUNTERPARTY`는 증빙에 적힌 상호와 사업자번호, `ITEM`은 품목 요약, 금액은 {@link evidenceAmounts}로 채운 값입니다.
  */
 export function evidenceFacts(record: EvidenceRecord): RuleFacts {
   const amounts = evidenceAmounts(record)
   return {
     partner: record.partnerId,
-    counterparty: record.counterpartyName ?? '',
+    counterparty: `${record.counterpartyName ?? ''} ${record.counterpartyBusinessNumber ?? ''}`.trim(),
     item: record.itemSummary ?? '',
     totalAmount: amounts.totalAmount,
     supplyAmount: amounts.supplyAmount,

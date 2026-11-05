@@ -1,0 +1,154 @@
+{
+  "rule": "classification-rule-matching",
+  "description": "Whether an auto-classification rule matches a row and which conditions are valid for a rule scope.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/classification/classification.utils.ts", "lines": "19-139" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/evidence/evidence.utils.ts", "lines": "32-50" },
+    {
+      "file": "alfred-manual/03-경리/01-매출-증빙-관리/01-경리-규칙기반-자동분류.md",
+      "lines": "1-40",
+      "origin": "manual"
+    }
+  ],
+  "inputSchema": {
+    "call": "'matches' | 'violations'",
+    "rule": "{ source: string | null, conditions: RuleCondition[] } (matches)",
+    "facts": "partial RuleFacts; missing text facts are '', numbers 0, partner/source/account/direction null (matches)",
+    "scope": "'SALES' | 'PURCHASE' | 'BANK' (violations)",
+    "conditions": "RuleCondition[] (violations)"
+  },
+  "cases": [
+    {
+      "name": "contains is case-insensitive",
+      "input": {
+        "call": "matches",
+        "rule": { "source": null, "conditions": [{ "field": "SUMMARY", "operator": "CONTAINS", "values": ["kb카드"] }] },
+        "facts": { "summary": "KB카드 정산" }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "amount conditions compare the absolute value",
+      "input": {
+        "call": "matches",
+        "rule": { "source": null, "conditions": [{ "field": "TOTAL_AMOUNT", "operator": "GTE", "min": 1000000 }] },
+        "facts": { "totalAmount": -1100000 }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "between includes both ends",
+      "input": {
+        "call": "matches",
+        "rule": {
+          "source": null,
+          "conditions": [{ "field": "SUPPLY_AMOUNT", "operator": "BETWEEN", "min": 100, "max": 500000 }]
+        },
+        "facts": { "supplyAmount": 500000 }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "source restriction must match",
+      "input": {
+        "call": "matches",
+        "rule": { "source": "CARD", "conditions": [{ "field": "TOTAL_AMOUNT", "operator": "GTE", "min": 0 }] },
+        "facts": { "source": "TAX_INVOICE", "totalAmount": 1000 }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "a missing partner never matches",
+      "input": {
+        "call": "matches",
+        "rule": { "source": null, "conditions": [{ "field": "PARTNER", "operator": "IN", "values": ["p-1"] }] },
+        "facts": { "partner": null }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "every condition must match",
+      "input": {
+        "call": "matches",
+        "rule": {
+          "source": null,
+          "conditions": [
+            { "field": "SUMMARY", "operator": "STARTS_WITH", "values": ["10월"] },
+            { "field": "AMOUNT", "operator": "LTE", "max": 1000000 }
+          ]
+        },
+        "facts": { "summary": "10월 급여", "amount": -8000000 }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "counterparty text includes the business number",
+      "input": {
+        "call": "matches",
+        "rule": {
+          "source": null,
+          "conditions": [{ "field": "COUNTERPARTY", "operator": "CONTAINS", "values": ["1108100011"] }]
+        },
+        "facts": { "counterparty": "에코프로비엠 1108100011" }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "a rule needs at least one condition",
+      "input": { "call": "violations", "scope": "SALES", "conditions": [] },
+      "expected": [{ "index": -1, "code": "CONDITIONS_EMPTY" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "bank rules cannot look at the item",
+      "input": {
+        "call": "violations",
+        "scope": "BANK",
+        "conditions": [{ "field": "ITEM", "operator": "CONTAINS", "values": ["a"] }]
+      },
+      "expected": [{ "index": 0, "code": "FIELD_NOT_ALLOWED" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "partner only supports in",
+      "input": {
+        "call": "violations",
+        "scope": "PURCHASE",
+        "conditions": [{ "field": "PARTNER", "operator": "CONTAINS", "values": ["a"] }]
+      },
+      "expected": [{ "index": 0, "code": "OPERATOR_NOT_ALLOWED" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "between needs min and max",
+      "input": {
+        "call": "violations",
+        "scope": "BANK",
+        "conditions": [{ "field": "AMOUNT", "operator": "BETWEEN", "min": 1 }]
+      },
+      "expected": [{ "index": 0, "code": "OPERAND_REQUIRED" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "between with min above max",
+      "input": {
+        "call": "violations",
+        "scope": "BANK",
+        "conditions": [{ "field": "AMOUNT", "operator": "BETWEEN", "min": 10, "max": 1 }]
+      },
+      "expected": [{ "index": 0, "code": "RANGE_REVERSED" }],
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 첫 위반 하나만 문장으로 돌려줍니다. 재설계는 위반을 모두 돌려줍니다. 여러 위반 케이스는 현행 결과(첫 위반)와 다르므로 픽스처에 넣지 않았습니다.",
+    "규칙의 `source` 제한은 매입 규칙에서 PG·쇼핑몰·배달을 받을지 현행 스펙이 정하지 않았습니다. 재설계는 매입 원천(세금계산서·현금영수증·카드)만 받습니다."
+  ]
+}
