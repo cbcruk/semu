@@ -228,7 +228,7 @@ export class EsignRequests extends Context.Service<
         yield* requests.save(next)
         if (delivery.ok) {
           yield* events.publish({
-            type: 'esign-request.sent',
+            type: 'esign_request.sent',
             companyId: actor.companyId,
             requestId: next.id,
             at: now.iso,

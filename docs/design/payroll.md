@@ -296,7 +296,7 @@ GET /labor-cost-reports/{year}    → { year, hasData, months[12] { month, amoun
 ```mermaid
 flowchart LR
   HR[HR] -- PayrollEmployeeDirectory --> PAY[Payroll]
-  PAY -- payroll.pay-month.closed / reopened --> TAX[Tax]
+  PAY -- payroll_pay_month.closed / reopened --> TAX[Tax]
   TAX -- WithholdingFilingLock.isFiled --> PAY
   PAY -- PayrollLedgerSummary.summaryFor --> TAX
   PAY -- PayrollLaborCost.monthly --> BK[Bookkeeping]
@@ -309,15 +309,15 @@ flowchart LR
 | 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean` |
 | 포트(메일 구현) | `PayslipMailer` | `send({ payslipId, to, subject }) → { ok: true } \| { ok: false, reason: NO_EMAIL \| REJECTED }` |
 | 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 지금은 메모리 |
-| 내보냄(이벤트) | `payroll.pay-month.closed` | `{ eventId, companyId, paymentMonth, ledgerIds[], withholding[] { incomeKind, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }, occurredAt }` |
-| 내보냄(이벤트) | `payroll.pay-month.reopened` | `{ eventId, companyId, paymentMonth, ledgerIds[], occurredAt }` |
+| 내보냄(이벤트) | `payroll_pay_month.closed` | `{ eventId, companyId, paymentMonth, ledgerIds[], withholding[] { incomeKind, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }, occurredAt }` |
+| 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, ledgerIds[], occurredAt }` |
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 
 - `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
 - 원천세 집계는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 싣습니다. 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax입니다
-- Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll.pay-month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다
+- Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다
 - 다른 컨텍스트는 [payroll.public.ts](../../apps/api/src/modules/payroll/payroll.public.ts)만 가져옵니다. 급여는 HR·Tax 저장소를 읽지 않습니다
 
 ## 접근 요건
@@ -428,7 +428,7 @@ flowchart LR
 | 42 | `POST /bpo/card/:c/approve/` | `POST /payroll-ledgers/{ledgerId}:approve` |
 | 43 | `POST /bpo/card/:c/request-approval/` | `POST /payroll-ledgers/{ledgerId}:request-approval` |
 | 44 | `POST /bpo/card/:c/cancel-approval/` | `:withdraw-approval-request`(승인 대기) 또는 `:reopen { reason }`(마감 후) |
-| 45 | `POST /bpo/card/:c/export-to-desk/` | 미구현. 데스크(세무 대리인 도구)는 범위 밖. 필요하면 `payroll.pay-month.closed`를 구독 |
+| 45 | `POST /bpo/card/:c/export-to-desk/` | 미구현. 데스크(세무 대리인 도구)는 범위 밖. 필요하면 `payroll_pay_month.closed`를 구독 |
 
 ### BPO 입력 (46-98)
 

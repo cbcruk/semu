@@ -1,7 +1,7 @@
 /**
  * 급여 컨텍스트가 다른 컨텍스트에 공개하는 것입니다. 다른 컨텍스트는 이 파일만 가져옵니다.
  *
- * - Tax: 지급월 마감 이벤트(`payroll.pay-month.closed`·`payroll.pay-month.reopened`)를 구독하고,
+ * - Tax: 지급월 마감 이벤트(`payroll_pay_month.closed`·`payroll_pay_month.reopened`)를 구독하고,
  *   `PayrollLedgerSummary`로 지급일 구간의 마감 현황을 읽고, `WithholdingFilingLock` 포트를 구현합니다
  * - Bookkeeping: `PayrollLaborCost`로 월별 인건비를 읽습니다
  * - HR: `PayrollEmployeeDirectory` 포트를 구현합니다

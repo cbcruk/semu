@@ -77,9 +77,9 @@ export class SignerIdentityVerifier extends Context.Service<
 
 /** 문서 컨텍스트가 내는 도메인 이벤트입니다. */
 export type DocumentEvent =
-  | { type: 'esign-request.sent'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
+  | { type: 'esign_request.sent'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
   | {
-      type: 'esign-request.completed'
+      type: 'esign_request.completed'
       companyId: Id<'company'>
       requestId: Id<'esignRequest'>
       employeeId?: Id<'employee'>

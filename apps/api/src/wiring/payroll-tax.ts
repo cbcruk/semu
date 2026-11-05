@@ -21,7 +21,7 @@ export const PayrollWithholdingFilingLockFromTax: Layer.Layer<WithholdingFilingL
 /**
  * Payroll의 `PayrollEventPublisher` 포트를 같은 프로세스에서 Tax에 바로 넘기는 구현입니다. 아웃박스가 생기기 전까지 씁니다.
  *
- * `payroll.pay-month.closed`·`payroll.pay-month.reopened`를 받으면 그 지급월의 원천세 신고 건을 Payroll의 현재 마감 현황으로
+ * `payroll_pay_month.closed`·`payroll_pay_month.reopened`를 받으면 그 지급월의 원천세 신고 건을 Payroll의 현재 마감 현황으로
  * 다시 맞춥니다(`PayrollLedgerSync`). Tax에는 회사와 지급월만 넘기고, 원천세 집계 같은 급여 금액은 넘기지 않습니다.
  * 대장 커맨드와 같은 요청 안에서 동기로 돌기 때문에 Tax 쪽 반영이 끝나야 커맨드 응답이 나갑니다.
  */

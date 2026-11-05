@@ -64,8 +64,6 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Bookkeeping | `evidence.ingested`, `tax_invoice.issued`, `giro.paid` | 단말, Tax(예상 부가세 갱신 알림) | 설계 |
 | 공통 | `job.completed`, `reset` | 단말 | 설계 |
 
-> 구현이 쓰는 이름 중 `esign-request.completed`(Documents), `payroll.pay-month.closed`(Payroll)는 위 규칙과 다릅니다. outbox를 붙일 때 이 문서의 이름으로 맞춥니다 ([review.md](review.md#다음-단계)).
-
 ## 공개 조회
 
 이벤트로 넘기기 어려운 "지금 값"은 제공하는 컨텍스트가 `<context>.public.ts`에 조회 서비스로 내보내고, 쓰는 컨텍스트는 자기 말로 선언한 포트로 받습니다. 둘을 잇는 어댑터는 `apps/api/src/wiring/`에 있습니다.

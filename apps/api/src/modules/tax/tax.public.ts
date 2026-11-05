@@ -41,7 +41,7 @@ export type TaxEvent = FilingStatusChanged
 /**
  * Tax가 받는 Payroll의 사실입니다. 급여대장이 마감되거나 마감이 풀리면 그 지급월을 알려 줍니다.
  *
- * `app.ts`의 어댑터가 Payroll의 `payroll.pay-month.closed`·`payroll.pay-month.reopened` 이벤트를 이 형태로 바꿔
+ * `app.ts`의 어댑터가 Payroll의 `payroll_pay_month.closed`·`payroll_pay_month.reopened` 이벤트를 이 형태로 바꿔
  * {@link PayrollLedgerSync}에 넘깁니다.
  */
 export interface PayrollLedgerChanged {

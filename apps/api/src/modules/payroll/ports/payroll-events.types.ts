@@ -18,7 +18,7 @@ export interface WithholdingSummaryLine {
  * "급여대장 마감" 자료를 제출됨으로 바꾸고 집계를 신고서 초안에 씁니다.
  */
 export interface PayMonthClosed {
-  type: 'payroll.pay-month.closed'
+  type: 'payroll_pay_month.closed'
   eventId: Id<'event'>
   companyId: Id<'company'>
   paymentMonth: string
@@ -32,7 +32,7 @@ export interface PayMonthClosed {
  * 다시 대기로 돌립니다.
  */
 export interface PayMonthReopened {
-  type: 'payroll.pay-month.reopened'
+  type: 'payroll_pay_month.reopened'
   eventId: Id<'event'>
   companyId: Id<'company'>
   paymentMonth: string

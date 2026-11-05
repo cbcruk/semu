@@ -194,7 +194,7 @@ export class Signing extends Context.Service<
           })
           const kinds = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
           yield* events.publish({
-            type: 'esign-request.completed',
+            type: 'esign_request.completed',
             companyId: record.companyId,
             requestId: record.id,
             ...(record.recipient.employeeId === undefined ? {} : { employeeId: record.recipient.employeeId }),

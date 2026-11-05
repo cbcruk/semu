@@ -15,7 +15,7 @@
 ```
 지급월 대장 = 지급일이 그 달인 대장
 마감 = 지급월 대장이 1개 이상 && 모두 CLOSED
-변경 전후로 마감 여부가 바뀌면 payroll.pay-month.closed / payroll.pay-month.reopened 이벤트
+변경 전후로 마감 여부가 바뀌면 payroll_pay_month.closed / payroll_pay_month.reopened 이벤트
 집계 = 소득 종류(WAGE·DAILY·BUSINESS·OTHER)별 인원, 총지급액, 과세 급여, 소득세, 지방소득세
 ```
 

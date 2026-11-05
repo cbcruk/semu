@@ -529,7 +529,7 @@ function publishChanges(
     for (const change of payMonthChanges(before, after)) {
       if (change.kind === 'REOPENED') {
         yield* publisher.publish({
-          type: 'payroll.pay-month.reopened',
+          type: 'payroll_pay_month.reopened',
           eventId: newId('event'),
           companyId,
           paymentMonth: change.paymentMonth,
@@ -539,7 +539,7 @@ function publishChanges(
       }
       const ledgers = after.filter((ledger) => paymentMonthOf(ledger.paymentDate) === change.paymentMonth)
       yield* publisher.publish({
-        type: 'payroll.pay-month.closed',
+        type: 'payroll_pay_month.closed',
         eventId: newId('event'),
         companyId,
         paymentMonth: change.paymentMonth,

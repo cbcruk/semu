@@ -149,7 +149,7 @@ describe('/payroll-ledgers with client approval', () => {
 
   it('publishes the pay-month closed event with the withholding summary', () => {
     expect(events.at(-1)).toMatchObject({
-      type: 'payroll.pay-month.closed',
+      type: 'payroll_pay_month.closed',
       companyId: TEST_COMPANY_ID,
       paymentMonth: '2026-03',
       ledgerIds: [ledgerId],
@@ -177,7 +177,7 @@ describe('/payroll-ledgers with client approval', () => {
     const response = await app.request('POST', `/payroll-ledgers/${ledgerId}:reopen`, { body: { reason: '상여 누락' } })
 
     expect(response.body).toMatchObject({ status: 'SUBMITTED', reopenReason: '상여 누락', closedAt: null })
-    expect(events.at(-1)).toMatchObject({ type: 'payroll.pay-month.reopened', paymentMonth: '2026-03' })
+    expect(events.at(-1)).toMatchObject({ type: 'payroll_pay_month.reopened', paymentMonth: '2026-03' })
   })
 
   it('lists ledgers by attribution month', async () => {
@@ -267,7 +267,7 @@ describe('/payroll-ledgers self-service', () => {
 
     expect(closed.body).toMatchObject({ status: 'CLOSED' })
     expect(events.at(-1)).toMatchObject({
-      type: 'payroll.pay-month.closed',
+      type: 'payroll_pay_month.closed',
       companyId: DIRECT_COMPANY_ID,
       paymentMonth: '2026-04',
     })

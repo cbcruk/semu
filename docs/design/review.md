@@ -129,6 +129,6 @@
 1. **D1·D2 결정.** 저장소와 클라이언트 이전 방식이 정해져야 운영 배포를 계획할 수 있습니다
 2. **공식 기준표 확인.** 급여 기준표의 미확인 값과 간이세액표를 법령·고시 원문으로 채웁니다 (D4)
 3. **보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 51개를 외부 사실 확인 후 정합니다
-4. **이벤트 이름 정리와 outbox.** 구현의 `esign-request.*`, `payroll.pay-month.*`를 [events.md](events.md)의 snake_case 이름으로 맞추고 outbox를 붙입니다
+4. **outbox.** D1이 정해지면 발행 포트를 outbox로 바꿉니다. 이벤트 이름은 이미 [events.md](events.md)의 snake_case 규칙을 따릅니다
 5. **공통 도우미 정리.** 컨텍스트마다 중복된 메모리 테이블·테스트 도우미를 `src/shared`로 모읍니다
 6. **이전 구현 정리.** 이식이 끝난 뒤 `apps/api/legacy/`를 지웁니다. 지금은 D2의 BFF 근거로 둡니다
