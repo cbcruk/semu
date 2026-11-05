@@ -334,18 +334,18 @@ GET /document-forms/{documentFormCode}/file
 
 ## 구현 상태
 
-`apps/api/src/modules/documents/`에 있습니다. 저장소는 메모리 구현, 외부 연동은 결정적인 가짜입니다.
+`apps/api/src/modules/documents/`에 있습니다. 저장소는 메모리 구현, 외부 연동(알림·PDF·본인확인)은 결정적인 가짜이고, 직원 정보는 `HrDirectory`로만 읽습니다.
 
 | 영역 | 상태 |
 |---|---|
-| 순수 규칙 (전자서명 전이표, 발송 검증, 본인확인 잠금, 발급번호·증명서 전이, 도장·알림 수신자 한도) | 구현, 단위·픽스처 테스트 |
-| 전자서명 요청 (목록·생성·조회·수정·삭제·`:send`·`:resend`·`:revert-to-draft`·`:cancel`·`:void`) | 구현, HTTP 테스트 |
-| 서명자 흐름 (요약·`:verify`·문서·`:complete`) | 구현(서명 이미지 업로드는 본문 대신 가짜 ID), HTTP 테스트 |
-| 제증명 (목록·발급·조회·`:send`·`:void`) | 구현, HTTP 테스트 |
-| 템플릿 조회, 서식 모음 목록·건수 | 구현 |
-| 템플릿 수정, 도장·사인, 알림 수신자, 파일 다운로드, `:bundle`, 증명서 링크 | 미구현 (규칙만) |
-| 기한 만료 스케줄러 | 서비스 메서드(`expireOverdue`)만 구현, 스케줄 등록 없음 |
-| 이벤트 outbox, 멱등성 키 재응답 | 미구현 (`Idempotency-Key` 존재만 검사) |
+| 순수 규칙 (전자서명 전이표, 발송 검증, 본인확인 잠금, 발급번호·증명서 전이, 도장·알림 수신자 한도) | 구현, 단위·픽스처 테스트 5개 규칙 |
+| 전자서명 요청 (`GET/POST /esign-requests`, `GET/PUT/DELETE /esign-requests/{id}`, `:send`·`:resend`·`:revert-to-draft`·`:cancel`·`:void`) | 구현, HTTP 테스트. 기한 지난 요청은 조회할 때 `EXPIRED`로 보입니다 |
+| 서명자 흐름 (`GET /esign-links/{token}`, `:verify`, `:complete`) | 구현, HTTP 테스트. 서명 이미지는 본문 대신 가짜 파일 ID로 받습니다. 서명자용 문서 조회·서명 업로드·파일 다운로드는 미구현 |
+| 제증명 (`GET/POST /certificate-issuances`, `GET /{id}`, `:send`, `:void`) | 구현, HTTP 테스트 |
+| 템플릿 조회 (`GET /esign-templates`, `GET /esign-templates/{id}`) | 구현(기본 템플릿 5종) |
+| 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만) |
+| 기한 만료 스케줄러 | 미구현. 저장 상태는 바꾸지 않고 읽을 때 만료를 반영합니다 |
+| 이벤트 outbox, 멱등성 키 재응답 | 미구현. `DocumentEvents.layerMemory`가 이벤트를 메모리에 모읍니다 |
 
 ## 열린 질문
 

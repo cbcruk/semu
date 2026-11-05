@@ -437,23 +437,22 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 ## 구현 상태
 
-`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(PostgreSQL·outbox 미연결), 외부 연동은 결정적인 가짜입니다.
+`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(PostgreSQL·outbox 미연결), 개인정보 암호화는 결정적인 가짜(`PersonalDataCipher.layerFake`)입니다. `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
 
 | 영역 | 상태 |
 |---|---|
-| 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 |
-| 직원 (목록·건수·등록·조회·수정·삭제·원문 조회·퇴직·퇴직 취소) | 구현, HTTP 테스트 |
-| 휴직 (목록·요약·등록·조회·수정·삭제·복직) | 구현, HTTP 테스트 |
-| 근로·급여계약, 무기계약 전환 조회 | 구현, HTTP 테스트 |
-| 4대보험 설정·판정 | 구현, HTTP 테스트 |
-| 부서·직위 | 구현, HTTP 테스트 |
-| 인적공제 대상자 | 구현(첨부 제외), HTTP 테스트 |
-| 참조 데이터 (퇴직 사유, 감면 사유, 문서 카테고리) | 구현 |
-| `HrDirectory` (`hr.public.ts`) | 구현, 메모리 저장소 기반 |
-| 4대보험 신고 | 생성·철회만 구현. 처리 커맨드(`:complete`, `:fail`)와 목록은 미구현 |
-| 소득세 공제 저장 | 규칙만 구현. 엔드포인트 미구현 |
+| 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 13개 규칙 |
+| 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
+| 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)은 미구현 |
+| 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
+| 4대보험 판정 (`POST /employees/{id}/social-insurance:determine`) | 구현(저장 없는 권장값), HTTP 테스트. 설정 저장(`PUT`) 미구현 |
+| 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
+| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 유효 근로계약, 겹치는 휴직, 주민번호 원문(열람 기록). 급여계약·4대보험·공제·인적공제·퇴직 조회는 미구현 |
+| 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
+| 급여계약·임금 계산, 소득세 공제, 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
+| 퇴직 정보(급여 형태·중간정산), 퇴직금 정산 상태 구독 | 미구현. 정산 상태 필드(`severanceSettlementStatus`)와 삭제·퇴사 취소 가드만 있습니다 |
 | 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기, 계좌 원문 조회 | 미구현 |
-| 이벤트 발행·구독 (`esign.completed` 처리 포함) | 미구현. 이벤트 버스가 없어 서비스 경계만 정했습니다 |
+| 이벤트 발행·구독 (`esign-request.completed` 처리 포함) | 미구현. 이벤트 버스가 없습니다 |
 | 멱등성 키 재응답 | 미구현 |
 
 ## 열린 질문
