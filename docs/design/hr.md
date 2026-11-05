@@ -463,8 +463,9 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 1. **급여대장에 들어간 직원 삭제:** 현행은 퇴직금 정산 완료만 막습니다. 확정 급여대장에 행이 있는 직원도 막으려면 Payroll이 `HrDirectory` 반대 방향 조회(`PayrollUsage.hasLedgerRows`)를 HR에 줘야 합니다. 포트를 HR에 둘지, 삭제 대신 보관(`ARCHIVED`)만 허용할지 정해야 합니다
 2. **같은 사람의 여러 `kind`:** 근로자를 기타소득자로도 등록할 때 인적 정보를 공유할지(Person 분리) 복사할지. 지금은 복사이고 중복 판정을 `kind`별로 합니다
 3. **고정임금제 가산율(R10):** 화면 값이 가산 없는 1.0배라 그대로 두었습니다. Payroll 계산 엔진과 맞춰야 합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md))
-4. **고용보험 상호주의 국가 목록:** 확인한 자료가 없어 비어 있습니다. 비어 있는 동안 상호주의 체류자격은 모두 가입 제외 권장입니다
+4. **고용보험 상호주의 국가 목록:** 두지 않기로 했습니다. 고용보험법 시행령 제3조의3은 국가 목록이 아니라 본국법 기준이라 D-7·D-8·D-9는 가입을 권하고 본국법 확인을 안내합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
 5. **계약 만료 경고 30일, 무기계약 전환 사전 알림 90일:** 제품 값을 확인하지 못했습니다. 회사 설정으로 둘지 정해야 합니다
 6. **4대보험 신고 처리 주체:** 세무 대리인 큐로 두었습니다. 급여 구독만 쓰는 회사(대리인 없음)에서 누가 처리하는지 정해야 합니다
 7. **ERP 이관 직원:** 현행 "임시저장"으로 들어오는 더존·세무사랑 직원은 `source: ERP_IMPORT` + `MISSING_REGISTRATION_NUMBER` 경고로 둡니다. 이관 작업의 형태(Job)는 [integrations.md](integrations.md)와 맞춰야 합니다
 8. **급여계약의 최저시급 출처:** 설계는 Payroll 기준표(`rateTable`)에서 계약 시작일 기준으로 읽지만, HR에서 Payroll로 가는 포트가 없어 지금은 HR 상수(2026년 10,320원)로 비교합니다. HR 포트(`MinimumWageSource`)와 `wiring/hr-payroll.ts` 어댑터를 둘지 정해야 합니다
+9. **기간제 예외 기간을 2년 계산에서 뺄지:** 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 계약 기간도 셉니다. 일반 18개월 → 예외 12개월 → 일반 2개월이면 전환으로 보지만, 예외 기간을 빼면 일반 사용기간이 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정해야 합니다([결정](rule-decisions/hr.md#indefinite-conversion-alert))

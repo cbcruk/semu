@@ -4,23 +4,23 @@ import { DEFAULT_ENROLLMENT, determineEligibility } from './insurance-eligibilit
 import type { EligibilityFacts, Insurance, InsuranceEnrollment } from './insurance-eligibility.types.ts'
 
 /**
- * 질문 1(바꿈): 고용보험법 시행령 제3조의3에서 상호주의는 D-7·D-8·D-9만입니다. E-7 같은 취업 체류자격은 신청해야
- * 적용되는 임의가입이고, D-2처럼 목록에 없는 체류자격은 적용하지 않으므로 둘 다 신청 전 기본값은 미적용입니다.
+ * 질문 1(바꿈): 고용보험법 시행령 제3조의3에서 상호주의는 D-7·D-8·D-9만입니다. E-7은 신청해야 적용되는 임의가입이라
+ * 신청 전 미적용과 신청 안내이고, D-2는 신청할 수도 없는 체류자격이라 미적용만 돌려줍니다.
  */
-const NOT_COVERED = {
+const notCovered = (messages: string[]) => ({
   determinations: [],
-  messages: ['EI_FOREIGNER_OPTIONAL'],
+  messages,
   recommended: {
     nps: { enrolled: true },
     nhis: { enrolled: true },
     ei: { enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' },
     iais: { enrolled: true },
   },
-}
+})
 
 const CHANGED = {
-  'E-7 foreigner without agreement': NOT_COVERED,
-  'D-2 foreigner is optional': NOT_COVERED,
+  'E-7 foreigner without agreement': notCovered(['EI_FOREIGNER_OPTIONAL']),
+  'D-2 foreigner is optional': notCovered([]),
 }
 
 describeRuleFixture(
@@ -42,6 +42,18 @@ describe('foreigner employment insurance', () => {
     const result = determineEligibility(foreigner('D-7'), DEFAULT_ENROLLMENT, '2026-06-01')
     expect(result.messages).toEqual(['EI_FOREIGNER_RECIPROCITY_CHECK'])
     expect(result.recommended.ei).toEqual({ enrolled: true })
+  })
+
+  it('offers opt-in to a working holiday maker', () => {
+    const result = determineEligibility(foreigner('H-1'), DEFAULT_ENROLLMENT, '2026-06-01')
+    expect(result.messages).toEqual(['EI_FOREIGNER_OPTIONAL'])
+    expect(result.recommended.ei).toEqual({ enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' })
+  })
+
+  it('leaves out a status that cannot opt in without guidance', () => {
+    const result = determineEligibility(foreigner('D-4'), DEFAULT_ENROLLMENT, '2026-06-01')
+    expect(result.messages).toEqual([])
+    expect(result.recommended.ei).toEqual({ enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' })
   })
 
   it('leaves an overseas Korean out until they apply', () => {

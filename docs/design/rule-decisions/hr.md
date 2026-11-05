@@ -104,6 +104,8 @@
 
 **바뀌는 케이스:** 없음. 질문 2는 새 입력이라 `indefinite-conversion.fixtures.test.ts`가 따로 확인합니다.
 
+**열린 질문:** 예외 기간을 2년 계산에서 뺄지 정하지 않았습니다. 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 기간도 셉니다. 예를 들어 일반 18개월 → 예외 12개월 → 일반 2개월이면 마지막 일반 계약이 전환일 뒤에 있으므로 전환으로 봅니다. 예외 기간을 빼면 일반 사용기간은 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정합니다([hr.md 열린 질문](../hr.md#열린-질문) 9).
+
 ## 4대보험
 
 ### social-insurance-eligibility
@@ -112,11 +114,11 @@
 
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
-| 1 | 상호주의 국가 목록을 받을까요 | **바꿈:** 국가 목록을 두지 않습니다. 상호주의 체류자격은 D-7·D-8·D-9뿐이고, 가입을 권하며 `EI_FOREIGNER_RECIPROCITY_CHECK`로 본국법 확인을 안내합니다. E-1~E-7·F-4 등 당연가입이 아닌 체류자격은 신청 전 기본값이 미적용이라 고용보험을 `EXEMPT_FOREIGNER`로 제외하고 `EI_FOREIGNER_OPTIONAL`로 신청하면 가입할 수 있다고 안내합니다 | [고용보험법 시행령 제3조의3](https://www.law.go.kr/법령/고용보험법시행령): 주재·기업투자·무역경영은 법 전부를 적용하되 본국법이 대한민국 국민에게 고용보험에 상응하는 보험료·급여를 적용하지 않으면 제외합니다(제1호 가목). 국가 목록을 고시로 위임하지 않습니다. 그 밖의 취업 체류자격과 재외동포는 신청해야 적용합니다(제2호) |
+| 1 | 상호주의 국가 목록을 받을까요 | **바꿈:** 국가 목록을 두지 않습니다. 상호주의 체류자격은 D-7·D-8·D-9뿐이고, 가입을 권하며 `EI_FOREIGNER_RECIPROCITY_CHECK`로 본국법 확인을 안내합니다. 그 밖의 체류자격은 고용보험을 `EXEMPT_FOREIGNER`로 제외합니다. 신청하면 적용되는 체류자격(F-4, C-4, E-1~E-10, H-1. `EI_OPT_IN_VISAS`)만 `EI_FOREIGNER_OPTIONAL`로 신청을 안내하고, 목록에 없는 체류자격(D-2 등)은 신청할 수 없어 안내하지 않습니다 | [고용보험법 시행령 제3조의3](https://www.law.go.kr/법령/고용보험법시행령): 주재·기업투자·무역경영은 법 전부를 적용하되 본국법이 대한민국 국민에게 고용보험에 상응하는 보험료·급여를 적용하지 않으면 제외합니다(제1호 가목). 국가 목록을 고시로 위임하지 않습니다. 그 밖의 취업 체류자격과 재외동포는 신청해야 적용합니다(제2호). 취업 체류자격은 C-4, E-1~E-10, H-2이고 H-1은 취업하면 같이 봅니다([출입국관리법 시행령 제23조 ①·⑤](https://www.law.go.kr/법령/출입국관리법시행령)) |
 | 2 | 월 60시간 분기를 정리할까요 | **따름:** 결과가 같으므로 그대로 둡니다 | 주 15시간 미만 검사가 먼저 걸러 결과가 바뀌지 않습니다 |
 | 3 | 60세 이후 임의계속가입을 다룰까요 | **따름:** 다루지 않습니다. 사용자가 권장값을 바꿔 저장할 수 있습니다 | 판정은 권장값이고 저장은 사용자가 합니다 |
 
-**바뀌는 케이스:** `E-7 foreigner without agreement`, `D-2 foreigner is optional` → 메시지 `EI_FOREIGNER_OPTIONAL`, 고용보험 미적용(`EXEMPT_FOREIGNER`). 응답 코드 `EI_FOREIGNER_RECIPROCITY_AGREEMENT`·`NON_AGREEMENT`는 `EI_FOREIGNER_RECIPROCITY_CHECK` 하나로 바뀝니다.
+**바뀌는 케이스:** `E-7 foreigner without agreement` → 메시지 `EI_FOREIGNER_OPTIONAL`(고용보험 미적용은 그대로). `D-2 foreigner is optional` → 메시지 없음, 고용보험 미적용(`EXEMPT_FOREIGNER`). 응답 코드 `EI_FOREIGNER_RECIPROCITY_AGREEMENT`·`NON_AGREEMENT`는 `EI_FOREIGNER_RECIPROCITY_CHECK` 하나로 바뀝니다.
 
 ## 휴직·퇴사
 
