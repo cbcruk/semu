@@ -1,0 +1,35 @@
+{
+  "rule": "daily-worker-withholding",
+  "description": "Daily worker tax: (daily pay - 150,000) x 6% less a 55% credit, exempt under 1,000 won; employment insurance only.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "377-389", "origin": "spec 4.3" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "386-405", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/engine/withholding.ts", "lines": "1-60" }
+  ],
+  "inputSchema": { "payAmount": "won, row total split evenly across days", "workDays": "days" },
+  "cases": [
+    {
+      "name": "200,000 a day for 5 days",
+      "input": { "payAmount": 1000000, "workDays": 5 },
+      "expected": { "employmentInsurance": 9000, "incomeTax": 6750, "localIncomeTax": 670, "netPay": 983580 },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax under 1,000 won is not withheld",
+      "input": { "payAmount": 180000, "workDays": 1 },
+      "expected": { "incomeTax": 0, "localIncomeTax": 0, "netPay": 178380 },
+      "derivation": "traced"
+    },
+    {
+      "name": "nothing above the daily deduction",
+      "input": { "payAmount": 450000, "workDays": 3 },
+      "expected": { "incomeTax": 0, "localIncomeTax": 0, "netPay": 445950 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Whether the small-amount exemption is judged per day or per payment (spec 4.3).",
+    "Whether the daily deduction rises in 2026.",
+    "Daily pay is split evenly across work days; per-day amounts are not confirmed."
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "rule": "severance-pay",
+  "description": "Severance pays 30 days of average daily wage per year of service after a year, raised to ordinary wage, less retirement income tax.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "463-476", "origin": "spec 4.11" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "446-472", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/engine/severance.ts", "lines": "1-140" }
+  ],
+  "inputSchema": {
+    "joinDate": "YYYY-MM-DD",
+    "lastWorkDate": "YYYY-MM-DD",
+    "threeMonthWages": "won",
+    "ordinaryDailyWage": "won, optional"
+  },
+  "cases": [
+    {
+      "name": "two years ten months of service",
+      "input": { "joinDate": "2024-01-01", "lastWorkDate": "2026-10-31", "threeMonthWages": 9000000 },
+      "expected": {
+        "eligible": true,
+        "serviceDays": 1035,
+        "averageDailyWage": 97826,
+        "severancePay": 8321917,
+        "retirementIncomeTax": 79720,
+        "localIncomeTax": 7970,
+        "netPay": 8234227
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "ordinary daily wage replaces a lower average",
+      "input": { "joinDate": "2025-01-01", "lastWorkDate": "2025-12-31", "threeMonthWages": 6000000, "ordinaryDailyWage": 100000 },
+      "expected": { "usedOrdinaryWage": true, "serviceDays": 365, "severancePay": 3000000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "under a year of service",
+      "input": { "joinDate": "2025-01-02", "lastWorkDate": "2025-12-31", "threeMonthWages": 9000000 },
+      "expected": { "eligible": false, "severancePay": 0, "retirementIncomeTax": 0 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Retirement income tax deduction tables are unverified (spec 4.11).",
+    "Whether severance is paid on its own or as a row of the leaving month's ledger, and when it feeds withholding A21 (spec Q12).",
+    "Leave periods inside the three months are not excluded yet."
+  ]
+}

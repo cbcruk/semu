@@ -1,0 +1,91 @@
+{
+  "rule": "additional-payroll-ledger",
+  "description": "An additional ledger needs a submitted regular ledger, no draft ledger, an unfiled withholding month, and more than five days before the 10th of the next month.",
+  "sources": [
+    { "file": "alfred-manual/05-급여/01-급여-관리/01-급여-급여-관리-추가-급여-생성-및-입력-업데이트.md", "lines": "9-27, 40-44", "origin": "manual" },
+    { "file": "docs/reference/spec/payroll.md", "lines": "80-89", "origin": "spec 1.4" },
+    { "file": "apps/api/legacy/src/modules/payroll/cards/cards.service.ts", "lines": "98-123", "origin": "legacy additionalCardBlocker" }
+  ],
+  "inputSchema": {
+    "attributionMonth": "YYYY-MM",
+    "paymentDate": "YYYY-MM-DD",
+    "today": "YYYY-MM-DD, company time zone",
+    "ledgers": "[{kind, attributionMonth, status}] of the company",
+    "withholdingFiled": "boolean for the payment month"
+  },
+  "cases": [
+    {
+      "name": "no regular ledger for the month",
+      "input": { "attributionMonth": "2026-08", "paymentDate": "2026-08-25", "today": "2026-08-26", "ledgers": [], "withholdingFiled": false },
+      "expected": { "blocker": "NO_REGULAR_LEDGER" },
+      "derivation": "traced"
+    },
+    {
+      "name": "regular ledger still in input",
+      "input": {
+        "attributionMonth": "2026-08",
+        "paymentDate": "2026-08-25",
+        "today": "2026-08-26",
+        "ledgers": [{ "kind": "REGULAR", "attributionMonth": "2026-08", "status": "DRAFT" }],
+        "withholdingFiled": false
+      },
+      "expected": { "blocker": "REGULAR_LEDGER_NOT_SUBMITTED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "another ledger of the company is in input",
+      "input": {
+        "attributionMonth": "2026-08",
+        "paymentDate": "2026-08-25",
+        "today": "2026-08-26",
+        "ledgers": [
+          { "kind": "REGULAR", "attributionMonth": "2026-08", "status": "SUBMITTED" },
+          { "kind": "REGULAR", "attributionMonth": "2026-09", "status": "DRAFT" }
+        ],
+        "withholdingFiled": false
+      },
+      "expected": { "blocker": "DRAFT_LEDGER_EXISTS" },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding already filed",
+      "input": {
+        "attributionMonth": "2026-08",
+        "paymentDate": "2026-08-25",
+        "today": "2026-08-26",
+        "ledgers": [{ "kind": "REGULAR", "attributionMonth": "2026-08", "status": "CLOSED" }],
+        "withholdingFiled": true
+      },
+      "expected": { "blocker": "WITHHOLDING_FILED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "five days before the 10 September deadline",
+      "input": {
+        "attributionMonth": "2026-08",
+        "paymentDate": "2026-08-25",
+        "today": "2026-09-05",
+        "ledgers": [{ "kind": "REGULAR", "attributionMonth": "2026-08", "status": "SUBMITTED" }],
+        "withholdingFiled": false
+      },
+      "expected": { "blocker": "WITHHOLDING_DEADLINE_NEAR" },
+      "derivation": "traced"
+    },
+    {
+      "name": "allowed after submitting the regular ledger",
+      "input": {
+        "attributionMonth": "2026-08",
+        "paymentDate": "2026-08-25",
+        "today": "2026-09-04",
+        "ledgers": [{ "kind": "REGULAR", "attributionMonth": "2026-08", "status": "SUBMITTED" }],
+        "withholdingFiled": false
+      },
+      "expected": { "blocker": null },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The manual example says a 10 September filing allows creation until 5 August, which contradicts 'five days before the deadline'; the legacy reading (blocked from 5 September) is kept (spec 1.4).",
+    "Whether 'five days before' includes the fifth day."
+  ]
+}

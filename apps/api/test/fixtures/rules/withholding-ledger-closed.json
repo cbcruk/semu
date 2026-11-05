@@ -1,0 +1,57 @@
+{
+  "rule": "withholding-ledger-closed",
+  "description": "A payment month counts as ledger-closed for withholding when it has ledgers and every ledger paid in it is CLOSED.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "707-730", "origin": "spec 6.1" },
+    { "file": "apps/api/legacy/src/modules/payroll/withholding/withholding-link.ts", "lines": "1-80", "origin": "legacy" }
+  ],
+  "inputSchema": { "paymentMonth": "YYYY-MM", "ledgers": "[{paymentDate, status}] of the company" },
+  "cases": [
+    {
+      "name": "every ledger of the month closed",
+      "input": {
+        "paymentMonth": "2026-08",
+        "ledgers": [
+          { "paymentDate": "2026-08-25", "status": "CLOSED" },
+          { "paymentDate": "2026-08-31", "status": "CLOSED" }
+        ]
+      },
+      "expected": { "closed": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "one ledger still pending approval",
+      "input": {
+        "paymentMonth": "2026-08",
+        "ledgers": [
+          { "paymentDate": "2026-08-25", "status": "CLOSED" },
+          { "paymentDate": "2026-08-31", "status": "PENDING_APPROVAL" }
+        ]
+      },
+      "expected": { "closed": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "ledgers of other months are ignored",
+      "input": {
+        "paymentMonth": "2026-08",
+        "ledgers": [
+          { "paymentDate": "2026-08-25", "status": "CLOSED" },
+          { "paymentDate": "2026-09-25", "status": "DRAFT" }
+        ]
+      },
+      "expected": { "closed": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "no ledger in the month",
+      "input": { "paymentMonth": "2026-08", "ledgers": [] },
+      "expected": { "closed": false },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Withholding return code mapping (A01, A03, A25, A40) is unverified (spec 6.1); Payroll sends income kinds and Tax maps them.",
+    "Whether a month with no ledger should count as closed for companies that paid nothing."
+  ]
+}

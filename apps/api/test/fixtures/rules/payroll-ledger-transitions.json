@@ -1,0 +1,97 @@
+{
+  "rule": "payroll-ledger-transitions",
+  "description": "Payroll ledger state machine: who may move a ledger between DRAFT, SUBMITTED, PENDING_APPROVAL and CLOSED, and which moves a filed withholding return locks.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "285-323", "origin": "spec 3.2, 3.3" },
+    { "file": "docs/reference/spec/payroll.md", "lines": "728-730", "origin": "spec 6.1 lock" },
+    { "file": "alfred-manual/05-급여/02-급여-정산.md", "lines": "21-49", "origin": "manual" },
+    { "file": "apps/api/legacy/src/modules/payroll/cards/card-status.ts", "lines": "14-26", "origin": "legacy CARD_TRANSITIONS" }
+  ],
+  "inputSchema": {
+    "transition": "SUBMIT | RETURN_TO_DRAFT | REQUEST_APPROVAL | WITHDRAW_APPROVAL_REQUEST | APPROVE | REJECT | CLOSE | REOPEN",
+    "status": "DRAFT | SUBMITTED | PENDING_APPROVAL | CLOSED",
+    "workflow": "CLIENT_APPROVAL | DIRECT_CLOSE",
+    "actor": "CLIENT | AGENCY",
+    "withholdingFiled": "boolean"
+  },
+  "cases": [
+    {
+      "name": "client submits a draft",
+      "input": { "transition": "SUBMIT", "status": "DRAFT", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": true, "to": "SUBMITTED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "only the agency requests approval",
+      "input": { "transition": "REQUEST_APPROVAL", "status": "SUBMITTED", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": false, "reason": "TRANSITION_INVALID" },
+      "derivation": "traced"
+    },
+    {
+      "name": "client approves a pending ledger",
+      "input": { "transition": "APPROVE", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": true, "to": "CLOSED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "agency cannot approve",
+      "input": { "transition": "APPROVE", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "AGENCY", "withholdingFiled": false },
+      "expected": { "ok": false, "reason": "TRANSITION_INVALID" },
+      "derivation": "traced"
+    },
+    {
+      "name": "client rejection returns to submitted",
+      "input": { "transition": "REJECT", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": true, "to": "SUBMITTED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "agency withdraws its request",
+      "input": { "transition": "WITHDRAW_APPROVAL_REQUEST", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "AGENCY", "withholdingFiled": false },
+      "expected": { "ok": true, "to": "SUBMITTED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "only the agency returns a submitted ledger under client approval",
+      "input": { "transition": "RETURN_TO_DRAFT", "status": "SUBMITTED", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": false, "reason": "TRANSITION_INVALID" },
+      "derivation": "traced"
+    },
+    {
+      "name": "self-service closes a draft directly",
+      "input": { "transition": "CLOSE", "status": "DRAFT", "workflow": "DIRECT_CLOSE", "actor": "CLIENT", "withholdingFiled": false },
+      "expected": { "ok": true, "to": "CLOSED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "client approval has no direct close",
+      "input": { "transition": "CLOSE", "status": "SUBMITTED", "workflow": "CLIENT_APPROVAL", "actor": "AGENCY", "withholdingFiled": false },
+      "expected": { "ok": false, "reason": "TRANSITION_INVALID" },
+      "derivation": "traced"
+    },
+    {
+      "name": "filed withholding locks reopening",
+      "input": { "transition": "REOPEN", "status": "CLOSED", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": true },
+      "expected": { "ok": false, "reason": "WITHHOLDING_FILED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "filed withholding locks rejection",
+      "input": { "transition": "REJECT", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": true },
+      "expected": { "ok": false, "reason": "WITHHOLDING_FILED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "approval is allowed after filing",
+      "input": { "transition": "APPROVE", "status": "PENDING_APPROVAL", "workflow": "CLIENT_APPROVAL", "actor": "CLIENT", "withholdingFiled": true },
+      "expected": { "ok": true, "to": "CLOSED" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "BPO status strings and the n/3 step mapping are not in the bundle (spec Q1).",
+    "The client's 'review request' endpoint is unknown (spec Q2); SUBMIT stands for it.",
+    "cancel-approval is read as two commands: WITHDRAW_APPROVAL_REQUEST by the agency and REOPEN after closing (spec Q3).",
+    "Whether reject carries a reason body (spec Q3); REJECT requires one here."
+  ]
+}

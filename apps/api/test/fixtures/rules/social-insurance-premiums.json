@@ -1,0 +1,41 @@
+{
+  "rule": "social-insurance-premiums",
+  "description": "Employee social insurance premiums by rate: pension on a capped base truncated to 1,000 won, premiums truncated to 10 won.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "347-365", "origin": "spec 4.1" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "66-97", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/engine/social-insurance.ts", "lines": "1-150" }
+  ],
+  "inputSchema": { "insurablePay": "won, taxable monthly pay; every insurance in RATE mode, 2026-01 table" },
+  "cases": [
+    {
+      "name": "3,000,000 won",
+      "input": { "insurablePay": 3000000 },
+      "expected": { "nationalPension": 142500, "healthInsurance": 107850, "longTermCare": 14170, "employmentInsurance": 27000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "pension base capped at 6,370,000",
+      "input": { "insurablePay": 8000000 },
+      "expected": { "nationalPension": 302570, "healthInsurance": 287600, "longTermCare": 37790, "employmentInsurance": 72000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "pension base floored at 400,000",
+      "input": { "insurablePay": 300000 },
+      "expected": { "nationalPension": 19000, "healthInsurance": 10780, "longTermCare": 1410, "employmentInsurance": 2700 },
+      "derivation": "traced"
+    },
+    {
+      "name": "pension base truncated below 1,000 won",
+      "input": { "insurablePay": 3456789 },
+      "expected": { "nationalPension": 164160, "healthInsurance": 124270, "longTermCare": 16320, "employmentInsurance": 31110 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Long-term care ratio 13.14% for 2026 is unverified (spec 4.1).",
+    "Pension base limits from 2026-07 are unknown; the 2026-07 table repeats the 2025-07 values.",
+    "10-won truncation of premiums is the observed practice, not a confirmed rule."
+  ]
+}
