@@ -510,7 +510,7 @@ flowchart LR
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
 | 퇴직금 정산 (퇴직) | 구현 (메모리) |
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary` | 구현 |
-| 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 급여계약·공제 정보는 HR에 없어 기본값을 씀([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
+| 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |
 | 지급·공제 항목 카탈로그, 근무 일정 정책 | 없음 |
 | 행 결과 수동 덮어쓰기(고지액 입력 외) | 없음 |
@@ -530,5 +530,6 @@ flowchart LR
 7. **공유 변경.**
    - Identity & Access 역할 템플릿에 [접근 요건](#접근-요건)의 권한을 넣어야 합니다
    - ID 접두사(`pyl`·`pyr`·`psl`·`sev`·`rtb`)는 공유 목록에 이미 있어 변경이 필요 없습니다
-   - HR에 급여계약(지급 단위·금액)과 소득세 공제 정보 저장소가 생기면 [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)의 기본값을 그 값으로 바꿔야 합니다
+   - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다
+   - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다

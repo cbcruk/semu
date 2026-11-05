@@ -5,6 +5,8 @@ import { makeTestApp } from '../../src/modules/identity-access/testing-http.ts'
 const app = makeTestApp()
 const WITHHOLDING_2026_10 = 'fil_01JBQ0000000000000000000D1'
 const RETURN_FILE = 'fle_01JBQ0000000000000000000R1'
+/** HR 데모 시드의 근로소득자입니다. 데모 급여계약(월 340만 원)과 공제 설정(가족 3명)이 있습니다. */
+const DEMO_WAGE_EMPLOYEE = 'emp_01JBQ00000000000000000D3M1'
 
 let owner = ''
 let agent = ''
@@ -38,6 +40,29 @@ describe('HR → Payroll', () => {
     })
     expect(contract.status).toBe(201)
 
+    const contracted = await app.request('POST', '/v1/employees', {
+      token: owner,
+      body: { kind: 'WAGE', name: '최계약', joinDate: '2026-01-05' },
+    })
+    const contractedId = (await contracted.json()).id
+    const payrollContract = await app.request('POST', `/v1/employees/${contractedId}/payroll-contracts`, {
+      token: owner,
+      body: { startDate: '2026-01-05', wageType: 'MONTHLY', amount: 2_800_000, monthlyWorkHours: 209 },
+    })
+    expect(payrollContract.status).toBe(201)
+    const withholding = await app.request('PUT', `/v1/employees/${contractedId}/tax-withholding`, {
+      token: owner,
+      body: {
+        effectiveFrom: '2026-01-05',
+        dependantsCount: 2,
+        childrenAged8To20Count: 1,
+        calcMethod: 'MANUAL',
+        manualIncomeTax: 40_000,
+        adjustmentRatePpm: 1_200_000,
+      },
+    })
+    expect(withholding.status).toBe(200)
+
     const created = await app.request('POST', '/v1/payroll-ledgers', {
       token: owner,
       body: { attributionMonth: '2026-10' },
@@ -53,8 +78,23 @@ describe('HR → Payroll', () => {
     expect(row).toMatchObject({ employeeId, incomeType: 'WAGE_MONTHLY' })
     expect(row).toMatchObject({
       payeeName: '박급여',
+      // 급여계약이 없어 기본값(PAYROLL_DEFAULTS_WITHOUT_HR)을 씁니다.
       input: { basePay: 3_000_000 },
       snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240 },
+    })
+
+    const contractedRow = rows.items.find((item: { employeeId: string }) => item.employeeId === contractedId)
+    expect(contractedRow).toMatchObject({
+      payeeName: '최계약',
+      incomeType: 'WAGE_MONTHLY',
+      input: { basePay: 2_800_000 },
+      snapshot: { dependants: 2, childrenAged8To20: 1, withholdingRatePpm: 1_200_000, manualIncomeTax: 40_000 },
+    })
+
+    const demoRow = rows.items.find((item: { employeeId: string }) => item.employeeId === DEMO_WAGE_EMPLOYEE)
+    expect(demoRow).toMatchObject({
+      input: { basePay: 3_400_000 },
+      snapshot: { dependants: 3, childrenAged8To20: 1 },
     })
   })
 })

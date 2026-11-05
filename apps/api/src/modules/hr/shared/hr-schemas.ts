@@ -16,6 +16,9 @@ export const LeaveId = IdSchema('leave')
 /** 근로계약 ID입니다. */
 export const WorkContractId = IdSchema('workContract')
 
+/** 급여계약 ID입니다. */
+export const PayrollContractId = IdSchema('payrollContract')
+
 /** 개인정보를 열람하는 사유입니다. 접근 기록에 남습니다. 한글은 퍼센트 인코딩(UTF-8)해서 보냅니다. */
 export const AccessReasonHeaders = { 'x-access-reason': Schema.NonEmptyString }
 

@@ -169,3 +169,10 @@ export class ResignationRejected extends HttpApiError.Problem<ResignationRejecte
     ]),
   },
 ) {}
+
+/** 이 리소스는 근로소득자(`WAGE`)에게만 둡니다. 급여계약·소득세 공제가 해당합니다. */
+export class EmployeeKindNotSupported extends HttpApiError.Problem<EmployeeKindNotSupported>()(
+  'EmployeeKindNotSupported',
+  { type: problemType('EMPLOYEE_KIND_NOT_SUPPORTED'), status: 422, title: 'Employee kind is not supported here' },
+  { code: Schema.tag('EMPLOYEE_KIND_NOT_SUPPORTED'), kind: EmployeeKindSchema },
+) {}

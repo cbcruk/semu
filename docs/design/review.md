@@ -46,7 +46,7 @@
 | Billing | `subscription:read`, `payment:read`, `billing-mandate:*`, `service-contract:*` (대리인 전용: `subscription:manage`, `payment:retry/refund`) | `service-contract`는 TAXATION |
 | Integrations | `integration:*`, `certificate:*`, `scrap-request:*`, `hometax-delegation:*`, `business-status:read` | `hometax-delegation`은 TAXATION |
 | Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 `filing:process`, `action-card:read/complete`, `estimated-vat:read` | TAXATION + 약관 |
-| HR | `employee:read/create/update/delete/resign/reveal-rrn`, `organization:read/update` | PAYROLL 또는 TAXATION |
+| HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update` | PAYROLL 또는 TAXATION |
 | Documents | `esign-request:*`, `esign-template:read`, `certificate-issuance:*`, `document-form:read` | PAYROLL |
 | Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (인건비는 PAYROLL 또는 TAXATION) |
 | Bookkeeping | `evidence:*`, `account-title:*`, `classification-rule:*`, `bank-account:*`, `bank-transaction:*`, `partner:*`, `sales-transaction:*`, `tax-invoice:read/issue`, `giro:read/update/pay`, `report:read`, `settlement-report:read` | 결산 보고서는 TAXATION |
@@ -65,7 +65,7 @@
 | 세무·급여 기록 삭제 금지, 정정·제외 상태 | 보존 의무 충족, 감사 가능 | 저장 공간 증가. "지웠는데 남아 있음"에 대한 사용자 안내 필요 |
 | 원천세가 신고되면 그 달 급여대장 잠금 | 신고 금액과 대장의 불일치 방지 | 신고 후 정정은 수정신고 흐름이 생기기 전까지 막힘 |
 | 플랜을 Billing 구독에서 파생 | 플랜 캐시 동기화 제거 | 구독이 바뀌어도 액세스 토큰 만료(10분)까지 이전 플랜으로 동작 (D6) |
-| 모듈러 모놀리스 + 포트·어댑터 | 트랜잭션 경계가 단순, 컨텍스트 경계가 코드에 드러남 | 포트마다 어댑터를 `wiring/`에 유지해야 함. 제공 쪽 데이터가 부족한 포트는 기본값으로 채움 |
+| 모듈러 모놀리스 + 포트·어댑터 | 트랜잭션 경계가 단순, 컨텍스트 경계가 코드에 드러남 | 포트마다 어댑터를 `wiring/`에 유지해야 함. 제공 쪽 데이터가 부족한 포트는 기본값으로 채움(예: Payroll `PayrollEmployeeDirectory`는 HR 급여계약·공제 설정이 없는 직원만 월급 300만 원·가족 1명을 쓰고, 퇴직급여 제도는 언제나 퇴직금) |
 
 ## 위험
 
@@ -104,7 +104,7 @@
 | Integrations | 연동 등록·한도, 인증서 자격, 수집 요청·쿨다운·재시도, 수임동의 조회, 사업자 상태조회, 메신저 채널 | 자동 수집 스케줄러, 인증서 만료 알림, 수임동의 생성 |
 | Assistant | 대화, 도구 제안(플랜·권한별), 지원금 추천 | 실제 LLM 어댑터, 스트리밍, 지원금 수집 |
 | Tax | 신고 건과 커맨드 14개, 필요 자료, 신고 일정 계산·스케줄러 서비스, 할 일 카드, 예상 부가세 | 대리인 작업 큐, 수정신고, 스케줄러 상시 실행, 파일 저장소 |
-| HR | 직원, 휴직, 근로계약, 4대보험 판정, 부서·직위, `HrDirectory` | 급여계약·공제·가족 API, 퇴직 정보, 메모, 문서 보관함, 4대보험 신고 처리 |
+| HR | 직원, 휴직, 근로계약, 급여계약(파생 금액·최저임금 경고·계좌 원문 조회), 소득세 공제 설정, 4대보험 판정, 부서·직위, `HrDirectory` | 인적공제 대상자(가족) API, 퇴직 정보, 메모, 문서 보관함, 4대보험 신고 처리 |
 | Documents | 전자서명 요청·서명 링크·본인확인·완료, 제증명 발급·발송, 기본 템플릿 | 회사별 템플릿, 서식 모음, 직인·알림 수신자 설정, 묶음 다운로드 |
 | Payroll | 계산 엔진 전체, 기준표, 급여 설정, 급여대장과 행, 명세서 발송, 퇴직금 정산, 인건비 | 엑셀 가져오기 Job, 지급·공제 항목 카탈로그, 수동 보정, 중간정산, 명세서 PDF |
 | Bookkeeping | 증빙·분류, 계정과목, 자동분류 규칙, 계좌·입출금·잔액, 정산 연결, 거래처, 거래명세서·세금계산서, 지로, 실시간 손익·자금 현황·홈 요약·인건비, 수집 반영 | 규칙 미리보기, 매출·매입 현황 API, 엑셀 내보내기, 손익 정책 설정 |

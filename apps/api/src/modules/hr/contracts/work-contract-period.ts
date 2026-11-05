@@ -39,7 +39,10 @@ export function isFollowedByLaterContract(contract: ContractPeriod, contracts: R
 }
 
 /** `asOf`에 유효한 계약입니다. 시작일 ≤ asOf ≤ 종료일(없으면 무기한)이고, 여럿이면 가장 늦게 시작한 것입니다. */
-export function contractInForce<C extends ContractPeriod>(contracts: ReadonlyArray<C>, asOf: string): C | undefined {
+export function contractInForce<C extends Pick<ContractPeriod, 'startDate' | 'endDate'>>(
+  contracts: ReadonlyArray<C>,
+  asOf: string,
+): C | undefined {
   return contracts
     .filter((contract) => contract.startDate <= asOf && (contract.endDate === undefined || contract.endDate >= asOf))
     .reduce<C | undefined>(

@@ -1,5 +1,7 @@
 import { Context, DateTime, Effect, Layer, Option } from 'effect'
 import type { Id } from '../../shared/ids/ids.types.ts'
+import { PayrollContractRepository } from './contracts/payroll-contract.ts'
+import type { WageType } from './contracts/wage-calculation.types.ts'
 import { WorkContractRepository } from './contracts/work-contract.ts'
 import { contractInForce } from './contracts/work-contract-period.ts'
 import type { ContractType } from './contracts/work-contract-period.types.ts'
@@ -13,7 +15,10 @@ import { OrganizationRepository } from './organization/organization.ts'
 import type { LeaveReason } from './leaves/leave-rules.types.ts'
 import { PersonalDataAccessLog } from './shared/personal-data-access-log.ts'
 import { PersonalDataCipher } from './shared/personal-data-cipher.ts'
+import { stripUndefined } from './shared/tenant-table.ts'
 import { DEFAULT_ENROLLMENT, determineEligibility } from './social-insurance/insurance-eligibility.ts'
+import { entryInEffect } from './tax-withholding/tax-withholding-history.ts'
+import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
 
 /** 다른 컨텍스트에 보이는 직원입니다. 주민번호 원문은 담지 않습니다. */
 export interface DirectoryEmployee {
@@ -44,6 +49,44 @@ export interface DirectoryWorkContract {
   weeklyWorkHours?: number
 }
 
+/** 다른 컨텍스트에 보이는 급여계약입니다. 계좌번호는 끝 4자리만 담습니다. */
+export interface DirectoryPayrollContract {
+  id: Id<'payrollContract'>
+  startDate: string
+  endDate?: string
+  wageType: WageType
+  /** 월급·일급·시급 금액(원)입니다. */
+  amount: number
+  monthlyWorkHours: number
+  dailyWorkHours?: number
+  /** 월급에서 지급항목·고정수당을 뺀 기본급(원)입니다. 일급·시급제는 시급 × 월 소정근로시간입니다. */
+  baseSalary: number
+  payTiming?: { month: 'CURRENT' | 'NEXT'; day: number }
+  payMethod?: 'TRANSFER' | 'CASH'
+  account?: { bankCode: string; accountNumberMasked: string; accountHolder: string }
+}
+
+/** 다른 컨텍스트에 보이는 소득세 공제 설정입니다. 기준일에 적용되는 이력 항목입니다. */
+export interface DirectoryTaxWithholding {
+  effectiveFrom: string
+  /** 본인을 포함한 공제대상 가족 수입니다. */
+  dependantsCount: number
+  childrenAged8To20Count: number
+  calcMethod: 'TAX_TABLE' | 'MANUAL'
+  /** `calcMethod`가 `MANUAL`일 때의 월 소득세(원)입니다. */
+  manualIncomeTax?: number
+  /** 소득세액 조정비율(ppm)입니다. 80/100/120% 중 하나입니다. */
+  adjustmentRatePpm: number
+  reduction?: {
+    reasonCode: string
+    ratePpm: number
+    application: 'PAYROLL' | 'YEAR_END'
+    startDate: string
+    endDate: string
+  }
+  studentLoan?: { monthlyAmount?: number; startDate?: string; endDate?: string }
+}
+
 /**
  * 기준일의 4대보험 권장 가입 여부입니다. 산재보험은 사업장 단위라 담지 않습니다.
  *
@@ -69,7 +112,7 @@ export interface DirectoryLeave {
  * 인사 컨텍스트의 공개 조회 서비스입니다. 급여·문서 컨텍스트는 인사 데이터를 이것으로만 읽습니다.
  *
  * 상태는 기준일(`asOf`, 회사 시간대 `YYYY-MM-DD`)로 계산합니다. 주민번호 원문은 `revealRegistrationNumber`만
- * 돌려주고, 부를 때마다 열람 기록을 남깁니다.
+ * 돌려주고, 부를 때마다 열람 기록을 남깁니다. 급여계약의 계좌번호는 가린 값만 줍니다.
  */
 export class HrDirectory extends Context.Service<
   HrDirectory,
@@ -95,6 +138,18 @@ export class HrDirectory extends Context.Service<
       employeeId: Id<'employee'>,
       asOf: string,
     ): Effect.Effect<Option.Option<DirectoryWorkContract>>
+    /** `asOf`에 유효한 급여계약입니다. 여럿이면 가장 늦게 시작한 것입니다. */
+    findPayrollContract(
+      companyId: Id<'company'>,
+      employeeId: Id<'employee'>,
+      asOf: string,
+    ): Effect.Effect<Option.Option<DirectoryPayrollContract>>
+    /** `asOf`에 적용되는 소득세 공제 설정입니다. */
+    findTaxWithholding(
+      companyId: Id<'company'>,
+      employeeId: Id<'employee'>,
+      asOf: string,
+    ): Effect.Effect<Option.Option<DirectoryTaxWithholding>>
     listLeavesOverlapping(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
@@ -122,6 +177,8 @@ export const HrDirectoryLive = Layer.effect(
     const employees = yield* EmployeeRepository
     const leaves = yield* LeaveRepository
     const contracts = yield* WorkContractRepository
+    const payrollContracts = yield* PayrollContractRepository
+    const taxWithholding = yield* TaxWithholdingRepository
     const organization = yield* OrganizationRepository
     const cipher = yield* PersonalDataCipher
     const accessLog = yield* PersonalDataAccessLog
@@ -218,6 +275,64 @@ export const HrDirectoryLive = Layer.effect(
                 if (contract.weeklyWorkHours !== undefined) view.weeklyWorkHours = contract.weeklyWorkHours
                 return view
               }),
+            ),
+          ),
+        ),
+      findPayrollContract: (companyId, employeeId, asOf) =>
+        payrollContracts.list(companyId).pipe(
+          Effect.map((all) =>
+            Option.fromNullishOr(
+              contractInForce(
+                all.filter((contract) => contract.employeeId === employeeId),
+                asOf,
+              ),
+            ).pipe(
+              Option.map((contract): DirectoryPayrollContract => {
+                const optional = {
+                  endDate: contract.endDate,
+                  dailyWorkHours: contract.dailyWorkHours,
+                  payTiming: contract.payTiming,
+                  payMethod: contract.payMethod,
+                  account:
+                    contract.account === undefined
+                      ? undefined
+                      : {
+                          bankCode: contract.account.bankCode,
+                          accountNumberMasked: contract.account.accountNumberMasked,
+                          accountHolder: contract.account.accountHolder,
+                        },
+                }
+                return {
+                  id: contract.id,
+                  startDate: contract.startDate,
+                  wageType: contract.wageType,
+                  amount: contract.amount,
+                  monthlyWorkHours: contract.monthlyWorkHours,
+                  baseSalary: contract.derived.baseSalary,
+                  ...stripUndefined(optional),
+                }
+              }),
+            ),
+          ),
+        ),
+      findTaxWithholding: (companyId, employeeId, asOf) =>
+        taxWithholding.find(companyId, employeeId).pipe(
+          Effect.map((record) =>
+            Option.flatMap(record, (found) => Option.fromNullishOr(entryInEffect(found.entries, asOf))).pipe(
+              Option.map(({ reduction, ...entry }): DirectoryTaxWithholding => ({
+                ...stripUndefined(entry),
+                ...(reduction === undefined
+                  ? {}
+                  : {
+                      reduction: {
+                        reasonCode: reduction.reasonCode,
+                        ratePpm: reduction.ratePpm,
+                        application: reduction.application,
+                        startDate: reduction.startDate,
+                        endDate: reduction.endDate,
+                      },
+                    }),
+              })),
             ),
           ),
         ),
