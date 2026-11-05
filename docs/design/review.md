@@ -137,5 +137,5 @@
 1. **공식 기준표 확인.** 급여 기준표의 미확인 값을 법령·고시 원문으로 채웁니다. 간이세액표는 산식을 유지합니다 (D4)
 2. **보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개를 외부 사실 확인 후 정합니다
 3. **대리인 작업 큐 (D3).** 대리인 범위 토큰과 `/agency/*` 리소스를 설계·구현합니다
-4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로 모았습니다. 컨텍스트마다 중복된 테스트 도우미(`http-test-support`, `test-app`)를 모읍니다
+4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 5. **이전 구현 정리.** 이식이 끝난 뒤 `apps/api/legacy/`를 지웁니다. 지금은 D2의 BFF 근거로 둡니다
