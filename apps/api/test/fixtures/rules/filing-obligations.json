@@ -1,0 +1,790 @@
+{
+  "rule": "filing-obligations",
+  "description": "Which filings a general taxpayer owes (VAT, withholding, corporate and income tax), their periods and deadlines, and how the scheduler reconciles stored filings with them.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/tax-calendar/tax-calendar.ts",
+      "lines": "42-161"
+    },
+    {
+      "file": "apps/api/legacy/src/jobs/schedule-filings.ts",
+      "lines": "30-71"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/filings/filings.repository.ts",
+      "lines": "122-200"
+    },
+    {
+      "file": "apps/api/legacy/test/tax-calendar.test.ts",
+      "lines": "58-101"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "278-302"
+    },
+    {
+      "file": "alfred-manual/06-세무/02-원천세.md",
+      "lines": "16, 49-51"
+    }
+  ],
+  "inputSchema": {
+    "check": "period (look up one period), window (keys due within a range) or schedule (reconcile stored filings).",
+    "company": "Legacy CalendarCompany settings.",
+    "from/to": "Inclusive payment-deadline range.",
+    "taxPeriodKey": "Legacy natural key, e.g. 2026-2-final, 2026-10-payment, 2026-H2-semiannual, 2026-FY, 2025-annual.",
+    "periods/existing": "Computed obligations and stored filings for the schedule check."
+  },
+  "cases": [
+    {
+      "name": "corporate VAT H2 preliminary",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-2-preliminary"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "preliminary",
+        "periodStart": "2026-07-01",
+        "periodEnd": "2026-09-30",
+        "statutoryDue": "2026-10-25",
+        "dueDate": "2026-10-26",
+        "paymentDue": "2026-10-26",
+        "quarter": 3
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate VAT H2 final covers the rest of the half",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-2-final"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "final",
+        "periodStart": "2026-10-01",
+        "periodEnd": "2026-12-31",
+        "statutoryDue": "2027-01-25",
+        "dueDate": "2027-01-25",
+        "paymentDue": "2027-01-25",
+        "quarter": 4
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "individual VAT H1 preliminary is a notice",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "individual",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "notice",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-1-notice"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "notice",
+        "periodStart": "2026-01-01",
+        "periodEnd": "2026-03-31",
+        "statutoryDue": null,
+        "dueDate": null,
+        "paymentDue": "2026-04-27",
+        "quarter": 1
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "individual VAT H1 final covers the whole half",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "individual",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "notice",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-1-final"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "final",
+        "periodStart": "2026-01-01",
+        "periodEnd": "2026-06-30",
+        "statutoryDue": "2026-07-25",
+        "dueDate": "2026-07-27",
+        "paymentDue": "2026-07-27",
+        "quarter": 2
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporation on notice mode gets a notice",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "notice",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-2-notice"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "notice",
+        "periodStart": "2026-07-01",
+        "periodEnd": "2026-09-30",
+        "statutoryDue": null,
+        "dueDate": null,
+        "paymentDue": "2026-10-26",
+        "quarter": 3
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "individual on filing mode still gets a notice",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "individual",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-1-notice"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "surtax",
+        "kind": "notice",
+        "periodStart": "2026-01-01",
+        "periodEnd": "2026-03-31",
+        "statutoryDue": null,
+        "dueDate": null,
+        "paymentDue": "2026-04-27",
+        "quarter": 1
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "monthly withholding by payment month",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-10-payment"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "periodStart": "2026-10-01",
+        "periodEnd": "2026-10-31",
+        "statutoryDue": "2026-11-10",
+        "dueDate": "2026-11-10",
+        "paymentDue": "2026-11-10",
+        "quarter": 4
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "monthly withholding for December rolls into January",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-12-payment"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "withholding_tax",
+        "kind": "monthly",
+        "periodStart": "2026-12-01",
+        "periodEnd": "2026-12-31",
+        "statutoryDue": "2027-01-10",
+        "dueDate": "2027-01-11",
+        "paymentDue": "2027-01-11",
+        "quarter": 4
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "semiannual withholding H2",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": true,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-H2-semiannual"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "withholding_tax",
+        "kind": "semiannual",
+        "periodStart": "2026-07-01",
+        "periodEnd": "2026-12-31",
+        "statutoryDue": "2027-01-10",
+        "dueDate": "2027-01-11",
+        "paymentDue": "2027-01-11",
+        "quarter": 4
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "semiannual company has no monthly withholding",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": true,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-10-payment"
+      },
+      "expected": {
+        "found": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax for a December year end",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-FY"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "corporation_tax",
+        "kind": "annual",
+        "periodStart": "2026-01-01",
+        "periodEnd": "2026-12-31",
+        "statutoryDue": "2027-03-31",
+        "dueDate": "2027-03-31",
+        "paymentDue": "2027-03-31",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax for a sincere-filing target",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": true
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-FY"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "corporation_tax",
+        "kind": "annual",
+        "periodStart": "2026-01-01",
+        "periodEnd": "2026-12-31",
+        "statutoryDue": "2027-04-30",
+        "dueDate": "2027-04-30",
+        "paymentDue": "2027-04-30",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax for a June year end",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 6,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-FY"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "corporation_tax",
+        "kind": "annual",
+        "periodStart": "2025-07-01",
+        "periodEnd": "2026-06-30",
+        "statutoryDue": "2026-09-30",
+        "dueDate": "2026-09-30",
+        "paymentDue": "2026-09-30",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax for a March year end",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 3,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2026-FY"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "corporation_tax",
+        "kind": "annual",
+        "periodStart": "2025-04-01",
+        "periodEnd": "2026-03-31",
+        "statutoryDue": "2026-06-30",
+        "dueDate": "2026-06-30",
+        "paymentDue": "2026-06-30",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "income tax for an individual",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "individual",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "notice",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2025-annual"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "aggr_income_tax",
+        "kind": "annual",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "statutoryDue": "2026-05-31",
+        "dueDate": "2026-06-01",
+        "paymentDue": "2026-06-01",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "income tax for a sincere-filing individual",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "individual",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "notice",
+          "sincereFilingTarget": true
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2025-annual"
+      },
+      "expected": {
+        "found": true,
+        "taxType": "aggr_income_tax",
+        "kind": "annual",
+        "periodStart": "2025-01-01",
+        "periodEnd": "2025-12-31",
+        "statutoryDue": "2026-06-30",
+        "dueDate": "2026-06-30",
+        "paymentDue": "2026-06-30",
+        "quarter": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporation owes no income tax",
+      "input": {
+        "check": "period",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-01-01",
+        "to": "2027-12-31",
+        "holidays": [],
+        "taxPeriodKey": "2025-annual"
+      },
+      "expected": {
+        "found": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "November 2026 for a corporation",
+      "input": {
+        "check": "window",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2026-11-01",
+        "to": "2026-11-30",
+        "holidays": []
+      },
+      "expected": {
+        "taxPeriodKeys": [
+          "2026-10-payment"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "January 2027 for a corporation sorted by payment deadline",
+      "input": {
+        "check": "window",
+        "company": {
+          "businessType": "corporate",
+          "fiscalYearEndMonth": 12,
+          "withholdingSemiannual": false,
+          "vatPreliminaryMode": "filing",
+          "sincereFilingTarget": false
+        },
+        "from": "2027-01-01",
+        "to": "2027-01-31",
+        "holidays": []
+      },
+      "expected": {
+        "taxPeriodKeys": [
+          "2026-12-payment",
+          "2026-2-final"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "creates a missing filing",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [
+          {
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10"
+          }
+        ],
+        "existing": []
+      },
+      "expected": {
+        "created": [
+          "withholding_tax:2026-10-payment"
+        ],
+        "updated": [],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "does nothing when deadlines match",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [
+          {
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10"
+          }
+        ],
+        "existing": [
+          {
+            "id": "f1",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10",
+            "status": "scheduled"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "refreshes a requested filing after a holiday change",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [
+          {
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10"
+          }
+        ],
+        "existing": [
+          {
+            "id": "f1",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-09",
+            "paymentDue": "2026-11-09",
+            "status": "requested"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [
+          "f1"
+        ],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "keeps deadlines of a submitted filing",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [
+          {
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10"
+          }
+        ],
+        "existing": [
+          {
+            "id": "f1",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-09",
+            "paymentDue": "2026-11-09",
+            "status": "submitted"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancels a scheduled filing that no longer applies",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [],
+        "existing": [
+          {
+            "id": "f2",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-11-payment",
+            "dueDate": "2026-12-10",
+            "paymentDue": "2026-12-10",
+            "status": "scheduled"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [],
+        "cancelled": [
+          "f2"
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "keeps a requested filing that no longer applies",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [],
+        "existing": [
+          {
+            "id": "f2",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-11-payment",
+            "dueDate": "2026-12-10",
+            "paymentDue": "2026-12-10",
+            "status": "requested"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "does not recreate a cancelled filing",
+      "input": {
+        "check": "schedule",
+        "window": {
+          "from": "2026-11-05",
+          "to": "2027-03-05"
+        },
+        "periods": [
+          {
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10"
+          }
+        ],
+        "existing": [
+          {
+            "id": "f1",
+            "taxType": "withholding_tax",
+            "taxPeriodKey": "2026-10-payment",
+            "dueDate": "2026-11-10",
+            "paymentDue": "2026-11-10",
+            "status": "cancelled"
+          }
+        ]
+      },
+      "expected": {
+        "created": [],
+        "updated": [],
+        "cancelled": []
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "반기 신고의 `quarter`에 2·4를 넣는 추정 값과 `year`/`quarter` 필드를 계속 둘까요",
+    "개인 일반과세자는 `vat_preliminary_mode`와 상관없이 항상 예정고지로 두는 것을 따를까요",
+    "예정고지 건의 납부 기한을 법정 25일로 미리 채우는 것을 따를까요 (설계는 담당자가 고지서 기한을 입력)",
+    "간이과세자·중간예납·연말정산 의무를 일정에 넣을까요",
+    "대리인이 취소한 신고 건을 일정 배치가 다시 만들지 않는 것을 따를까요",
+    "더는 해당하지 않는 `scheduled` 신고 건은 자동 취소하고 `requested` 이후는 그대로 두는 것을 따를까요"
+  ]
+}

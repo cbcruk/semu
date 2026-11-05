@@ -1,0 +1,633 @@
+{
+  "rule": "estimated-vat",
+  "description": "Estimated VAT for the current quarter or half from collected evidence, and the half-yearly trend that prefers filed amounts for taxation customers.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/estimated-vat/estimated-vat.utils.ts",
+      "lines": "7-47"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/estimated-vat/estimated-vat.service.ts",
+      "lines": "17-146"
+    },
+    {
+      "file": "apps/api/legacy/src/lib/money.ts",
+      "lines": "1-31"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "330-378"
+    },
+    {
+      "file": "alfred-manual/02-홈-Universal-Home/04-실시간-보고서/02-예상-부가세.md",
+      "lines": "21-57"
+    }
+  ],
+  "inputSchema": {
+    "check": "period, sales-vat, estimate or trend.",
+    "sales/purchases": "Legacy sales_evidence and purchase_evidence rows (deductible 1, 0 or null).",
+    "taxableCardRatioBp": "Taxable share of card sales in basis points (10000 = 100%).",
+    "filings": "Legacy VAT filings by year and quarter.",
+    "estimates": "Evidence-based estimate per period, keyed start..end."
+  },
+  "cases": [
+    {
+      "name": "corporation in November estimates Q4",
+      "input": {
+        "check": "period",
+        "businessType": "corporate",
+        "on": "2026-11-05"
+      },
+      "expected": {
+        "start": "2026-10-01",
+        "end": "2026-12-31",
+        "unit": "quarter"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporation on the last day of Q1",
+      "input": {
+        "check": "period",
+        "businessType": "corporate",
+        "on": "2026-03-31"
+      },
+      "expected": {
+        "start": "2026-01-01",
+        "end": "2026-03-31",
+        "unit": "quarter"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "individual on June 30 estimates H1",
+      "input": {
+        "check": "period",
+        "businessType": "individual",
+        "on": "2026-06-30"
+      },
+      "expected": {
+        "start": "2026-01-01",
+        "end": "2026-06-30",
+        "unit": "half"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "individual on July 1 moves to H2",
+      "input": {
+        "check": "period",
+        "businessType": "individual",
+        "on": "2026-07-01"
+      },
+      "expected": {
+        "start": "2026-07-01",
+        "end": "2026-12-31",
+        "unit": "half"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "card sale split from the total",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": 11000,
+        "vatAmount": null,
+        "taxableCardRatioBp": 10000
+      },
+      "expected": {
+        "vat": 1000
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "card cancellation mirrors the sale",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": -11000,
+        "vatAmount": null,
+        "taxableCardRatioBp": 10000
+      },
+      "expected": {
+        "vat": -1000
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "uneven total keeps the remainder as VAT",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": 10000,
+        "vatAmount": null,
+        "taxableCardRatioBp": 10000
+      },
+      "expected": {
+        "vat": 910
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "taxable ratio truncates toward zero",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": 11000,
+        "vatAmount": null,
+        "taxableCardRatioBp": 5000
+      },
+      "expected": {
+        "vat": 500
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "taxable ratio on a cancellation",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": -11000,
+        "vatAmount": null,
+        "taxableCardRatioBp": 5000
+      },
+      "expected": {
+        "vat": -500
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "recorded VAT wins over the split",
+      "input": {
+        "check": "sales-vat",
+        "totalAmount": 11000,
+        "vatAmount": 1200,
+        "taxableCardRatioBp": 5000
+      },
+      "expected": {
+        "vat": 1200
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "quarter estimate from mixed evidence",
+      "input": {
+        "check": "estimate",
+        "period": {
+          "start": "2026-10-01",
+          "end": "2026-12-31",
+          "unit": "quarter"
+        },
+        "taxableCardRatioBp": 10000,
+        "sales": [
+          {
+            "id": "s1",
+            "source": "tax_invoice",
+            "issued_on": "2026-10-02",
+            "total_amount": 1100000,
+            "vat_amount": 100000,
+            "dedupe_group": null
+          },
+          {
+            "id": "s2",
+            "source": "card",
+            "issued_on": "2026-10-03",
+            "total_amount": 110000,
+            "vat_amount": null,
+            "dedupe_group": null
+          },
+          {
+            "id": "s3",
+            "source": "pg",
+            "issued_on": "2026-10-04",
+            "total_amount": 55000,
+            "vat_amount": 5000,
+            "dedupe_group": "g1"
+          },
+          {
+            "id": "s4",
+            "source": "mall",
+            "issued_on": "2026-10-04",
+            "total_amount": 55000,
+            "vat_amount": 5000,
+            "dedupe_group": "g1"
+          },
+          {
+            "id": "s5",
+            "source": "delivery",
+            "issued_on": "2026-10-05",
+            "total_amount": 33000,
+            "vat_amount": 3000,
+            "dedupe_group": null
+          },
+          {
+            "id": "s6",
+            "source": "cash_receipt",
+            "issued_on": "2026-10-06",
+            "total_amount": -11000,
+            "vat_amount": -1000,
+            "dedupe_group": null
+          },
+          {
+            "id": "s7",
+            "source": "tax_invoice",
+            "issued_on": "2026-09-30",
+            "total_amount": 220000,
+            "vat_amount": 20000,
+            "dedupe_group": null
+          }
+        ],
+        "purchases": [
+          {
+            "id": "p1",
+            "source": "tax_invoice",
+            "issued_on": "2026-10-02",
+            "vat_amount": 40000,
+            "deductible": 1
+          },
+          {
+            "id": "p2",
+            "source": "card",
+            "issued_on": "2026-10-03",
+            "vat_amount": 2000,
+            "deductible": 0
+          },
+          {
+            "id": "p3",
+            "source": "card",
+            "issued_on": "2026-10-04",
+            "vat_amount": 3000,
+            "deductible": null
+          }
+        ]
+      },
+      "expected": {
+        "output_tax": 114000,
+        "input_tax": 40000,
+        "estimated_tax": 74000,
+        "is_refund": false,
+        "card_split_estimated": true,
+        "breakdown": [
+          {
+            "side": "sales",
+            "source": "tax_invoice",
+            "vat_amount": 100000,
+            "included_in_total": true
+          },
+          {
+            "side": "sales",
+            "source": "card",
+            "vat_amount": 10000,
+            "included_in_total": true
+          },
+          {
+            "side": "sales",
+            "source": "pg",
+            "vat_amount": 5000,
+            "included_in_total": true
+          },
+          {
+            "side": "sales",
+            "source": "delivery",
+            "vat_amount": 3000,
+            "included_in_total": false
+          },
+          {
+            "side": "sales",
+            "source": "cash_receipt",
+            "vat_amount": -1000,
+            "included_in_total": true
+          },
+          {
+            "side": "purchase",
+            "source": "tax_invoice",
+            "vat_amount": 40000,
+            "included_in_total": true
+          },
+          {
+            "side": "purchase",
+            "source": "card",
+            "vat_amount": 0,
+            "included_in_total": true
+          }
+        ],
+        "excluded": {
+          "non_deductible_count": 1,
+          "unclassified_count": 1
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "refund when input tax is larger",
+      "input": {
+        "check": "estimate",
+        "period": {
+          "start": "2026-10-01",
+          "end": "2026-12-31",
+          "unit": "quarter"
+        },
+        "taxableCardRatioBp": 10000,
+        "sales": [
+          {
+            "id": "s1",
+            "source": "tax_invoice",
+            "issued_on": "2026-10-02",
+            "total_amount": 1100000,
+            "vat_amount": 100000,
+            "dedupe_group": null
+          }
+        ],
+        "purchases": [
+          {
+            "id": "p1",
+            "source": "tax_invoice",
+            "issued_on": "2026-10-02",
+            "vat_amount": 130000,
+            "deductible": 1
+          }
+        ]
+      },
+      "expected": {
+        "output_tax": 100000,
+        "input_tax": 130000,
+        "estimated_tax": -30000,
+        "is_refund": true,
+        "card_split_estimated": false,
+        "breakdown": [
+          {
+            "side": "sales",
+            "source": "tax_invoice",
+            "vat_amount": 100000,
+            "included_in_total": true
+          },
+          {
+            "side": "purchase",
+            "source": "tax_invoice",
+            "vat_amount": 130000,
+            "included_in_total": true
+          }
+        ],
+        "excluded": {
+          "non_deductible_count": 0,
+          "unclassified_count": 0
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "trend for a taxation corporation",
+      "input": {
+        "check": "trend",
+        "taxPlan": "taxation",
+        "businessType": "corporate",
+        "today": "2026-11-05",
+        "years": 2,
+        "filings": [
+          {
+            "kind": "preliminary",
+            "year": 2025,
+            "quarter": 1,
+            "status": "filed",
+            "payable_amount": 300000
+          },
+          {
+            "kind": "final",
+            "year": 2025,
+            "quarter": 2,
+            "status": "settled",
+            "payable_amount": 200000
+          },
+          {
+            "kind": "preliminary",
+            "year": 2025,
+            "quarter": 3,
+            "status": "settled",
+            "payable_amount": 150000
+          },
+          {
+            "kind": "final",
+            "year": 2025,
+            "quarter": 4,
+            "status": "filed",
+            "payable_amount": 250000
+          },
+          {
+            "kind": "preliminary",
+            "year": 2026,
+            "quarter": 1,
+            "status": "settled",
+            "payable_amount": 100000
+          },
+          {
+            "kind": "final",
+            "year": 2026,
+            "quarter": 2,
+            "status": "reviewing",
+            "payable_amount": null
+          }
+        ],
+        "estimates": {
+          "2025-01-01..2025-06-30": 480000,
+          "2025-07-01..2025-12-31": 410000,
+          "2026-01-01..2026-06-30": 90000,
+          "2026-07-01..2026-11-05": 120000
+        }
+      },
+      "expected": {
+        "points": [
+          {
+            "year": 2025,
+            "half": 1,
+            "amount": 500000,
+            "source": "confirmed"
+          },
+          {
+            "year": 2025,
+            "half": 2,
+            "amount": 400000,
+            "source": "confirmed"
+          },
+          {
+            "year": 2026,
+            "half": 1,
+            "amount": 90000,
+            "source": "estimated"
+          },
+          {
+            "year": 2026,
+            "half": 2,
+            "amount": 120000,
+            "source": "estimated"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "trend for a free customer ignores filings",
+      "input": {
+        "check": "trend",
+        "taxPlan": null,
+        "businessType": "corporate",
+        "today": "2026-11-05",
+        "years": 2,
+        "filings": [
+          {
+            "kind": "preliminary",
+            "year": 2025,
+            "quarter": 1,
+            "status": "filed",
+            "payable_amount": 300000
+          },
+          {
+            "kind": "final",
+            "year": 2025,
+            "quarter": 2,
+            "status": "settled",
+            "payable_amount": 200000
+          },
+          {
+            "kind": "preliminary",
+            "year": 2025,
+            "quarter": 3,
+            "status": "settled",
+            "payable_amount": 150000
+          },
+          {
+            "kind": "final",
+            "year": 2025,
+            "quarter": 4,
+            "status": "filed",
+            "payable_amount": 250000
+          },
+          {
+            "kind": "preliminary",
+            "year": 2026,
+            "quarter": 1,
+            "status": "settled",
+            "payable_amount": 100000
+          },
+          {
+            "kind": "final",
+            "year": 2026,
+            "quarter": 2,
+            "status": "reviewing",
+            "payable_amount": null
+          }
+        ],
+        "estimates": {
+          "2025-01-01..2025-06-30": 480000,
+          "2025-07-01..2025-12-31": 410000,
+          "2026-01-01..2026-06-30": 90000,
+          "2026-07-01..2026-11-05": 120000
+        }
+      },
+      "expected": {
+        "points": [
+          {
+            "year": 2025,
+            "half": 1,
+            "amount": 480000,
+            "source": "estimated"
+          },
+          {
+            "year": 2025,
+            "half": 2,
+            "amount": 410000,
+            "source": "estimated"
+          },
+          {
+            "year": 2026,
+            "half": 1,
+            "amount": 90000,
+            "source": "estimated"
+          },
+          {
+            "year": 2026,
+            "half": 2,
+            "amount": 120000,
+            "source": "estimated"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "trend leaves the notice amount out of the confirmed sum",
+      "input": {
+        "check": "trend",
+        "taxPlan": "taxation",
+        "businessType": "individual",
+        "today": "2026-08-01",
+        "years": 1,
+        "filings": [
+          {
+            "kind": "notice",
+            "year": 2026,
+            "quarter": 1,
+            "status": "settled",
+            "payable_amount": 300000
+          },
+          {
+            "kind": "final",
+            "year": 2026,
+            "quarter": 2,
+            "status": "settled",
+            "payable_amount": 500000
+          }
+        ],
+        "estimates": {
+          "2026-07-01..2026-08-01": 70000
+        }
+      },
+      "expected": {
+        "points": [
+          {
+            "year": 2026,
+            "half": 1,
+            "amount": 500000,
+            "source": "confirmed"
+          },
+          {
+            "year": 2026,
+            "half": 2,
+            "amount": 70000,
+            "source": "estimated"
+          }
+        ]
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "trend skips a half that has not started",
+      "input": {
+        "check": "trend",
+        "taxPlan": null,
+        "businessType": "individual",
+        "today": "2026-05-01",
+        "years": 1,
+        "filings": [],
+        "estimates": {
+          "2026-01-01..2026-05-01": 42000
+        }
+      },
+      "expected": {
+        "points": [
+          {
+            "year": 2026,
+            "half": 1,
+            "amount": 42000,
+            "source": "estimated"
+          }
+        ]
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "몰·배달 매출을 `dedupe_group`이 채워지기 전까지 합계에서 빼고 내역에만 보여 주는 것을 따를까요",
+    "미분류 매입을 합계에서 빼서 예상 세액이 높게 나오게 하는 것을 따를까요",
+    "카드 과세 비율을 bp(`taxable_card_ratio_bp`)로 두는 것을 ppm으로 바꿀까요",
+    "추이의 확정 세액에서 예정고지 금액을 빼는 것을 따를까요",
+    "법인 예상 부가세는 분기 단위인데 추이는 반기 단위인 것을 따를까요",
+    "`is_refund` 플래그를 응답에 둘까요",
+    "출처별 마지막 수집 상태(`last_scrap_status`)를 예상 부가세 응답에 계속 넣을까요"
+  ]
+}
