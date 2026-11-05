@@ -21,11 +21,13 @@ export function describeDefect(defect: unknown): string {
 /** 스택에서 위치만 꺼냅니다. 앱 코드(`src/`) 줄을 먼저 고르고, 없으면 첫 위치입니다. 경로는 `src/`·`node_modules/`부터 씁니다. */
 function defectLocation(stack: string | undefined): string | undefined {
   if (stack === undefined) return undefined
+  // 스택 앞부분에는 메시지(여러 줄일 수 있음)가 있으므로 `at `으로 시작하는 프레임 줄만 봅니다.
   const locations = stack
     .split('\n')
-    .slice(1)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('at '))
     .flatMap((line) => {
-      const match = /\(?([^()\s]+):(\d+):\d+\)?\s*$/.exec(line)
+      const match = /\(?([^()\s]+):(\d+):\d+\)?$/.exec(line)
       if (match === null || match[1]!.startsWith('node:')) return []
       return [`${match[1]!.replace(/^.*?\/(src|node_modules)\//, '$1/')}:${match[2]}`]
     })

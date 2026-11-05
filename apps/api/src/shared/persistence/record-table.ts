@@ -111,10 +111,14 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
     `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT;` +
       `CREATE INDEX IF NOT EXISTS ${name}_company ON ${name} (company_id, id);`,
   )
-  seedOnce(db, name, () => {
-    const insertSeed = db.prepare(`INSERT INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
-    for (const record of options.seed ?? []) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
-  })
+  const seed = options.seed ?? []
+  if (seed.length > 0) {
+    seedOnce(db, name, () => {
+      // 같은 파일을 연 다른 프로세스가 먼저 넣었어도 기본 키 충돌로 실패하지 않게 합니다.
+      const insertSeed = db.prepare(`INSERT OR IGNORE INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
+      for (const record of seed) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
+    })
+  }
 
   const selectOne = db.prepare(`SELECT data FROM ${name} WHERE id = ?`)
   const selectAll = db.prepare(`SELECT data FROM ${name} ORDER BY id`)
@@ -149,17 +153,23 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
 /**
  * 표 `name`에 시드를 한 번만 넣습니다. 넣었으면 `semu_meta`에 `seeded:<name>`을 남기고, 표시가 있으면 다시 넣지 않습니다.
  *
- * 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣고 표시를 남깁니다. 넣기와 표시는 한 savepoint 안에서 함께 됩니다.
+ * 시드가 있는 표만 부릅니다. 시드가 없는 표에는 표시를 남기지 않아, 나중에 시드를 더하면 이미 있는 데이터베이스에도 들어갑니다.
+ * 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣고 표시를 남깁니다. 표시 확인·넣기·표시는 한 savepoint 안에서 하고,
+ * 표시는 `INSERT OR IGNORE`라 같은 파일을 연 두 프로세스가 겹쳐도 실패하지 않습니다.
  */
 function seedOnce(db: import('node:sqlite').DatabaseSync, name: string, insertSeed: () => void): void {
   ensureMetaTable(db)
   const marker = seededMarker(name)
-  if (db.prepare(`SELECT 1 FROM ${META_TABLE} WHERE name = ?`).get(marker) !== undefined) return
   db.exec('SAVEPOINT semu_seed')
   try {
-    const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
-    if (isEmpty) insertSeed()
-    db.prepare(`INSERT INTO ${META_TABLE} (name, value) VALUES (?, ?)`).run(marker, new Date().toISOString())
+    if (db.prepare(`SELECT 1 FROM ${META_TABLE} WHERE name = ?`).get(marker) === undefined) {
+      const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
+      if (isEmpty) insertSeed()
+      db.prepare(`INSERT OR IGNORE INTO ${META_TABLE} (name, value) VALUES (?, ?)`).run(
+        marker,
+        new Date().toISOString(),
+      )
+    }
     db.exec('RELEASE semu_seed')
   } catch (error) {
     db.exec('ROLLBACK TO semu_seed')

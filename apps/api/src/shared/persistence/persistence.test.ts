@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite'
 import { Effect, Fiber, Layer, Option } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
-import { Outbox } from './outbox.ts'
+import { Outbox, relayLoggingDefects } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
 import { TableFactory, makeSqliteRecordTable, makeTenantTable } from './record-table.ts'
 import { SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
@@ -160,6 +160,69 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
+  it('records only a defect summary in last_error and keeps relaying past a broken row', () =>
+    run(
+      PersistenceSqliteLive(':memory:'),
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const outbox = yield* Outbox
+        const { db } = yield* SqliteDatabase
+        const received: string[] = []
+        const publish = yield* outbox.channel<{ name: string }>('leak.event->test', (event) =>
+          Effect.suspend(() => {
+            if (event.name === 'boom') return Effect.die(new Error('consumer saw owner@semu.example'))
+            received.push(event.name)
+            return Effect.void
+          }),
+        )
+        yield* unitOfWork.run(publish({ name: 'boom' }))
+        db.prepare(
+          `INSERT INTO outbox (id, channel, data, created_at) VALUES ('evt_broken', 'leak.event->test', ?, ?)`,
+        ).run('{"name":"홍길동","email":"leak@example.com"', new Date().toISOString())
+        yield* unitOfWork.run(publish({ name: 'after' }))
+        received.length = 0
+
+        const logs: string[] = []
+        const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+          vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.join(' '))),
+        )
+        yield* relayLoggingDefects(outbox)
+        for (const spy of spies) spy.mockRestore()
+
+        expect(received).toEqual([])
+        const errors = db
+          .prepare(`SELECT last_error FROM outbox WHERE last_error IS NOT NULL ORDER BY seq`)
+          .all()
+          .map((row) => String(row['last_error']))
+        expect(errors).toHaveLength(2)
+        expect(errors[0]).toMatch(/^Error at src\/shared\/persistence\/persistence\.test\.ts:\d+$/)
+        expect(errors[1]).toMatch(/^SyntaxError at src\/shared\/persistence\/json-codec\.ts:\d+$/)
+        const leaked = [...errors, ...logs].join('\n')
+        for (const value of ['owner@semu.example', 'leak@example.com', '홍길동']) expect(leaked).not.toContain(value)
+      }),
+    ))
+
+  it('logs a relay defect as a summary instead of failing', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const logs: string[] = []
+        const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+          vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.join(' '))),
+        )
+        yield* relayLoggingDefects(
+          Outbox.of({
+            channel: () => Effect.die('unused'),
+            relay: () => Effect.die(new Error('row for leak@example.com')),
+          }),
+        )
+        for (const spy of spies) spy.mockRestore()
+
+        expect(logs.join('\n')).toContain('Outbox relay defect')
+        expect(logs.join('\n')).toContain('Error at src/shared/persistence/persistence.test.ts')
+        expect(logs.join('\n')).not.toContain('leak@example.com')
+      }),
+    ))
+
   it('does not let the relay deliver an event from a transaction that later rolls back, and delivers once', () =>
     run(
       PersistenceSqliteLive(':memory:'),
@@ -218,6 +281,16 @@ describe('sqlite seeds', () => {
         .all()
         .map((row) => row['name']),
     ).toEqual(['seeded:test_seeded'])
+  })
+
+  it('does not mark a table without a seed, so a seed added later still arrives', () => {
+    const db = new DatabaseSync(':memory:')
+    makeSqliteRecordTable<Row>(db, 'test_seeded')
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'semu_meta'`).get()).toBeUndefined()
+
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual(['r1', 'r2'])
   })
 
   it('marks a table that predates the marker without seeding it, and keeps it unseeded after it empties', () => {

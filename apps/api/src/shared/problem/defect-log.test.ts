@@ -26,6 +26,19 @@ describe('describeDefect', () => {
     )
   })
 
+  it('never reads a multi-line message as a stack frame', () => {
+    const defect = new Error('x\nuser leak@example.com:12:34')
+    defect.stack =
+      'Error: x\nuser leak@example.com:12:34\n' +
+      '    at run (file:///app/node_modules/effect/dist/esm/internal/fiber.js:10:5)\n' +
+      '    at node:internal/process/task_queues:105:5'
+
+    expect(describeDefect(defect)).toBe('Error at node_modules/effect/dist/esm/internal/fiber.js:10')
+
+    defect.stack = 'Error: x\nuser leak@example.com:12:34'
+    expect(describeDefect(defect)).toBe('Error')
+  })
+
   it('does not print values thrown as non-errors', () => {
     expect(describeDefect('owner@semu.example')).toBe('defect of type string')
     expect(describeDefect({ _tag: 'NoSuchElementError', value: 'owner@semu.example' })).toBe(
