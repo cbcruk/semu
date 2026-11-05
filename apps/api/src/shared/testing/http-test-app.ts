@@ -28,7 +28,7 @@ export interface HttpTestRequest {
   ifMatch?: string | undefined
   /** `Idempotency-Key` 헤더 값입니다. */
   idempotencyKey?: string | undefined
-  /** 그 밖의 헤더입니다. `token`이 만든 `Authorization`은 덮어쓰고, 위 옵션이 만든 헤더에는 덮어써집니다. */
+  /** 그 밖의 헤더입니다. 이름의 대소문자와 상관없이 `token`이 만든 `Authorization`은 덮어쓰고, 위 옵션이 만든 헤더에는 덮어써집니다. */
   headers?: Record<string, string>
 }
 
@@ -81,7 +81,8 @@ export function httpTestApp(options: HttpTestAppOptions = {}): HttpTestApp {
     const token = init.token ?? options.defaultToken
     const headers: Record<string, string> = {
       ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
-      ...init.headers,
+      // 헤더 이름은 대소문자를 가리지 않으므로 소문자로 맞춰 `Authorization`과 `authorization`이 함께 실리지 않게 합니다.
+      ...Object.fromEntries(Object.entries(init.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
     }
     if (init.body !== undefined) headers['content-type'] = 'application/json'
     if (init.ifMatch !== undefined) headers['if-match'] = init.ifMatch
