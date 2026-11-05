@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { makeTenantTable, TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { InstitutionType } from '../institutions/institution.ts'
 import type { IntegrationRecord } from './integration.ts'
@@ -13,36 +14,31 @@ export class IntegrationRepository extends Context.Service<
     remove(companyId: Id<'company'>, integrationId: Id<'integration'>): Effect.Effect<void>
   }
 >()('semu/integrations/IntegrationRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 연동을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<IntegrationRecord> = []) =>
+  /** `integrations_integrations` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<IntegrationRecord> = []) =>
     Layer.effect(
       IntegrationRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((integration) => [integration.id, integration])))
+        const table = yield* makeTenantTable<IntegrationRecord>('integrations_integrations', seed)
         return IntegrationRepository.of({
-          find: (companyId, integrationId) =>
-            Ref.get(store).pipe(
-              Effect.map((all) =>
-                Option.filter(Option.fromNullishOr(all.get(integrationId)), (found) => found.companyId === companyId),
-              ),
-            ),
+          find: (companyId, integrationId) => table.find(companyId, integrationId),
           listByCompany: (companyId, type) =>
-            Ref.get(store).pipe(
-              Effect.map((all) =>
-                [...all.values()]
-                  .filter((found) => found.companyId === companyId && (type === undefined || found.type === type))
-                  .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
+            table
+              .list(companyId)
+              .pipe(
+                Effect.map((all) =>
+                  all
+                    .filter((found) => type === undefined || found.type === type)
+                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
+                ),
               ),
-            ),
-          save: (integration) => Ref.update(store, (all) => new Map(all).set(integration.id, integration)),
-          remove: (companyId, integrationId) =>
-            Ref.update(store, (all) => {
-              if (all.get(integrationId)?.companyId !== companyId) return all
-              const next = new Map(all)
-              next.delete(integrationId)
-              return next
-            }),
+          save: (integration) => table.save(integration),
+          remove: (companyId, integrationId) => table.remove(companyId, integrationId),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 연동을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<IntegrationRecord> = []) =>
+    IntegrationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { GrantRecord } from './grant.ts'
 
@@ -11,17 +12,21 @@ export class GrantRepository extends Context.Service<
     save(grant: GrantRecord): Effect.Effect<void>
   }
 >()('semu/assistant/GrantRepository') {
-  /** 프로세스 메모리에 공고를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<GrantRecord> = []) =>
+  /** `assistant_grants` 표에 둡니다. 회사 키가 없는 공용 표입니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<GrantRecord> = []) =>
     Layer.effect(
       GrantRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((grant) => [grant.id, grant])))
+        const table = yield* (yield* TableFactory).make<GrantRecord>('assistant_grants', { seed })
         return GrantRepository.of({
-          find: (grantId) => Ref.get(store).pipe(Effect.map((grants) => Option.fromNullishOr(grants.get(grantId)))),
-          list: () => Ref.get(store).pipe(Effect.map((grants) => [...grants.values()])),
-          save: (grant) => Ref.update(store, (grants) => new Map(grants).set(grant.id, grant)),
+          find: (grantId) => table.get(grantId),
+          list: () => Effect.map(table.all(), (grants) => [...grants]),
+          save: (grant) => table.put(grant),
         })
       }),
     )
+
+  /** 프로세스 메모리에 공고를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<GrantRecord> = []) =>
+    GrantRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

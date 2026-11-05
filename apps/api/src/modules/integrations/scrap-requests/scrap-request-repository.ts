@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { makeTenantTable, TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { InstitutionType } from '../institutions/institution.ts'
 import type { ScrapRequestRecord } from './scrap-request.ts'
@@ -16,29 +17,24 @@ export class ScrapRequestRepository extends Context.Service<
     save(request: ScrapRequestRecord): Effect.Effect<void>
   }
 >()('semu/integrations/ScrapRequestRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 수집 요청을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<ScrapRequestRecord> = []) =>
+  /** `integrations_scrap_requests` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<ScrapRequestRecord> = []) =>
     Layer.effect(
       ScrapRequestRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((request) => [request.id, request])))
+        const table = yield* makeTenantTable<ScrapRequestRecord>('integrations_scrap_requests', seed)
         const list = (companyId: Id<'company'>, type?: InstitutionType) =>
-          Ref.get(store).pipe(
-            Effect.map((all) =>
-              [...all.values()]
-                .filter(
-                  (found) => found.companyId === companyId && (type === undefined || found.institutionType === type),
-                )
-                .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id)),
-            ),
-          )
-        return ScrapRequestRepository.of({
-          find: (companyId, requestId) =>
-            Ref.get(store).pipe(
+          table
+            .list(companyId)
+            .pipe(
               Effect.map((all) =>
-                Option.filter(Option.fromNullishOr(all.get(requestId)), (found) => found.companyId === companyId),
+                all
+                  .filter((found) => type === undefined || found.institutionType === type)
+                  .sort((a, b) => b.createdAt - a.createdAt || b.id.localeCompare(a.id)),
               ),
-            ),
+            )
+        return ScrapRequestRepository.of({
+          find: (companyId, requestId) => table.find(companyId, requestId),
           listByCompany: list,
           latest: (companyId, type) =>
             list(companyId, type).pipe(Effect.map((found) => Option.fromNullishOr(found[0]))),
@@ -46,8 +42,12 @@ export class ScrapRequestRepository extends Context.Service<
             list(companyId).pipe(
               Effect.map((found) => Option.fromNullishOr(found.find((request) => request.idempotencyKey === key))),
             ),
-          save: (request) => Ref.update(store, (all) => new Map(all).set(request.id, request)),
+          save: (request) => table.save(request),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 수집 요청을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<ScrapRequestRecord> = []) =>
+    ScrapRequestRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

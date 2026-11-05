@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { Context, Effect, Layer, Option, Ref, Schema } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 
 /** 상담 채널 메신저입니다. */
@@ -73,24 +74,44 @@ export class ChannelTokenRepository extends Context.Service<
     save(token: ChannelTokenRecord): Effect.Effect<void>
   }
 >()('semu/integrations/ChannelTokenRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 토큰을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<ChannelTokenRecord> = []) =>
+  /**
+   * `integrations_channel_tokens` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다.
+   *
+   * 표의 ID는 토큰 해시입니다. 아직 쓰지 않은 토큰은 회사가 없습니다.
+   */
+  static readonly layer = (seed: ReadonlyArray<ChannelTokenRecord> = []) =>
     Layer.effect(
       ChannelTokenRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((token) => [token.tokenHash, token])))
+        const table = yield* (yield* TableFactory).make<StoredChannelToken>('integrations_channel_tokens', {
+          seed: seed.map(storedToken),
+          companyOf: (token) => token.companyId ?? null,
+        })
         return ChannelTokenRepository.of({
-          findByHash: (tokenHash) => Ref.get(store).pipe(Effect.map((all) => Option.fromNullishOr(all.get(tokenHash)))),
+          findByHash: (tokenHash) => Effect.map(table.get(tokenHash), Option.map(tokenOf)),
           listByCompany: (companyId) =>
-            Ref.get(store).pipe(
-              Effect.map((all) =>
-                [...all.values()]
-                  .filter((token) => token.companyId === companyId)
-                  .sort((a, b) => (a.usedAt ?? 0) - (b.usedAt ?? 0)),
-              ),
-            ),
-          save: (token) => Ref.update(store, (all) => new Map(all).set(token.tokenHash, token)),
+            table
+              .byCompany(companyId)
+              .pipe(Effect.map((all) => all.map(tokenOf).sort((a, b) => (a.usedAt ?? 0) - (b.usedAt ?? 0)))),
+          save: (token) => table.put(storedToken(token)),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 토큰을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<ChannelTokenRecord> = []) =>
+    ChannelTokenRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
+}
+
+/** 표에 넣는 연결 토큰입니다. ID는 토큰 해시입니다. */
+interface StoredChannelToken extends ChannelTokenRecord {
+  readonly id: string
+}
+
+function storedToken(token: ChannelTokenRecord): StoredChannelToken {
+  return { ...token, id: token.tokenHash }
+}
+
+function tokenOf({ id: _id, ...token }: StoredChannelToken): ChannelTokenRecord {
+  return token
 }
