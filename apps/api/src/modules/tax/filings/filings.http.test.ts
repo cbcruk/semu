@@ -228,6 +228,61 @@ describe('VAT filing flow', () => {
   })
 })
 
+describe('agent commands called by a client (D5)', () => {
+  const startReview = (token: 'client' | 'viewer' | 'pendingTerms' | 'demo' | 'free') =>
+    app.send(`/filings/${VAT_ID}:start-review`, { method: 'POST', token })
+
+  it('answers FILING_ACTOR_NOT_ALLOWED to a client who can see filings', async () => {
+    app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
+
+    for (const token of ['client', 'viewer'] as const) {
+      const response = await startReview(token)
+      expect(response.status).toBe(403)
+      expect(await response.json()).toMatchObject({
+        code: 'FILING_ACTOR_NOT_ALLOWED',
+        action: 'START_REVIEW',
+        requiredActorKind: 'AGENCY',
+      })
+    }
+  })
+
+  it('still asks for terms re-agreement first', async () => {
+    app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
+
+    const response = await startReview('pendingTerms')
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED', termCodes: ['TAX_SERVICE'] })
+  })
+
+  it('still refuses a demo write as PERMISSION_DENIED', async () => {
+    app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
+
+    const response = await startReview('demo')
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'filing:process' })
+  })
+
+  it('still asks for the plan before anything else', async () => {
+    app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
+
+    const response = await startReview('free')
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED' })
+  })
+
+  it('applies the same order to attaching a document', async () => {
+    app = taxTestApp({ filings: [vat({ status: 'PREPARING', requirements: [] })] })
+    const attach = (token: 'pendingTerms' | 'demo') =>
+      app.send(`/filings/${VAT_ID}/documents`, { token, body: { type: 'RETURN', fileId: FILE_ID } })
+
+    expect(await (await attach('pendingTerms')).json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED' })
+    expect(await (await attach('demo')).json()).toMatchObject({ code: 'PERMISSION_DENIED' })
+  })
+})
+
 describe('requirements', () => {
   it('are locked outside REQUESTED', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })

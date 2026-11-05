@@ -68,20 +68,20 @@
 | 연동 | `integration`: CRUD · `scrap-request`: read, create · `certificate`: read, create, delete · `external-service`: read, manage · `business-status`: read · `messenger-channel`: link | |
 | | `hometax-delegation`: read, agree | TAXATION |
 | AI 비서 | `conversation`: read, create, delete · `grant`: read | |
-| 인사·문서 | `employee`: CRUD · `organization`: read, update | TAXATION 또는 PAYROLL |
+| 인사·문서 | `employee`: CRUD, resign, reveal-rrn, reveal-account · `organization`: read, update | TAXATION 또는 PAYROLL |
 | | `document-form`: read | |
-| | `esign-request`: read, create, send, cancel · `esign-template`: CRUD · `certificate-issuance`: read, create | PAYROLL |
-| 급여 | `payroll-ledger`: CRUD, approve · `payslip`: read, send | TAXATION 또는 PAYROLL |
-| | `payroll-setting`: read, update · `severance-settlement`: CRUD · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
+| | `esign-request`: CRUD, send, cancel, void · `esign-template`: CRUD · `certificate-issuance`: read, create, send, void | PAYROLL |
+| 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send | TAXATION 또는 PAYROLL |
+| | `payroll-setting`: read, update · `severance-settlement`: CRUD, complete · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
 | | `labor-cost-report`: read | TAXATION |
 | | `salary-calculation`: create | |
-| 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, pay · `account-title`: read, update · `classification-rule`: CRUD · `realtime-report`: read · `report`: read | |
+| 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update, classify · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, update, pay · `account-title`: CRUD · `classification-rule`: CRUD, apply · `realtime-report`: read · `report`: read | |
 | | `settlement-report`: read | TAXATION |
 | 세무 | `filing`: read, update, submit, confirm-ledger, pay, *process* | TAXATION |
 | | `vat-filing`·`withholding-tax-filing`·`corporate-tax-filing`·`income-tax-filing`: read, update, submit | TAXATION |
-| | `estimated-vat`: read · `action-card`: read, update | |
+| | `estimated-vat`: read · `action-card`: read, update, complete | |
 
-`filing`, `organization`, `payroll-workflow`, `payroll-rate-table`, `payroll-calculator`, `report`는 엔드포인트가 이미 쓰던 리소스를 D5에서 카탈로그에 올린 것입니다. 대리인 기본 권한이 카탈로그에서 계산되므로 빠져 있으면 대리인이 그 엔드포인트를 쓰지 못합니다. 그 결과 고객 역할 화면(`GET /permissions`)에도 부여 가능 권한으로 나타납니다. 세목별 `*-filing` 리소스는 역할 템플릿과 현행 메뉴 대응이 쓰고 있어 그대로 둡니다.
+`filing`, `organization`, `payroll-workflow`, `payroll-rate-table`, `payroll-calculator`, `report`는 엔드포인트가 이미 쓰던 리소스를 D5에서 카탈로그에 올린 것입니다. 기존 리소스에서 빠져 있던 동작 17개(`employee:resign`·`reveal-rrn`·`reveal-account`, `esign-request:update`·`delete`·`void`, `certificate-issuance:send`·`void`, `payroll-ledger:submit`·`close`, `severance-settlement:complete`, `bank-transaction:classify`, `giro:update`, `account-title:create`·`delete`, `classification-rule:apply`, `action-card:complete`)도 같이 올려 권한 그룹에서 하나씩 줄 수 있습니다. `permission-catalog.coverage.test.ts`가 소스(테스트 제외)에 나오는 모든 `resource:action` 문자열이 카탈로그에 있는지 확인해 다시 어긋나지 않게 합니다. 대리인 기본 권한이 카탈로그에서 계산되므로 빠져 있으면 대리인이 그 엔드포인트를 쓰지 못합니다. 그 결과 고객 역할 화면(`GET /permissions`)에도 부여 가능 권한으로 나타납니다. 세목별 `*-filing` 리소스는 역할 템플릿과 현행 메뉴 대응이 쓰고 있어 그대로 둡니다.
 
 #### 대리인 기본 권한
 
@@ -95,7 +95,7 @@
 - 구성원 관리는 고객 회사의 내부 통제라 대리인 업무가 아닙니다. 대리인은 `/users`·`/roles`·`/invitations`·`/audit-logs`가 403입니다. 회사 정보(`company:*`)는 대리인 업무라 남깁니다
 - AI 비서는 고객용 기능이고 현행도 대리인에게 열지 않았습니다. 대리인은 `/conversations`·`/grants`가 403입니다
 - 카탈로그에 리소스를 더하면 대리인 기본 권한에도 자동으로 들어갑니다. 대리인에게 주지 않을 리소스는 `AGENT_EXCLUDED_RESOURCES`에 넣습니다
-- 대리인 기본 권한은 토큰을 발급할 때 계산합니다. 배포 전에 받은 대리인 토큰은 만료(10분)나 refresh까지 이전 `*`로 동작합니다
+- 대리인 기본 권한은 토큰을 발급할 때 계산합니다. access token은 프로세스 메모리(`AccessTokens.layerExpiring`)에만 있으므로 배포하면 모든 세션의 access token이 사라지고, 클라이언트는 401을 받은 뒤 refresh로 새 권한 표의 토큰을 받습니다. 이전 `*`를 담은 토큰이 남더라도 와일드카드는 대리인 전용 권한을 덮지 않습니다
 
 `BASE_PERMISSIONS`: `company:read`, `action-card:read`, `conversation:read|create|delete`, `grant:read`, `document-form:read`, `salary-calculation:create`, `business-status:read`, `messenger-channel:link`, `consultation:create`.
 

@@ -37,7 +37,7 @@
 - `request materials for a notice filing`: 성공 → 409 `FILING_TRANSITION_INVALID` (질문 3)
 - `cancel submitted`: 거절 → `CANCELED` (질문 4)
 - 오류 코드: `PERMISSION_DENIED` → `FILING_ACTOR_NOT_ALLOWED`, `INVALID_TRANSITION` → `FILING_TRANSITION_INVALID`, `VALIDATION_FAILED`(남은 항목) → `FILING_REQUIREMENTS_PENDING` (질문 7)
-- D5(2026-11-06) 뒤에도 질문 7의 결정을 유지합니다. `filing:process`가 대리인 전용이 되어 고객 관리자의 `*`로는 통과하지 못하지만, 신고 건을 볼 수 있는(`filing:read`) 고객이 대리인 커맨드나 문서 붙이기를 부르면 권한 단계에서 같은 403 `FILING_ACTOR_NOT_ALLOWED`(`requiredActorKind: AGENCY`)로 돌려줍니다. 달라진 점은 순서뿐입니다. 이 경우 신고 건 없음(404)·`If-Match` 불일치(412)·상태 불일치(409)보다 이 오류가 먼저입니다
+- D5(2026-11-06) 뒤에도 질문 7의 결정을 유지합니다. `filing:process`가 대리인 전용이 되어 고객 관리자의 `*`로는 통과하지 못하지만, 신고 건을 볼 수 있는(`filing:read`) 고객이 대리인 커맨드나 문서 붙이기를 부르면 권한 단계에서 같은 403 `FILING_ACTOR_NOT_ALLOWED`(`requiredActorKind: AGENCY`)로 돌려줍니다. 대리인 전용 권한 말고 다른 요건이 막히면 D5 전과 같은 오류를 같은 순서로 줍니다. 플랜이 없으면 `ENTITLEMENT_REQUIRED`, 세무 약관 재동의 전이면 `TERMS_REAGREEMENT_REQUIRED`, 데모 계정이면 `PERMISSION_DENIED`입니다. 달라진 점은 순서뿐입니다. 이 경우 신고 건 없음(404)·`If-Match` 불일치(412)·상태 불일치(409)보다 이 오류가 먼저입니다
 - `file without a return document`: 옮기지 않음. 스키마가 `returnFileId`를 요구합니다 (질문 5)
 
 ## filing-requirements

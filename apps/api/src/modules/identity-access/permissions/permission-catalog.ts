@@ -39,18 +39,26 @@ export const PERMISSION_CATALOG = {
   conversation: { area: 'ASSISTANT', actions: ['read', 'create', 'delete'] },
   grant: { area: 'ASSISTANT', actions: ['read'] },
 
-  employee: { area: 'HR', actions: CRUD, plans: ['TAXATION', 'PAYROLL'] },
+  employee: {
+    area: 'HR',
+    actions: [...CRUD, 'resign', 'reveal-rrn', 'reveal-account'],
+    plans: ['TAXATION', 'PAYROLL'],
+  },
   organization: { area: 'HR', actions: ['read', 'update'], plans: ['TAXATION', 'PAYROLL'] },
   'document-form': { area: 'DOCUMENTS', actions: ['read'] },
-  'esign-request': { area: 'DOCUMENTS', actions: ['read', 'create', 'send', 'cancel'], plans: ['PAYROLL'] },
+  'esign-request': { area: 'DOCUMENTS', actions: [...CRUD, 'send', 'cancel', 'void'], plans: ['PAYROLL'] },
   'esign-template': { area: 'DOCUMENTS', actions: CRUD, plans: ['PAYROLL'] },
   'company-seal': { area: 'DOCUMENTS', actions: ['read', 'create', 'delete'], plans: ['PAYROLL'] },
-  'certificate-issuance': { area: 'DOCUMENTS', actions: ['read', 'create'], plans: ['PAYROLL'] },
+  'certificate-issuance': { area: 'DOCUMENTS', actions: ['read', 'create', 'send', 'void'], plans: ['PAYROLL'] },
 
-  'payroll-ledger': { area: 'PAYROLL', actions: [...CRUD, 'approve'], plans: ['TAXATION', 'PAYROLL'] },
+  'payroll-ledger': {
+    area: 'PAYROLL',
+    actions: [...CRUD, 'submit', 'approve', 'close'],
+    plans: ['TAXATION', 'PAYROLL'],
+  },
   payslip: { area: 'PAYROLL', actions: ['read', 'send'], plans: ['TAXATION', 'PAYROLL'] },
   'payroll-setting': { area: 'PAYROLL', actions: ['read', 'update'], plans: ['PAYROLL'] },
-  'severance-settlement': { area: 'PAYROLL', actions: CRUD, plans: ['PAYROLL'] },
+  'severance-settlement': { area: 'PAYROLL', actions: [...CRUD, 'complete'], plans: ['PAYROLL'] },
   'labor-cost-report': { area: 'PAYROLL', actions: ['read'], plans: ['TAXATION'] },
   'salary-calculation': { area: 'PAYROLL', actions: ['create'] },
   'payroll-workflow': { area: 'PAYROLL', actions: ['update'], plans: ['PAYROLL'] },
@@ -59,13 +67,13 @@ export const PERMISSION_CATALOG = {
 
   evidence: { area: 'BOOKKEEPING', actions: [...CRUD, 'classify'] },
   'bank-account': { area: 'BOOKKEEPING', actions: ['read', 'update'] },
-  'bank-transaction': { area: 'BOOKKEEPING', actions: ['read', 'update'] },
+  'bank-transaction': { area: 'BOOKKEEPING', actions: ['read', 'update', 'classify'] },
   partner: { area: 'BOOKKEEPING', actions: CRUD },
   'tax-invoice': { area: 'BOOKKEEPING', actions: ['read', 'issue'] },
   'sales-transaction': { area: 'BOOKKEEPING', actions: CRUD },
-  giro: { area: 'BOOKKEEPING', actions: ['read', 'pay'] },
-  'account-title': { area: 'BOOKKEEPING', actions: ['read', 'update'] },
-  'classification-rule': { area: 'BOOKKEEPING', actions: CRUD },
+  giro: { area: 'BOOKKEEPING', actions: ['read', 'update', 'pay'] },
+  'account-title': { area: 'BOOKKEEPING', actions: CRUD },
+  'classification-rule': { area: 'BOOKKEEPING', actions: [...CRUD, 'apply'] },
   'realtime-report': { area: 'BOOKKEEPING', actions: ['read'] },
   report: { area: 'BOOKKEEPING', actions: ['read'] },
   'settlement-report': { area: 'BOOKKEEPING', actions: ['read'], plans: ['TAXATION'] },
@@ -81,7 +89,7 @@ export const PERMISSION_CATALOG = {
     plans: ['TAXATION'],
   },
   'estimated-vat': { area: 'TAX', actions: ['read'] },
-  'action-card': { area: 'TAX', actions: ['read', 'update'] },
+  'action-card': { area: 'TAX', actions: ['read', 'update', 'complete'] },
 } as const satisfies Record<string, ResourcePermissions>
 
 /** 카탈로그의 리소스 이름입니다. */
