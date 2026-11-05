@@ -5,7 +5,7 @@ import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { Outbox } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
 import { TableFactory, makeTenantTable } from './record-table.ts'
-import { SqliteDatabase, UnitOfWork } from './unit-of-work.ts'
+import { SqliteDatabase, UnitOfWork, keepOnRollback } from './unit-of-work.ts'
 
 interface Row {
   id: string
@@ -79,6 +79,27 @@ describe('sqlite unit of work', () => {
         yield* unitOfWork.run(table.put({ id: 'kept' }))
 
         expect((yield* table.all()).map((row) => row.id)).toEqual(['kept'])
+      }),
+    ))
+
+  it('keeps writes marked keepOnRollback when the rest of the transaction rolls back', () =>
+    run(
+      layer,
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const table = yield* (yield* TableFactory).make<{ id: string }>('test_keep')
+
+        yield* Effect.exit(
+          unitOfWork.run(
+            Effect.gen(function* () {
+              yield* table.put({ id: 'dropped' })
+              yield* keepOnRollback(table.put({ id: 'counter' }))
+              return yield* Effect.fail('denied')
+            }),
+          ),
+        )
+
+        expect((yield* table.all()).map((row) => row.id)).toEqual(['counter'])
       }),
     ))
 

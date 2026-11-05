@@ -4,12 +4,26 @@ import { Context, Effect, Exit, Layer, Semaphore } from 'effect'
 /** 진행 중인 트랜잭션입니다. 커밋된 뒤에 실행할 작업(outbox 전달)을 모읍니다. */
 export interface Transaction {
   readonly afterCommit: Array<Effect.Effect<void>>
+  /** 되돌린 뒤 따로 다시 실행할 쓰기입니다({@link keepOnRollback}). */
+  readonly afterRollback: Array<Effect.Effect<void>>
 }
 
 /** 지금 파이버가 속한 트랜잭션입니다. 트랜잭션 밖이면 `null`입니다. */
 export const CurrentTransaction = Context.Reference<Transaction | null>('semu/persistence/CurrentTransaction', {
   defaultValue: () => null,
 })
+
+/**
+ * 요청이 4xx·5xx로 끝나 트랜잭션을 되돌려도 남아야 하는 쓰기입니다. 예: 본인확인 실패 횟수.
+ *
+ * 지금 실행하고, 트랜잭션을 되돌리면 그 뒤 새 트랜잭션에서 한 번 더 실행합니다. 몇 번 실행해도 결과가 같은 쓰기(덮어쓰기)여야 합니다.
+ */
+export const keepOnRollback = (write: Effect.Effect<void>): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* write
+    const transaction = yield* CurrentTransaction
+    transaction?.afterRollback.push(write)
+  })
 
 /** SQLite 연결입니다. 프로세스에 하나만 둡니다. */
 export class SqliteDatabase extends Context.Service<SqliteDatabase, { readonly db: DatabaseSync }>()(
@@ -63,11 +77,16 @@ export class UnitOfWork extends Context.Service<
         lock.withPermit(
           Effect.uninterruptibleMask((restore) =>
             Effect.gen(function* () {
-              const transaction: Transaction = { afterCommit: [] }
+              const transaction: Transaction = { afterCommit: [], afterRollback: [] }
               db.exec('BEGIN IMMEDIATE')
               const exit = yield* Effect.exit(restore(Effect.provideService(effect, CurrentTransaction, transaction)))
               const commit = Exit.isSuccess(exit) && commitIf(exit.value)
               db.exec(commit ? 'COMMIT' : 'ROLLBACK')
+              if (!commit && transaction.afterRollback.length > 0) {
+                db.exec('BEGIN IMMEDIATE')
+                const kept = yield* Effect.exit(Effect.forEach(transaction.afterRollback, (write) => write))
+                db.exec(Exit.isSuccess(kept) ? 'COMMIT' : 'ROLLBACK')
+              }
               return { exit, afterCommit: commit ? transaction.afterCommit : [] }
             }),
           ),
