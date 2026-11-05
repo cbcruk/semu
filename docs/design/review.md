@@ -71,7 +71,7 @@
 
 ### 규칙 이전 시 동작 차이
 
-현행 규칙 68개를 번들과 매뉴얼에서 추적해 입력·출력 케이스 765건으로 정리했습니다 ([docs/reference/rules](../reference/rules/README.md)). hemr와 달리 화면 컴포넌트가 번들에 없어 원본 함수를 실행하지 못했으므로 **모든 케이스가 추적(`traced`)** 입니다. 열린 질문 233개의 결정은 [rule-decisions/](rule-decisions/README.md)에 있고, 그중 보류가 50개입니다.
+현행 규칙 68개를 번들과 매뉴얼에서 추적해 입력·출력 케이스 765건으로 정리했습니다 ([docs/reference/rules](../reference/rules/README.md)). hemr와 달리 화면 컴포넌트가 번들에 없어 원본 함수를 실행하지 못했으므로 **모든 케이스가 추적(`traced`)** 입니다. 열린 질문 233개의 결정은 [rule-decisions/](rule-decisions/README.md)에 있고, 그중 보류가 39개입니다(처음 50개 중 11개를 법령 원문으로 정했습니다).
 
 | 결정이 필요한 대표 차이 | 규칙 |
 |---|---|
@@ -135,7 +135,7 @@
 ## 다음 단계
 
 1. **공식 기준표 확인.** 급여 기준표의 미확인 값을 법령·고시 원문으로 채웁니다. 간이세액표는 산식을 유지합니다 (D4)
-2. **보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개를 외부 사실 확인 후 정합니다
+2. **남은 보류 규칙 결정.** [rule-decisions/](rule-decisions/README.md)의 보류 50개 중 11개는 법령 원문으로 정했습니다. 남은 39개 중 Payroll 14개와 HR 보육수당 비과세 나이는 급여 기준표 확인(1번)과 함께 정합니다. 나머지는 상시 근로자 수 같은 새 입력, 내부 자료(약관·메뉴 코드, CMS 계약), 외부 서비스 자료(수집 업체, 메신저 브리지, 홈택스 발급)가 있어야 정할 수 있습니다
 3. **대리인 작업 큐 (D3).** 대리인 범위 토큰과 `/agency/*` 리소스를 설계·구현합니다
 4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 5. **이전 구현 정리.** 이식이 끝난 뒤 `apps/api/legacy/`를 지웁니다. 지금은 D2의 BFF 근거로 둡니다

@@ -10,10 +10,10 @@
 |---|---|---:|---:|---:|---:|
 | 전자서명 | [esign-request-transitions](#esign-request-transitions) | 3 | 1 | 2 | 0 |
 | 전자서명 | [esign-send-validation](#esign-send-validation) | 3 | 2 | 1 | 0 |
-| 전자서명 | [esign-identity-verification](#esign-identity-verification) | 2 | 1 | 0 | 1 |
+| 전자서명 | [esign-identity-verification](#esign-identity-verification) | 2 | 2 | 0 | 0 |
 | 제증명 | [certificate-issuance](#certificate-issuance) | 3 | 2 | 1 | 0 |
 | 설정 | [esign-settings-limits](#esign-settings-limits) | 2 | 2 | 0 | 0 |
-| | **합계** | **13** | **8** | **4** | **1** |
+| | **합계** | **13** | **9** | **4** | **0** |
 
 ## 전자서명
 
@@ -48,7 +48,7 @@
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
 | 1 | 잠금 해제 커맨드를 둘까요 | **따름:** `:resend`가 실패 횟수를 0으로 되돌립니다. 따로 두지 않습니다 | 재발송은 새 링크와 같은 효과입니다 |
-| 2 | 휴대폰 본인인증으로 바꿀까요 | **보류:** `SignerIdentityVerifier` 포트 뒤에 이름·생년월일 비교를 둡니다 | 외부 인증 서비스 계약이 필요합니다 |
+| 2 | 휴대폰 본인인증으로 바꿀까요 | **따름:** `SignerIdentityVerifier` 포트 뒤에 이름·생년월일 비교를 둡니다. 휴대폰 본인인증은 인증 서비스 계약이 생기면 같은 포트의 다른 구현으로 더합니다 | 법은 특정 인증 방식을 요구하지 않습니다. 전자서명은 전자적 형태라는 이유로 효력이 부인되지 않고, 당사자 간 약정으로 고른 전자서명은 서명·기명날인의 효력을 가집니다([전자서명법 제3조](https://www.law.go.kr/법령/전자서명법)) |
 
 ## 제증명
 

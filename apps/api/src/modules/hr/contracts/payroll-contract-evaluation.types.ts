@@ -27,9 +27,18 @@ export interface PayrollContractDerived extends WageResult {
   statutoryMinimumHourlyWage: number
 }
 
+/**
+ * 저장을 막지 않는 경고입니다.
+ *
+ * - `BELOW_MINIMUM_WAGE`: 최저임금 산입 시급이 최저시급보다 낮습니다
+ * - `PROBATION_BELOW_MINIMUM_WAGE`: 수습이 3개월을 넘는데 수습 시급이 최저시급보다 낮습니다. 감액한 최저임금(90%)은
+ *   수습 시작일부터 3개월까지만 적용됩니다(최저임금법 제5조 ②, 시행령 제3조)
+ */
+export type PayrollContractWarning = 'BELOW_MINIMUM_WAGE' | 'PROBATION_BELOW_MINIMUM_WAGE'
+
 /** 급여계약 평가 결과입니다. 위반이 있으면 저장하지 않고, 경고는 저장을 막지 않습니다. */
 export interface PayrollContractEvaluation {
   violations: Violation[]
   derived: PayrollContractDerived
-  warnings: Array<'BELOW_MINIMUM_WAGE'>
+  warnings: PayrollContractWarning[]
 }

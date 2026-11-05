@@ -6,10 +6,7 @@ export type EligibilityDeterminationCode = 'NPS_OVER_60_NEW_HIRE' | 'NPS_OVER_60
 
 /** 안내 메시지 코드입니다. */
 export type EligibilityMessageCode =
-  | 'NPS_UNDER_60_HOURS_ENROLLED'
-  | 'EI_FOREIGNER_OPTIONAL'
-  | 'EI_FOREIGNER_RECIPROCITY_AGREEMENT'
-  | 'EI_FOREIGNER_RECIPROCITY_NON_AGREEMENT'
+  'NPS_UNDER_60_HOURS_ENROLLED' | 'EI_FOREIGNER_OPTIONAL' | 'EI_FOREIGNER_RECIPROCITY_CHECK'
 
 /** 가입 제외 사유 코드입니다. 표시 문자열은 참조 데이터가 줍니다. */
 export type InsuranceExclusionReason =
