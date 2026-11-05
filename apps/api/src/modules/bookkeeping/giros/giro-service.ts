@@ -1,3 +1,4 @@
+import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Context, Effect, Layer, Option } from 'effect'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
@@ -159,6 +160,8 @@ export class GiroService extends Context.Service<
               history: [...row.history, { type: 'PAYMENT_FAILED', memo: result.resultMessage, actorUserId, at: now }],
               version: row.version + 1,
             })
+            // 실패 응답(4xx)이어도 납부 시도 기록은 남겨야 같은 멱등성 키로 다시 출금하지 않습니다.
+            yield* keepChanges
             return yield* new GiroPaymentFailed({ resultCode: result.resultCode, resultMessage: result.resultMessage })
           }
           return toGiro(yield* transition(row, 'PAY', actorUserId, ''))

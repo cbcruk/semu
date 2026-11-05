@@ -19,10 +19,11 @@ pnpm install
 pnpm dev        # http://localhost:3000/v1/health
 pnpm typecheck
 pnpm test
+pnpm test:sqlite   # 같은 테스트를 SQLite 저장소로
 pnpm format     # 또는 format:check
 pnpm build
 ```
 
 ## 상태
 
-저장소는 모두 메모리 구현입니다(`MemoryLive`). SQLite + outbox로 정했고([`docs/design/review.md`](../../docs/design/review.md) D1) 구현 중입니다.
+서버는 SQLite에 저장합니다(`SqliteLive`, 기본 `data/semu.sqlite`). `SEMU_DATABASE=memory`면 저장하지 않습니다. 요청마다 트랜잭션 하나이고, 컨텍스트 사이 이벤트는 outbox를 거칩니다([`docs/design/conventions.md`](../../docs/design/conventions.md#코드-구조)). 테스트는 메모리 저장소(`MemoryLive`)로 돌고, `pnpm test:sqlite`는 같은 테스트를 SQLite로 돌립니다.

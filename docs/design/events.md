@@ -35,7 +35,7 @@
 
 - 각 컨텍스트는 상태 변경과 같은 트랜잭션에서 **outbox**에 이벤트를 씁니다. 릴레이가 outbox를 읽어 버스에 냅니다
 - 소비자는 `id`로 중복을 거릅니다 (최소 1회 전달). 그래서 소비 처리는 멱등이어야 합니다. 예: 원천세의 급여대장 항목 갱신은 "그 달의 대장이 모두 마감됐는가"를 다시 계산할 뿐입니다
-- **지금 구현:** 저장소가 메모리 구현이라 outbox가 없습니다. 발행 포트(`TaxEvents`, `PayrollEventPublisher`, `DocumentEvents`)를 프로세스 안에서 바로 소비자에게 넘깁니다. 연결은 `apps/api/src/wiring/`에 있습니다
+- **지금 구현:** SQLite 저장소에서는 `outbox` 표에 쓰고 커밋 뒤 같은 프로세스의 소비자에게 넘깁니다. 실패한 전달은 시작할 때와 30초마다 릴레이가 다시 넘깁니다(`src/shared/persistence/outbox.ts`). 메모리 저장소에서는 바로 소비자를 부릅니다. outbox를 거치는 연계는 지금 `payroll_pay_month.*` → Tax 하나이고, 소비자가 없는 `TaxEvents`·`DocumentEvents`는 아직 메모리 로그입니다. 연결은 `apps/api/src/wiring/`에 있습니다
 
 ### 단말 (실시간)
 
@@ -60,7 +60,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Tax | `filing.status_changed` | Payroll(원천세 `FILED` 이상이면 대장 잠금 판정은 조회로 함), 단말, 할 일 카드 | 구현(메모리 발행) |
 | HR | `employee.joined`, `employee.resigned`, `leave.started`, `leave.ended` | Payroll(명단 변경 경고), Documents | 설계 |
 | Documents | `esign_request.sent`, `esign_request.completed`, `certificate.issued` | HR(서명 완료 시 근로·급여계약과 문서 보관함 생성) | 발행 구현, HR 소비는 설계 |
-| Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened` | Tax(원천세 신고의 급여대장 항목 `provided` 판정) | 구현(프로세스 안 전달) |
+| Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened` | Tax(원천세 신고의 급여대장 항목 `provided` 판정) | 구현(outbox) |
 | Bookkeeping | `evidence.ingested`, `tax_invoice.issued`, `giro.paid` | 단말, Tax(예상 부가세 갱신 알림) | 설계 |
 | 공통 | `job.completed`, `reset` | 단말 | 설계 |
 

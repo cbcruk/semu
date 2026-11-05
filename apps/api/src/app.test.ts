@@ -7,7 +7,9 @@ import { AccessTokens } from './modules/identity-access/access-tokens.ts'
 const Defect = HttpRouter.add('GET', '/v1/defect', Effect.die(new Error('boom')))
 
 const app = HttpRouter.toWebHandler(
-  Layer.merge(AppLive, Defect).pipe(Layer.provide([TestStoreLive, AccessTokens.layerMemory(), HttpServer.layerServices])),
+  Layer.merge(AppLive, Defect).pipe(
+    Layer.provide([TestStoreLive, AccessTokens.layerMemory(), HttpServer.layerServices]),
+  ),
   { disableLogger: true },
 )
 

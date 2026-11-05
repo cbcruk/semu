@@ -29,4 +29,4 @@ pnpm build
 
 ## Status
 
-The server is built on Effect (`effect/http-api`), with the HTTP contract in `apps/api/src/api.ts`; persistence (SQLite + outbox, decided) is not wired yet and every repository is in memory. Open decisions are listed in `docs/design/review.md`.
+The server is built on Effect (`effect/http-api`), with the HTTP contract in `apps/api/src/api.ts`; data is stored in SQLite (`data/semu.sqlite`) with one transaction per request and an outbox for cross-context events. Open decisions are listed in `docs/design/review.md`.

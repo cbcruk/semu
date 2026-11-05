@@ -2,19 +2,19 @@ import { Effect, Layer } from 'effect'
 import { HttpRouter, HttpServerError, HttpServerRespondable } from 'effect/http'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from './api.ts'
-import { AssistantHttpLive, AssistantMemoryLive } from './modules/assistant/assistant.layer.ts'
-import { BillingHttpLive, BillingMemoryStoreLive } from './modules/billing/billing.layer.ts'
-import { BookkeepingHttpLive, BookkeepingMemoryStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
-import { DocumentsHttpLive, DocumentsMemoryLive } from './modules/documents/documents.layer.ts'
-import { HrHttpLive, HrMemoryStoreLive } from './modules/hr/hr.layer.ts'
+import { AssistantHttpLive, AssistantStoreLive } from './modules/assistant/assistant.layer.ts'
+import { BillingHttpLive, BillingStoreLive } from './modules/billing/billing.layer.ts'
+import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
+import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
+import { HrHttpLive, HrStoreLive } from './modules/hr/hr.layer.ts'
 import { AuthenticationLive } from './modules/identity-access/authentication.ts'
-import { IdentityAccessHttpLive, IdentityAccessMemoryLive } from './modules/identity-access/identity-access.layer.ts'
+import { IdentityAccessHttpLive, IdentityAccessStoreLive } from './modules/identity-access/identity-access.layer.ts'
 import {
   IntegrationsHttpLive,
-  IntegrationsMemoryStoreLive,
+  IntegrationsStoreLive,
   ScrapQueueInlineLive,
 } from './modules/integrations/integrations.layer.ts'
-import { PayrollHttpLive, PayrollMemoryStoreLive } from './modules/payroll/payroll.layer.ts'
+import { PayrollHttpLive, PayrollStoreLive } from './modules/payroll/payroll.layer.ts'
 import { TaxHttpLive, TaxStoreLive } from './modules/tax/tax.layer.ts'
 import {
   OutboxRelayLive,
@@ -86,20 +86,20 @@ export const AppLive = HttpApiBuilder.layer(Api).pipe(
 /**
  * 컨텍스트마다 자기가 소유한 저장소와 외부 기관 어댑터입니다. 공유 쉬는 날 참조데이터도 넣습니다.
  *
- * `TableFactory`로 표를 만드는 컨텍스트(지금은 Tax)는 저장 방식을 바깥에서 받고, 아직 옮기지 않은 컨텍스트는 메모리 저장소입니다.
+ * 표는 모두 `TableFactory`로 만들어 저장 방식(메모리 또는 SQLite)을 바깥에서 받습니다.
  * 컨텍스트 사이 포트는 넣지 않습니다. 각 컨텍스트의 `<Ctx>MemoryLive`에 있는 그 포트의 가짜는 컨텍스트 단위 테스트에서만 씁니다.
  * 아직 제공하는 쪽이 없는 포트(Payroll `PayslipMailer`, Assistant `CompanyGrantProfiles`)는 그 컨텍스트의 가짜를 그대로 씁니다.
  */
 const ContextStoresLive = Layer.mergeAll(
-  IdentityAccessMemoryLive,
-  BillingMemoryStoreLive,
-  IntegrationsMemoryStoreLive,
-  AssistantMemoryLive,
+  IdentityAccessStoreLive,
+  BillingStoreLive,
+  IntegrationsStoreLive,
+  AssistantStoreLive,
   TaxStoreLive,
-  HrMemoryStoreLive,
-  DocumentsMemoryLive,
-  PayrollMemoryStoreLive,
-  BookkeepingMemoryStoreLive,
+  HrStoreLive,
+  DocumentsStoreLive,
+  PayrollStoreLive,
+  BookkeepingStoreLive,
   PublicHolidayCalendar.layerMemory(),
 )
 

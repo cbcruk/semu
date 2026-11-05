@@ -153,14 +153,14 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 
 ## 코드 구조
 
-- 컨텍스트 하나가 `apps/api/src/modules/<context>/` 폴더 하나입니다. 컨텍스트는 `<context>.api.ts`(HTTP 계약)와 `<context>.layer.ts`(`<Context>HttpLive`, `<Context>MemoryLive`)를 내보냅니다
+- 컨텍스트 하나가 `apps/api/src/modules/<context>/` 폴더 하나입니다. 컨텍스트는 `<context>.api.ts`(HTTP 계약)와 `<context>.layer.ts`(`<Context>HttpLive`, `<Context>StoreLive`, `<Context>MemoryLive`)를 내보냅니다
 - 컨텍스트 안의 리소스 하나는 하위 폴더 하나입니다. 파일 역할은 다음과 같습니다
 
 | 파일 | 내용 |
 |---|---|
 | `<resource>.ts` | 스키마(`Schema.Struct`)와 도메인 오류(`HttpApiError.Problem`) |
 | `<rule>.ts`, `<rule>.types.ts` | 순수 규칙 함수(상태 전이표, 계산). Effect에 의존하지 않습니다 |
-| `<resource>-repository.ts` | 저장소 서비스(`Context.Service`)와 `layerMemory` |
+| `<resource>-repository.ts` | 저장소 서비스(`Context.Service`). `layer(seed)`는 `TableFactory`로 표를 만들고, `layerMemory(seed)`는 그것을 메모리 표로 채운 것입니다 |
 | `<resources>.ts` | 유스케이스 서비스. 권한 확인, 규칙 호출, 저장 |
 | `<resources>.api.ts` | 엔드포인트 그룹(`HttpApiGroup`) |
 | `<resources>.http.ts` | 핸들러(`HttpApiBuilder.group`) |
@@ -168,6 +168,12 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 
 - **다른 컨텍스트의 저장소를 직접 읽지 않습니다.** 필요한 것은 쓰는 쪽이 포트(`Context.Service`)로 선언하고, 제공하는 쪽이 공개 서비스(`<context>.public.ts`)를 내보냅니다. 둘을 잇는 어댑터는 `apps/api/src/wiring/<consumer>-<provider>.ts`에 두고, `wiring.layer.ts`의 `WiringLive`로 묶어 `app.ts`에서 연결합니다
   - 어댑터와 핸들러는 컨텍스트마다 하나뿐인 저장소 인스턴스를 함께 씁니다. 각 컨텍스트의 `<Context>MemoryLive`에 있는 다른 컨텍스트 포트의 가짜는 그 컨텍스트 단위 테스트에서만 씁니다
+- **저장은 `src/shared/persistence/`를 거칩니다.**
+  - 저장소는 `TableFactory.make('<context>_<collection>', { seed, companyOf })`로 표를 만듭니다. 표는 `(id, company_id, data JSON)`이고 메모리·SQLite 구현이 같은 동작을 합니다. 레코드는 불변 순수 데이터여야 합니다(`Set`·`Map`·`bigint`까지 보존)
+  - 요청 하나가 트랜잭션 하나입니다(`UnitOfWorkMiddleware`). 응답이 4xx·5xx이면 되돌립니다. 저장소와 유스케이스는 트랜잭션을 직접 열지 않습니다
+  - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
+  - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다
+  - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file)`(서버 기본 `data/semu.sqlite`, `SEMU_DATABASE`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
 
 ## 예시 규칙

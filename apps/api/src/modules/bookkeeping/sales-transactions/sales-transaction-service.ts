@@ -1,3 +1,4 @@
+import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Context, Effect, Layer } from 'effect'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import { paginate } from '../../../shared/http/pagination.ts'
@@ -251,6 +252,8 @@ export class SalesTransactionService extends Context.Service<
               failure: { code: result.errorCode, message: result.errorMessage },
             }
             yield* invoices.save(failed)
+            // 실패 응답(4xx)이어도 홈택스가 거절한 발행 시도는 남깁니다. 같은 멱등성 키는 그 실패를 다시 돌려줍니다.
+            yield* keepChanges
             return yield* new TaxInvoiceRejected({
               taxInvoiceId: failed.id,
               errorCode: result.errorCode,
