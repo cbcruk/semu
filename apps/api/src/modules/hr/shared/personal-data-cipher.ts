@@ -1,11 +1,12 @@
 import { createHmac } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
+import { DataKey, decryptString, encryptString } from '../../../shared/crypto/data-key.ts'
 
 /**
  * 주민등록번호·계좌번호 암호화와 중복 판정용 해시입니다.
  *
- * 운영 구현은 AES-256-GCM(키는 KMS)과 회사와 무관한 HMAC-SHA256 키를 씁니다. 암호문은 매번 달라 비교할 수 없으므로
- * 중복은 {@link PersonalDataCipher} `hash`로 찾습니다.
+ * 서버 구현({@link PersonalDataCipher.layerAesGcm})은 AES-256-GCM과 회사와 무관한 HMAC-SHA256을 쓰고, 두 키 모두 {@link DataKey}에서
+ * 용도별로 따로 만듭니다. 암호문은 매번 달라 비교할 수 없으므로 중복은 {@link PersonalDataCipher} `hash`로 찾습니다.
  */
 export class PersonalDataCipher extends Context.Service<
   PersonalDataCipher,
@@ -23,6 +24,25 @@ export class PersonalDataCipher extends Context.Service<
       encrypt: (plain) => Effect.succeed(`enc:${Buffer.from(plain, 'utf8').toString('base64')}`),
       decrypt: (cipherText) => Effect.succeed(Buffer.from(cipherText.replace(/^enc:/, ''), 'base64').toString('utf8')),
       hash: (plain) => Effect.succeed(createHmac('sha256', 'semu-fake-hmac-key').update(plain).digest('hex')),
+    }),
+  )
+
+  /**
+   * AES-256-GCM 암호화와 HMAC-SHA256 해시입니다. 서버(`SqliteLive`)가 씁니다.
+   *
+   * 암호문은 `v1:<iv>:<tag>:<ciphertext>`이고, 바뀐 값이나 다른 키의 암호문은 결함(defect)으로 끝납니다.
+   */
+  static readonly layerAesGcm = Layer.effect(
+    PersonalDataCipher,
+    Effect.gen(function* () {
+      const dataKey = yield* DataKey
+      const encryptionKey = dataKey.subkey('hr/personal-data/aes-256-gcm')
+      const hashKey = dataKey.subkey('hr/personal-data/hmac-sha256')
+      return PersonalDataCipher.of({
+        encrypt: (plain) => Effect.sync(() => encryptString(encryptionKey, plain)),
+        decrypt: (cipherText) => Effect.sync(() => decryptString(encryptionKey, cipherText)),
+        hash: (plain) => Effect.sync(() => createHmac('sha256', hashKey).update(plain).digest('hex')),
+      })
     }),
   )
 }

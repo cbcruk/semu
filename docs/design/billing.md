@@ -68,7 +68,7 @@
 - 상품 두 개뿐이라 페이지 없이 전체를 줍니다. 화면의 서비스 카드 3개(무료·세무·급여)는 이 목록과 `/me`의 `promotions`로 그립니다
 - `status`와 `isEntitled`는 저장값이 아니라 오늘 날짜(회사 시간대)로 계산한 값입니다
 - 같은 플랜의 끝나지 않은 구독은 하나뿐입니다. `monthlyFee`는 원 단위 VAT 포함이고 0이면 청구하지 않습니다
-- 기장 구독은 근거가 된 `serviceContractId`를 가집니다
+- 기장 구독은 근거가 된 `serviceContractId`를 가집니다. 구독을 시작할 때 그 계약이 같은 회사 것인지 확인하고, 아니면 404 `SERVICE_CONTRACT_NOT_FOUND`입니다
 
 ### 결제
 

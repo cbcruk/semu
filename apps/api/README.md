@@ -26,4 +26,4 @@ pnpm build
 
 ## 상태
 
-서버는 SQLite에 저장합니다(`SqliteLive`, 기본 `data/semu.sqlite`). `SEMU_DATABASE=memory`면 저장하지 않습니다. 요청마다 트랜잭션 하나이고, 컨텍스트 사이 이벤트는 outbox를 거칩니다([`docs/design/conventions.md`](../../docs/design/conventions.md#코드-구조)). 테스트는 메모리 저장소(`MemoryLive`)로 돌고, `pnpm test:sqlite`는 같은 테스트를 SQLite로 돌립니다.
+서버는 SQLite에 저장합니다(`SqliteLive`, 기본 `data/semu.sqlite`). `SEMU_DATABASE=memory`면 저장하지 않습니다. 주민등록번호·계좌번호·연동 비밀번호는 AES-256-GCM으로 암호화해 저장하고, 데이터 키는 `SEMU_DATA_KEY`(base64 32바이트)에서 읽습니다. 없으면 데이터베이스 옆 `semu.key`(권한 0600)를 만들어 다시 씁니다. 이 파일을 잃으면 저장된 암호문을 열 수 없습니다([`docs/design/compliance.md`](../../docs/design/compliance.md#개인정보-최소-노출)). 요청마다 트랜잭션 하나이고, 컨텍스트 사이 이벤트는 outbox를 거칩니다([`docs/design/conventions.md`](../../docs/design/conventions.md#코드-구조)). 테스트는 메모리 저장소(`MemoryLive`)로 돌고, `pnpm test:sqlite`는 같은 테스트를 SQLite로 돌립니다.

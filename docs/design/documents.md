@@ -101,6 +101,7 @@ stateDiagram-v2
 - 문서가 하나 이상이고, 모든 템플릿이 켜져 있어야 합니다
 - 숨기지 않은 필수 필드는 관리자 입력값, 템플릿 기본값, 직원 기록(`source: employee.joinDate`) 중 하나로 채워져야 합니다. 서명자가 채우는 필드는 보지 않습니다
 - 도장은 요청의 `companySealId`, 없으면 첫 템플릿의 기본 도장을 씁니다. 둘 다 없으면 위반입니다
+- 도장은 요청한 회사의 지우지 않은 도장이어야 합니다. 다른 회사 도장 ID는 초안 저장과 발송 모두에서 422 `ESIGN_REQUEST_INVALID`(`companySealId` `NOT_FOUND`)입니다
 
 ### 엔드포인트
 
@@ -343,7 +344,7 @@ GET /document-forms/{documentFormCode}/file
 | 서명자 흐름 (`GET /esign-links/{token}`, `:verify`, `:complete`) | 구현, HTTP 테스트. 서명 이미지는 본문 대신 가짜 파일 ID로 받습니다. 서명자용 문서 조회·서명 업로드·파일 다운로드는 미구현 |
 | 제증명 (`GET/POST /certificate-issuances`, `GET /{id}`, `:send`, `:void`) | 구현, HTTP 테스트 |
 | 템플릿 조회 (`GET /esign-templates`, `GET /esign-templates/{id}`) | 구현(기본 템플릿 5종) |
-| 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만) |
+| 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만). 도장은 회사 확인용 저장소(`CompanySealRepository`, 데모 회사 도장 하나)만 있고 API는 없습니다 |
 | 기한 만료 스케줄러 | 미구현. 저장 상태는 바꾸지 않고 읽을 때 만료를 반영합니다 |
 | 이벤트 outbox, 멱등성 키 재응답 | 미구현. `DocumentEvents.layerMemory`가 이벤트를 메모리에 모읍니다 |
 

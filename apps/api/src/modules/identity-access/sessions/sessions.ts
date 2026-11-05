@@ -2,7 +2,7 @@ import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Clock, Context, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
-import { AccessTokens } from '../access-tokens.ts'
+import { AccessTokens, hashAccessToken } from '../access-tokens.ts'
 import type { AccessibleCompany } from '../access/actor-directory.ts'
 import { ActorDirectory } from '../access/actor-directory.ts'
 import { verifyPassword } from '../accounts/password-hash.ts'
@@ -18,6 +18,9 @@ import type { SessionGrant, SessionRecord, SessionRevocation } from './session.t
 
 /** access token 수명(초)입니다. `AccessTokens.layerExpiring`에 같은 값을 넣습니다. */
 export const ACCESS_TOKEN_TTL_SECONDS = 600
+
+/** onboarding token(회사 등록용) 수명(초)입니다. 세션이 먼저 끝나면 그때 끝납니다. refresh하면 새로 받습니다. */
+export const ONBOARDING_TOKEN_TTL_SECONDS = 3600
 
 /** `staySignedIn` 없이 로그인한 세션의 수명(초)입니다. */
 export const SHORT_SESSION_SECONDS = 86_400
@@ -97,13 +100,21 @@ export class Sessions extends Context.Service<
         const companies = yield* directory.companiesOf(user.id)
         const chosen = chooseCompany(companies, requested, user.lastCompanyId)
         if (chosen === 'NOT_FOUND') return yield* new CompanyNotFound({})
-        if (session.accessToken !== undefined) yield* tokens.revoke(session.accessToken)
+        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
 
         const summaries = companies.map(toCompanySummary)
         if (chosen === undefined) {
-          const { accessToken: _, companyId: __, ...rest } = session
-          const onboardingToken = session.onboardingToken ?? randomSecret()
-          yield* sessions.save({ ...rest, onboardingToken })
+          const { accessTokenHash: _, companyId: __, ...rest } = session
+          const onboardingToken = randomSecret()
+          const expiresAt = Math.min(
+            (yield* Clock.currentTimeMillis) + ONBOARDING_TOKEN_TTL_SECONDS * 1000,
+            Date.parse(session.expiresAt),
+          )
+          yield* sessions.save({
+            ...rest,
+            onboardingTokenHash: sha256(onboardingToken),
+            onboardingTokenExpiresAt: new Date(expiresAt).toISOString(),
+          })
           const grant: SessionGrant = { onboardingToken, user: toUserProfile(user), companies: summaries }
           return { grant }
         }
@@ -111,8 +122,12 @@ export class Sessions extends Context.Service<
         const resolved = yield* directory.resolve(user.id, chosen.company.id)
         if (Option.isNone(resolved)) return yield* new CompanyNotFound({})
         const accessToken = yield* tokens.issue(resolved.value.actor)
-        const { onboardingToken: _, ...rest } = session
-        const next: SessionRecord = { ...rest, companyId: chosen.company.id, accessToken }
+        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, ...rest } = session
+        const next: SessionRecord = {
+          ...rest,
+          companyId: chosen.company.id,
+          accessTokenHash: hashAccessToken(accessToken),
+        }
         yield* sessions.save(next)
         if (user.lastCompanyId !== chosen.company.id) yield* users.save({ ...user, lastCompanyId: chosen.company.id })
         const grant: SessionGrant = {
@@ -228,8 +243,8 @@ export class Sessions extends Context.Service<
       })
 
       const revoke = Effect.fn('Sessions.revoke')(function* (session: SessionRecord, reason: SessionRevocation) {
-        if (session.accessToken !== undefined) yield* tokens.revoke(session.accessToken)
-        const { accessToken: _, onboardingToken: __, ...rest } = session
+        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
+        const { accessTokenHash: _, onboardingTokenHash: __, onboardingTokenExpiresAt: ___, ...rest } = session
         yield* sessions.save({ ...rest, revokedAt: yield* nowIso, revokedReason: reason })
       })
 
@@ -253,16 +268,26 @@ export class Sessions extends Context.Service<
         companyId?: Id<'company'>,
       ) {
         for (const session of yield* sessions.listActiveByUser(userId)) {
-          if (session.accessToken === undefined) continue
+          if (session.accessTokenHash === undefined) continue
           if (companyId !== undefined && session.companyId !== companyId) continue
-          yield* tokens.revoke(session.accessToken)
-          const { accessToken: _, ...rest } = session
+          yield* tokens.revokeHash(session.accessTokenHash)
+          const { accessTokenHash: _, ...rest } = session
           yield* sessions.save(rest)
         }
       })
 
-      const onboardingUser = (token: string) =>
-        sessions.findByOnboardingToken(token).pipe(Effect.map(Option.map((session) => session.userId)))
+      /** 해시가 같고, 세션과 토큰이 모두 살아 있을 때만 사용자를 돌려줍니다. */
+      const onboardingUser = Effect.fn('Sessions.onboardingUser')(function* (token: string) {
+        const found = yield* sessions.findByOnboardingTokenHash(sha256(token))
+        if (Option.isNone(found)) return Option.none<Id<'user'>>()
+        const now = yield* nowIso
+        const session = found.value
+        const expired =
+          session.expiresAt <= now ||
+          session.onboardingTokenExpiresAt === undefined ||
+          session.onboardingTokenExpiresAt <= now
+        return expired ? Option.none<Id<'user'>>() : Option.some(session.userId)
+      })
 
       return Sessions.of({ signIn, signInDemo, open, refresh, signOut, revokeAll, invalidateAccess, onboardingUser })
     }),

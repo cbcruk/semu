@@ -15,10 +15,12 @@ export interface SessionRecord {
   refreshSecretHash: string
   /** 이미 회전해 버린 refresh token 비밀의 해시입니다. 다시 오면 탈취로 보고 세션을 폐기합니다. */
   rotatedSecretHashes: ReadonlyArray<string>
-  /** 마지막으로 발급한 access token입니다. 회전·전환·로그아웃 때 폐기합니다. */
-  accessToken?: string
-  /** 회사가 없는 사용자가 회사를 등록할 때만 쓰는 토큰입니다. */
-  onboardingToken?: string
+  /** 마지막으로 발급한 access token의 SHA-256입니다. 회전·전환·로그아웃 때 이 해시로 폐기합니다. 원문은 저장하지 않습니다. */
+  accessTokenHash?: string
+  /** 회사가 없는 사용자가 회사를 등록할 때만 쓰는 토큰의 SHA-256입니다. 원문은 저장하지 않습니다. */
+  onboardingTokenHash?: string
+  /** onboarding token이 만료되는 시각입니다. 세션 만료보다 늦지 않습니다. */
+  onboardingTokenExpiresAt?: string
   staySignedIn: boolean
   createdAt: string
   expiresAt: string

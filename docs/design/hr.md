@@ -317,7 +317,7 @@ GET    /reference/document-categories
 
 [compliance.md](compliance.md#개인정보-최소-노출)를 따릅니다.
 
-- 주민등록번호·외국인등록번호·여권번호·계좌번호는 `PersonalDataCipher`(AES-256-GCM, 키는 KMS)로 암호화하고, 중복 판정은 회사와 무관한 HMAC 키로 만든 `registrationNumberHash`로 합니다. 암호문은 매번 달라 비교할 수 없고, 평문 해시는 13자리 공간이라 사전 공격에 약하기 때문입니다
+- 주민등록번호·외국인등록번호·여권번호·계좌번호는 `PersonalDataCipher`(AES-256-GCM, 키는 서버 데이터 키에서 HKDF로 파생, 운영은 KMS가 데이터 키를 보관)로 암호화하고, 중복 판정은 회사와 무관한 HMAC 키로 만든 `registrationNumberHash`로 합니다. 암호문은 매번 달라 비교할 수 없고, 평문 해시는 13자리 공간이라 사전 공격에 약하기 때문입니다
 - 응답은 `registrationNumberMasked`(`900101-1******`, 여권은 끝 3자리만), `accountNumberMasked`(끝 4자리)만 넣습니다
 - 원문은 `GET …/registration-number`, `GET …/account-number`로만 주고 `X-Access-Reason`을 필수로 받아 열람 기록(`PersonalDataAccessLog`)을 남깁니다. 권한은 `employee:reveal-rrn`, `employee:reveal-account`로 따로 둡니다
 - 생년월일은 주민등록번호에서 파생하고(7번째 자리로 세기 판정), 여권이면 입력을 받습니다
@@ -437,7 +437,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 ## 구현 상태
 
-`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(SQLite·outbox 미연결, [review.md](review.md#결정) D1), 개인정보 암호화는 결정적인 가짜(`PersonalDataCipher.layerFake`)입니다. `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
+`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(SQLite·outbox 미연결, [review.md](review.md#결정) D1), 개인정보 암호화는 서버(`SqliteLive`)에서 `PersonalDataCipher.layerAesGcm`(AES-256-GCM 암호화 + HMAC-SHA256 중복 판정 해시)이고, 테스트와 `HrMemoryLive`만 결정적인 가짜(`PersonalDataCipher.layerFake`)를 씁니다. 데모 급여계약 계좌번호도 그 환경의 암호화로 시드합니다 ([compliance.md](compliance.md#개인정보-최소-노출)). `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
 
 | 영역 | 상태 |
 |---|---|

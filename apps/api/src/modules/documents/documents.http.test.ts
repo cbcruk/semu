@@ -96,6 +96,24 @@ describe('e-sign requests', () => {
     expect(resent.body).toMatchObject({ status: 'PENDING' })
   })
 
+  it("refuses another company's seal", async () => {
+    const created = await app.json('POST', '/esign-requests', {
+      token: 'other-company',
+      body: {
+        title: '2026 근로계약',
+        recipient: { name: '김다른', email: 'kim@example.com' },
+        templateIds: [EMPLOYMENT_CONTRACT],
+        companySealId: SEAL,
+      },
+    })
+
+    expect(created.status).toBe(422)
+    expect(created.body).toMatchObject({
+      code: 'ESIGN_REQUEST_INVALID',
+      violations: [{ field: 'companySealId', code: 'NOT_FOUND' }],
+    })
+  })
+
   it('marks a failed mail as SEND_FAILED', async () => {
     const employeeId = await hire({ email: 'fail@example.com' })
     const created = await draft(employeeId)

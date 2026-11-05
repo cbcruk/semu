@@ -3,6 +3,7 @@ import { DEMO_COMPANY_IDS, DEMO_USER_IDS } from '../identity-access/identity-acc
 import type { CertificateRecord } from './certificates/certificate.ts'
 import type { CertificateCompany } from './certificates/certificate-eligibility.types.ts'
 import { DEMO_VAULT_KEY, sealSecret } from './credentials/credential-vault.ts'
+import type { SealedSecret, SecretFields } from './credentials/credential-vault.ts'
 import type { DelegationRecord } from './hometax-delegations/hometax-delegation.ts'
 import type { IntegrationRecord } from './integrations/integration.ts'
 import { hashChannelToken } from './messenger-channels/messenger-channel.ts'
@@ -26,6 +27,11 @@ export const DEMO_CHANNEL_TOKENS = { valid: 'demo-kakao-token', used: 'demo-used
 
 const CREATED_AT = '2026-01-02T00:00:00.000Z'
 
+/** 데모 자격 증명을 봉하는 함수입니다. 저장소를 만들 때 그 환경의 금고를 넘깁니다. 기본값은 테스트용 고정 키입니다. */
+export type DemoSeal = (fields: SecretFields) => SealedSecret
+
+const sealWithDemoKey: DemoSeal = (fields) => sealSecret(DEMO_VAULT_KEY, fields)
+
 /** 인증서 명의 확인에 쓰는 데모 회사 정보입니다. Identity & Access의 데모 회사와 같습니다. */
 export function demoCompanyProfiles(): Array<readonly [Id<'company'>, CertificateCompany]> {
   const profile = (businessNumber: string, businessType: CertificateCompany['businessType']): CertificateCompany => ({
@@ -42,7 +48,7 @@ export function demoCompanyProfiles(): Array<readonly [Id<'company'>, Certificat
 }
 
 /** 법인의 사업자 범용 인증서입니다. */
-export function demoCertificates(): CertificateRecord[] {
+export function demoCertificates(seal: DemoSeal = sealWithDemoKey): CertificateRecord[] {
   return [
     {
       id: DEMO_INTEGRATION_IDS.certificate,
@@ -56,7 +62,7 @@ export function demoCertificates(): CertificateRecord[] {
       issuedOn: '2026-01-02',
       expiresOn: '2099-12-31',
       storedStatus: 'ACTIVE',
-      secret: sealSecret(DEMO_VAULT_KEY, { bundle: 'demo-bundle', signPassword: DEMO_SIGN_PASSWORD }),
+      secret: seal({ bundle: 'demo-bundle', signPassword: DEMO_SIGN_PASSWORD }),
       registeredBy: DEMO_USER_IDS.owner,
       registeredAt: CREATED_AT,
     },
@@ -64,7 +70,7 @@ export function demoCertificates(): CertificateRecord[] {
 }
 
 /** 법인의 홈택스 ID 연동과 은행 ID 연동입니다. */
-export function demoIntegrations(): IntegrationRecord[] {
+export function demoIntegrations(seal: DemoSeal = sealWithDemoKey): IntegrationRecord[] {
   return [
     {
       id: DEMO_INTEGRATION_IDS.hometax,
@@ -73,7 +79,7 @@ export function demoIntegrations(): IntegrationRecord[] {
       authMethod: 'ID_PASSWORD',
       isCorporate: true,
       accountId: 'semu-hometax',
-      credential: sealSecret(DEMO_VAULT_KEY, { password: 'hometax-1234' }),
+      credential: seal({ password: 'hometax-1234' }),
       items: [],
       canIssueTaxInvoice: false,
       usableForTaxFiling: true,
@@ -88,7 +94,7 @@ export function demoIntegrations(): IntegrationRecord[] {
       authMethod: 'ID_PASSWORD',
       isCorporate: true,
       accountId: 'semu-bank',
-      credential: sealSecret(DEMO_VAULT_KEY, { password: 'bank-1234' }),
+      credential: seal({ password: 'bank-1234' }),
       items: [
         {
           key: '004-1',
