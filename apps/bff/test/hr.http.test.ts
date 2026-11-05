@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DEMO_COMPANY_IDS, makeHarness } from './legacy-client.ts'
+import { DEMO_COMPANY_IDS, makeHarness, PUBLIC_BASE_URL } from './legacy-client.ts'
 import type { Harness, LegacyClient } from './legacy-client.ts'
 
 const CORPORATION = `/api/company/${DEMO_COMPANY_IDS.corporation}/employment/wage-employees`
@@ -72,11 +72,11 @@ describe('GET …/employment/wage-employees/', () => {
 
     expect(first.count).toBe(3)
     expect(first.results.map((row: { name: string }) => row.name)).toEqual(['김세무', '박하나'])
-    expect(first.next).toBe(`http://localhost${CORPORATION}/?ordering=name&limit=2&offset=2`)
+    expect(first.next).toBe(`${PUBLIC_BASE_URL}${CORPORATION}/?ordering=name&limit=2&offset=2`)
     expect(first.previous).toBeNull()
     expect(second.results.map((row: { name: string }) => row.name)).toEqual(['최둘'])
     expect(second.next).toBeNull()
-    expect(second.previous).toBe(`http://localhost${CORPORATION}/?ordering=name&limit=2&offset=0`)
+    expect(second.previous).toBe(`${PUBLIC_BASE_URL}${CORPORATION}/?ordering=name&limit=2&offset=0`)
   })
 
   it('filters by the legacy integer status codes and search', async () => {
@@ -99,7 +99,7 @@ describe('GET …/employment/wage-employees/', () => {
     expect(await response.json()).toEqual({
       detail: 'Request validation failed.',
       code: 'VALIDATION_FAILED',
-      errors: { status: ['Unknown status.'] },
+      errors: { status: ['Use status codes 1-5 or PRE_JOINED, WORKING, JOINED, LEAVE, RESIGNED.'] },
     })
   })
 
@@ -168,5 +168,65 @@ describe('GET …/employment/wage-employees/:employeeId/', () => {
 
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({ detail: 'Employee not found.', code: 'NOT_FOUND' })
+  })
+})
+
+describe('legacy list search and ordering', () => {
+  it('finds employees by department name', async () => {
+    await hire('박하나', '900101-1234567')
+
+    const response = await client.request('GET', `${CORPORATION}/?search=경영지원`)
+
+    expect((await response.json()).results.map((row: { name: string }) => row.name)).toEqual(['김세무'])
+  })
+
+  it('sorts by name without ordering and by several keys with ordering', async () => {
+    await hire('가나다', '900101-1234567', '2099-01-02')
+    await hire('하하', '910202-2234567')
+
+    const byDefault = await (await client.request('GET', `${CORPORATION}/`)).json()
+    const byStatus = await (await client.request('GET', `${CORPORATION}/?ordering=-status,name`)).json()
+
+    expect(byDefault.results.map((row: { name: string }) => row.name)).toEqual(['가나다', '김세무', '하하'])
+    expect(byStatus.results.map((row: { name: string }) => row.name)).toEqual(['김세무', '하하', '가나다'])
+  })
+})
+
+describe('upstream limits', () => {
+  it('stops reading a cursor list that never ends', async () => {
+    const endless = makeHarness({
+      maxUpstreamPages: 3,
+      intercept: async (request, next) => {
+        const url = new URL(request.url)
+        if (url.pathname !== '/v1/employees') return next(request)
+        const page = Number(url.searchParams.get('cursor') ?? '0') + 1
+        return Response.json({ items: [], nextCursor: String(page) })
+      },
+    })
+    const legacy = endless.client()
+    await legacy.login('owner@semu.example')
+
+    const response = await legacy.request('GET', `${CORPORATION}/`)
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ code: 'UPSTREAM_LIST_TOO_LARGE' })
+    await endless.dispose()
+  })
+
+  it('stops when the new API repeats a cursor', async () => {
+    const looping = makeHarness({
+      intercept: async (request, next) =>
+        new URL(request.url).pathname === '/v1/employees'
+          ? Response.json({ items: [], nextCursor: 'same' })
+          : next(request),
+    })
+    const legacy = looping.client()
+    await legacy.login('owner@semu.example')
+
+    const response = await legacy.request('GET', `${CORPORATION}/count-by-status/`)
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ code: 'UPSTREAM_CURSOR_REPEATED' })
+    await looping.dispose()
   })
 })

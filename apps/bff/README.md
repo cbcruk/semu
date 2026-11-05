@@ -24,3 +24,11 @@ pnpm test
 pnpm test:sqlite   # 새 API를 SQLite 저장소로
 pnpm format        # 또는 format:check
 ```
+
+| 환경 변수 | 기본 | 뜻 |
+|---|---|---|
+| `PORT` | `3100` | BFF 포트 |
+| `SEMU_API_URL` | `http://localhost:3000` | 새 API 주소 |
+| `BFF_PUBLIC_URL` | `http://localhost:$PORT` | 현행 클라이언트가 부르는 공개 주소. DRF 링크에 씁니다 |
+| `BFF_ALLOWED_ORIGINS` | `BFF_PUBLIC_URL`의 출처 | 로그인을 받는 브라우저 출처(쉼표로 여럿) |
+| `BFF_UPSTREAM_TIMEOUT_MS` | `10000` | 새 API 요청 하나의 제한 시간 |

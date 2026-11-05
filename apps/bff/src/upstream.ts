@@ -1,5 +1,5 @@
 import { cookiePair } from './cookies.ts'
-import { fromProblem, legacyErrors } from './legacy-error.ts'
+import { fromProblem, LegacyError, legacyErrors } from './legacy-error.ts'
 import { randomToken, SessionLocks, sessionKey, sessionLifetimeMs } from './sessions.ts'
 import type { BffSession, SessionStore } from './sessions.ts'
 import type { SessionGrant } from './upstream.types.ts'
@@ -12,7 +12,12 @@ export interface UpstreamOptions {
   /** 예: `http://localhost:3000`. 끝 슬래시 없이 씁니다. */
   baseUrl: string
   fetch: (request: Request) => Promise<Response>
+  /** 요청 하나를 기다리는 최대 시간(ms)입니다. 넘으면 현행 504로 응답합니다. 기본 10초입니다. */
+  timeoutMs?: number
 }
+
+/** 기본 업스트림 제한 시간입니다. */
+export const DEFAULT_UPSTREAM_TIMEOUT_MS = 10_000
 
 /** BFF 라우트가 공유하는 의존성입니다. */
 export interface BffDeps {
@@ -21,6 +26,12 @@ export interface BffDeps {
   locks: SessionLocks
   /** 현재 시각(ms)입니다. 테스트가 토큰 만료를 흉내 낼 때 바꿉니다. */
   now: () => number
+  /** 현행 응답의 절대 링크(`next`, `previous`)를 만드는 공개 주소입니다. `Host` 헤더를 믿지 않습니다. 끝 슬래시 없이 씁니다. */
+  publicBaseUrl: string
+  /** 커서 목록을 끝까지 읽을 때 따라가는 최대 쪽 수입니다. */
+  maxUpstreamPages: number
+  /** 로그인을 받는 브라우저 출처입니다. */
+  allowedOrigins: ReadonlySet<string>
 }
 
 /** access token 만료 몇 초 전에 미리 갱신할지입니다. 요청이 오가는 사이에 만료되지 않게 합니다. */
@@ -33,17 +44,49 @@ interface UpstreamRequest {
   headers?: Record<string, string>
 }
 
-/** 새 API에 요청 하나를 보냅니다. */
-export function send(deps: BffDeps, method: string, path: string, options: UpstreamRequest = {}): Promise<Response> {
+/**
+ * 새 API에 요청 하나를 보냅니다.
+ *
+ * 제한 시간이 지나면 요청을 취소(`AbortSignal`)하고 현행 504 `GATEWAY_TIMEOUT`을 던집니다. 업스트림이 신호를 무시해도
+ * 기다림은 끝나므로, 이 호출을 감싼 세션 자물쇠도 풀립니다. 연결 실패는 502 `BAD_GATEWAY`입니다.
+ */
+export async function send(
+  deps: BffDeps,
+  method: string,
+  path: string,
+  options: UpstreamRequest = {},
+): Promise<Response> {
   const headers = new Headers(options.headers)
   if (options.token !== undefined) headers.set('authorization', `Bearer ${options.token}`)
   if (options.cookie !== undefined) headers.set('cookie', options.cookie)
-  const init: RequestInit = { method, headers }
+  const controller = new AbortController()
+  const init: RequestInit = { method, headers, signal: controller.signal }
   if (options.body !== undefined) {
     headers.set('content-type', 'application/json')
     init.body = JSON.stringify(options.body)
   }
-  return deps.upstream.fetch(new Request(`${deps.upstream.baseUrl}${path}`, init))
+  const timeoutMs = deps.upstream.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(upstreamTimeout())
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([deps.upstream.fetch(new Request(`${deps.upstream.baseUrl}${path}`, init)), timedOut])
+  } catch (error) {
+    if (error instanceof LegacyError) throw error
+    if (controller.signal.aborted) throw upstreamTimeout()
+    console.error(error)
+    throw new LegacyError(502, { detail: 'The upstream API is unavailable.', code: 'BAD_GATEWAY' })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function upstreamTimeout(): LegacyError {
+  return new LegacyError(504, { detail: 'The upstream API did not respond in time.', code: 'GATEWAY_TIMEOUT' })
 }
 
 /** 성공 응답의 본문을 읽고, 실패면 현행 오류로 바꿔 던집니다. */
@@ -109,11 +152,19 @@ export async function signIn(
   return { token, session }
 }
 
-/** 새 API 세션을 끝내고 BFF 세션을 지웁니다. 새 API가 이미 끝낸 세션이어도 성공으로 봅니다. */
+/**
+ * 새 API 세션을 끝내고 BFF 세션을 지웁니다. 새 API가 이미 끝낸 세션이거나 응답하지 않아도 BFF 세션은 지웁니다.
+ * 새 API 세션은 refresh 쿠키 수명이 지나면 스스로 끝납니다.
+ */
 export async function signOut(deps: BffDeps, session: BffSession): Promise<void> {
   await deps.locks.exclusive(session.id, async () => {
-    await send(deps, 'DELETE', '/v1/auth/sessions/current', { cookie: session.refreshCookie })
-    await deps.store.delete(session.id)
+    try {
+      await send(deps, 'DELETE', '/v1/auth/sessions/current', { cookie: session.refreshCookie })
+    } catch (error) {
+      if (!(error instanceof LegacyError)) throw error
+    } finally {
+      await deps.store.delete(session.id)
+    }
   })
 }
 
@@ -153,6 +204,8 @@ export function ensureAccess(
       await deps.store.delete(sessionId)
       throw legacyErrors.unauthenticated({ endsSession: true })
     }
+    // 새 ID 형식이 아니면 새 API는 400, 접근할 수 없으면 404입니다. 현행은 둘 다 404 "Company not found."였습니다.
+    if (switching && (response.status === 400 || response.status === 404)) throw legacyErrors.notFound('Company')
     const grant = await readJson<SessionGrant>(response)
     const next = applyGrant(session, grant, cookiePair(response.headers.get('set-cookie')), deps.now())
     await deps.store.save(next)

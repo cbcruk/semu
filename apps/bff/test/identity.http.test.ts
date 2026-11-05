@@ -238,3 +238,127 @@ describe('unknown legacy routes', () => {
     expect(await response.json()).toEqual({ detail: 'Not found.', code: 'NOT_FOUND' })
   })
 })
+
+describe('login CSRF', () => {
+  it('rejects a login body that is not application/json with 415', async () => {
+    const response = await client.request('POST', '/api/login/', {
+      headers: { 'content-type': 'text/plain' },
+      body: '{"email":"owner@semu.example","password":"semu1234"}',
+    })
+
+    expect(response.status).toBe(415)
+    expect(await response.json()).toEqual({
+      detail: 'Send the body as application/json.',
+      code: 'UNSUPPORTED_MEDIA_TYPE',
+    })
+    expect(client.cookies.has('sessionid')).toBe(false)
+  })
+
+  it.each([
+    ['an origin that is not allowed', { origin: 'https://evil.example' }],
+    ['a cross-site fetch without Origin', { 'sec-fetch-site': 'cross-site' }],
+  ])('rejects a login from %s', async (_, headers: Record<string, string>) => {
+    const response = await harness.bff.handle(
+      new Request('http://10.0.0.7:3100/api/login/', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ email: 'owner@semu.example', password: DEMO_PASSWORD }),
+      }),
+    )
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ detail: 'Sign-in from this origin is not allowed.', code: 'CSRF_FAILED' })
+    expect(response.headers.getSetCookie()).toEqual([])
+  })
+
+  it('ends the previous BFF and new API session when the browser signs in again', async () => {
+    await client.login('owner@semu.example')
+    const previous = client.cookies.get('sessionid') ?? ''
+    const previousSession = await harness.bff.store.get(sessionKey(previous))
+
+    await client.login('member@semu.example')
+
+    expect(await harness.bff.store.get(sessionKey(previous))).toBeUndefined()
+    const refresh = await harness.api.request('POST', '/v1/auth/sessions:refresh', {
+      cookie: previousSession?.refreshCookie,
+    })
+    expect(refresh.status).toBe(401)
+    expect(await (await client.request('GET', '/api/member/profile/')).json()).toMatchObject({
+      email: 'member@semu.example',
+    })
+  })
+})
+
+describe('upstream failures', () => {
+  it('answers a hung upstream with the legacy 504 and releases the session lock', async () => {
+    let hang = false
+    const slow = makeHarness({
+      timeoutMs: 50,
+      intercept: (request, next) =>
+        hang && new URL(request.url).pathname === '/v1/companies/current' ? new Promise(() => {}) : next(request),
+    })
+    const legacy = slow.client()
+    await legacy.login('owner@semu.example')
+    hang = true
+
+    const response = await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.corporation}/`)
+
+    expect(response.status).toBe(504)
+    expect(await response.json()).toEqual({
+      detail: 'The upstream API did not respond in time.',
+      code: 'GATEWAY_TIMEOUT',
+    })
+    hang = false
+    expect((await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.free}/`)).status).toBe(200)
+    await slow.dispose()
+  })
+
+  it('still clears the legacy session when the upstream sign-out fails', async () => {
+    const broken = makeHarness({
+      intercept: (request, next) =>
+        request.method === 'DELETE' ? Promise.reject(new TypeError('connection refused')) : next(request),
+    })
+    const legacy = broken.client()
+    await legacy.login('owner@semu.example')
+    const token = legacy.cookies.get('sessionid') ?? ''
+
+    const response = await legacy.request('POST', '/api/logout/')
+
+    expect(response.status).toBe(204)
+    expect(legacy.cookies.size).toBe(0)
+    expect(await broken.bff.store.get(sessionKey(token))).toBeUndefined()
+    await broken.dispose()
+  })
+})
+
+describe('malformed legacy paths', () => {
+  it('answers bad percent-encoding with 404 instead of 500', async () => {
+    await client.login('owner@semu.example')
+
+    const response = await client.request('GET', '/api/company/%E0%A4%A/')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ detail: 'Not found.', code: 'NOT_FOUND' })
+  })
+
+  it('answers a company ID that is not a new ID with the legacy company 404', async () => {
+    await client.login('owner@semu.example')
+
+    const response = await client.request('GET', '/api/company/345/')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ detail: 'Company not found.', code: 'NOT_FOUND' })
+  })
+})
+
+describe('expired sessions', () => {
+  it('are swept from the store', async () => {
+    await client.login('owner@semu.example')
+    const token = client.cookies.get('sessionid') ?? ''
+
+    harness.advance(2 * 24 * 60 * 60 * 1000)
+    await harness.client().request('GET', '/api/user/me/')
+
+    expect(await harness.bff.store.get(sessionKey(token))).toBeUndefined()
+  })
+})

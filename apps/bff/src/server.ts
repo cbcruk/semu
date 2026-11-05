@@ -7,7 +7,21 @@ const port = Number(process.env['PORT'] ?? 3100)
 /** 새 API 주소입니다. BFF는 이 주소의 `/v1`만 부릅니다. */
 const apiUrl = (process.env['SEMU_API_URL'] ?? 'http://localhost:3000').replace(/\/$/, '')
 
-const bff = createBff({ upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request) } })
+/** 현행 클라이언트가 BFF를 부르는 공개 주소입니다. DRF `next`·`previous` 링크를 이 주소로 만듭니다. */
+const publicBaseUrl = process.env['BFF_PUBLIC_URL'] ?? `http://localhost:${port}`
+/** 로그인을 받는 브라우저 출처입니다. 쉼표로 여럿. 비우면 `BFF_PUBLIC_URL`의 출처입니다. */
+const allowedOrigins = (process.env['BFF_ALLOWED_ORIGINS'] ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter((origin) => origin !== '')
+/** 새 API 요청 하나의 제한 시간(ms)입니다. */
+const timeoutMs = Number(process.env['BFF_UPSTREAM_TIMEOUT_MS'] ?? 10_000)
+
+const bff = createBff({
+  upstream: { baseUrl: apiUrl, fetch: (request) => fetch(request), timeoutMs },
+  publicBaseUrl,
+  allowedOrigins,
+})
 
 /** Node 요청을 웹 표준 `Request`로 바꿉니다. */
 function toRequest(incoming: IncomingMessage): Request {

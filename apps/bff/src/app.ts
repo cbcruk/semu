@@ -4,7 +4,7 @@ import { identityRoutes } from './identity/identity.routes.ts'
 import { LegacyError, legacyErrors } from './legacy-error.ts'
 import { makeRouter } from './router.ts'
 import type { Route } from './router.ts'
-import { memorySessionStore, SessionLocks, sessionKey } from './sessions.ts'
+import { memorySessionStore, sameSecret, SessionLocks, sessionKey } from './sessions.ts'
 import type { SessionStore } from './sessions.ts'
 import type { BffDeps, UpstreamOptions } from './upstream.ts'
 
@@ -13,11 +13,25 @@ export const ROUTES: readonly Route[] = [...identityRoutes, ...hrRoutes]
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
+/** 만료된 세션을 쓸어 내는 간격입니다. 요청이 올 때 지난 간격이면 한 번 씁니다. */
+const SWEEP_INTERVAL_MS = 60_000
+
+/** 커서 목록을 끝까지 읽을 때의 기본 최대 쪽 수입니다. 200개씩이면 직원 10,000명입니다. */
+const DEFAULT_MAX_UPSTREAM_PAGES = 50
+
 /** BFF 설정입니다. */
 export interface BffOptions {
   upstream: UpstreamOptions
+  /** 현행 클라이언트가 BFF를 부르는 공개 주소입니다. 예: `https://api.example.com`. DRF 링크를 이 주소로 만듭니다. */
+  publicBaseUrl: string
+  /**
+   * 로그인을 받는 브라우저 출처(`Origin`)입니다. 비우면 `publicBaseUrl`의 출처 하나입니다.
+   * 로그인에는 CSRF 토큰이 아직 없으므로, 다른 사이트가 피해자를 공격자 계정으로 로그인시키지 못하게 출처로 막습니다.
+   */
+  allowedOrigins?: readonly string[]
   store?: SessionStore
   now?: () => number
+  maxUpstreamPages?: number
 }
 
 /** 현행 와이어를 받는 BFF입니다. 웹 표준 `Request` → `Response` 핸들러 하나입니다. */
@@ -36,7 +50,7 @@ export interface Bff {
  *
  * @example
  * ```ts
- * const bff = createBff({ upstream: { baseUrl: 'http://localhost:3000', fetch } })
+ * const bff = createBff({ upstream: { baseUrl: 'http://localhost:3000', fetch }, publicBaseUrl: 'http://localhost:3100' })
  * const response = await bff.handle(new Request('http://localhost/api/user/me/'))
  * ```
  */
@@ -46,11 +60,26 @@ export function createBff(options: BffOptions): Bff {
     store: options.store ?? memorySessionStore(),
     locks: new SessionLocks(),
     now: options.now ?? Date.now,
+    publicBaseUrl: options.publicBaseUrl.replace(/\/$/, ''),
+    allowedOrigins: new Set(
+      options.allowedOrigins === undefined || options.allowedOrigins.length === 0
+        ? [new URL(options.publicBaseUrl).origin]
+        : options.allowedOrigins.map((origin) => new URL(origin).origin),
+    ),
+    maxUpstreamPages: options.maxUpstreamPages ?? DEFAULT_MAX_UPSTREAM_PAGES,
   }
   const route = makeRouter(ROUTES)
+  let lastSweep = deps.now()
+  const sweepIfDue = async (): Promise<void> => {
+    const now = deps.now()
+    if (now - lastSweep < SWEEP_INTERVAL_MS) return
+    lastSweep = now
+    await deps.store.sweep(now)
+  }
 
   const handle = async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
+    await sweepIfDue()
     const match = route(request.method, url.pathname)
     if (match === undefined) return legacyErrors.notFound().toResponse()
     try {
@@ -88,8 +117,9 @@ async function authenticate(deps: BffDeps, request: Request): Promise<string> {
   }
   if (!SAFE_METHODS.has(request.method)) {
     const sent = CSRF_HEADERS.map((name) => request.headers.get(name)).find((value) => value !== null)
-    const echoed = CSRF_COOKIES.some((name) => cookies.get(name) === sent)
-    if (sent === undefined || sent !== session.csrfToken || !echoed) throw legacyErrors.csrfFailed()
+    if (sent === undefined || sent === null || !sameSecret(sent, session.csrfToken)) throw legacyErrors.csrfFailed()
+    const echoed = CSRF_COOKIES.some((name) => sameSecret(cookies.get(name) ?? '', sent))
+    if (!echoed) throw legacyErrors.csrfFailed()
   }
   return id
 }

@@ -40,17 +40,39 @@ export interface Harness {
   dispose(): Promise<void>
 }
 
+/** BFF의 공개 주소입니다. DRF 링크가 이 주소로 나옵니다. */
+export const PUBLIC_BASE_URL = 'https://bff.example'
+
+/** 현행 클라이언트 페이지의 출처입니다. 로그인 허용 목록에 있습니다. */
+export const CLIENT_ORIGIN = 'https://app.example'
+
+/** 테스트 BFF 설정입니다. */
+export interface HarnessOptions {
+  /** 새 API로 가는 요청을 가로챕니다. 응답을 늦추거나 바꿀 때 씁니다. `next`는 실제 새 API입니다. */
+  intercept?: (request: Request, next: (request: Request) => Promise<Response>) => Promise<Response>
+  timeoutMs?: number
+  maxUpstreamPages?: number
+}
+
 /**
  * 새 API를 프로세스 안 웹 핸들러로 띄우고, BFF가 그것을 업스트림으로 부르게 합니다.
  *
  * 운영에서는 같은 자리에 `fetch`가 들어갑니다. BFF가 보는 것은 HTTP 요청·응답뿐이라 둘의 차이는 전송 방식뿐입니다.
  */
-export function makeHarness(): Harness {
+export function makeHarness(options: HarnessOptions = {}): Harness {
   const api = makeTestApp()
   let offset = 0
+  const next = (request: Request) => api.handler(request)
   const bff = createBff({
-    upstream: { baseUrl: 'http://api.internal', fetch: (request) => api.handler(request) },
+    upstream: {
+      baseUrl: 'http://api.internal',
+      fetch: (request) => (options.intercept === undefined ? next(request) : options.intercept(request, next)),
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    },
+    publicBaseUrl: PUBLIC_BASE_URL,
+    allowedOrigins: [CLIENT_ORIGIN],
     now: () => Date.now() + offset,
+    ...(options.maxUpstreamPages === undefined ? {} : { maxUpstreamPages: options.maxUpstreamPages }),
   })
   const client = (): LegacyClient => {
     const jar = new Map<string, string>()
@@ -59,12 +81,15 @@ export function makeHarness(): Harness {
       if (jar.size > 0) headers.set('cookie', [...jar].map(([name, value]) => `${name}=${value}`).join('; '))
       const csrf = jar.get('csrftoken')
       if (method !== 'GET' && options.csrf !== false && csrf !== undefined) headers.set('x-csrftoken', csrf)
+      // 브라우저는 쓰기 요청에 페이지 출처를 붙입니다.
+      if (method !== 'GET' && !headers.has('origin')) headers.set('origin', CLIENT_ORIGIN)
       const init: RequestInit = { method, headers }
       if (options.body !== undefined) {
-        headers.set('content-type', 'application/json')
-        init.body = JSON.stringify(options.body)
+        if (!headers.has('content-type')) headers.set('content-type', 'application/json')
+        init.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
       }
-      const response = await bff.handle(new Request(`http://localhost${path}`, init))
+      // 요청이 닿는 내부 주소입니다. DRF 링크는 이 주소가 아니라 `PUBLIC_BASE_URL`로 나와야 합니다.
+      const response = await bff.handle(new Request(`http://10.0.0.7:3100${path}`, init))
       for (const cookie of response.headers.getSetCookie()) {
         const [pair = '', ...attributes] = cookie.split(';')
         const index = pair.indexOf('=')

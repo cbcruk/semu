@@ -26,7 +26,7 @@ export interface Match {
 
 /**
  * 현행 경로 표입니다. `:name`은 경로 변수이고, 현행 Django식 끝 슬래시는 있어도 없어도 됩니다.
- * 앞에 둔 경로가 먼저 맞습니다(`count-by-status`를 `:employeeId`보다 앞에).
+ * 앞에 둔 경로가 먼저 맞습니다(`count-by-status`를 `:employeeId`보다 앞에). 경로 변수를 디코딩하지 못하면 맞지 않은 것으로 봅니다.
  */
 export function makeRouter(routes: readonly Route[]): (method: string, pathname: string) => Match | undefined {
   const compiled = routes.map((route) => {
@@ -43,7 +43,12 @@ export function makeRouter(routes: readonly Route[]): (method: string, pathname:
       const found = pattern.exec(pathname)
       if (found === null) continue
       const params: Record<string, string> = {}
-      names.forEach((name, index) => (params[name] = decodeURIComponent(found[index + 1] ?? '')))
+      try {
+        names.forEach((name, index) => (params[name] = decodeURIComponent(found[index + 1] ?? '')))
+      } catch {
+        // 잘못된 퍼센트 인코딩(`%E0%A4%A`)은 어떤 현행 경로와도 맞지 않습니다. 404로 답합니다.
+        return undefined
+      }
       return { route, params }
     }
     return undefined

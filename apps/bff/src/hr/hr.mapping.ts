@@ -59,7 +59,7 @@ export function organizationNames(units: readonly OrganizationUnit[]): Organizat
  * 현행 근로소득자 목록·상세의 한 행입니다(`wage-employees/`, `wage-employees/:id/`).
  *
  * 새 직원에 없는 필드는 `null`입니다: 영문 이름, 사번, 담당업무, 거주자 여부, 등록 경로,
- * 그리고 근로계약에서 오던 `contract_type`·`contract_end_date`(계약 만료는 `warnings`로 남습니다).
+ * 근로계약에서 오던 `contract_end_date`도 비고, `contract_type`은 현행의 계약 없음 값 `none`입니다(계약 만료는 `warnings`로 남습니다).
  */
 export function toLegacyEmployee(
   employee: Employee,
@@ -97,7 +97,7 @@ export function toLegacyEmployee(
     join_date: employee.joinDate,
     leave_date: employee.resignation?.leaveDate ?? null,
     work_code: null,
-    contract_type: null,
+    contract_type: 'none',
     contract_end_date: null,
     has_warning: warnings.length > 0,
     warnings,
@@ -122,6 +122,9 @@ export interface LegacyEmployeeQuery {
   offset: number
 }
 
+/** 현행 서버와 같은 문구입니다. */
+const STATUS_ERROR = 'Use status codes 1-5 or PRE_JOINED, WORKING, JOINED, LEAVE, RESIGNED.'
+
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 100
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -138,7 +141,7 @@ export function parseEmployeeQuery(params: URLSearchParams): LegacyEmployeeQuery
     statuses = new Set()
     for (const part of status.split(',')) {
       const mapped = STATUS_FILTER[part.trim().toUpperCase()]
-      if (mapped === undefined) throw legacyErrors.invalidField('status', 'Unknown status.')
+      if (mapped === undefined) throw legacyErrors.invalidField('status', STATUS_ERROR)
       for (const value of mapped) statuses.add(value)
     }
   }
@@ -175,13 +178,35 @@ function date(params: URLSearchParams, name: string): string | undefined {
   return value
 }
 
-/** 상태를 뺀 현행 필터(검색·기간·계약 만료)를 적용합니다. 탭 건수는 이 결과로 셉니다. */
-export function filterEmployees(employees: readonly Employee[], query: LegacyEmployeeQuery): Employee[] {
+/** 현행 행의 부서·직위 이름입니다. 검색과 정렬이 씁니다. */
+export interface OrganizationLookup {
+  departments: OrganizationNames
+  positions: OrganizationNames
+}
+
+function departmentName(employee: Employee, organization: OrganizationLookup): string | undefined {
+  return employee.departmentId === undefined ? undefined : organization.departments.get(employee.departmentId)
+}
+
+function positionName(employee: Employee, organization: OrganizationLookup): string | undefined {
+  return employee.positionId === undefined ? undefined : organization.positions.get(employee.positionId)
+}
+
+/**
+ * 상태를 뺀 현행 필터(검색·기간·계약 만료)를 적용합니다. 탭 건수는 이 결과로 셉니다.
+ *
+ * 검색은 현행처럼 이름·부서 이름·직위 이름 중 하나에 들어 있으면 맞습니다. 현행 SQLite `LIKE`처럼 영문 대소문자를 가리지 않습니다.
+ */
+export function filterEmployees(
+  employees: readonly Employee[],
+  query: LegacyEmployeeQuery,
+  organization: OrganizationLookup,
+): Employee[] {
   const search = query.search?.toLowerCase()
   return employees.filter((employee) => {
     if (search !== undefined) {
-      const haystack = [employee.name, employee.email ?? ''].join(' ').toLowerCase()
-      if (!haystack.includes(search)) return false
+      const fields = [employee.name, departmentName(employee, organization), positionName(employee, organization)]
+      if (!fields.some((field) => field !== undefined && field.toLowerCase().includes(search))) return false
     }
     if (query.dateType !== undefined) {
       const value =
@@ -200,24 +225,59 @@ export function filterEmployees(employees: readonly Employee[], query: LegacyEmp
   })
 }
 
-/** 상태 필터와 정렬을 적용합니다. 정렬은 `name`, `join_date`, `leave_date`, `birth_date`와 `-` 접두사를 받습니다. */
-export function selectEmployees(employees: readonly Employee[], query: LegacyEmployeeQuery): Employee[] {
-  const selected = employees.filter((employee) => query.statuses?.has(employee.status) ?? true)
-  const ordering = query.ordering?.trim()
-  if (ordering === undefined || ordering === '') return selected
-  const descending = ordering.startsWith('-')
-  const field = descending ? ordering.slice(1) : ordering
-  const key = SORT_KEYS[field]
-  if (key === undefined) return selected
-  const direction = descending ? -1 : 1
-  return [...selected].sort((a, b) => direction * (key(a) ?? '').localeCompare(key(b) ?? '', 'ko'))
-}
+type SortValue = string | number | undefined
 
-const SORT_KEYS: Record<string, (employee: Employee) => string | undefined> = {
+/** 현행 `ordering` 키 → 정렬 값입니다. 현행 서버의 `ORDER_COLUMNS`와 같은 키입니다. */
+const SORT_KEYS: Record<string, (employee: Employee, organization: OrganizationLookup) => SortValue> = {
   name: (employee) => employee.name,
+  status: (employee) => STATUS[employee.status].code,
+  birth_date: (employee) => employee.birthDate,
   join_date: (employee) => employee.joinDate,
   leave_date: (employee) => employee.resignation?.leaveDate,
-  birth_date: (employee) => employee.birthDate,
+  department: departmentName,
+  position: positionName,
+  /** 새 직원에는 사번이 없어 모두 같은 값입니다. */
+  employee_number: () => undefined,
+  created: (employee) => employee.createdAt,
+}
+
+/** SQLite 정렬과 같게 비교합니다. 값이 없으면(`NULL`) 가장 작고, 문자열은 코드 단위 순서입니다. */
+function compareValues(a: SortValue, b: SortValue): number {
+  if (a === b) return 0
+  if (a === undefined) return -1
+  if (b === undefined) return 1
+  return a < b ? -1 : 1
+}
+
+/**
+ * 상태 필터와 정렬을 적용합니다. 현행 서버와 같이 정렬합니다.
+ *
+ * - `ordering`이 없으면 `name`입니다
+ * - 쉼표로 여러 키를 받고(`-status,name`), `-`는 내림차순, 모르는 키는 건너뜁니다
+ * - 마지막에 ID 오름차순으로 순서를 고정합니다
+ */
+export function selectEmployees(
+  employees: readonly Employee[],
+  query: LegacyEmployeeQuery,
+  organization: OrganizationLookup,
+): Employee[] {
+  const selected = employees.filter((employee) => query.statuses?.has(employee.status) ?? true)
+  const terms = (query.ordering ?? 'name')
+    .split(',')
+    .map((term) => term.trim())
+    .filter((term) => term !== '')
+    .flatMap((term) => {
+      const descending = term.startsWith('-')
+      const key = SORT_KEYS[descending ? term.slice(1) : term]
+      return key === undefined ? [] : [{ key, direction: descending ? -1 : 1 }]
+    })
+  return [...selected].sort((a, b) => {
+    for (const { key, direction } of terms) {
+      const order = compareValues(key(a, organization), key(b, organization))
+      if (order !== 0) return direction * order
+    }
+    return compareValues(a.id, b.id)
+  })
 }
 
 /** 현행 탭 건수(`count-by-status/`)입니다. */
@@ -235,14 +295,19 @@ export function countByStatus(employees: readonly Employee[]): Record<string, nu
   }
 }
 
-/** 현행 DRF 페이지 봉투 `{count, next, previous, results}`입니다. 링크는 요청 URL 기준 절대 주소입니다. */
+/**
+ * 현행 DRF 페이지 봉투 `{count, next, previous, results}`입니다.
+ *
+ * 링크는 설정한 공개 주소(`publicBaseUrl`)에 요청 경로와 쿼리를 붙인 절대 주소입니다. 요청의 `Host` 헤더는 쓰지 않습니다.
+ */
 export function drfPage<A>(
   rows: readonly A[],
   page: { limit: number; offset: number },
-  requestUrl: string,
+  request: { pathname: string; search: string },
+  publicBaseUrl: string,
 ): { count: number; next: string | null; previous: string | null; results: A[] } {
   const link = (offset: number): string => {
-    const url = new URL(requestUrl)
+    const url = new URL(`${request.pathname}${request.search}`, `${publicBaseUrl}/`)
     url.searchParams.set('limit', String(page.limit))
     url.searchParams.set('offset', String(offset))
     return url.toString()

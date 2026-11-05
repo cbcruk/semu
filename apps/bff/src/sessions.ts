@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Plan, UserProfile } from './upstream.types.ts'
 
 /**
@@ -31,6 +32,8 @@ export interface SessionStore {
   get(id: string): Promise<BffSession | undefined>
   save(session: BffSession): Promise<void>
   delete(id: string): Promise<void>
+  /** `expiresAt`이 `now` 이전인 세션을 지웁니다. */
+  sweep(now: number): Promise<void>
 }
 
 /** 메모리 세션 저장소입니다. */
@@ -40,7 +43,17 @@ export function memorySessionStore(): SessionStore {
     get: async (id) => sessions.get(id),
     save: async (session) => void sessions.set(session.id, session),
     delete: async (id) => void sessions.delete(id),
+    sweep: async (now) => {
+      for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id)
+    },
   }
+}
+
+/** 두 비밀을 걸리는 시간으로 내용을 짐작할 수 없게 비교합니다. CSRF 토큰 확인에 씁니다. */
+export function sameSecret(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
 }
 
 /** 추측할 수 없는 URL 안전 토큰입니다. */
@@ -68,13 +81,37 @@ export function sessionLifetimeMs(staySignedIn: boolean): number {
  */
 export class SessionLocks {
   readonly #locks = new Map<string, ReadWriteLock>()
+  /** 지금 비동기 흐름이 쥔 세션 자물쇠입니다. 같은 세션 자물쇠를 안에서 또 잡으면 교착되므로 막습니다. */
+  readonly #held = new AsyncLocalStorage<ReadonlySet<string>>()
 
   shared<A>(sessionId: string, task: () => Promise<A>): Promise<A> {
-    return this.#lock(sessionId).shared(task)
+    this.#assertNotHeld(sessionId)
+    return this.#lock(sessionId).shared(this.#holding(sessionId, task))
   }
 
   exclusive<A>(sessionId: string, task: () => Promise<A>): Promise<A> {
-    return this.#lock(sessionId).exclusive(task)
+    this.#assertNotHeld(sessionId)
+    return this.#lock(sessionId).exclusive(this.#holding(sessionId, task))
+  }
+
+  /**
+   * 같은 세션 자물쇠를 겹쳐 잡지 못하게 합니다. 쓰기 안의 읽기는 자기 쓰기가 끝나기를 기다리고,
+   * 읽기 안의 쓰기는 자기 읽기가 끝나기를 기다려 둘 다 영원히 멈춥니다.
+   *
+   * @throws {Error} 이미 이 세션 자물쇠 안이면. 프로그래밍 오류라 500이 됩니다.
+   */
+  #assertNotHeld(sessionId: string): void {
+    if (this.#held.getStore()?.has(sessionId) === true) {
+      throw new Error(
+        `Session lock for ${sessionId.slice(0, 8)}… is already held by this call; nesting would deadlock.`,
+      )
+    }
+  }
+
+  #holding<A>(sessionId: string, task: () => Promise<A>): () => Promise<A> {
+    const held = new Set(this.#held.getStore())
+    held.add(sessionId)
+    return () => this.#held.run(held, task)
   }
 
   #lock(sessionId: string): ReadWriteLock {
@@ -102,13 +139,12 @@ class ReadWriteLock {
   }
 
   async shared<A>(task: () => Promise<A>): Promise<A> {
-    let tail: Promise<void>
-    this.#waiting += 1
-    do {
-      tail = this.#writerTail
-      await tail
-    } while (tail !== this.#writerTail)
-    this.#waiting -= 1
+    // 줄 선 쓰기가 없으면 기다리지 않고 바로 읽기 수를 올립니다. 그래야 뒤에 온 쓰기가 이 읽기를 기다립니다(도착 순서).
+    if (this.#writers > 0) {
+      this.#waiting += 1
+      while (this.#writers > 0) await this.#writerTail
+      this.#waiting -= 1
+    }
     this.#readers += 1
     try {
       return await task()
