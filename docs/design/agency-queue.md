@@ -33,7 +33,7 @@ sequenceDiagram
 
 | 엔드포인트 | 소유 | 쿼리 | 정렬 |
 |---|---|---|---|
-| `GET /agency/companies` | Identity & Access | `assigneeId`, `limit`, `cursor` | 회사 이름, ID |
+| `GET /agency/companies` | Identity & Access | `assigneeId`, `limit`, `cursor` | 회사 이름(코드값), ID |
 | `GET /agency/filings` | Tax | `companyId`, `taxType`, `status`, `open`, `overdue`, `dueFrom`, `dueTo`, `limit`, `cursor` | 기한(신고 기한, 없으면 납부 기한) 오름차순, 기한 없는 건은 끝, ID |
 | `GET /agency/action-cards` | Tax | `status=OPEN\|CLOSED`(기본 `OPEN`), `companyId`, `kind`, `limit`, `cursor` | 회사 범위 `/action-cards`와 같음(진행중은 마감일, 완료는 최근) |
 
@@ -59,6 +59,7 @@ sequenceDiagram
               "company": { "id": "cmp_01J...", "name": "세무 상점" } }] }
 ```
 
+- 커서는 [conventions.md](conventions.md#페이지네이션)의 불투명 커서(`paginate`)입니다. 알아볼 수 없는 커서도 400이 아니라 그 정렬 키 뒤의 항목(대개 빈 페이지)을 돌려줍니다. 정렬과 커서는 같은 키를 코드값으로 비교합니다. 회사 이름도 코드값 순이라 대문자가 소문자보다, 짧은 이름이 같은 앞부분의 긴 이름보다 먼저 옵니다
 - 항목 모양은 회사 범위 목록(`GET /filings`, `GET /action-cards`)의 항목에 `company`를 더한 것입니다. 신고 건은 대리인 기준 `allowedActions`도 넣어 "내 차례인 건"을 거를 수 있게 합니다
 - 할 일 카드는 고객이 할 일입니다. 대리인에게는 독촉할 목록이고, 완료(`:complete`)는 `/agency/*`에 없습니다
 - 집계(`workload`)는 회사 목록 한 페이지에 대해서만 셉니다. 큐 전체 집계가 필요해지면 `GET /agency/filings:count?groupBy=status`처럼 집계 엔드포인트로 둡니다([conventions.md](conventions.md#페이지네이션))
@@ -113,7 +114,7 @@ flowchart LR
 | 403 | `AGENCY_SCOPE_NOT_ALLOWED` | 고객 사용자의 `:switch-agency` |
 | 403 | `PERMISSION_DENIED` | 대리인 권한 밖(D5 이후) |
 | 404 | `COMPANY_NOT_FOUND` | `companyId`가 배정되지 않은 회사 |
-| 400 | `VALIDATION_FAILED` | 잘못된 날짜·enum·커서 |
+| 400 | `VALIDATION_FAILED` | 잘못된 날짜·enum·`limit` |
 
 ## 현행 엔드포인트 대응
 

@@ -13,6 +13,21 @@ export function isAgentKind(kind: string): kind is AgentKind {
 }
 
 /**
+ * 담당 회사의 정렬 키입니다. 이름, 같으면 회사 ID 순이고, 문자열은 코드값으로 비교합니다.
+ *
+ * 구분자 `\u0000`은 어떤 글자보다 작아 앞부분이 같은 이름(`세무` < `세무 상점`)이 짧은 쪽부터 옵니다.
+ * 목록 정렬과 커서(`paginate`의 `>` 비교)가 같은 키·같은 비교를 써야 페이지 사이에서 회사가 빠지지 않습니다.
+ */
+export function agentCompanyKey(company: { name: string; companyId: string }): string {
+  return `${company.name}\u0000${company.companyId}`
+}
+
+/** 코드값 비교입니다. `localeCompare`와 달리 `paginate`의 커서 비교와 순서가 같습니다. */
+export function compareCodePoints(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/**
  * 대리인 범위 요청의 행위자({@link Agent})를 계산합니다. `AgencyAuthentication`이 요청마다 부릅니다.
  *
  * 담당 회사는 본인 배정과, 팀장이면 팀원 배정의 합입니다. 회사 범위의 `ActorDirectory`와 같은 배정 규칙을 씁니다.
@@ -63,7 +78,7 @@ export class AgentDirectory extends Context.Service<
           userId: user.id,
           userKind: user.kind,
           permissions: actorPermissions({ kind: 'AGENCY' }),
-          companies: result.toSorted((a, b) => a.name.localeCompare(b.name) || a.companyId.localeCompare(b.companyId)),
+          companies: result.toSorted((a, b) => compareCodePoints(agentCompanyKey(a), agentCompanyKey(b))),
         })
       })
 

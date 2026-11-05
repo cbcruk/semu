@@ -109,7 +109,11 @@ export class AgencyQueue extends Context.Service<
             if (matchesFilingQuery(filing, query, today)) selected.push({ filing, company })
           }
         }
-        const sorted = selected.toSorted((a, b) => filingQueueKey(a.filing).localeCompare(filingQueueKey(b.filing)))
+        const sorted = selected.toSorted((a, b) => {
+          const left = filingQueueKey(a.filing)
+          const right = filingQueueKey(b.filing)
+          return left < right ? -1 : left > right ? 1 : 0
+        })
         const page = paginate(sorted, (entry) => filingQueueKey(entry.filing), query)
         return {
           ...page,

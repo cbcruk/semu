@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from 'effect'
 import { paginate } from '../../../shared/http/pagination.ts'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { agentCompanyKey, compareCodePoints } from '../access/agent-directory.ts'
 import type { AgentCompany } from '../actor.types.ts'
 import type { AgencyCompany } from './agency-company.ts'
 import { AgencyWorkload } from './agency-workload.ts'
@@ -29,10 +30,10 @@ export class AgencyCompanies extends Context.Service<
         companies: ReadonlyArray<AgentCompany>,
         query: AgencyCompanyQuery,
       ) {
-        const selected = companies.filter(
-          (company) => query.assigneeId === undefined || company.assigneeIds.includes(query.assigneeId),
-        )
-        const page = paginate(selected, (company) => `${company.name}|${company.companyId}`, query)
+        const selected = companies
+          .filter((company) => query.assigneeId === undefined || company.assigneeIds.includes(query.assigneeId))
+          .toSorted((a, b) => compareCodePoints(agentCompanyKey(a), agentCompanyKey(b)))
+        const page = paginate(selected, agentCompanyKey, query)
         const counts = yield* workload.of(page.items)
         return {
           ...page,
