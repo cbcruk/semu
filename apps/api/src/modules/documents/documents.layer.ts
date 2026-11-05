@@ -6,6 +6,8 @@ import { CertificatesHttpLive } from './certificates/certificates.http.ts'
 import { EsignRequestRepository } from './esign/esign-request.ts'
 import { EsignRequests } from './esign/esign-requests.ts'
 import { EsignRequestsHttpLive } from './esign/esign-requests.http.ts'
+import { CompanySealRepository } from './seals/company-seal.ts'
+import { CompanySealsHttpLive } from './seals/company-seals.http.ts'
 import { DocumentEvents, DocumentNotifier, PdfRenderer, SignerIdentityVerifier } from './shared/documents-ports.ts'
 import { EsignLinksHttpLive } from './signing/esign-links.http.ts'
 import { Signing } from './signing/signing.ts'
@@ -15,18 +17,20 @@ import { EsignTemplatesHttpLive } from './templates/esign-templates.http.ts'
 /**
  * 전자서명·제증명 발급·서식 모음 컨텍스트의 핸들러 전체입니다.
  *
- * 필요한 것: `EsignRequestRepository`, `EsignTemplateRepository`, `CertificateIssuanceRepository`,
+ * 필요한 것: `EsignRequestRepository`, `EsignTemplateRepository`, `CompanySealRepository`, `CertificateIssuanceRepository`,
  * `DocumentNotifier`, `PdfRenderer`, `SignerIdentityVerifier`, `DocumentEvents`, 인사의 `HrDirectory`.
  */
 export const DocumentsHttpLive = Layer.mergeAll(
   EsignRequestsHttpLive,
   EsignLinksHttpLive,
   EsignTemplatesHttpLive,
+  CompanySealsHttpLive,
   CertificatesHttpLive,
 ).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer)))
 
 /**
- * 전자서명·제증명 발급·서식 모음 컨텍스트의 저장소와 외부 연동입니다. 요청·발급 기록은 `TableFactory`(메모리 또는 SQLite)에 둡니다.
+ * 전자서명·제증명 발급·서식 모음 컨텍스트의 저장소와 외부 연동입니다. 요청·발급 기록과 회사 도장은 `TableFactory`(메모리 또는 SQLite)에 둡니다.
+ * 데모 회사(법인)에 도장 하나가 들어 있습니다.
  *
  * 기본 템플릿은 코드에 있는 참조 데이터라 표에 두지 않습니다. 알림·PDF·본인확인은 아직 외부 구현이 없어 결정적인 가짜이고,
  * 이벤트는 아직 소비자가 없어 메모리에 쌓습니다.
@@ -34,6 +38,7 @@ export const DocumentsHttpLive = Layer.mergeAll(
 export const DocumentsStoreLive = Layer.mergeAll(
   EsignRequestRepository.layer(),
   EsignTemplateRepository.layerMemory(),
+  CompanySealRepository.layer(),
   CertificateIssuanceRepository.layer(),
   DocumentNotifier.layerFake,
   PdfRenderer.layerFake,

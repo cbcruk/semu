@@ -139,3 +139,6 @@
 3. **대리인 작업 큐 (D3).** 대리인 범위 토큰과 `/agency/*` 리소스를 설계·구현합니다
 4. **공통 도우미 정리.** 저장 표는 `src/shared/persistence`로, HTTP 테스트 앱은 `src/shared/testing/http-test-app.ts`로 모았습니다. 컨텍스트별 도우미(`testing-http`, `tax-http.testing`, `http-test-support`, `payroll-testing`, `test-app`)는 토큰 표와 덮어 쓸 레이어만 정하는 얇은 래퍼입니다
 5. **이전 구현 정리.** 이식이 끝난 뒤 `apps/api/legacy/`를 지웁니다. 지금은 D2의 BFF 근거로 둡니다
+6. **보안 후속 (PR #8 리뷰).**
+   - onboarding token은 회사를 등록한 뒤에도 소비되지 않아, 만료(1시간) 전에는 같은 토큰으로 회사를 여러 개 등록할 수 있습니다. 등록에 성공하면 세션의 `onboardingTokenHash`를 지웁니다 ([identity-access.md](identity-access.md))
+   - 세무 신고에 붙는 파일 ID(`ledgerFileId`, `returnFileId`, `paymentSlipFileId`, `noticeFileId`, `fileId`)는 회사 확인 없이 저장됩니다. 파일 저장소(D7)가 생기면 파일 소유 회사를 확인하고, ID만으로 내려받지 못하게 합니다 ([tax.md](tax.md))

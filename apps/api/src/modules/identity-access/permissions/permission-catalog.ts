@@ -43,6 +43,7 @@ export const PERMISSION_CATALOG = {
   'document-form': { area: 'DOCUMENTS', actions: ['read'] },
   'esign-request': { area: 'DOCUMENTS', actions: ['read', 'create', 'send', 'cancel'], plans: ['PAYROLL'] },
   'esign-template': { area: 'DOCUMENTS', actions: CRUD, plans: ['PAYROLL'] },
+  'company-seal': { area: 'DOCUMENTS', actions: ['read', 'create', 'delete'], plans: ['PAYROLL'] },
   'certificate-issuance': { area: 'DOCUMENTS', actions: ['read', 'create'], plans: ['PAYROLL'] },
 
   'payroll-ledger': { area: 'PAYROLL', actions: [...CRUD, 'approve'], plans: ['TAXATION', 'PAYROLL'] },
@@ -166,7 +167,7 @@ export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>
   employment_employee: menu(['employee:*'], ['PAYROLL']),
   employment_e_sign: menu(['esign-request:*'], ['PAYROLL']),
   employment_certificate: menu(['certificate-issuance:*'], ['PAYROLL']),
-  settings_e_sign: menu(['esign-template:*'], ['PAYROLL']),
+  settings_e_sign: menu(['esign-template:*', 'company-seal:*'], ['PAYROLL']),
   payroll_settlement: menu(['payroll-ledger:*', 'payslip:*'], ['PAYROLL']),
   payroll_management: menu(['payroll-ledger:*', 'payslip:*'], ['TAXATION']),
   payroll_setting: menu(['payroll-setting:*'], ['PAYROLL']),

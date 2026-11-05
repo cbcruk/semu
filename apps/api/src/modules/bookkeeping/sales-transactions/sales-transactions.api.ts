@@ -5,6 +5,7 @@ import { IdempotencyKeyRequired, PermissionDenied, VersionMismatch } from '../..
 import { Authentication } from '../../identity-access/authentication.ts'
 import { SalesTransactionId, TaxInvoiceId } from '../common/ids.ts'
 import { CalendarDate, IdempotencyHeaders, IfMatchHeaders } from '../common/wire.ts'
+import { PartnerNotFound } from '../evidence/evidence.ts'
 import {
   IdempotencyKeyReused,
   SalesStatementInvalid,
@@ -43,7 +44,7 @@ export class SalesTransactionsApi extends HttpApiGroup.make('salesTransactions')
     HttpApiEndpoint.post('create', '/sales-transactions', {
       payload: Schema.Struct(StatementPayload),
       success: SalesTransaction.pipe(HttpApiSchema.status(201)),
-      error: [SalesStatementInvalid, PermissionDenied],
+      error: [SalesStatementInvalid, PartnerNotFound, PermissionDenied],
     }),
     HttpApiEndpoint.get('get', '/sales-transactions/:salesTransactionId', {
       params,
@@ -63,6 +64,7 @@ export class SalesTransactionsApi extends HttpApiGroup.make('salesTransactions')
         SalesTransactionNotFound,
         SalesStatementInvalid,
         SalesTransactionLocked,
+        PartnerNotFound,
         VersionMismatch,
         PermissionDenied,
       ],

@@ -128,6 +128,7 @@ stateDiagram-v2
 | DELETE | `/v1/partners/{partnerId}` | `partner:delete` | 소프트 삭제. `If-Match` |
 
 - 사업자번호는 회사 안에서 유일합니다(409 `PARTNER_BUSINESS_NUMBER_DUPLICATE`, 기존 `partnerId` 포함)
+- 증빙·입출금·자동분류 규칙·거래명세서에 넣는 `partnerId`는 같은 회사의 지우지 않은 거래처여야 합니다. 아니면 404 `PARTNER_NOT_FOUND`입니다
 - 거래처 계좌번호는 `AccountNumberCipher`로 암호화해 저장하고 마스킹해 돌려줍니다
 - 미정산: [partner-outstanding-amount](../reference/rules/partner-outstanding-amount.md)
 - 상태조회 캐시: [business-status-cache](../reference/rules/business-status-cache.md)
@@ -268,7 +269,7 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `BusinessStatusLookup` | Integrations | `lookup(businessNumber) → { status: REGISTERED | SUSPENDED | CLOSED | UNKNOWN, taxationType, closedOn }` |
 | `HometaxInvoiceIssuer` | Integrations | `issue(request) → { ok, approvalNumber, issuedAt } | { ok: false, errorCode, errorMessage }`, `fetchDetail(companyId, approvalNumber)` |
 | `GiroPaymentGateway` | Integrations | `pay({ companyId, giroId, electronicPaymentNumber, taxKind, bankCode, accountNumber, accountPassword, amount, idempotencyKey }) → { ok, resultCode, resultMessage }` |
-| `AccountNumberCipher` | 공유(KMS) | `encrypt(plaintext)`, `decrypt(token)` (동기) |
+| `AccountNumberCipher` | 공유(데이터 키) | `encrypt(plaintext)`, `decrypt(token)` (동기). 서버는 `layerAesGcm`(AES-256-GCM, 서버 데이터 키에서 파생한 계좌번호용 키), 테스트는 `layerFake` |
 
 모두 `ports/`에 있고 `layerFake`가 있습니다. Bookkeeping만 시험할 때(`BookkeepingMemoryLive`)는 가짜를 쓰고, `app.ts`는 `src/wiring/bookkeeping-*.ts` 어댑터로 Integrations·Tax·Payroll에 연결합니다.
 

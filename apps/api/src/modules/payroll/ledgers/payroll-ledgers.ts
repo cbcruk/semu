@@ -446,6 +446,15 @@ function payeeOf(
   return Effect.gen(function* () {
     if (!isWage(payload.input)) {
       if (payload.payeeName !== undefined) {
+        // 이름을 직접 받아도 직원을 이으려면 같은 회사 직원이어야 합니다. 다른 회사 직원 ID를 저장하지 않습니다.
+        if (payload.employeeId !== undefined) {
+          const linked = yield* (yield* PayrollEmployeeDirectory).find(
+            actor.companyId,
+            payload.employeeId,
+            ledger.wagePeriod.end,
+          )
+          if (Option.isNone(linked)) return yield* new EmployeeNotFound({})
+        }
         return { employeeId: payload.employeeId ?? null, payeeName: payload.payeeName, snapshot: null }
       }
       if (payload.employeeId === undefined) return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_NAME_REQUIRED' })

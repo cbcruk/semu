@@ -201,7 +201,7 @@ export class Employees extends Context.Service<
         }
         return {
           identityType: type,
-          registrationNumberEncrypted: yield* cipher.encrypt(normalized),
+          registrationNumberEncrypted: yield* cipher.encrypt('registrationNumber', normalized),
           registrationNumberHash: hash,
           registrationNumberMasked: maskIdentityNumber(normalized, type),
           ...(type === 'RRN' ? { derivedBirthDate: birthDateFromRegistrationNumber(normalized) ?? undefined } : {}),
@@ -309,7 +309,7 @@ export class Employees extends Context.Service<
         revealRegistrationNumber: Effect.fn('Employees.revealRegistrationNumber')(function* (actor, id, reason) {
           const record = yield* find(actor, id)
           if (record.registrationNumberEncrypted === undefined) return yield* new EmployeeNotFound({})
-          const registrationNumber = yield* cipher.decrypt(record.registrationNumberEncrypted)
+          const registrationNumber = yield* cipher.decrypt('registrationNumber', record.registrationNumberEncrypted)
           yield* accessLog.record({
             companyId: actor.companyId,
             userId: actor.userId,
