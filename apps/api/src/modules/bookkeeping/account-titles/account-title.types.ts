@@ -7,7 +7,7 @@ export type AccountScope = 'SALES' | 'PURCHASE' | 'DEPOSIT' | 'WITHDRAWAL'
 export type PlCategory =
   'REVENUE' | 'COGS' | 'SGA' | 'NON_OPERATING_INCOME' | 'NON_OPERATING_EXPENSE' | 'INCOME_TAX' | 'NONE'
 
-/** 계정과목의 출처입니다. Alfred 기본, 회사가 추가, 하위 계정을 처음 만들 때 자동 생성한 `기타 {상위명}`입니다. */
+/** 계정과목의 출처입니다. semu 기본, 회사가 추가, 하위 계정을 처음 만들 때 자동 생성한 `기타 {상위명}`입니다. */
 export type AccountTitleOrigin = 'SYSTEM' | 'COMPANY' | 'AUTO_ETC'
 
 /** 저장한 계정과목 한 행입니다. 기본 행은 `companyId`가 `null`입니다. */

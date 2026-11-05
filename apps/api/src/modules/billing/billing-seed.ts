@@ -79,7 +79,7 @@ export function demoMandates(): BillingMandateRecord[] {
       companyId: DEMO_COMPANY_IDS.corporation,
       bankCode: '088',
       accountNumberMasked: '*********4321',
-      accountHolder: '주식회사 알프레드',
+      accountHolder: '주식회사 세무',
       source: 'ONLINE',
       status: 'REGISTERED',
       gatewayReference: 'cms-demo-0001',

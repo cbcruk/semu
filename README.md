@@ -1,6 +1,6 @@
 # semu
 
-Backend API server for Alfred Business (Korean tax, HR, payroll and bookkeeping SaaS), redesigned from a static analysis of the existing web client and its support manual.
+Backend API server for semu (Korean tax, HR, payroll and bookkeeping SaaS), redesigned from a static analysis of the existing web client and its support manual.
 
 ## Layout
 

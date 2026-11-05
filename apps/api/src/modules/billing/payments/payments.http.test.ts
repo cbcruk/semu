@@ -14,7 +14,7 @@ afterEach(() => app.dispose())
 
 describe('GET /v1/payments', () => {
   it('lists payroll outsourcing payments newest first with a masked account', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/payments', { token })
 
@@ -33,7 +33,7 @@ describe('GET /v1/payments', () => {
   })
 
   it('pages with a cursor and filters by status', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const first = await (await app.request('GET', '/v1/payments?limit=2', { token })).json()
     const second = await (await app.request('GET', `/v1/payments?limit=2&cursor=${first.nextCursor}`, { token })).json()
@@ -46,13 +46,13 @@ describe('GET /v1/payments', () => {
   })
 
   it('hides a payment of a product not shown in the list', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     expect((await app.request('GET', `/v1/payments/${DEMO_PAYMENT_IDS.tax}`, { token })).status).toBe(404)
   })
 
   it('needs payment:read', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     const response = await app.request('GET', '/v1/payments', { token })
 
@@ -104,7 +104,7 @@ describe('agency payment commands', () => {
   })
 
   it('does not let a client admin retry', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', `/v1/payments/${DEMO_PAYMENT_IDS.failed}:retry`, {
       token,

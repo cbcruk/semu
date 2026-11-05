@@ -12,7 +12,7 @@ let employeeId = ''
 let ledgerId = ''
 
 beforeAll(async () => {
-  owner = (await app.signIn('owner@alfred.example')).token
+  owner = (await app.signIn('owner@semu.example')).token
   agent = (await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.corporation })).token
 })
 

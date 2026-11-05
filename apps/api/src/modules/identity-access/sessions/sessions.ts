@@ -28,7 +28,7 @@ export const LONG_SESSION_SECONDS = 14 * 86_400
 export const MAX_FAILED_SIGN_INS = 5
 
 /** 공개 데모 계정의 로그인 ID입니다. 데모 계정은 읽기만 합니다. */
-export const DEMO_EMAIL = 'demo@alfred.example'
+export const DEMO_EMAIL = 'demo@semu.example'
 
 /** 발급한 세션입니다. `refreshToken`은 쿠키로만 내보냅니다. */
 export interface IssuedSession {

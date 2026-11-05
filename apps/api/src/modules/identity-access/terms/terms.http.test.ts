@@ -26,7 +26,7 @@ describe('terms', () => {
   })
 
   it('shows tax terms only to a taxation company and clears the gate after agreeing', async () => {
-    const sole = await app.signIn('sole@alfred.example')
+    const sole = await app.signIn('sole@semu.example')
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: sole.token })).json()
     const taxTerm = (items as Agreement[]).find((a) => a.term.code === 'TAX_SERVICE')
     expect(taxTerm).toMatchObject({ status: 'REQUIRED' })
@@ -44,7 +44,7 @@ describe('terms', () => {
   })
 
   it('refuses to record a declined required term', async () => {
-    const sole = await app.signIn('sole@alfred.example')
+    const sole = await app.signIn('sole@semu.example')
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: sole.token })).json()
     const taxTerm = (items as Agreement[]).find((a) => a.term.code === 'TAX_SERVICE')
 
@@ -58,7 +58,7 @@ describe('terms', () => {
   })
 
   it('refuses an answer to an outdated term version', async () => {
-    const owner = await app.signIn('owner@alfred.example')
+    const owner = await app.signIn('owner@semu.example')
     const outdatedId = demoTerms().find((t) => t.code === 'SERVICE' && t.version === '2025-07')?.id
 
     const response = await app.request('POST', '/v1/me/term-agreements', {
@@ -70,7 +70,7 @@ describe('terms', () => {
   })
 
   it('does not show tax terms to a free company', async () => {
-    const owner = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const owner = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: owner.token })).json()
 
     expect((items as Agreement[]).map((a) => a.term.code)).not.toContain('TAX_SERVICE')

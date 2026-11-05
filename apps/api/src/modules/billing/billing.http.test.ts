@@ -15,13 +15,13 @@ afterEach(() => app.dispose())
 const account = {
   bankCode: '004',
   accountNumber: '123-456-789012',
-  accountHolder: '알프레드 카페',
+  accountHolder: '세무 카페',
   payerNumber: '1048145235',
 }
 
 describe('/v1/billing-mandates', () => {
   it('registers a new account, revokes the previous one and never returns the full number', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/billing-mandates', {
       token,
@@ -41,7 +41,7 @@ describe('/v1/billing-mandates', () => {
   })
 
   it('keeps a rejected account on record and answers 422', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/billing-mandates', {
       token,
@@ -56,7 +56,7 @@ describe('/v1/billing-mandates', () => {
   })
 
   it('validates the payer number and requires an idempotency key', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const invalid = await app.request('POST', '/v1/billing-mandates', {
       token,
@@ -75,13 +75,13 @@ describe('POST /v1/consultations', () => {
     products: ['TAXATION'],
     name: '김알프',
     phone: '01012345678',
-    email: 'cafe@alfred.example',
+    email: 'cafe@semu.example',
     privacyConsent: true,
     thirdPartyConsent: true,
   }
 
   it('records a lead for the current company and refuses a duplicate while it is open', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const first = await app.request('POST', '/v1/consultations', { token, body: request })
     const second = await app.request('POST', '/v1/consultations', {
@@ -100,7 +100,7 @@ describe('POST /v1/consultations', () => {
   })
 
   it('refuses an inquiry for products the company already has', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/consultations', { token, body: request })
 
@@ -109,7 +109,7 @@ describe('POST /v1/consultations', () => {
   })
 
   it('requires both consents', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/consultations', {
       token,
@@ -122,7 +122,7 @@ describe('POST /v1/consultations', () => {
 
 describe('/v1/service-contracts', () => {
   it('lists the contracts of a bookkeeping customer', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const { items } = await (await app.request('GET', '/v1/service-contracts', { token })).json()
     const detail = await app.request(
@@ -138,7 +138,7 @@ describe('/v1/service-contracts', () => {
   })
 
   it('hides contracts of another company', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request(
       'GET',
@@ -150,7 +150,7 @@ describe('/v1/service-contracts', () => {
   })
 
   it('asks a free company to subscribe to the taxation plan', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', '/v1/service-contracts', { token })
 

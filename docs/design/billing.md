@@ -103,9 +103,9 @@
 
 ```jsonc
 // POST /v1/billing-mandates  Idempotency-Key: ...
-{ "bankCode": "004", "accountNumber": "123-456-789012", "accountHolder": "알프레드 카페", "payerNumber": "1048145235" }
+{ "bankCode": "004", "accountNumber": "123-456-789012", "accountHolder": "세무 카페", "payerNumber": "1048145235" }
 // → 201
-{ "id": "mdt_01J...", "bankCode": "004", "accountNumberMasked": "********9012", "accountHolder": "알프레드 카페",
+{ "id": "mdt_01J...", "bankCode": "004", "accountNumberMasked": "********9012", "accountHolder": "세무 카페",
   "source": "ONLINE", "status": "REGISTERED", "createdAt": "...", "registeredAt": "..." }
 ```
 
@@ -129,7 +129,7 @@
 
 ```jsonc
 // POST /v1/consultations
-{ "products": ["TAXATION"], "name": "김알프", "phone": "01012345678", "email": "cafe@alfred.example",
+{ "products": ["TAXATION"], "name": "김알프", "phone": "01012345678", "email": "cafe@semu.example",
   "memo": "...", "privacyConsent": true, "thirdPartyConsent": true }
 // → 201 { "id": "led_01J...", "products": ["TAXATION"], "status": "NEW", ... }
 ```

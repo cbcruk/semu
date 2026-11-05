@@ -47,7 +47,7 @@ export function demoCertificates(): CertificateRecord[] {
     {
       id: DEMO_INTEGRATION_IDS.certificate,
       companyId: DEMO_COMPANY_IDS.corporation,
-      name: '주식회사 알프레드',
+      name: '주식회사 세무',
       oid: '1.2.410.200005.1.1.5',
       ownerType: 'BUSINESS',
       usage: 'GENERAL',
@@ -72,7 +72,7 @@ export function demoIntegrations(): IntegrationRecord[] {
       type: 'HOMETAX',
       authMethod: 'ID_PASSWORD',
       isCorporate: true,
-      accountId: 'alfred-hometax',
+      accountId: 'semu-hometax',
       credential: sealSecret(DEMO_VAULT_KEY, { password: 'hometax-1234' }),
       items: [],
       canIssueTaxInvoice: false,
@@ -87,7 +87,7 @@ export function demoIntegrations(): IntegrationRecord[] {
       institutionCode: '004',
       authMethod: 'ID_PASSWORD',
       isCorporate: true,
-      accountId: 'alfred-bank',
+      accountId: 'semu-bank',
       credential: sealSecret(DEMO_VAULT_KEY, { password: 'bank-1234' }),
       items: [
         {
@@ -151,7 +151,7 @@ export function demoChannelTokens(): ChannelTokenRecord[] {
     {
       tokenHash: hashChannelToken(DEMO_CHANNEL_TOKENS.used),
       messengerType: 'SLACK',
-      channelName: '#alfred-tax',
+      channelName: '#semu-tax',
       expiresAt: farFuture,
       usedAt: past,
       usedBy: DEMO_USER_IDS.owner,

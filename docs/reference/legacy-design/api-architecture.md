@@ -1,10 +1,10 @@
-# Alfred Business API 아키텍처
+# semu API 아키텍처
 
 > 상태: v0.2 · 2026-11-01 · 구현: [`apps/api`](../apps/api/README.md)
 >
 > 도메인별 근거는 `docs/spec-notes/*.md`, 세무 도메인 설계는 [`tax-api-design.md`](tax-api-design.md)에 있습니다.
 
-이 문서는 세무 API(`apps/api`)를 Alfred Business 전체 백엔드로 넓히면서 모든 도메인이 공유하는 결정을 정합니다. 도메인별 세부 설계는 `docs/design/<domain>.md`에 둡니다.
+이 문서는 세무 API(`apps/api`)를 semu 전체 백엔드로 넓히면서 모든 도메인이 공유하는 결정을 정합니다. 도메인별 세부 설계는 `docs/design/<domain>.md`에 둡니다.
 
 ## 1. 하나의 앱, 세 백엔드의 경로
 

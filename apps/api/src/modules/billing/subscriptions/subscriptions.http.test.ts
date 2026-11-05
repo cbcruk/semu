@@ -13,7 +13,7 @@ afterEach(() => app.dispose())
 
 describe('GET /v1/subscriptions', () => {
   it('lists entitled subscriptions without agency commands for a client', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/subscriptions', { token })
 
@@ -24,7 +24,7 @@ describe('GET /v1/subscriptions', () => {
   })
 
   it('shows an ended subscription of a free company as not entitled', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token })).json()
 
@@ -42,7 +42,7 @@ describe('GET /v1/subscriptions', () => {
 
 describe('agency subscription commands', () => {
   it('refuses a client admin even though the admin holds every permission', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/subscriptions', {
       token,
@@ -90,7 +90,7 @@ describe('agency subscription commands', () => {
       endsOn: '2099-12-31',
       allowedActions: ['RESUME'],
     })
-    const sole = await app.signIn('sole@alfred.example')
+    const sole = await app.signIn('sole@semu.example')
     expect((await (await app.request('GET', '/v1/me', { token: sole.token })).json()).company.plans).toEqual([
       'TAXATION',
     ])

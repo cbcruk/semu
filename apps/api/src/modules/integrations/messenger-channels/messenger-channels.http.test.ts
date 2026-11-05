@@ -9,7 +9,7 @@ let token: string
 
 beforeEach(async () => {
   app = makeTestApp()
-  token = (await app.signIn('owner@alfred.example')).token
+  token = (await app.signIn('owner@semu.example')).token
 })
 
 afterEach(() => app.dispose())
@@ -34,7 +34,7 @@ describe('messenger channels', () => {
     expect(connected.status).toBe(201)
     expect(again.status).toBe(422)
     expect(await again.json()).toMatchObject({ code: 'CHAT_CHANNEL_TOKEN_USED' })
-    expect(list.items.map((item: { channelName: string }) => item.channelName)).toEqual(['#alfred-tax', '혜움상담'])
+    expect(list.items.map((item: { channelName: string }) => item.channelName)).toEqual(['#semu-tax', '혜움상담'])
   })
 
   it('answers each token failure with its own code', async () => {
@@ -55,7 +55,7 @@ describe('messenger channels', () => {
 
 describe('hometax delegations', () => {
   it('lets a taxation customer agree to the pending delegation', async () => {
-    const sole = await app.signIn('sole@alfred.example')
+    const sole = await app.signIn('sole@semu.example')
 
     const list = await (await app.request('GET', '/v1/hometax-delegations', { token: sole.token })).json()
     const id = list.items[0].id
@@ -79,7 +79,7 @@ describe('hometax delegations', () => {
   })
 
   it('asks a free company to subscribe to TAXATION first', async () => {
-    const free = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const free = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', '/v1/hometax-delegations', { token: free.token })
 

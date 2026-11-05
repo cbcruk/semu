@@ -14,7 +14,7 @@ afterEach(() => app.dispose())
 describe('POST /v1/auth/sessions', () => {
   it('signs in, sets an HttpOnly refresh cookie and binds the last-used or first company', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'OWNER@alfred.example', password: DEMO_PASSWORD },
+      body: { email: 'OWNER@semu.example', password: DEMO_PASSWORD },
     })
 
     expect(response.status).toBe(200)
@@ -27,7 +27,7 @@ describe('POST /v1/auth/sessions', () => {
     expect(body).toMatchObject({
       tokenType: 'Bearer',
       expiresIn: 600,
-      user: { email: 'owner@alfred.example', kind: 'CLIENT', isDemo: false },
+      user: { email: 'owner@semu.example', kind: 'CLIENT', isDemo: false },
       company: { id: DEMO_COMPANY_IDS.corporation, actorKind: 'CLIENT', plans: ['TAXATION', 'PAYROLL'] },
     })
     expect(body.companies.map((c: { id: string }) => c.id)).toEqual([
@@ -42,7 +42,7 @@ describe('POST /v1/auth/sessions', () => {
       body: { email: 'nobody@x.example', password: 'abc12345' },
     })
     const wrong = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'owner@alfred.example', password: 'wrong123' },
+      body: { email: 'owner@semu.example', password: 'wrong123' },
     })
 
     expect(unknown.status).toBe(401)
@@ -53,15 +53,15 @@ describe('POST /v1/auth/sessions', () => {
   it('locks the account after five wrong passwords, even for the right one', async () => {
     for (let attempt = 1; attempt <= 4; attempt += 1) {
       const response = await app.request('POST', '/v1/auth/sessions', {
-        body: { email: 'member@alfred.example', password: 'nope1234' },
+        body: { email: 'member@semu.example', password: 'nope1234' },
       })
       expect(response.status).toBe(401)
     }
     const fifth = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'member@alfred.example', password: 'nope1234' },
+      body: { email: 'member@semu.example', password: 'nope1234' },
     })
     const right = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'member@alfred.example', password: DEMO_PASSWORD },
+      body: { email: 'member@semu.example', password: DEMO_PASSWORD },
     })
 
     expect(fifth.status).toBe(423)
@@ -70,7 +70,7 @@ describe('POST /v1/auth/sessions', () => {
 
   it('refuses a company the user cannot access without revealing whether it exists', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'owner@alfred.example', password: DEMO_PASSWORD, companyId: DEMO_COMPANY_IDS.individual },
+      body: { email: 'owner@semu.example', password: DEMO_PASSWORD, companyId: DEMO_COMPANY_IDS.individual },
     })
 
     expect(response.status).toBe(404)
@@ -80,7 +80,7 @@ describe('POST /v1/auth/sessions', () => {
 
 describe('GET /v1/me', () => {
   it('returns the computed permissions, plans and switch targets of an admin', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/me', { token })
 
@@ -95,7 +95,7 @@ describe('GET /v1/me', () => {
   })
 
   it('gives a member the base permissions plus the union of their roles', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     const body = await (await app.request('GET', '/v1/me', { token })).json()
 
@@ -118,7 +118,7 @@ describe('GET /v1/me', () => {
   })
 
   it('lists pending tax terms for a taxation customer who has not agreed yet', async () => {
-    const { token } = await app.signIn('sole@alfred.example')
+    const { token } = await app.signIn('sole@semu.example')
 
     expect(await (await app.request('GET', '/v1/me', { token })).json()).toMatchObject({
       pendingTermCodes: ['TAX_SERVICE'],
@@ -126,7 +126,7 @@ describe('GET /v1/me', () => {
   })
 
   it('promotes every plan to a free company', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     expect(await (await app.request('GET', '/v1/me', { token })).json()).toMatchObject({
       company: { plans: [] },
@@ -141,7 +141,7 @@ describe('GET /v1/me', () => {
 
 describe('refresh, switch and sign-out', () => {
   it('rotates the refresh token and revokes the previous access token', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
 
     const refreshed = await app.request('POST', '/v1/auth/sessions:refresh', { cookie: first.cookie })
 
@@ -153,7 +153,7 @@ describe('refresh, switch and sign-out', () => {
   })
 
   it('revokes the whole session when a rotated refresh token comes back', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
     const rotated = await app.request('POST', '/v1/auth/sessions:refresh', { cookie: first.cookie })
     const latest = cookieOf(rotated)
 
@@ -166,7 +166,7 @@ describe('refresh, switch and sign-out', () => {
   })
 
   it('switches company with a new token bound to the new company', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
 
     const switched = await app.request('POST', '/v1/auth/sessions:switch-company', {
       cookie: first.cookie,
@@ -182,19 +182,19 @@ describe('refresh, switch and sign-out', () => {
   })
 
   it('remembers the last company for the next sign-in', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
     await app.request('POST', '/v1/auth/sessions:switch-company', {
       cookie: first.cookie,
       body: { companyId: DEMO_COMPANY_IDS.free },
     })
 
-    const again = await app.signIn('owner@alfred.example')
+    const again = await app.signIn('owner@semu.example')
 
     expect(again.body).toMatchObject({ company: { id: DEMO_COMPANY_IDS.free } })
   })
 
   it('refuses to switch to a company outside the user', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/auth/sessions:switch-company', {
       cookie: first.cookie,
@@ -205,7 +205,7 @@ describe('refresh, switch and sign-out', () => {
   })
 
   it('signs out, clears the cookie and kills both tokens', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
 
     const response = await app.request('DELETE', '/v1/auth/sessions/current', { cookie: first.cookie })
 
@@ -231,7 +231,7 @@ describe('demo', () => {
 
   it('does not let anyone sign in to the demo account with a password', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
-      body: { email: 'demo@alfred.example', password: DEMO_PASSWORD },
+      body: { email: 'demo@semu.example', password: DEMO_PASSWORD },
     })
 
     expect(response.status).toBe(401)

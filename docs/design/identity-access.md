@@ -224,7 +224,7 @@ stateDiagram-v2
 
 ## 데모
 
-`POST /auth/sessions:demo`가 공용 데모 계정(`demo@alfred.example`)으로 세션을 엽니다. 데모 계정은 비밀번호 로그인·비밀번호 변경을 막고, `authorize`가 읽기 외 요청을 403으로 거절합니다. 데모 회사 데이터는 각 컨텍스트의 데모 시드가 채웁니다.
+`POST /auth/sessions:demo`가 공용 데모 계정(`demo@semu.example`)으로 세션을 엽니다. 데모 계정은 비밀번호 로그인·비밀번호 변경을 막고, `authorize`가 읽기 외 요청을 403으로 거절합니다. 데모 회사 데이터는 각 컨텍스트의 데모 시드가 채웁니다.
 
 ## 감사 로그
 

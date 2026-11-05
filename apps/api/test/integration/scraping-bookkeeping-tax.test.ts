@@ -7,7 +7,7 @@ const ON = '2026-11-30'
 let owner = ''
 
 beforeAll(async () => {
-  owner = (await app.signIn('owner@alfred.example')).token
+  owner = (await app.signIn('owner@semu.example')).token
 })
 
 afterAll(() => app.dispose())

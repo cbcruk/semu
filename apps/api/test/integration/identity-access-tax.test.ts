@@ -6,7 +6,7 @@ const app = makeTestApp()
 let owner = ''
 
 beforeAll(async () => {
-  owner = (await app.signIn('owner@alfred.example')).token
+  owner = (await app.signIn('owner@semu.example')).token
 })
 
 afterAll(() => app.dispose())

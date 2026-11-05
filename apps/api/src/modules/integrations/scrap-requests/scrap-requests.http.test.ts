@@ -8,7 +8,7 @@ let token: string
 
 beforeEach(async () => {
   app = makeTestApp()
-  token = (await app.signIn('owner@alfred.example')).token
+  token = (await app.signIn('owner@semu.example')).token
 })
 
 afterEach(() => app.dispose())
@@ -106,7 +106,7 @@ describe('request-all and availability', () => {
   })
 
   it('lets a company without links see that nothing is connected', async () => {
-    const free = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const free = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const body = await (await app.request('GET', '/v1/scrap-requests:availability', { token: free.token })).json()
 

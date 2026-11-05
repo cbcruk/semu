@@ -1,6 +1,6 @@
 # @semu/api
 
-Alfred Business 백엔드 API 서버입니다. Effect(`effect/http-api`)로 만든 모듈러 모놀리스이고, HTTP 계약은 `src/api.ts`에 있습니다. 설계는 [`docs/design/`](../../docs/design/README.md)에서 시작하세요.
+semu 백엔드 API 서버입니다. Effect(`effect/http-api`)로 만든 모듈러 모놀리스이고, HTTP 계약은 `src/api.ts`에 있습니다. 설계는 [`docs/design/`](../../docs/design/README.md)에서 시작하세요.
 
 ## 구성
 

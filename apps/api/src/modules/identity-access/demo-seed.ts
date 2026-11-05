@@ -12,7 +12,7 @@ import type { AgreementRecord, Term } from './terms/term.ts'
 import { TEST_COMPANY_ID, TEST_USER_ID } from './testing.ts'
 
 /** 데모 계정 비밀번호입니다. 로컬 개발과 테스트에서만 씁니다. */
-export const DEMO_PASSWORD = 'alfred1234'
+export const DEMO_PASSWORD = 'semu1234'
 
 /** 데모 회사 ID입니다. 다른 컨텍스트의 메모리 시드가 같은 회사를 가리키도록 공개합니다. */
 export const DEMO_COMPANY_IDS = {
@@ -28,17 +28,17 @@ export const DEMO_COMPANY_IDS = {
 
 /** 데모 사용자 ID입니다. */
 export const DEMO_USER_IDS = {
-  /** `owner@alfred.example`: 법인과 무료 회사의 소유자(관리자). `TEST_USER_ID`와 같습니다. */
+  /** `owner@semu.example`: 법인과 무료 회사의 소유자(관리자). `TEST_USER_ID`와 같습니다. */
   owner: TEST_USER_ID,
-  /** `member@alfred.example`: 법인의 일반 사용자, 경리 권한 그룹 */
+  /** `member@semu.example`: 법인의 일반 사용자, 경리 권한 그룹 */
   member: 'usr_01JBQ000000000000000000002' as Id<'user'>,
   /** `agent@agency.example`: 세무 대리인 담당자, 법인·개인 회사 배정 */
   agent: 'usr_01JBQ000000000000000000003' as Id<'user'>,
   /** `manager@agency.example`: 세무 대리인 팀장, 담당자의 팀장 */
   manager: 'usr_01JBQ000000000000000000004' as Id<'user'>,
-  /** `demo@alfred.example`: 공개 데모 계정(읽기 전용) */
+  /** `demo@semu.example`: 공개 데모 계정(읽기 전용) */
   demo: 'usr_01JBQ000000000000000000005' as Id<'user'>,
-  /** `sole@alfred.example`: 개인 회사 소유자, 세무 약관 미동의 */
+  /** `sole@semu.example`: 개인 회사 소유자, 세무 약관 미동의 */
   sole: 'usr_01JBQ000000000000000000006' as Id<'user'>,
 } as const
 
@@ -86,9 +86,9 @@ function company(
 export function demoCompanies(): Company[] {
   const hq = { id: 'agc_01JBQ000000000000000000001' as Id<'agency'>, name: '세무법인 혜움', kind: 'HQ' as const }
   return [
-    company(DEMO_COMPANY_IDS.corporation, '주식회사 알프레드', '1238145600', 'CORPORATION', hq),
-    company(DEMO_COMPANY_IDS.individual, '알프레드 상점', '2208162517', 'INDIVIDUAL', hq),
-    company(DEMO_COMPANY_IDS.free, '알프레드 카페', '1048145235', 'INDIVIDUAL'),
+    company(DEMO_COMPANY_IDS.corporation, '주식회사 세무', '1238145600', 'CORPORATION', hq),
+    company(DEMO_COMPANY_IDS.individual, '세무 상점', '2208162517', 'INDIVIDUAL', hq),
+    company(DEMO_COMPANY_IDS.free, '세무 카페', '1048145235', 'INDIVIDUAL'),
     company(DEMO_COMPANY_IDS.demo, '데모 주식회사', '1018100340', 'CORPORATION'),
   ]
 }
@@ -117,12 +117,12 @@ function user(
 /** 데모 사용자입니다. 비밀번호는 모두 {@link DEMO_PASSWORD}입니다. */
 export function demoUsers(): UserRecord[] {
   return [
-    user(DEMO_USER_IDS.owner, 'owner@alfred.example', '김대표', 'CLIENT'),
-    user(DEMO_USER_IDS.member, 'member@alfred.example', '이경리', 'CLIENT'),
+    user(DEMO_USER_IDS.owner, 'owner@semu.example', '김대표', 'CLIENT'),
+    user(DEMO_USER_IDS.member, 'member@semu.example', '이경리', 'CLIENT'),
     user(DEMO_USER_IDS.agent, 'agent@agency.example', '박세무', 'AGENCY_STAFF', { managerId: DEMO_USER_IDS.manager }),
     user(DEMO_USER_IDS.manager, 'manager@agency.example', '최팀장', 'AGENCY_MANAGER'),
     user(DEMO_USER_IDS.demo, DEMO_EMAIL, '데모', 'CLIENT', { isDemo: true }),
-    user(DEMO_USER_IDS.sole, 'sole@alfred.example', '정사장', 'CLIENT'),
+    user(DEMO_USER_IDS.sole, 'sole@semu.example', '정사장', 'CLIENT'),
   ]
 }
 
@@ -194,7 +194,7 @@ function term(
     code,
     purpose,
     title,
-    contentUrl: `https://alfred.example/terms/${code.toLowerCase()}/${version}`,
+    contentUrl: `https://semu.example/terms/${code.toLowerCase()}/${version}`,
     version,
     required,
     effectiveFrom: `${version}-01`,
@@ -213,7 +213,7 @@ export function demoTerms(): Term[] {
   ]
 }
 
-/** 데모 동의 기록입니다. `sole@alfred.example`만 세무 약관에 동의하지 않았습니다. */
+/** 데모 동의 기록입니다. `sole@semu.example`만 세무 약관에 동의하지 않았습니다. */
 export function demoAgreements(): AgreementRecord[] {
   const current = demoTerms().filter((entry) => entry.version === '2026-01' && entry.purpose !== 'CONSULTING')
   const agreeAll = (userId: Id<'user'>, codes: ReadonlyArray<string>): AgreementRecord[] =>

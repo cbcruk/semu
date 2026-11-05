@@ -15,7 +15,7 @@ afterEach(() => app.dispose())
 
 describe('conversations', () => {
   it('starts a conversation, continues it and reads it back', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const started = await app.request('POST', '/v1/conversations', {
       token,
@@ -43,7 +43,7 @@ describe('conversations', () => {
   })
 
   it('proposes write tools with a confirmation step instead of running them', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', {
       token,
@@ -60,7 +60,7 @@ describe('conversations', () => {
   })
 
   it('narrows the tools of a member to the permissions of their roles', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     const tools = await (await app.request('GET', '/v1/assistant-tools', { token })).json()
     const reply = await (
@@ -76,7 +76,7 @@ describe('conversations', () => {
   })
 
   it('gives a free company the knowledge, finance and tax invoice tools', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: FREE_COMPANY_ID })
+    const { token } = await app.signIn('owner@semu.example', { companyId: FREE_COMPANY_ID })
 
     const tools = await (await app.request('GET', '/v1/assistant-tools', { token })).json()
 
@@ -88,8 +88,8 @@ describe('conversations', () => {
   })
 
   it('hides a conversation from other users of the same company', async () => {
-    const owner = await app.signIn('owner@alfred.example')
-    const member = await app.signIn('member@alfred.example')
+    const owner = await app.signIn('owner@semu.example')
+    const member = await app.signIn('member@semu.example')
     const { conversationId } = await (
       await app.request('POST', '/v1/conversations', { token: owner.token, body: { message: '안녕하세요' } })
     ).json()
@@ -101,7 +101,7 @@ describe('conversations', () => {
   })
 
   it('deletes a conversation', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
     const { conversationId } = await (
       await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
     ).json()
@@ -114,7 +114,7 @@ describe('conversations', () => {
   })
 
   it('blocks a taxation customer who has not agreed to the tax terms', async () => {
-    const { token } = await app.signIn('sole@alfred.example')
+    const { token } = await app.signIn('sole@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
 
@@ -131,7 +131,7 @@ describe('conversations', () => {
   })
 
   it('rejects an empty message', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '' } })
 
@@ -146,7 +146,7 @@ describe('conversations', () => {
 
 describe('grants', () => {
   it('lists only calls open today, closest deadline first and always-open last', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/grants', { token })).json()
 
@@ -159,7 +159,7 @@ describe('grants', () => {
   })
 
   it('recommends grants matching the company industry and region', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
 
@@ -167,7 +167,7 @@ describe('grants', () => {
   })
 
   it('does not filter by industry for a company whose industry is unclear', async () => {
-    const { token } = await app.signIn('owner@alfred.example', { companyId: FREE_COMPANY_ID })
+    const { token } = await app.signIn('owner@semu.example', { companyId: FREE_COMPANY_ID })
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
 
@@ -175,7 +175,7 @@ describe('grants', () => {
   })
 
   it('shows grants even before the tax terms are agreed', async () => {
-    const { token } = await app.signIn('sole@alfred.example')
+    const { token } = await app.signIn('sole@semu.example')
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
 
@@ -186,7 +186,7 @@ describe('grants', () => {
   })
 
   it('reads one grant and answers 404 for an unknown one', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     const found = await app.request('GET', `/v1/grants/${DEMO_GRANT_IDS.closed}`, { token })
     const missing = await app.request('GET', '/v1/grants/grt_01JBQ0000000000000000000ZZ', { token })

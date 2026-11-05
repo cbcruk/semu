@@ -306,7 +306,7 @@ export function systemAccountTitleId(sortOrder: number): Id<'accountTitle'> {
   return `acc_${String(sortOrder).padStart(26, '0')}` as Id<'accountTitle'>
 }
 
-/** Alfred 기본 계정과목입니다. 모든 회사가 함께 보고, 이름을 바꾸거나 지울 수 없습니다. */
+/** semu 기본 계정과목입니다. 모든 회사가 함께 보고, 이름을 바꾸거나 지울 수 없습니다. */
 export const SYSTEM_ACCOUNT_TITLES: ReadonlyArray<AccountTitleRecord> = ROWS.map(
   ([sortOrder, parent, depth, code, name, description, appliesTo, plCategory, cashCategory]) => ({
     id: systemAccountTitleId(sortOrder),

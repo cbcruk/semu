@@ -57,7 +57,7 @@ export class AccountTitleNotAssignable extends HttpApiError.Problem<AccountTitle
   },
 ) {}
 
-/** Alfred 기본 계정과목은 이름을 바꾸거나 지울 수 없습니다. */
+/** semu 기본 계정과목은 이름을 바꾸거나 지울 수 없습니다. */
 export class AccountTitleSystemLocked extends HttpApiError.Problem<AccountTitleSystemLocked>()(
   'AccountTitleSystemLocked',
   { type: problemType('ACCOUNT_TITLE_SYSTEM_LOCKED'), status: 409, title: 'Default account titles cannot change' },

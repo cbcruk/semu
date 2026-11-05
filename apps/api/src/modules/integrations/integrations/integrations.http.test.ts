@@ -9,7 +9,7 @@ let token: string
 
 beforeEach(async () => {
   app = makeTestApp()
-  token = (await app.signIn('owner@alfred.example')).token
+  token = (await app.signIn('owner@semu.example')).token
 })
 
 afterEach(() => app.dispose())
@@ -36,7 +36,7 @@ describe('GET /v1/integrations', () => {
   })
 
   it('lets a bookkeeping member read but not register', async () => {
-    const member = await app.signIn('member@alfred.example')
+    const member = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/integrations', { token: member.token })).status).toBe(200)
     const denied = await app.request('POST', '/v1/integrations', {
@@ -48,7 +48,7 @@ describe('GET /v1/integrations', () => {
   })
 
   it('does not show another company link', async () => {
-    const other = await app.signIn('owner@alfred.example', { companyId: DEMO_COMPANY_IDS.free })
+    const other = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', `/v1/integrations/${DEMO_INTEGRATION_IDS.bank}`, { token: other.token })
 
@@ -202,7 +202,7 @@ describe('items, credentials and removal', () => {
 
 describe('certificates', () => {
   const upload = {
-    name: '주식회사 알프레드',
+    name: '주식회사 세무',
     oid: '1.2.410.200005.1.1.2',
     serialNumber: 'NEW-0001',
     issuedOn: '2026-01-02',

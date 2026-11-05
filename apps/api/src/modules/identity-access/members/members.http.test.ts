@@ -13,7 +13,7 @@ afterEach(() => app.dispose())
 
 describe('/v1/companies/current', () => {
   it('reads and updates the company of the token with an ETag', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const read = await app.request('GET', '/v1/companies/current', { token })
     expect(read.status).toBe(200)
@@ -34,11 +34,11 @@ describe('/v1/companies/current', () => {
     expect(stale.status).toBe(412)
     expect(updated.status).toBe(200)
     expect(updated.headers.get('etag')).toBe('"2"')
-    expect(await updated.json()).toMatchObject({ industry: '소프트웨어 개발', name: '주식회사 알프레드' })
+    expect(await updated.json()).toMatchObject({ industry: '소프트웨어 개발', name: '주식회사 세무' })
   })
 
   it('lets a member read but not update the company', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/companies/current', { token })).status).toBe(200)
     const response = await app.request('PATCH', '/v1/companies/current', { token, body: { industry: 'x' } })
@@ -49,11 +49,11 @@ describe('/v1/companies/current', () => {
 
 describe('POST /v1/companies', () => {
   it('registers a company for a signed-in user, who can then switch to it', async () => {
-    const first = await app.signIn('owner@alfred.example')
+    const first = await app.signIn('owner@semu.example')
 
     const created = await app.request('POST', '/v1/companies', {
       token: first.token,
-      body: { name: '알프레드 2호점', businessNumber: '220-81-62517', businessType: 'CORPORATION' },
+      body: { name: '세무 2호점', businessNumber: '220-81-62517', businessType: 'CORPORATION' },
     })
 
     expect(created.status).toBe(409)
@@ -71,7 +71,7 @@ describe('POST /v1/companies', () => {
   })
 
   it('rejects a business number with a wrong check digit', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/companies', {
       token,
@@ -93,20 +93,20 @@ describe('POST /v1/companies', () => {
 
 describe('/v1/users', () => {
   it('lists the members of the current company only', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/users', { token })).json()
 
     expect(body.totalCount).toBe(2)
     expect(body.items.map((m: { email: string; isMe: boolean }) => [m.email, m.isMe])).toEqual([
-      ['owner@alfred.example', true],
-      ['member@alfred.example', false],
+      ['owner@semu.example', true],
+      ['member@semu.example', false],
     ])
   })
 
   it('promotes a member to admin and revokes their current access token', async () => {
-    const owner = await app.signIn('owner@alfred.example')
-    const member = await app.signIn('member@alfred.example')
+    const owner = await app.signIn('owner@semu.example')
+    const member = await app.signIn('member@semu.example')
 
     const response = await app.request('POST', `/v1/users/${DEMO_USER_IDS.member}:change-access`, {
       token: owner.token,
@@ -122,7 +122,7 @@ describe('/v1/users', () => {
   })
 
   it('protects the owner and the last admin', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const demote = await app.request('POST', `/v1/users/${DEMO_USER_IDS.owner}:change-access`, {
       token,
@@ -136,27 +136,27 @@ describe('/v1/users', () => {
   })
 
   it('removes a member, who then cannot reach the company', async () => {
-    const owner = await app.signIn('owner@alfred.example')
-    const member = await app.signIn('member@alfred.example')
+    const owner = await app.signIn('owner@semu.example')
+    const member = await app.signIn('member@semu.example')
 
     const removed = await app.request('DELETE', `/v1/users/${DEMO_USER_IDS.member}`, { token: owner.token })
 
     expect(removed.status).toBe(204)
     expect((await app.request('GET', '/v1/me', { token: member.token })).status).toBe(401)
-    const again = await app.signIn('member@alfred.example')
+    const again = await app.signIn('member@semu.example')
     expect(again.body).toMatchObject({ companies: [] })
     expect(again.body).toHaveProperty('onboardingToken')
   })
 
   it('does not let a member without the user-management permissions see or manage members', async () => {
-    const { token } = await app.signIn('member@alfred.example')
+    const { token } = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/users', { token })).status).toBe(403)
     expect((await app.request('DELETE', `/v1/users/${DEMO_USER_IDS.owner}`, { token })).status).toBe(403)
   })
 
   it('answers 404 for a user of another company', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     expect((await app.request('GET', `/v1/users/${DEMO_USER_IDS.sole}`, { token })).status).toBe(404)
   })
@@ -164,7 +164,7 @@ describe('/v1/users', () => {
 
 describe('/v1/roles', () => {
   it('creates a role from grantable permissions and refuses admin-only ones', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const refused = await app.request('POST', '/v1/roles', {
       token,
@@ -184,8 +184,8 @@ describe('/v1/roles', () => {
   })
 
   it('updates a role and refreshes the permissions of its holders', async () => {
-    const owner = await app.signIn('owner@alfred.example')
-    const member = await app.signIn('member@alfred.example')
+    const owner = await app.signIn('owner@semu.example')
+    const member = await app.signIn('member@semu.example')
     const { items } = await (await app.request('GET', '/v1/roles', { token: owner.token })).json()
     const role = items[0]
 
@@ -201,7 +201,7 @@ describe('/v1/roles', () => {
   })
 
   it('deletes a role and detaches it from members', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
     const { items } = await (await app.request('GET', '/v1/roles', { token })).json()
 
     expect((await app.request('DELETE', `/v1/roles/${items[0].id}`, { token })).status).toBe(204)
@@ -210,7 +210,7 @@ describe('/v1/roles', () => {
   })
 
   it('lists templates and only grantable permissions', async () => {
-    const { token } = await app.signIn('owner@alfred.example')
+    const { token } = await app.signIn('owner@semu.example')
 
     const templates = await (await app.request('GET', '/v1/role-templates', { token })).json()
     const permissions = await (await app.request('GET', '/v1/permissions', { token })).json()

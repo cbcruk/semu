@@ -1,4 +1,4 @@
-# Alfred Business 백엔드 재설계
+# semu 백엔드 재설계
 
 Alfred Business 웹 클라이언트를 정적 분석한 결과([`docs/reference/spec/`](../reference/spec/)), 지원 사이트 매뉴얼([`alfred-manual/`](../../alfred-manual/README.md)), 현행 클라이언트 규칙을 추적해 정리한 [`docs/reference/rules/`](../reference/rules/README.md)를 근거로, 같은 업무를 처리하는 백엔드 API 서버를 처음부터 다시 설계한 문서입니다. 코드는 [`apps/api/src/`](../../apps/api/src/)에 있습니다. 이 문서 묶음은 구현 전에 도메인 경계·리소스·상태 전이·규칙의 위치를 합의하는 데 씁니다.
 

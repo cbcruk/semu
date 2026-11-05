@@ -747,7 +747,7 @@ tax-api는 담당자 경로를 `/api/desk/*`로 분리했지만, **급여의 현
 
 | 연동 | 현행 | 백엔드 경계 |
 | --- | --- | --- |
-| **Shiftee**(근태) | `GET/POST/DELETE /payroll/bpo/shiftee-integration`. 연동하면 Alfred가 시프티 회사를 만들고 최고관리자를 가입시킨다(회사명·대표자명은 Alfred 회사 정보로 자동 채움, 이메일은 시프티 미가입 이메일만). 신규 고객만 가능하고, 해제 후 재연동은 막혀 있다. 시프티에 "급여 담당자" 직원이 자동으로 추가된다(향후 근태 기반 급여 정산용) [매뉴얼 08-설정/09] | 현재 근태 데이터를 가져오는 API는 번들에 없다. `ATTENDANCE_RECORD_INTEGRATION`에도 `none|manual_input`만 있다. **근태 → `work-input` 자동 채움은 미구현 또는 계획 단계로 추정**. 시프티 API 호출을 어댑터로 분리하고, 연동 상태 테이블(`external_integrations`: provider, external_company_id, admin_email, status, promotion_applied, unlinked_at)을 둔다 |
+| **Shiftee**(근태) | `GET/POST/DELETE /payroll/bpo/shiftee-integration`. 연동하면 현행 서비스가 시프티 회사를 만들고 최고관리자를 가입시킨다(회사명·대표자명은 서비스의 회사 정보로 자동 채움, 이메일은 시프티 미가입 이메일만). 신규 고객만 가능하고, 해제 후 재연동은 막혀 있다. 시프티에 "급여 담당자" 직원이 자동으로 추가된다(향후 근태 기반 급여 정산용) [매뉴얼 08-설정/09] | 현재 근태 데이터를 가져오는 API는 번들에 없다. `ATTENDANCE_RECORD_INTEGRATION`에도 `none|manual_input`만 있다. **근태 → `work-input` 자동 채움은 미구현 또는 계획 단계로 추정**. 시프티 API 호출을 어댑터로 분리하고, 연동 상태 테이블(`external_integrations`: provider, external_company_id, admin_email, status, promotion_applied, unlinked_at)을 둔다 |
 | 명세서 발송 | legacy는 이메일만(근로소득자만). BPO `payslip/send`는 사업소득 행에도 발송 버튼이 있다. 이메일이 없는 행은 "등록하기 +"로 표시한다 [화면 12fcebc8] | 메일 발송 큐 → `in_flight` → 콜백이나 폴링 → `success|fail`. SMS·카카오 알림톡은 번들과 매뉴얼에 근거가 없다(**미확인**). 첨부 PDF 렌더러가 필요하다 |
 | 명세서·대장 다운로드 | BPO `payslip/download`(Blob), legacy "급여대장 다운로드", "PDF 다운로드", 대장 헤더 "다운로드" | 서버에서 PDF와 엑셀을 생성한다. 대장 다운로드 엔드포인트는 번들에 없다(lazy chunk나 정적 링크 추정) |
 | 엑셀 업로드 | legacy `GET/POST /api/payroll/excel/`(회사 경로 아님), 일용·사업·기타 탭. 양식은 `혜움_급여입력_양식.xlsx`(25.8KB). 복사 붙여넣기도 지원한다 | 업로드하면 파싱·검증한 행을 돌려주고 클라이언트가 그리드에 채우는 방식으로 추정한다(카드 ID를 받지 않으므로 서버에 바로 저장하지 않을 가능성이 높다). BPO에는 엑셀 엔드포인트가 없다 |

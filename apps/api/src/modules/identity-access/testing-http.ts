@@ -45,7 +45,7 @@ export interface SignedIn {
  * @example
  * ```ts
  * const app = makeTestApp()
- * const { token } = await app.signIn('owner@alfred.example')
+ * const { token } = await app.signIn('owner@semu.example')
  * const response = await app.request('GET', '/v1/me', { token })
  * ```
  */
