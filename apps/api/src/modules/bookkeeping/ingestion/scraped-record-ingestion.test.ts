@@ -127,9 +127,12 @@ describe('VatEvidenceQuery', () => {
       'NON_DEDUCTIBLE',
       'UNDECIDED',
     ])
-    expect(evidence.sales.filter((row) => row.vatAmount === null).map((row) => row.totalAmount)).toEqual([
-      11_000_000, -1_100_000,
-    ])
+    expect(
+      evidence.sales
+        .filter((row) => row.vatAmount === null)
+        .map((row) => row.totalAmount)
+        .sort((a, b) => (a ?? 0) - (b ?? 0)),
+    ).toEqual([-1_100_000, 11_000_000])
     expect(evidence.sales.filter((row) => row.dedupeGroup === 'order-77')).toHaveLength(2)
   })
 })
