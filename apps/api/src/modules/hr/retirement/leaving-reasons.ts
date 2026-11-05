@@ -1,12 +1,11 @@
-import type { LeavingReason } from './retirement.types'
+import type { LeavingReason } from './retirement.types.ts'
 
 /**
- * Leaving reasons and detail reasons, following the 고용보험 피보험자격 상실신고 reason codes.
+ * 퇴직(상실) 사유와 상세 사유입니다. 고용보험 피보험자격 상실신고의 상실사유 구분코드를 따릅니다.
  *
- * The legacy `employee/leaving-reason` list, the retirement form and the
- * worker's resignation letter all use this tree. Names are product labels.
+ * 퇴직 등록, 사직서 서명, 상실신고가 같은 표를 씁니다. 이름은 제품 표시 문자열입니다.
  */
-export const LEAVING_REASONS: readonly LeavingReason[] = [
+export const LEAVING_REASONS: ReadonlyArray<LeavingReason> = [
   {
     code: '11',
     name: '개인사정으로 인한 자진퇴사',
@@ -35,16 +34,43 @@ export const LEAVING_REASONS: readonly LeavingReason[] = [
       { code: '23-3', name: '명예퇴직' },
     ],
   },
-  { code: '26', name: '근로자의 귀책사유에 의한 징계해고·권고사직', details: [{ code: '26-1', name: '징계해고' }, { code: '26-2', name: '귀책사유로 인한 권고사직' }] },
+  {
+    code: '26',
+    name: '근로자의 귀책사유에 의한 징계해고·권고사직',
+    details: [
+      { code: '26-1', name: '징계해고' },
+      { code: '26-2', name: '귀책사유로 인한 권고사직' },
+    ],
+  },
   { code: '31', name: '정년', details: [{ code: '31-1', name: '정년퇴직' }] },
-  { code: '32', name: '계약기간만료, 공사종료', details: [{ code: '32-1', name: '계약기간 만료' }, { code: '32-2', name: '공사 종료' }] },
+  {
+    code: '32',
+    name: '계약기간만료, 공사종료',
+    details: [
+      { code: '32-1', name: '계약기간 만료' },
+      { code: '32-2', name: '공사 종료' },
+    ],
+  },
   { code: '41', name: '고용보험 비적용', details: [{ code: '41-1', name: '고용보험 비적용' }] },
   { code: '42', name: '이중고용', details: [{ code: '42-1', name: '이중고용' }] },
 ]
 
-/** Checks that a reason code exists and, when given, that the detail belongs to it. */
-export function isValidLeavingReason(reason: string, detail: string | null): boolean {
-  const parent = LEAVING_REASONS.find((candidate) => candidate.code === reason)
+/** 사유 코드가 있고, 상세 사유가 주어졌으면 그 사유에 속하는지입니다. */
+export function isValidLeavingReason(reasonCode: string, detailCode: string | undefined): boolean {
+  const parent = LEAVING_REASONS.find((candidate) => candidate.code === reasonCode)
   if (parent === undefined) return false
-  return detail === null || parent.details.some((candidate) => candidate.code === detail)
+  return detailCode === undefined || parent.details.some((candidate) => candidate.code === detailCode)
 }
+
+/** 퇴직금 중간정산 사유입니다(근로자퇴직급여 보장법 시행령 제3조). */
+export const INTERIM_SETTLEMENT_REASONS = [
+  'HOME_PURCHASE',
+  'RENT_DEPOSIT',
+  'MEDICAL_TREATMENT',
+  'BANKRUPTCY',
+  'PERSONAL_REHABILITATION',
+  'WAGE_PEAK',
+  'WORK_HOURS_REDUCTION',
+  'LEGAL_WORK_HOURS_REDUCTION',
+  'GOVERNMENT_NOTICE',
+] as const

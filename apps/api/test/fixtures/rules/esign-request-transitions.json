@@ -1,0 +1,186 @@
+{
+  "rule": "esign-request-transitions",
+  "description": "E-sign request state machine: draft edits and sends, cancel while waiting, void after completion, revert or delete closed requests.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign-requests.service.ts",
+      "lines": "60-80, 140-245"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign-signer.service.ts",
+      "lines": "67-97"
+    },
+    {
+      "file": "alfred-manual/04-인사/03-전자서명.md",
+      "lines": "56"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "583-614, 658-659"
+    }
+  ],
+  "inputSchema": {
+    "from": "Request status.",
+    "event": "UPDATE, DELETE, SEND, SEND_REJECTED, RESEND, REVERT_TO_DRAFT, CANCEL, VOID, VERIFY_SIGNER, COMPLETE, EXPIRE."
+  },
+  "cases": [
+    {
+      "name": "draft update",
+      "input": {
+        "from": "DRAFT",
+        "event": "UPDATE"
+      },
+      "expected": "DRAFT",
+      "derivation": "traced"
+    },
+    {
+      "name": "draft send",
+      "input": {
+        "from": "DRAFT",
+        "event": "SEND"
+      },
+      "expected": "PENDING",
+      "derivation": "traced"
+    },
+    {
+      "name": "draft send rejected by mail",
+      "input": {
+        "from": "DRAFT",
+        "event": "SEND_REJECTED"
+      },
+      "expected": "SEND_FAILED",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending update refused",
+      "input": {
+        "from": "PENDING",
+        "event": "UPDATE"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending delete refused",
+      "input": {
+        "from": "PENDING",
+        "event": "DELETE"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending cancel",
+      "input": {
+        "from": "PENDING",
+        "event": "CANCEL"
+      },
+      "expected": "CANCELED",
+      "derivation": "traced"
+    },
+    {
+      "name": "in progress cancel",
+      "input": {
+        "from": "IN_PROGRESS",
+        "event": "CANCEL"
+      },
+      "expected": "CANCELED",
+      "derivation": "traced"
+    },
+    {
+      "name": "first verification starts signing",
+      "input": {
+        "from": "PENDING",
+        "event": "VERIFY_SIGNER"
+      },
+      "expected": "IN_PROGRESS",
+      "derivation": "traced"
+    },
+    {
+      "name": "complete",
+      "input": {
+        "from": "IN_PROGRESS",
+        "event": "COMPLETE"
+      },
+      "expected": "COMPLETED",
+      "derivation": "traced"
+    },
+    {
+      "name": "completed void",
+      "input": {
+        "from": "COMPLETED",
+        "event": "VOID"
+      },
+      "expected": "VOIDED",
+      "derivation": "traced"
+    },
+    {
+      "name": "completed cancel refused",
+      "input": {
+        "from": "COMPLETED",
+        "event": "CANCEL"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending expires",
+      "input": {
+        "from": "PENDING",
+        "event": "EXPIRE"
+      },
+      "expected": "EXPIRED",
+      "derivation": "traced"
+    },
+    {
+      "name": "canceled revert to draft",
+      "input": {
+        "from": "CANCELED",
+        "event": "REVERT_TO_DRAFT"
+      },
+      "expected": "DRAFT",
+      "derivation": "traced"
+    },
+    {
+      "name": "expired delete",
+      "input": {
+        "from": "EXPIRED",
+        "event": "DELETE"
+      },
+      "expected": "DELETED",
+      "derivation": "traced"
+    },
+    {
+      "name": "voided delete refused",
+      "input": {
+        "from": "VOIDED",
+        "event": "DELETE"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "expired resend",
+      "input": {
+        "from": "EXPIRED",
+        "event": "RESEND"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "send failed resend",
+      "input": {
+        "from": "SEND_FAILED",
+        "event": "RESEND"
+      },
+      "expected": "ESIGN_REQUEST_TRANSITION_INVALID",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 다시 보내려면 초안으로 되돌린 뒤 발송합니다. 취소·만료·발송 실패에서 바로 재발송(:resend)을 열까요",
+    "완료 문서의 무효(void)만 있고 되살리기는 없습니다. 무효 후 새 요청을 만들면 될까요",
+    "만료는 기한 다음날 00:00(회사 시간대)인데 현행은 조회·배치 때 처리합니다. 스케줄러로 옮길까요"
+  ]
+}

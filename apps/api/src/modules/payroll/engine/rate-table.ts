@@ -1,46 +1,34 @@
-import type { PayrollRateTable, YearMonth } from './rate-table.types'
+import type { PayrollRateTable, YearMonth } from './rate-table.types.ts'
 
 const YEAR_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/
-const TARGET_DATE = /^(?!0000)(\d{4})(0[1-9]|1[0-2])$/
 
-/** Checks whether a string is a {@linkcode YearMonth} in `YYYY-MM` form. */
+/** 문자열이 `YYYY-MM` 형식의 달인지입니다. */
 export function isYearMonth(value: string): value is YearMonth {
   return YEAR_MONTH.test(value)
 }
 
 /**
- * Converts the client's `target_date` parameter (`YYYYMM`) to a {@linkcode YearMonth}.
+ * 한 달에 적용하는 기준표를 고릅니다. `effectiveFrom`이 그 달 이하인 것 중 가장 최근 것입니다.
  *
- * @returns The month, or `undefined` when the value does not match `YYYYMM`.
- */
-export function yearMonthFromTargetDate(targetDate: string): YearMonth | undefined {
-  const match = TARGET_DATE.exec(targetDate)
-  return match === null ? undefined : `${match[1]}-${match[2]}`
-}
-
-/**
- * Picks the rate table in force in a month: the latest one whose `effectiveFrom` is not after it.
+ * @throws {RangeError} 그 달 이전에 시작한 기준표가 없을 때
  *
- * @throws {RangeError} When no table starts on or before the month.
- *
- * @example Resolving the July 2026 table
+ * @example 2026년 9월의 기준표
  * ```ts
- * import { resolveRateTable } from './rate-table'
- * import { PAYROLL_RATE_TABLES } from './rate-table-2026'
- *
- * resolveRateTable(PAYROLL_RATE_TABLES, '2026-09').effectiveFrom // '2026-07'
+ * resolveRateTable(BUILT_IN_RATE_TABLES, '2026-09').effectiveFrom // '2026-07'
  * ```
  */
 export function resolveRateTable(tables: readonly PayrollRateTable[], month: YearMonth): PayrollRateTable {
   let match: PayrollRateTable | undefined
   for (const table of tables) {
-    if (table.effectiveFrom <= month && (match === undefined || table.effectiveFrom > match.effectiveFrom)) match = table
+    if (table.effectiveFrom <= month && (match === undefined || table.effectiveFrom > match.effectiveFrom)) {
+      match = table
+    }
   }
   if (match === undefined) throw new RangeError(`No payroll rate table is in force in ${month}`)
   return match
 }
 
-/** Lists the dotted paths of rate-table values that are not confirmed by the spec. */
+/** 원문으로 확인하지 못한 기준표 값의 경로 목록입니다. 예: `longTermCare.ratioOfHealthPpm` */
 export function unverifiedRatePaths(table: PayrollRateTable): string[] {
   return Object.entries(table.verification)
     .filter(([, entry]) => !entry.verified)

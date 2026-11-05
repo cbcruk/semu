@@ -1,0 +1,151 @@
+import type { Id } from '../../shared/ids/ids.types.ts'
+import { KOREAN_PUBLIC_HOLIDAYS } from '../../shared/time/public-holidays.ts'
+import { DEMO_COMPANY_IDS } from '../identity-access/identity-access.public.ts'
+import { TEST_COMPANY_ID } from '../identity-access/testing.ts'
+import type { TaxProfile } from './calendar/tax-profiles.ts'
+import type { FilingRecord } from './filings/filing.types.ts'
+import { requirementTemplate } from './filings/filing-requirements.ts'
+import type { PurchaseEvidence, SalesEvidence } from './vat-estimates/vat-estimate.types.ts'
+
+const DEMO_TIME = '2026-11-01T00:00:00.000Z'
+
+/**
+ * 신고 건 레코드를 만듭니다. 주지 않은 값은 비어 있는 `SCHEDULED` 신고 건이고, 체크리스트는 세목 기본값입니다.
+ *
+ * 데모 시드와 테스트가 함께 씁니다.
+ */
+export function filingRecord(
+  fields: Pick<FilingRecord, 'id' | 'taxType' | 'kind' | 'periodKey' | 'periodStart' | 'periodEnd'> &
+    Partial<FilingRecord>,
+): FilingRecord {
+  return {
+    companyId: TEST_COMPANY_ID,
+    revision: 0,
+    statutoryDue: null,
+    dueDate: null,
+    paymentDue: null,
+    submitDue: null,
+    status: 'SCHEDULED',
+    payableAmount: null,
+    settlement: null,
+    paidOn: null,
+    ledgerUploadedAt: null,
+    ledgerConfirmedAt: null,
+    ledgerDisputeCount: 0,
+    paymentSlipSentAt: null,
+    requirements: requirementTemplate(fields.taxType, fields.kind, true).map((template) => ({
+      code: template.code,
+      response: 'PENDING',
+      autoLinked: template.autoLinked,
+      note: null,
+      fileIds: [],
+      updatedBy: null,
+      updatedAt: null,
+    })),
+    documents: [],
+    history: [],
+    version: 1,
+    createdAt: DEMO_TIME,
+    updatedAt: DEMO_TIME,
+    ...fields,
+  }
+}
+
+/** 데모 회사의 세무 프로필입니다. 12월 결산 법인, 매월 원천세, 예정 신고입니다. */
+export const DEMO_TAX_PROFILE: TaxProfile = {
+  companyId: TEST_COMPANY_ID,
+  businessType: 'CORPORATION',
+  fiscalYearEndMonth: 12,
+  withholdingCycle: 'MONTHLY',
+  vatPreliminaryMode: 'FILING',
+  sincereFilingTarget: false,
+  vatTaxpayerType: 'GENERAL',
+  plans: ['TAXATION', 'PAYROLL'],
+  taxableCardRatioPpm: 1_000_000,
+}
+
+/**
+ * 데모 신고 건입니다. 법인의 10월분 원천세는 자료 요청 중, 2기 확정 부가세는 예정 상태입니다.
+ *
+ * 대리인 작업 큐가 여러 회사를 보이도록 개인 회사(담당 대리인 있음)와 데모 회사(담당 대리인 없음)에 10월분 원천세가 하나씩 있습니다.
+ */
+export const DEMO_FILINGS: ReadonlyArray<FilingRecord> = [
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D1' as Id<'filing'>,
+    taxType: 'WITHHOLDING_TAX',
+    kind: 'MONTHLY',
+    periodKey: '2026-10',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    statutoryDue: '2026-11-10',
+    dueDate: '2026-11-10',
+    paymentDue: '2026-11-10',
+    submitDue: '2026-11-06',
+    status: 'REQUESTED',
+  }),
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D2' as Id<'filing'>,
+    taxType: 'VAT',
+    kind: 'FINAL',
+    periodKey: '2026-H2',
+    periodStart: '2026-07-01',
+    periodEnd: '2026-12-31',
+    statutoryDue: '2027-01-25',
+    dueDate: '2027-01-25',
+    paymentDue: '2027-01-25',
+  }),
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D3' as Id<'filing'>,
+    companyId: DEMO_COMPANY_IDS.individual,
+    taxType: 'WITHHOLDING_TAX',
+    kind: 'MONTHLY',
+    periodKey: '2026-10',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    statutoryDue: '2026-11-10',
+    dueDate: '2026-11-10',
+    paymentDue: '2026-11-10',
+  }),
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D4' as Id<'filing'>,
+    companyId: DEMO_COMPANY_IDS.demo,
+    taxType: 'WITHHOLDING_TAX',
+    kind: 'MONTHLY',
+    periodKey: '2026-10',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    statutoryDue: '2026-11-10',
+    dueDate: '2026-11-10',
+    paymentDue: '2026-11-10',
+    submitDue: '2026-11-06',
+    status: 'REQUESTED',
+  }),
+]
+
+/** 2026–2027년 기한을 미루는 쉬는 날입니다. 공유 참조데이터(`shared/time/public-holidays.ts`)의 표입니다. */
+export const DEMO_HOLIDAYS: ReadonlyArray<string> = KOREAN_PUBLIC_HOLIDAYS
+
+/** 데모 증빙입니다. 4분기 카드 매출 한 건과 공제 매입 한 건입니다. */
+export const DEMO_VAT_EVIDENCE: { sales: ReadonlyArray<SalesEvidence>; purchases: ReadonlyArray<PurchaseEvidence> } = {
+  sales: [
+    {
+      id: 'demo-sale-1',
+      source: 'CARD',
+      issuedOn: '2026-10-15',
+      totalAmount: 1_100_000,
+      vatAmount: null,
+      dedupeGroup: null,
+      syncedAt: DEMO_TIME,
+    },
+  ],
+  purchases: [
+    {
+      id: 'demo-purchase-1',
+      source: 'TAX_INVOICE',
+      issuedOn: '2026-10-20',
+      vatAmount: 30_000,
+      deductible: true,
+      syncedAt: DEMO_TIME,
+    },
+  ],
+}

@@ -1,0 +1,150 @@
+{
+  "rule": "certificate-eligibility",
+  "description": "Which joint certificates (공동인증서) a company may register and use per institution: owner must match the business or representative, allowed type/usage per business type and per institution (hometax, giro, bank, card), OID classification, derived status and remaining days.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "93, 105-110, 256, 293-298, 367, 428", "origin": "index.pretty.js B:89563-89768" },
+    { "file": "alfred-manual/08-설정/08-공동-인증서-관리.md", "lines": "26-60" },
+    { "file": "alfred-manual/15-공동인증서-등록-연동에-실패-가이드-FAQ.md", "lines": "9-21, 84-87, 149-156" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13, 48-52, 62-74" },
+    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "132-141" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/certificates.utils.ts", "lines": "17-90" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/certificates.service.ts", "lines": "38-58, 147-158" }
+  ],
+  "inputSchema": {
+    "check": "register | useFor | status | classify.",
+    "company": "{businessType: 'INDIVIDUAL'|'CORPORATION', businessNumber, representatives: [name]}.",
+    "certificate": "{oid, certType: 'personal'|'business', usage: 'general'(범용)|'bank'(은행/카드/보험용)|'etax'(전자세금용), ownerName, ownerBusinessNumber, endDate, status: 'ACTIVE'|'INACTIVE', deleted}.",
+    "service": "useFor only: hometax | giro | bank | creditcard | cardsales | pg | delivery | taxFilingHometax (세무신고 기관 연동).",
+    "today": "Business date YYYY-MM-DD (Asia/Seoul)."
+  },
+  "cases": [
+    {
+      "name": "register: individual, business general certificate with the company number",
+      "input": { "check": "register", "company": { "businessType": "INDIVIDUAL", "businessNumber": "1238145600", "representatives": ["김대표"] }, "certificate": { "oid": "1.2.410.200005.1.1.5", "ownerBusinessNumber": "123-81-45600", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": true, "certType": "business", "usage": "general", "organizationCode": "yessign" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: individual, personal bank certificate of the representative",
+      "input": { "check": "register", "company": { "businessType": "INDIVIDUAL", "businessNumber": "1238145600", "representatives": ["김대표"] }, "certificate": { "oid": "1.2.410.200005.1.1.4", "ownerName": "김대표", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": true, "certType": "personal", "usage": "bank" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: individual, personal certificate of someone else is refused",
+      "input": { "check": "register", "company": { "businessType": "INDIVIDUAL", "businessNumber": "1238145600", "representatives": ["김대표"] }, "certificate": { "oid": "1.2.410.200005.1.1.1", "ownerName": "이직원", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": false, "field": "owner_name", "message": "등록할 수 없는 인증서" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: corporation, personal certificate is refused",
+      "input": { "check": "register", "company": { "businessType": "CORPORATION", "businessNumber": "1238145600", "representatives": ["김대표"] }, "certificate": { "oid": "1.2.410.200005.1.1.4", "ownerName": "김대표", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": false, "field": "oid" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: business certificate of another business number is refused",
+      "input": { "check": "register", "company": { "businessType": "CORPORATION", "businessNumber": "1238145600", "representatives": [] }, "certificate": { "oid": "1.2.410.200005.1.1.2", "ownerBusinessNumber": "2208162517", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": false, "field": "owner_business_number" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: expired certificate is refused",
+      "input": { "check": "register", "company": { "businessType": "CORPORATION", "businessNumber": "1238145600", "representatives": [] }, "certificate": { "oid": "1.2.410.200005.1.1.2", "ownerBusinessNumber": "1238145600", "endDate": "2026-10-31" }, "today": "2026-11-01" },
+      "expected": { "ok": false, "field": "end_date" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register: unknown OID is refused",
+      "input": { "check": "register", "company": { "businessType": "CORPORATION", "businessNumber": "1238145600", "representatives": [] }, "certificate": { "oid": "1.2.410.200012.1.1.3", "ownerBusinessNumber": "1238145600", "endDate": "2027-03-01" }, "today": "2026-11-01" },
+      "expected": { "ok": false, "field": "oid" },
+      "derivation": "traced"
+    },
+    {
+      "name": "use for hometax: business e-tax certificate is allowed",
+      "input": { "check": "useFor", "service": "hometax", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "etax" } },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "use for hometax: personal certificate is not allowed",
+      "input": { "check": "useFor", "service": "hometax", "company": { "businessType": "INDIVIDUAL" }, "certificate": { "certType": "personal", "usage": "general" } },
+      "expected": { "allowed": false, "code": "CERT_NOT_ALLOWED_FOR_SERVICE", "label": "불가" },
+      "derivation": "traced"
+    },
+    {
+      "name": "use for hometax: business bank certificate is not allowed",
+      "input": { "check": "useFor", "service": "hometax", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "bank" } },
+      "expected": { "allowed": false, "code": "CERT_NOT_ALLOWED_FOR_SERVICE" },
+      "derivation": "traced"
+    },
+    {
+      "name": "use for giro: individual needs the representative's personal bank or general certificate",
+      "input": { "check": "useFor", "service": "giro", "company": { "businessType": "INDIVIDUAL" }, "certificate": { "certType": "personal", "usage": "bank" } },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "use for giro: individual with a business general certificate is refused",
+      "input": { "check": "useFor", "service": "giro", "company": { "businessType": "INDIVIDUAL" }, "certificate": { "certType": "business", "usage": "general" } },
+      "expected": { "allowed": false, "code": "CERT_NOT_ALLOWED_FOR_SERVICE" },
+      "derivation": "traced"
+    },
+    {
+      "name": "use for bank: corporation with business general certificate",
+      "input": { "check": "useFor", "service": "bank", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "general" } },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "use for creditcard: corporation with business e-tax certificate is refused",
+      "input": { "check": "useFor", "service": "creditcard", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "etax" } },
+      "expected": { "allowed": false, "code": "CERT_NOT_ALLOWED_FOR_SERVICE" },
+      "derivation": "traced"
+    },
+    {
+      "name": "use for cardsales, pg or delivery: certificates are not accepted at all",
+      "input": { "check": "useFor", "service": "cardsales", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "general" } },
+      "expected": { "allowed": false, "field": "cert_id" },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax filing (세무신고 기관 연동) cannot use certificate integrations",
+      "input": { "check": "useFor", "service": "taxFilingHometax", "company": { "businessType": "CORPORATION" }, "certificate": { "certType": "business", "usage": "general" } },
+      "expected": { "allowed": false, "reason": "세무신고 기관 연동은 ID/PW 또는 빠른조회로 수집한 내역만 사용" },
+      "derivation": "traced"
+    },
+    {
+      "name": "status: end date passed -> EXPIRED even if stored ACTIVE",
+      "input": { "check": "status", "certificate": { "status": "ACTIVE", "endDate": "2026-10-31", "deleted": false }, "today": "2026-11-01" },
+      "expected": { "status": "EXPIRED", "isActive": false, "remainingDays": -1 },
+      "derivation": "traced"
+    },
+    {
+      "name": "status: end date today is still ACTIVE",
+      "input": { "check": "status", "certificate": { "status": "ACTIVE", "endDate": "2026-11-01", "deleted": false }, "today": "2026-11-01" },
+      "expected": { "status": "ACTIVE", "isActive": true, "remainingDays": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "status: deleted certificate on a link -> UNREGISTERED",
+      "input": { "check": "status", "certificate": { "status": "ACTIVE", "endDate": "2027-03-01", "deleted": true }, "today": "2026-11-01" },
+      "expected": { "status": "UNREGISTERED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "classify: label shown on the certificate card",
+      "input": { "check": "classify", "certificate": { "oid": "1.2.410.200005.1.1.4" } },
+      "expected": { "typeLabel": "개인(은행/카드/보험용)", "orgName": "금융결제원" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The legacy OID table is a subset of the bundle's (B:89563-89740); KICA and tradesign OIDs and any personal e-tax OID are missing, so valid certificates may be refused.",
+    "The manual allows corporations to register e-tax certificates but no institution other than hometax accepts them, and whether registration itself should check usage is unclear.",
+    "Owner matching for personal certificates compares the certificate holder name with registered representatives by exact string; duplicate names and name changes are not handled.",
+    "Whether INACTIVE is detected (revoked or password changed at the issuer) by a periodic check or only when a scrape fails is unknown.",
+    "Giro additionally requires the certificate to be registered on an Internet Giro account (signup popup for non-yessign certificates), which the client and server cannot check before trying.",
+    "Whether a certificate already linked to another company's Internet Giro account should be refused up front is not specified."
+  ]
+}

@@ -1,115 +1,65 @@
-import type { PurchaseSource, SalesSource } from '../../estimated-vat/estimated-vat.types'
+import type { Id } from '../../../shared/ids/ids.types.ts'
 
-/** Which evidence table a request addresses. */
-export type EvidenceSide = 'sales' | 'purchase'
+/** 증빙 방향입니다. 매출 증빙과 매입 증빙은 한 리소스이고 이 값으로 나뉩니다. */
+export type EvidenceSide = 'SALES' | 'PURCHASE'
 
-/** Kind of tax document, mapped from `InvoiceClass` 01–04. */
-export type EvidenceDocType = 'tax_invoice' | 'modified_tax_invoice' | 'invoice' | 'modified_invoice'
+/** 증빙 원천입니다. 매입은 `TAX_INVOICE`·`CASH_RECEIPT`·`CARD`만 있습니다. `MALL`은 현행 `online` 탭(올라)입니다. */
+export type EvidenceSource = 'TAX_INVOICE' | 'CASH_RECEIPT' | 'CARD' | 'PG' | 'MALL' | 'DELIVERY'
 
-/** Tax invoice kind, mapped from `InvoiceKind` 01–04. */
-export type EvidenceKind = 'normal' | 'zero_rate' | 'delegation' | 'zero_rate_delegation'
+/** 문서 종류입니다. `InvoiceClass` 01–04에 대응합니다. */
+export type EvidenceDocType = 'TAX_INVOICE' | 'MODIFIED_TAX_INVOICE' | 'INVOICE' | 'MODIFIED_INVOICE'
 
-/** Columns shared by `sales_evidence` and `purchase_evidence` after the bookkeeping migration. */
-export interface EvidenceRow {
-  id: string
-  company_id: string
-  source: SalesSource | PurchaseSource
-  issued_on: string
-  total_amount: number | null
-  supply_amount: number | null
-  vat_amount: number | null
-  synced_at: string
-  external_key: string | null
-  doc_type: EvidenceDocType | null
-  kind: EvidenceKind | null
-  written_on: string | null
-  counterparty_business_number: string | null
-  counterparty_name: string | null
-  partner_id: string | null
-  item_summary: string | null
-  items: string | null
-  account_title_id: string | null
-  classified_by: 'manual' | 'rule' | null
-  classified_rule_id: string | null
-  memo: string | null
-  card_number_masked: string | null
-  card_company_code: string | null
-  approval_no: string | null
-  is_canceled: 0 | 1
-  dedupe_group?: string | null
-  channel?: string | null
-  sales_transaction_id?: string | null
-  deductible?: 0 | 1 | null
-  account_code?: string | null
+/** 세금계산서 종류입니다. `InvoiceKind` 01–04에 대응합니다. */
+export type EvidenceKind = 'NORMAL' | 'ZERO_RATE' | 'DELEGATION' | 'ZERO_RATE_DELEGATION'
+
+/** 누가 분류했는지입니다. */
+export type ClassificationMethod = 'MANUAL' | 'RULE'
+
+/** 매입세액 공제 여부입니다. 현행 `deductible` `1 | 0 | null`입니다. */
+export type VatDeduction = 'DEDUCTIBLE' | 'NON_DEDUCTIBLE' | 'UNDECIDED'
+
+/** 거래(증빙·입출금)의 분류 상태입니다. 계정과목이 없으면 미분류입니다. */
+export interface Classification {
+  accountTitleId: Id<'accountTitle'> | null
+  method: ClassificationMethod | null
+  ruleId: Id<'classificationRule'> | null
 }
 
-/** The supply, VAT and total amounts of an evidence row, with missing values derived. */
-export interface EvidenceAmounts {
-  total: number
-  supply: number
-  vat: number
-}
-
-/** One evidence record in wire shape. */
-export interface Evidence {
-  id: string
+/**
+ * 저장한 증빙 한 건입니다. 금액은 수집한 값 그대로 두고(빠진 값은 `null`), 응답할 때
+ * `evidenceAmounts`로 채웁니다. 예상 부가세가 "세액을 받았는지"를 구분해야 하기 때문입니다.
+ */
+export interface EvidenceRecord {
+  id: Id<'evidence'>
+  companyId: Id<'company'>
   side: EvidenceSide
-  source: string
-  doc_type: EvidenceDocType | null
+  source: EvidenceSource
+  /** 원천 안에서 유일한 수집 키입니다. 세금계산서는 승인번호, 카드는 승인번호:카드번호:승인시각입니다. */
+  externalKey: string
+  /** 작성일자입니다. 세금계산서가 아니면 발급일자와 같습니다. */
+  writtenOn: string
+  issuedOn: string
+  docType: EvidenceDocType | null
   kind: EvidenceKind | null
-  written_on: string
-  issued_on: string
-  counterparty_name: string | null
-  counterparty_business_number: string | null
-  partner_id: string | null
-  partner_name: string | null
-  item_summary: string | null
-  total_amount: number
-  supply_amount: number
-  vat_amount: number
-  account_title_id: string | null
-  account_title_name: string | null
-  classified_by: 'manual' | 'rule' | null
-  classified_rule_id: string | null
+  counterpartyName: string | null
+  /** `-` 없는 숫자 10자리입니다. */
+  counterpartyBusinessNumber: string | null
+  itemSummary: string | null
+  totalAmount: number | null
+  supplyAmount: number | null
+  vatAmount: number | null
+  partnerId: Id<'partner'> | null
+  classification: Classification
   memo: string | null
-  deductible: boolean | null
-  card_number_masked: string | null
-  card_company_code: string | null
-  approval_no: string | null
+  /** 매입만 씁니다. 매출은 항상 `UNDECIDED`입니다. */
+  vatDeduction: VatDeduction
+  card: { numberMasked: string; companyCode: string | null; approvalNo: string | null } | null
+  /** PG사·배달앱·쇼핑몰 채널 원문입니다. */
   channel: string | null
-  is_canceled: boolean
-  dedupe_group: string | null
-  sales_transaction_id: string | null
-  synced_at: string
-}
-
-/** Filters of the evidence list, already validated. */
-export interface EvidenceFilter {
-  sources: string[]
-  start: string
-  end: string
-  classification: 'classified' | 'unclassified' | undefined
-  accountTitleIds: string[]
-  docType: EvidenceDocType | undefined
-  kind: EvidenceKind | undefined
-  partnerId: string | undefined
-  search: string | undefined
-}
-
-/** Sort keys of the evidence list; a leading `-` sorts descending. */
-export type EvidenceSort = 'written_on' | '-written_on' | 'issued_on' | '-issued_on' | 'total_amount' | '-total_amount'
-
-/** Tab counts shown above the evidence list. */
-export interface ClassificationCounts {
-  all: number
-  classified: number
-  unclassified: number
-}
-
-/** Changes a user may make to one evidence record. */
-export interface EvidencePatch {
-  account_title_id?: string | null | undefined
-  partner_id?: string | null | undefined
-  memo?: string | null | undefined
-  deductible?: boolean | null | undefined
+  isCanceled: boolean
+  /** 같은 매출이 여러 원천으로 들어온 묶음 키입니다. 예상 부가세가 묶음당 한 건만 셉니다. */
+  dedupeGroup: string | null
+  salesTransactionId: Id<'salesTransaction'> | null
+  syncedAt: string
+  version: number
 }

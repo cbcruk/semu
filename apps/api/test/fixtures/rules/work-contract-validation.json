@@ -1,0 +1,185 @@
+{
+  "rule": "work-contract-validation",
+  "description": "Validates a work contract: fixed-term end date, period order, probation months and reduced probation pay only for contracts of one year or longer.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/contracts/contracts.service.ts",
+      "lines": "32-60"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/contracts/contracts.schema.ts",
+      "lines": "1-40"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "641"
+    }
+  ],
+  "inputSchema": {
+    "terms": "contractType, startDate, endDate, probation {months, payRatePpm (1,000,000 = 100%)}."
+  },
+  "cases": [
+    {
+      "name": "permanent without end date",
+      "input": {
+        "terms": {
+          "contractType": "PERMANENT",
+          "startDate": "2026-01-02"
+        }
+      },
+      "expected": {
+        "firstViolation": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "fixed-term needs end date",
+      "input": {
+        "terms": {
+          "contractType": "FIXED_TERM",
+          "startDate": "2026-01-02"
+        }
+      },
+      "expected": {
+        "firstViolation": "END_DATE_REQUIRED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "end before start",
+      "input": {
+        "terms": {
+          "contractType": "FIXED_TERM",
+          "startDate": "2026-01-02",
+          "endDate": "2026-01-01"
+        }
+      },
+      "expected": {
+        "firstViolation": "END_BEFORE_START"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "probation needs months",
+      "input": {
+        "terms": {
+          "contractType": "PERMANENT",
+          "startDate": "2026-01-02",
+          "probation": {}
+        }
+      },
+      "expected": {
+        "firstViolation": "PROBATION_MONTHS_REQUIRED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "probation 3 months at 90%",
+      "input": {
+        "terms": {
+          "contractType": "PERMANENT",
+          "startDate": "2026-01-02",
+          "probation": {
+            "months": 3,
+            "payRatePpm": 900000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reduced probation pay on a one-year contract ending 12-31",
+      "input": {
+        "terms": {
+          "contractType": "FIXED_TERM",
+          "startDate": "2026-01-01",
+          "endDate": "2026-12-31",
+          "probation": {
+            "months": 3,
+            "payRatePpm": 900000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "PROBATION_REDUCTION_NOT_ALLOWED"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "reduced probation pay on a contract through the anniversary",
+      "input": {
+        "terms": {
+          "contractType": "FIXED_TERM",
+          "startDate": "2026-01-01",
+          "endDate": "2027-01-01",
+          "probation": {
+            "months": 3,
+            "payRatePpm": 900000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "full probation pay on a short contract",
+      "input": {
+        "terms": {
+          "contractType": "FIXED_TERM",
+          "startDate": "2026-01-01",
+          "endDate": "2026-06-30",
+          "probation": {
+            "months": 3
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "probation pay below 90%",
+      "input": {
+        "terms": {
+          "contractType": "PERMANENT",
+          "startDate": "2026-01-02",
+          "probation": {
+            "months": 3,
+            "payRatePpm": 800000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "PROBATION_PAY_RATE_OUT_OF_RANGE"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "probation of 13 months",
+      "input": {
+        "terms": {
+          "contractType": "PERMANENT",
+          "startDate": "2026-01-02",
+          "probation": {
+            "months": 13
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "PROBATION_MONTHS_OUT_OF_RANGE"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "1년 계약(2026-01-01 ~ 2026-12-31)을 \"1년 미만\"으로 보아 수습 감액을 막습니다. 종료일 다음날 기준으로 1년이면 허용할까요",
+    "수습 지급률을 정수 퍼센트(90~100)로 받았습니다. 재설계는 ppm(900,000~1,000,000)으로 받아 소수 지급률(95.5%)도 허용할까요",
+    "단순노무직종의 수습 감액 금지(최저임금법 시행령 제3조)는 직종 코드가 없어 검사하지 않습니다. 직종을 받을까요"
+  ]
+}

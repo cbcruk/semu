@@ -1,0 +1,108 @@
+{
+  "rule": "partner-outstanding-amount",
+  "description": "Realtime unsettled sales and purchase amounts per partner from classified evidence minus settlement links.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/partners/partners.repository.ts", "lines": "107-137" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/evidence/evidence.utils.ts", "lines": "22-30" },
+    { "file": "alfred-manual/03-경리/05-거래처-관리.md", "lines": "11, 29", "origin": "manual" }
+  ],
+  "inputSchema": {
+    "evidence": "[{ side: 'SALES' | 'PURCHASE', partnerId: string | null, classified: boolean, totalAmount: number | null, supplyAmount: number | null, vatAmount: number | null, settledAmount: number }]"
+  },
+  "cases": [
+    {
+      "name": "classified sales minus links",
+      "input": {
+        "evidence": [
+          {
+            "side": "SALES",
+            "partnerId": "p-1",
+            "classified": true,
+            "totalAmount": 33000000,
+            "supplyAmount": 30000000,
+            "vatAmount": 3000000,
+            "settledAmount": 11000000
+          }
+        ]
+      },
+      "expected": { "p-1": { "salesAmount": 22000000, "purchaseAmount": 0 } },
+      "derivation": "traced"
+    },
+    {
+      "name": "unclassified evidence is left out",
+      "input": {
+        "evidence": [
+          {
+            "side": "SALES",
+            "partnerId": "p-1",
+            "classified": false,
+            "totalAmount": 1100,
+            "supplyAmount": 1000,
+            "vatAmount": 100,
+            "settledAmount": 0
+          },
+          {
+            "side": "PURCHASE",
+            "partnerId": "p-1",
+            "classified": true,
+            "totalAmount": null,
+            "supplyAmount": 2000000,
+            "vatAmount": 200000,
+            "settledAmount": 0
+          }
+        ]
+      },
+      "expected": { "p-1": { "salesAmount": 0, "purchaseAmount": 2200000 } },
+      "derivation": "traced"
+    },
+    {
+      "name": "evidence without a partner is ignored",
+      "input": {
+        "evidence": [
+          {
+            "side": "PURCHASE",
+            "partnerId": null,
+            "classified": true,
+            "totalAmount": 5000,
+            "supplyAmount": null,
+            "vatAmount": null,
+            "settledAmount": 0
+          }
+        ]
+      },
+      "expected": {},
+      "derivation": "traced"
+    },
+    {
+      "name": "a canceled sale lowers the amount",
+      "input": {
+        "evidence": [
+          {
+            "side": "SALES",
+            "partnerId": "p-1",
+            "classified": true,
+            "totalAmount": 1100000,
+            "supplyAmount": 1000000,
+            "vatAmount": 100000,
+            "settledAmount": 0
+          },
+          {
+            "side": "SALES",
+            "partnerId": "p-1",
+            "classified": true,
+            "totalAmount": -110000,
+            "supplyAmount": -100000,
+            "vatAmount": -10000,
+            "settledAmount": 0
+          }
+        ]
+      },
+      "expected": { "p-1": { "salesAmount": 990000, "purchaseAmount": 0 } },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행 매출 쪽은 `SUM(e.total_amount)`이고 매입 쪽만 `공급가액 + 세액`으로 채웁니다. 현행 매출 테이블은 합계가 `NOT NULL`이라 차이가 없지만, 재설계는 합계 없는 매출 증빙(공급가액·세액만 온 세금계산서)을 받으므로 양쪽 모두 증빙 금액 규칙(`evidence-amounts`)의 합계를 씁니다.",
+    "실시간 미정산은 결산 기준 미수·미지급과 다른 숫자입니다. 화면에서 둘을 어떻게 구분해 보일지 정해야 합니다."
+  ]
+}

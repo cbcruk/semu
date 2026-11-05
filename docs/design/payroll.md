@@ -1,452 +1,536 @@
-# 급여 도메인 설계 (1부: 계산 엔진, 기준표, 급여 설정 · 2부: 급여대장, 명세서, 퇴직금, 원천세 연계)
+# Payroll: 계산 엔진·급여대장·명세서·퇴직금·인건비
 
-> 상태: v0.2 · 2026-11-01 · 구현: `apps/api/src/modules/payroll/**`, 마이그레이션 `0030-payroll-settings.sql`, `0031-payroll-cards.sql`
->
-> 근거는 [`spec-notes/payroll.md`](../spec-notes/payroll.md)(이하 "스펙")이고, 공통 규약은 [`api-architecture.md`](../api-architecture.md)를 따릅니다. 2부(급여대장·BPO 흐름·명세서·퇴직금 정산)는 9절부터입니다.
+급여 계산 엔진, 요율·간이세액 기준표, 회사 급여 설정, 급여대장(급여 아웃소싱과 직접 운영 모두), 급여명세서 발송, 퇴직금 정산, Bookkeeping에 주는 인건비 집계를 다룹니다. 코드는 [`apps/api/src/modules/payroll/`](../../apps/api/src/modules/payroll/)에 있습니다. 근거 자료는 [`docs/reference/spec/payroll.md`](../reference/spec/payroll.md)(이하 스펙), 매뉴얼 `alfred-manual/05-급여/`, `alfred-manual/08-설정/03-급여-설정.md`, 재설계 전 구현 `apps/api/legacy/src/modules/payroll/`입니다.
 
-## 1. 범위와 구조
+## 현행에서 고칠 점
 
-| 폴더 | 내용 | DB |
-| --- | --- | --- |
-| `engine/` | 순수 계산 함수. 4대보험, 간이세액, 일용·사업·기타 원천징수, 비과세 한도, 근로시간·가산수당·일할, 퇴직금·퇴직소득세, 행 단위 진입점 | 없음 |
-| `reference/` | 기준표 저장소(`payroll_rate_tables`), 참조 코드(업종·지급사유·국가), 급여계산기, 엑셀(CSV) 양식 | `payroll_rate_tables` |
-| `settings/` | `employment/settings/*` 27개 엔드포인트 | `payroll_terms`, `payroll_deduction_settings`, `payroll_payment_items`, `payroll_deduction_items`, `work_conditions`, `work_schedule_policies` |
+- **급여만 응답 변환을 끕니다.** 다른 API는 snake_case ↔ camelCase를 인터셉터가 바꾸는데, 급여는 `other_deductions`·`taxable_incomes` 아래를 `LEGACY_RAW_KEYS`로 빼고, `transformKeys` 특이점 때문에 그 뒤에 오는 키까지 변환이 꺼집니다. 계산기 응답은 변환을 아예 끕니다 (P4). 재설계는 다른 컨텍스트와 같은 camelCase 하나이고, 지급·공제 항목은 키가 아니라 `code` 값을 가진 배열입니다
+- **엑셀 업로드를 클라이언트가 채웁니다.** `POST /api/payroll/excel/`이 회사 경로 밖에서 파일을 파싱해 행을 돌려주면, 클라이언트가 그리드를 채운 뒤 따로 저장합니다. 파싱과 저장 사이에 상태가 바뀌어도 모르고, 잘못된 행은 저장할 때 섞여 들어갑니다 (P1, P2). 재설계는 대장에 붙은 가져오기 `Job` 하나가 검증·저장을 끝냅니다
+- **대장 마감과 원천세 자료 갱신이 따로 움직입니다.** 승인 뒤 클라이언트가 원천세 화면을 다시 불러야 "급여대장 마감"이 바뀌고, 신고가 끝난 달의 승인 취소·반려를 막는 서버 규칙이 없습니다 (P2). 재설계는 마감·해제 요청 안에서 지급월 판정을 하고 이벤트를 내며, 원천세 신고가 끝난 지급월은 금액이 바뀌는 커맨드를 409로 막습니다
+- **상태가 화면마다 다릅니다.** legacy는 `입력가능`·`계산중`·`완료`, BPO는 lazy chunk 안의 문자열과 `n/3` 단계, 명세서 발송과 데스크 내보내기도 상태처럼 쓰입니다. `cancel-approval` 하나가 요청 철회와 승인 취소를 겸합니다 (스펙 Q1, Q3)
+- **입력 경로가 소득 종류만큼 복제됩니다.** `wage-monthly|wage-daily|wage-hourly|business|daily|other` × 입력·계산·삭제·동기화로 90개 가까운 경로입니다. 재설계는 행 하나의 `input.incomeType`으로 나눕니다
+- **계산과 저장이 다른 요청입니다.** `calculate`(공제액 계산)와 `data`(임시저장)·`reset-calculation`이 나뉘어 계산 안 된 행이 저장됩니다. 재설계는 행을 저장할 때 서버가 같은 요청에서 계산합니다
+- **규칙 상수가 화면에 있습니다.** 최저임금, 비과세 한도, 수당 배수 기본값, 추가 카드 생성 가능 여부를 화면이 판정하거나 그립니다 (P1). 재설계는 기준표·설정·`allowedActions`·`warnings`로 내려줍니다
 
-- 엔진은 직원 테이블을 모릅니다. 호출하는 쪽이 HR 조회 결과를 평범한 객체로 바꿔 넘깁니다.
-- 엔진의 공개 API는 `engine/index.ts` 한 곳에서 내보냅니다.
+## 용어
 
-## 2. 엔진 설계
+| 업무 용어 | 키 |
+|---|---|
+| 급여대장 (현행 급여카드) | `PayrollLedger` (`pyl_`) |
+| 정기 대장 / 추가 대장 | `kind`: `REGULAR` / `ADDITIONAL` |
+| 운영 방식 (급여 아웃소싱 / 직접 운영) | `workflow`: `CLIENT_APPROVAL` / `DIRECT_CLOSE` |
+| 입력가능 / 제출(계산중) / 승인 대기 / 마감(완료) | `status`: `DRAFT` / `SUBMITTED` / `PENDING_APPROVAL` / `CLOSED` |
+| 정산 진행 (n/3) | `step`: 1·2·3 |
+| 귀속월 / 지급일 / 지급월 | `attributionMonth` / `paymentDate` / `paymentMonth` |
+| 임금산정 기간 | `wagePeriod { start, end }` |
+| 대장 행 (근로·일용·사업·기타) | `PayrollRow` (`pyr_`), `input.incomeType`: `WAGE_MONTHLY`·`WAGE_HOURLY`·`WAGE_DAILY`·`DAILY`·`BUSINESS`·`OTHER` |
+| 직원 정보 사본 | `snapshot` |
+| 계산 결과 / 근거 | `result` / `result.breakdown[] { code, label, amount, formula }` |
+| 기준표 (요율·간이세액·최저임금) | `RateTable` (`rtb_`), `effectiveFrom` |
+| 미확인 값 | `unverifiedPaths` |
+| 급여 설정 (현행 급여 지급 조건·공제 설정) | `PayrollSetting` |
+| 수당 지급배수 | `multipliers` (ppm) |
+| 산출방법 (요율 / 고지 / 간이세액표 / 직접 입력 / 미적용) | `deductionMethods`: `RATE`·`NOTICE`·`TAX_TABLE`·`MANUAL`·`NONE` |
+| 급여명세서 | `Payslip` (`psl_`, 행 하나) |
+| 퇴직금 정산 | `SeveranceSettlement` (`sev_`), `status`: `CALCULATED`·`COMPLETED`·`EXCLUDED` |
+| 인건비 내역 | `LaborCostReport` |
+| 원천세 신고 잠금 | `withholdingFiled` |
 
-### 2.1 값의 단위
+## 계산 엔진
 
-| 값 | 표현 | 이유 |
-| --- | --- | --- |
-| 금액 | 원 단위 정수 | `lib/money` 규약 |
-| 요율 | ppm 정수(1% = 10,000) | 3.595%, 13.14%를 정확히 담기 위해서입니다. bp(만분율)로는 3.595%를 표현할 수 없습니다 |
-| 곱셈·나눗셈 | `mulDiv(a, b, c) = floor(a × b ÷ c)`를 BigInt로 계산 | 큰 금액 × 요율에서 정밀도를 잃지 않기 위해서입니다 |
-| 시간 | 입력은 소수 시간, 내부는 분 정수 | 1.5시간 같은 값을 부동소수 오차 없이 계산합니다 |
-| 배수 | 입력은 소수(1.5), 내부는 100분율 정수, DB는 `*_x100` 열 | |
-| 시급 | `WageRate {amount, perMinutes}` | 통상시급을 반올림하지 않고 가산수당을 계산합니다(월 통상임금 ÷ 209시간을 끝까지 분수로 유지) |
+[`engine/`](../../apps/api/src/modules/payroll/engine/)은 Effect도 저장소도 모르는 순수 함수입니다. 행 입력과 기준표를 받아 결과와 근거를 돌려줍니다. 대장, 계산기, 퇴직금이 모두 이 엔진을 부릅니다.
 
-### 2.2 반올림 규칙
+### 단위
 
-모든 중간 단계는 **원 미만 절사**입니다. 아래 표는 최종 금액에 적용하는 단위이고, 단위 자체도 기준표 값이라 바꿀 수 있습니다.
+| 값 | 단위 | 이유 |
+|---|---|---|
+| 금액 | 원 정수 (`Won`) | 소수 원이 없음. 엔진 입구에서 `assertWon`이 정수가 아니면 거부 |
+| 요율·배수·비율 | ppm 정수 (`4.75%` = 47500, `1.5배` = 1500000) | 부동소수 없이 곱셈과 절사를 정확히. 현행 `x100`·bp·퍼센트를 대신 |
+| 근무 시간 | 분 정수 | 현행 소수 시간(`1.5`)과 주휴시간 반올림을 없앰 |
+| 날짜 / 월 | `YYYY-MM-DD` / `YYYY-MM` | 회사 시간대(Asia/Seoul) 달력 날짜 |
 
-| 항목 | 규칙 | 기준표 키 | 확인 |
-| --- | --- | --- | --- |
-| 국민연금 기준소득월액 | 하한·상한으로 자른 뒤 **천원 미만 절사** | `nationalPension.baseRoundingUnit` | 미확인 |
-| 국민연금 보험료 | 기준소득월액 × 4.75%, **10원 미만 절사** | `nationalPension.premiumRoundingUnit` | 미확인 |
-| 건강보험료 | 보수월액 × 3.595%, 10원 미만 절사 | `healthInsurance.premiumRoundingUnit` | 미확인 |
-| 장기요양보험료 | 건강보험료(각 측) × 13.14%, 10원 미만 절사 | `longTermCare.premiumRoundingUnit` | 미확인 |
-| 고용보험료 | 보수 × 0.9%(사업주는 + 고용안정 0.25%), 10원 미만 절사 | `employmentInsurance.premiumRoundingUnit` | 미확인 |
-| 근로소득세(간이세액) | 연 결정세액 ÷ 12 → **10원 미만 절사** → 자녀공제 차감 → 감면 → × 80/100/120% → 10원 미만 절사 | `wageIncomeTax.taxRoundingUnit` | 미확인. 스펙 4.2는 "원 미만 절사"라고 적었지만 국고금 관리법의 10원 미만 절사 관행을 택했습니다 |
-| 지방소득세 | 소득세 × 10%, 10원 미만 절사 | `localIncomeTax.roundingUnit` | 미확인(스펙과 같은 이유) |
-| 일용·사업·기타 소득세 | 산출 후 10원 미만 절사, 1,000원 미만이면 0(소액부징수) | `smallAmountExemption` | 소액부징수 기준은 확인 |
-| 가산수당·일할 | `mulDiv`로 원 미만 절사 | — | |
-| 퇴직금 | 평균임금을 분수로 둔 채 `3개월 임금 × 30 × 재직일수 ÷ (역일수 × 365)`를 한 번에 절사. 표시용 평균임금(일)은 원 미만 절사 | — | 실무는 평균임금을 소수 둘째 자리까지 쓰기도 합니다 |
-| 퇴직소득세 | 각 단계 원 미만 절사, 최종 10원 미만 절사 | — | 미확인 |
+### 절사
 
-### 2.3 계산 순서
+| 대상 | 규칙 |
+|---|---|
+| 4대보험 근로자·사업주 부담 | 10원 미만 절사 |
+| 국민연금 기준소득월액 | 1,000원 미만 절사 후 상하한 |
+| 근로소득 간이세액 | 10원 미만 절사, 비율 적용 뒤 다시 10원 미만 절사 |
+| 일용·사업·기타 소득세, 지방소득세 | 원 미만 절사. 소득세 1,000원 미만 소액부징수 |
+| 가산수당, 일할, 근태 공제, 평균임금, 퇴직금 | 원 미만 절사 |
 
-**근로(월급·시급·일급)** `calculateWageRow`
+곱셈·나눗셈은 `mulDiv(a, b, c)` 하나로 하고(중간값 `BigInt`), 통상시급처럼 나눠 떨어지지 않는 값은 저장하지 않고 분수로 들고 다닙니다.
 
-1. 기본급: 월급은 `basePay`(일할이면 `prorate`), 시급은 `시급 × 근무시간`, 일급은 `일급 × 일수`
-2. 주휴수당(시급·일급만): `시급 × 1일 주휴시간 × 개근 주 수`. 월급제는 209시간에 이미 들어 있습니다
-3. 가산수당: `통상시급 × 시간 × 배수`. 통상시급은 (기본급 + 통상임금 포함 항목, 일할 전 금액) ÷ 월 소정근로시간입니다. 배수는 `payroll_terms`에서 옵니다
-4. 근태공제(월급만): `(지각·조퇴·결근 시간 + 주휴공제 일수 × 1일 주휴시간) × 통상시급`을 음수 지급 행으로 넣습니다
-5. 지급 항목(일할 대상이면 일할)
-6. 비과세 한도 적용(카테고리별 한도를 항목 순서대로 소진, 초과분은 과세)
-7. 4대보험(과세 급여 기준, 항목별 `rate | notice | exempt`)
-8. 간이세액·지방소득세
-9. 회사 공제 항목
-10. 최저임금 경고: (기본급 + 최저임금 포함 항목) ÷ 소정근로시간 < 최저시급이면 `BELOW_MINIMUM_WAGE`(차단하지 않음)
+### 검증된 규칙과 미확인 규칙
 
-**일용** `calculateDailyWorkerRow`: 일별 `max(0, 일급 − 150,000) × 6% − 55%` 합계. 일별 금액을 주지 않으면 총액을 균등 분할합니다. 소액부징수는 **지급 행 단위**로 판정합니다. 고용보험은 설정대로, 국민연금·건강보험은 호출자가 켤 때만 계산하고 8일·60시간 기준을 넘는데 꺼져 있으면 경고합니다.
+| 규칙 | 상태 | 근거 |
+|---|---|---|
+| [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율·상하한(2026-07 포함)·연금·건강 절사 확인, 장기요양 비율 반올림·고용·산재 절사 미확인 | 스펙 4.1, 법령·고시 원문 |
+| [simple-income-tax](../reference/rules/simple-income-tax.md) | 산식 계수·자녀 공제액(2026-03 개정) 확인, 공식 표와 차이는 D4로 유지 | 스펙 4.2, 소득세법·별표 2 |
+| [daily-worker-withholding](../reference/rules/daily-worker-withholding.md) | 확인 | 스펙 4.3 |
+| [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8% 확인, 역산·예술인 필요경비·업종코드 미확인 | 스펙 4.4, 보험료징수법 시행령 |
+| [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·과세최저한 확인, 지급사유 코드 미확인 | 스펙 4.5 |
+| [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 10종 한도 확인, 보육수당 자녀 1명당 한도는 미반영 | 스펙 4.6, 소득세법·시행령 |
+| [overtime-multipliers](../reference/rules/overtime-multipliers.md) | 확인 (배수는 회사 설정) | 스펙 4.8, 매뉴얼 |
+| [wage-proration](../reference/rules/wage-proration.md) | 식 확인, 역일·소정근로일 선택 미확인 | 스펙 4.10 |
+| [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인(고용노동부고시 제2025-47호), 경고만 하는 것은 추정 | 스펙 4.7 |
+| [severance-pay](../reference/rules/severance-pay.md) | 식·퇴직소득 공제표 확인 | 스펙 4.11, 소득세법 제48조 |
 
-**사업** `calculateBusinessRow`: 3%(+ 지방 0.3%). `after_tax`면 `grossUpFromNet`으로 역산합니다(967,000 → 1,000,000). 예술인·노무제공자 고용보험은 0.8%입니다.
+기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 남은 미확인 경로는 2026. 1~10월의 `longTermCare.ratioOfHealthPpm`(2026-11부터 확인), `employmentInsurance.premiumRoundingUnit`, `industrialAccident.*`, `wageIncomeTax.simpleTaxStrategy`(D4)입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
 
-**기타** `calculateOtherIncomeRow`: `기타소득금액 = 지급액 − 필요경비`, 5만원 이하면 과세최저한, 아니면 20%(지급사유별 세율 가능). 결과의 `taxablePay`는 기타소득금액입니다.
+### 계산 결과
 
-### 2.4 간이세액: 산식, 구간, 교체 가능성
-
-산식(`annualSimpleTaxSteps`): 월 과세급여 × 12 → 근로소득공제(2천만원 한도) → 인적공제 150만원 × 공제대상가족 → 연금보험료공제(국민연금 근로자 요율 × 상하한 적용 월급 × 12) → 특별소득공제 추정(가족 수 1/2/3+ 구간식) → 기본세율 → 근로소득세액공제와 한도 → ÷ 12. 월 1천만원 초과는 "1천만원 세액 + 초과분 산식"입니다. 자녀세액공제(8~20세 1명 12,500원, 2명 29,160원, 3명 이상 1명당 25,000원 추가)를 뺀 뒤 원천징수 비율을 곱합니다.
-
-| 전략 | 동작 | 용도 |
-| --- | --- | --- |
-| `MIDPOINT_FORMULA`(기본값) | 급여가 속한 간이세액표 행(77만~150만 5천원, ~300만 1만원, ~1천만 2만원 폭)의 **중간값**으로 산식을 계산 | 공식 표가 만들어지는 방식과 같습니다 |
-| `EXACT_FORMULA` | 실제 급여로 계산 | 테스트, 설명 |
-| `lookupSimpleTaxTable(rows, fallback)` | 공식 표 행을 그대로 조회하고 범위 밖은 fallback | **공식 간이세액표를 넣으면 이것으로 바꿉니다** |
-
-예상 차이:
-
-- 구간 효과: `EXACT`와 `MIDPOINT`의 차이는 행 폭 절반(2,500~10,000원)의 급여에 대한 세액, 즉 수백 원 이내입니다. 300만원·1인: exact 59,080원, midpoint 60,380원.
-- 계수 효과: 특별소득공제 추정 산식과 계수는 기억에 의존했습니다(미확인). 기억하는 공식 표 값(300만원·1인 74,350원, 이것도 미확인)과 midpoint 결과(60,380원)가 **약 1만 4천원 차이**가 납니다. 산식 계수가 틀렸거나 기억한 표 값이 틀렸을 수 있습니다. 공식 표를 `lookupSimpleTaxTable`로 넣기 전까지 근로소득세는 **추정치**로 다뤄야 합니다. `/api/tax-rates/simple` 응답에도 `verified: false`를 붙였습니다.
-
-### 2.5 기준표 (`PayrollRateTable`)
-
-- 연도·월별 버전입니다. `effectiveFrom`(`YYYY-MM`)이 귀속월 이하인 것 중 가장 최근 것을 씁니다(`resolveRateTable`).
-- TS 상수(`RATES_2026_01`, `RATES_2026_07`)가 원본이고, 앱 시작과 시드 때 `payroll_rate_tables`에 `INSERT OR IGNORE`로 넣습니다. 이미 있는 행은 덮어쓰지 않으므로 운영자가 DB에서 고칠 수 있습니다. API는 DB에서 읽습니다.
-- 모든 값에 `verification[경로] = {verified, source}`가 있습니다. `verified: true`는 스펙이나 화면으로 확인된 값만입니다. `unverifiedRatePaths(table)`로 목록을 뽑을 수 있습니다.
-- 2026-07 버전은 국민연금 상하한 변경 자리입니다. 값은 아직 몰라서 1월 값을 반복하고 미확인으로 표시했습니다.
-
-| 경로 | 2026 값 | 확인 | 출처 |
-| --- | --- | --- | --- |
-| `minimumWage` | 시급 10,320 / 월 2,156,880 / 209시간 | ✓ | 스펙 2.9, 화면 3b9f629f |
-| `nationalPension.employeeRatePpm` / `employerRatePpm` | 4.75% / 4.75% | ✓ | 스펙 4.1 |
-| `nationalPension.baseMin` / `baseMax` | 400,000 / 6,370,000 | ✗ | 2025.7~2026.6 값. 2026.7 이후 미확인 |
-| `healthInsurance` | 3.595% / 3.595% | ✓ | 스펙 4.1 |
-| `longTermCare.ratioOfHealthPpm` | 13.14% | ✗ | 스펙 "확인 필요" |
-| `employmentInsurance.employeeRatePpm` | 0.9% | ✓ | 스펙 4.1 |
-| `employmentInsurance.employerUnemploymentRatePpm` | 0.9% | ✗ | 법령 기억 |
-| `employmentInsurance.employerStabilityRatePpm` | 0.25%(150인 미만) | ✗ | 규모별로 다름. 호출자가 덮어쓸 수 있음 |
-| `employmentInsurance.artistEmployeeRatePpm` | 0.8% | ✗ | 스펙 "확인 필요" |
-| `industrialAccident.defaultEmployerRatePpm` | 0 | ✗ | 업종별. 호출자가 회사 요율을 넘김 |
-| 각 보험 반올림 단위 | 10원(기준소득월액 1,000원) | ✗ | 2.2절 |
-| `wageIncomeTax.earnedIncomeDeduction`, `Cap` | 70/40/15/5/2%, 2천만원 | ✗ | 소득세법 47조 기억 |
-| `wageIncomeTax.personalDeductionPerDependant` | 1,500,000 | ✗ | 50조 기억 |
-| `wageIncomeTax.specialDeductionByDependants` | 1명 310만+4%…, 2명 360만+4%…, 3명+ 500만+7%… | ✗ | 별표2 기억, **신뢰도 낮음** |
-| `wageIncomeTax.brackets` | 6/15/24/35/38/40/42/45% (1,400만·5,000만·8,800만…) | ✗ | 55조(2023 개정) 기억 |
-| `wageIncomeTax.earnedIncomeCredit`, `Limits` | 55%, 130만 초과 715,000+30% / 한도 74만·66만·50만·20만 | ✗ | 59조 기억 |
-| `wageIncomeTax.childCreditMonthly` | 12,500 / 29,160 / +25,000 | ✗ | 2024 간이세액표 기억 |
-| `wageIncomeTax.highIncomeBrackets` | 1천만 초과 98%×35%+25,000 … 8,700만 초과 45% | ✗ | 별표2 기억(경계값끼리 일관됨을 확인) |
-| `wageIncomeTax.tableRowBands`, `tableMinimumPay` | 5천/1만/2만원 폭, 77만원부터 | ✗ | 별표2 기억 |
-| `wageIncomeTax.taxRoundingUnit` | 10원 | ✗ | 2.2절 |
-| `localIncomeTax.ratePpm` | 10% | ✓ | 스펙 4.2 |
-| `dailyWorker` | 15만원 공제, 6%, 55%, 8일·60시간 | ✓ | 스펙 4.3, 4.1 |
-| `businessIncome.ratePpm` | 3% | ✓ | 스펙 4.4 |
-| `otherIncome` | 20%, 과세최저한 5만원 | ✓ | 스펙 4.5 |
-| `smallAmountExemption` | 1,000원 | ✓ | 스펙 4.3·4.4 |
-| `nonTaxable.meal/vehicle/childcare/research` | 월 200,000 | ✓ | 스펙 4.6 |
-| `nonTaxable.overseas` / `overseas_special` | 월 1,000,000 / 5,000,000 | ✗ | 스펙 "확인 필요" |
-| `nonTaxable.night_shift` | 연 2,400,000 | ✗ | 월정액급여 요건은 엔진 밖 |
-| `nonTaxable.parental_leave`, `tuition` | 한도 없음 | ✗ | |
-| `nonTaxable.invention` | 연 7,000,000 | ✗ | |
-| `retirementIncomeTax.serviceYearDeduction` | 5년 이하 100만×년, 10년 이하 500만+200만…, 20년 이하 1,500만+250만…, 초과 4,000만+300만… | ✗ | 2023 개정 기억 |
-| `retirementIncomeTax.convertedPayDeduction` | 800만 100%, 7천만 60%, 1억 55%, 3억 45%, 초과 35% | ✗ | 기억 |
-
-참조 코드(`reference-data.ts`)도 `verified`를 가집니다. 사업소득 업종명 중 화면에 나온 것(기타자영업(프리랜서), 가수, 간병인, 기타모집수당)은 이름만 확인했고, **숫자 코드는 전부 미확인**입니다. 특고 직종코드와 기타소득 지급사유 코드·세율(연금해지 15%, 서화·골동품 80%)도 미확인입니다.
-
-## 3. 다음 담당자가 쓸 엔진 API
-
-```ts
-import {
-  calculatePayrollRow, resolveRateTable, calculateSeverancePay, calculateSocialInsurance,
-  calculateWageIncomeTax, splitNonTaxable, weeklyRestHours, monthlyStandardHours,
-  MIDPOINT_FORMULA, EXACT_FORMULA, lookupSimpleTaxTable,
-  MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE,
-} from '../payroll/engine'
-import { rateTableFor } from '../payroll/reference/rate-tables.repository'
-
-calculatePayrollRow(input: PayrollRowInput, rates: PayrollRateTable, options?: { simpleTax?: SimpleTaxStrategy }): PayrollRowResult
-calculateWageRow(input: WageRowInput, rates, options?): PayrollRowResult
-calculateDailyWorkerRow(input: DailyWorkerRowInput, rates): PayrollRowResult
-calculateBusinessRow(input: BusinessRowInput, rates): PayrollRowResult
-calculateOtherIncomeRow(input: OtherIncomeRowInput, rates): PayrollRowResult
-calculateSeverancePay(input: SeveranceInput, rates): SeveranceResult
-resolveRateTable(tables, 'YYYY-MM'): PayrollRateTable      // 순수
-rateTableFor(db, 'YYYY-MM'): PayrollRateTable               // DB에서 읽기
+```
+result
+├─ grossPay, taxablePay, nonTaxablePay
+├─ deductions { nationalPension, healthInsurance, longTermCare, employmentInsurance, incomeTax, localIncomeTax, other }
+├─ deductionTotal, netPay
+├─ employerInsurance { nationalPension, healthInsurance, longTermCare, employmentInsurance, industrialAccident }
+├─ breakdown[] { code, label, amount, formula }       # "3,000,000 × 4.75%" 같은 근거
+└─ warnings[]  { code, message }                      # BELOW_MINIMUM_WAGE, NON_TAXABLE_LIMIT_EXCEEDED, ...
 ```
 
-- `PayrollRowInput`은 `incomeType`(`wage_monthly | wage_hourly | wage_daily | daily | business | other`)로 구분되는 유니온입니다. BPO 세그먼트(`wage-monthly` 등)의 하이픈을 밑줄로 바꾼 값입니다.
-- 근로 행 입력의 출처:
-  - `paymentItems`: `payroll_payment_items` + 카드 금액. `nonTaxableCategory`, `includeInOrdinaryWage`, `includeInMinimumWage`, 회사 한도(`companyNonTaxableLimit`)를 설정 행에서 옮깁니다
-  - `multipliers`: `payroll_terms.fixed_*_multiplier`
-  - `monthlyStandardHours`, `dailyRestHours`: 근로시간 정책 응답의 `monthly_standard_hours`, `weekly_rest_hours`
-  - `insurance.*.mode`: `payroll_deduction_settings`의 `notice | rate`, 직원 4대보험 제외 사유면 `exempt`
-  - `incomeTax`: 회사 `income_tax_method`와 HR `deduction-info`(가족 수, 자녀 수, 80/100/120%)
-- `PayrollRowResult`는 `payments[]`, `deductions[]`(fx 근거 `formula` 포함), `grossPay`, `taxablePay`, `nonTaxablePay`, `insurance.{employee,employer}`, `incomeTax`, `localIncomeTax`, `deductionTotal`, `netPay`, `employerInsuranceTotal`, `breakdown[]`, `warnings[]`, `rateTable`(사용한 기준표 월)입니다. `calc_trace` JSON에는 `breakdown`을 그대로 저장하면 됩니다.
-- 기준표 조회 월: 4대보험은 귀속월, 원천세는 지급일 기준이 원칙입니다(스펙 4.13, 확인 필요). 지금 엔진은 행 하나에 표 하나를 받으므로, 둘이 다르면 호출자가 보험과 세금을 따로 계산해야 합니다. 2026년 안에서는 두 버전의 세율이 같아 차이가 없습니다.
-- 사용 현황: `payrollRoutes(deps, { usage })`의 `SettingsUsageCounter`(`workConditionUsages`, `workSchedulePolicyUsages`)를 HR 근로계약 조회로 구현해 넘기면 `usage-status`와 삭제 거부가 실제 값으로 동작합니다. 기본값은 `NO_USAGE`(항상 0)입니다. `createApp`은 옵션 없이 부르므로, 연결할 때 `payroll.routes.ts`의 기본값을 바꾸는 편이 간단합니다.
-- 설정 기본값: `ensurePayrollSettings(db, companyId, now)`가 회사의 첫 요청(또는 시드) 때 급여 조건, 공제 설정, 기본 지급 항목 7개, 기본 근로조건, "주 5일 40시간" 정책을 만듭니다. 급여대장 쪽에서 설정을 읽기 전에도 이 함수를 부르세요(트랜잭션 안에서 호출하는 것을 전제로 합니다).
+## 기준표와 급여 설정
 
-## 4. 엔드포인트
+### 기준표
 
-### 4.1 회사 경로 `/api/company/:companyId/employment/settings` (메뉴 `payroll_setting`)
-
-| 동사 | 경로 | 비고 |
-| --- | --- | --- |
-| GET | `/payroll-payment-categories` | `search`, `is_taxable`, `group`. 카탈로그 전체(DRF 봉투, 페이지 없음) |
-| GET, POST | `/payroll-payment-items` | `is_taxable`, `search`, `limit`, `offset` |
-| GET, PATCH, DELETE | `/payroll-payment-items/:id` | 기본급(`is_system`)은 삭제·이름 변경 불가 |
-| GET, PATCH | `/payroll-deduction` | 회사 싱글턴 |
-| GET, POST | `/payroll-deduction-items` | |
-| GET, PATCH, DELETE | `/payroll-deduction-items/:id` | |
-| GET, PATCH | `/payroll-terms` | 응답에 읽기 전용 `minimum_wage` |
-| GET, POST | `/work-conditions` | `is_active` 필터 |
-| GET, PATCH, DELETE | `/work-conditions/:id` | 사용 중이면 삭제 409 |
-| GET, PATCH | `/work-conditions/:id/usage-status` | PATCH `{is_active}` |
-| GET, POST | `/work-schedule-policies` | |
-| GET, PUT, DELETE | `/work-schedule-policies/:id` | PUT은 전체 교체 |
-| GET, PATCH | `/work-schedule-policies/:id/usage-status` | |
-
-스펙 5.10의 27개(동사 기준)에 `usage-status` GET 2개를 더했습니다.
-
-### 4.2 계정 경로 (인증 필요, 회사 경로 아님)
-
-| 동사 | 경로 | 비고 |
-| --- | --- | --- |
-| GET | `/api/payroll/business-income-types` | `target_date=YYYYMM`(기본: 이번 달) |
-| GET | `/api/payroll/special-occ-types` | |
-| GET | `/api/payroll/other-labor-income-types` | |
-| GET | `/api/payroll/nation-codes` | |
-| GET, POST | `/api/payroll/excel` | CSV 양식 / CSV 업로드 파싱(저장하지 않음) |
-| GET | `/api/tax-rates/simple` | `monthly_pay`가 있으면 단건, 없으면 생성한 표 전체 |
-| GET | `/api/tax-rates/necessary-expenses` | |
-| POST | `/api/payroll/calculator/simulate` | 저장하지 않음. snake_case 그대로 응답 |
-
-참조·계산기 경로는 번들에서 세션으로 부르고 회사 ID가 없어서 `account` 라우터에 두었습니다. 공개(`public`)로 열 근거는 찾지 못했습니다.
-
-## 5. 설정 결정 사항
-
-- **지급 항목 규칙**: 비과세 항목은 카탈로그에서만 만들 수 있고 표준 이름을 바꿀 수 없습니다. 연차수당도 표준 이름 필수입니다. 직접 입력 항목은 과세만 됩니다. 카탈로그 항목의 과세 여부는 카탈로그와 같아야 합니다. 비과세 한도는 비과세 항목에만 켤 수 있고 법정 월 한도를 넘을 수 없습니다(엔진은 회사 한도와 법정 한도 중 작은 값을 씁니다). 계산방법 표기를 켜면 계산방법이 필수입니다. 이름은 회사 안에서 유일합니다.
-- **기본 지급 항목**: 기본급(시스템), 연장·야간·휴일·휴일연장근로수당, 연차수당, 식대. 카탈로그의 포함 플래그 기본값(월급여·통상·평균·최저)은 항목 성격에 따른 제안입니다.
-- **공제 설정**: 스펙은 국민연금 산출방법에 `notice`만 적었지만 엔진이 요율 계산을 지원하므로 `notice | rate`를 모두 받습니다. 기본값은 국민연금·건강보험 `notice`, 고용보험 `rate`, 소득세 `tax_table_based`입니다.
-- **급여 조건**: 5인 미만 여부를 바꾸면서 배수를 함께 보내지 않으면 배수를 새 규모의 기본값으로 되돌립니다. 배수는 소수 둘째 자리까지 받습니다. 기본 급여일은 25일(추정)입니다.
-- **근로조건**: 수습 개월이 0이면 수습 급여 비율을 100%로 맞춥니다.
-- **근로시간 정책**: 주기 안의 요일별 시간(`{week, day_of_week, hours}`)으로 받습니다. 주 소정근로시간은 주기 평균, 월 단위 주기는 정의한 주 수로 나눕니다. 자동 주휴시간은 비례식(`주 소정 ÷ 40 × 8`, 최대 8)이고, 주 15시간 미만이면 0입니다. 응답에 `weekly_contractual_hours`, `work_days_per_week`, `weekly_rest_hours`, `monthly_standard_hours`를 붙입니다. 같은 요일이 유급·무급 휴일에 동시에 있거나, 휴일에 소정 시간이 있거나, 주 15시간 이상인데 유급주휴일이 없으면 422입니다. 고정 시간외는 `none`끼리 짝이 맞아야 하고, 요일별일 때만 요일을 받습니다.
-- **ID**: sf와 같이 정수 자동 증가 ID입니다.
-- **사용 중 삭제**: `INVALID_TRANSITION`(409)으로 거부하고 비활성화를 권합니다. 오류 코드 목록이 공통 소유라 새 코드를 만들지 않았습니다.
-
-## 6. 추정 응답
-
-| 엔드포인트 | 추정한 형태 | 근거 |
-| --- | --- | --- |
-| `payroll-payment-categories` | `{count, next: null, previous: null, results: [{code, name, group, is_taxable, non_taxable_category, statutory_monthly_limit, statutory_annual_limit, description, standard_name_required, include_in_*}]}` | 불러오기 모달 열(항목명/과세여부/설명), 6절 3순위 |
-| `payroll-payment-items[/:id]` | 스펙 2.4 필드 + `non_taxable_category`, `statutory_non_taxable_limit`, `is_system`, `sort_order` | 스펙 2.4 |
-| `payroll-deduction` | `{national_pension_method, national_pension_pay_on_acquisition_month, health_insurance_method, employment_insurance_method, income_tax_method, updated_at}` 평탄 구조 | 스펙 2.5 |
-| `payroll-deduction-items` | `{id, name, amount_mode, amount}` | 스펙 2.5 |
-| `payroll-terms` | 스펙 2.9 필드 + `minimum_wage: {year, hourly_wage, monthly_wage, monthly_hours}` | 화면 3b9f629f |
-| `work-conditions` | `{id, name, work_place, probation_months, probation_pay_rate, is_active}` | 스펙 2.9 |
-| `*/usage-status` GET | `{id, is_active, usage_count, in_use}` | 엔드포인트 이름 |
-| `*/usage-status` PATCH | 엔티티 + 위 필드 | |
-| `work-schedule-policies` | 2.9 필드(`contractual_work_schedules[]`, `fixed_overtime_items[]`) + 파생 시간 | 번들 상수, 화면 c7509102 |
-| `business-income-types` | `[{code, name, detail_type, verified}]` 평탄 배열 | 스펙 5.1 #25 |
-| `special-occ-types` | `[{code, name, verified}]` | #26 |
-| `other-labor-income-types` | `[{code, name, necessary_expense_rate(%), tax_rate(%), verified}]` | #27 |
-| `nation-codes` | `[{code(ISO alpha-2), name}]` | #28 |
-| `excel` GET | CSV(UTF-8 BOM), 파일명 `혜움_급여입력_양식.csv`. 원본은 xlsx지만 의존성 없이 만들 수 없어 CSV로 대신했습니다 | #29 |
-| `excel` POST | `{rows: [{row_number, income_type, name, resident_number, is_foreigner, residence_country, payment_date, pay_amount, work_days, business_income_type_code, other_income_type_code}], errors: [{row_number, errors[]}]}` | 스펙 7절(저장하지 않고 그리드에 채움) |
-| `tax-rates/simple` | 단건 `{target_date, rate_table, method, verified, monthly_pay, dependants, children, income_tax, local_income_tax}` / 전체 `{…, rows: [{min, max, taxes[11]}]}` | 스펙 8절 8번 미확인 |
-| `tax-rates/necessary-expenses` | `[{income_type_code, name, necessary_expense_rate, verified}]` | 이름 |
-| `calculator/simulate` 요청 | `{type: wage, monthly_pay, meal_allowance?, non_taxable_pay?, dependants?, children_aged_8_to_20?, withholding_ratio?}` / `{type: daily, daily_pay, work_days?}` / `{type: business, pay_amount, tax_deduction_mode?}` / `{type: other, pay_amount, income_type_code?, necessary_expense_rate?(%), tax_deduction_mode?}`, 공통 `target_date?` | 탭 이름(`SALARY_CALCULATOR_TAB_SEGMENT`) |
-| `calculator/simulate` 응답 | `{type, income_type, attribution_month, rate_table, gross_pay, taxable_pay, non_taxable_pay, national_pension, health_insurance, long_term_care_insurance, employment_insurance, income_tax, local_income_tax, deduction_total, net_pay, employer{…, total}, payments[], deductions[], breakdown[], warnings[]}` | 매뉴얼 "급여액 대비 공제금액, 차인지급액" |
-
-## 7. 메뉴
-
-`payroll.menus.ts`에 넣은 규칙입니다. `requiredPlans`는 하나만 있어도 열립니다.
-
-| 코드 | 경로 | `requiredPlans` | 권한 필요 | 근거 |
-| --- | --- | --- | --- | --- |
-| `payroll_settlement` | `/payroll-settlement` | `['payroll']` | ○ | 스펙 1.1 "급여 구독, 또는 급여 구독과 세무 기장을 함께" |
-| `payroll_management` | `/company/payroll` | `['taxation']` | ○ | "세무 기장 고객" |
-| `payroll_setting` | `/payroll-setting` | `['payroll']` | ○ | "급여 구독" |
-| `salary_calculator` | `/salary-calculator` | `[]` | × | "공통" |
-
-코드는 제안입니다. 번들에는 프로모션 노드 코드 `pb_payroll_management`, `pb_employment`만 있습니다. 세무 약관 게이트(`requiresTaxTerms`)는 모두 끕니다.
-
-`default-menu-tree.ts`(공유 파일, 수정하지 않음)에 추가할 leaf 제안:
-
-```ts
-section(5, '급여', 'payroll', [
-  group(51, '급여', [
-    leaf(511, '급여 정산', 'payroll_settlement', '/payroll-settlement'),
-    leaf(512, '급여 관리', 'payroll_management', '/company/payroll'),
-    leaf(513, '급여 계산기', 'salary_calculator', '/salary-calculator/wage'),
-  ]),
-]),
-// 설정 > 운영 설정 그룹 아래
-leaf(9xx, '급여 설정', 'payroll_setting', '/payroll-setting/conditions-of-employment'),
+```
+RateTable                    rtb_
+├─ effectiveFrom             # YYYY-MM. 그 달부터 다음 기준표 전까지
+├─ minimumWage { hourly, monthly, monthlyHours }
+├─ nationalPension { employeeRatePpm, employerRatePpm, baseMin, baseMax }
+├─ healthInsurance, longTermCare, employmentInsurance, industrialAccident
+├─ localIncomeTax, dailyWorker, businessIncome, otherIncome, smallAmountExemption
+├─ nonTaxable { [type]: { monthlyLimit, annualLimit } }
+├─ wageIncomeTax, retirementIncomeTax                # 산식 상수(응답에는 요약만)
+└─ unverifiedPaths[]
 ```
 
-퇴직금 정산(`/severance-pay-settlement`, 메뉴 트리 버전 `2026.08_퇴직금정산`)은 2부에서 `severance_pay_settlement`(급여 구독 추정)로 추가했습니다. 20절을 보세요.
-
-## 8. 미해결 질문
-
-1. 간이세액: 공식 간이세액표(2024 개정 이후, 2026 개정 여부)를 받아 `lookupSimpleTaxTable` 행으로 넣어야 합니다. 그 전까지 근로소득세는 추정치이고, 2.4절의 약 1만 4천원 차이를 확인해야 합니다.
-2. 반올림: 소득세·지방소득세를 원 미만 절사(스펙)로 할지 10원 미만 절사(구현)로 할지. 보험료별 절사 단위.
-3. 미확인 요율(2.5절 ✗): 장기요양 13.14%, 국민연금 2026.7 상하한, 고용보험 사업주 요율과 규모 구간, 예술인 0.8%와 필요경비 공제, 비과세 한도(국외근로·야간근로·직무발명 등), 퇴직소득 공제표, 업종·지급사유 코드.
-4. 4대보험 기준월(귀속월)과 원천세 기준월(지급일)이 다른 대장을 어떻게 계산할지(3절).
-5. 주휴시간 방식: 단시간 근로자 비례식(구현 기본값)과 스펙의 "주 소정 ÷ 소정근로일수" 중 무엇을 쓰는지. `weeklyRestHours`가 둘 다 지원합니다.
-6. 월 소정근로시간 반올림(104.29 → 104로 반올림). 실무에서 올림이나 소수 유지도 씁니다.
-7. 일할계산 방식(역일 / 소정근로일). 엔진은 둘 다 받습니다.
-8. 일용 소액부징수를 지급 행 단위로 판정할지 일 단위로 판정할지(구현: 행 단위).
-9. 사업소득 "세금공제후" 값 이름과 역산 규칙(구현: `after_tax`, 순액이 같아지는 여러 총액 중 `순액 ÷ 0.967`에 가장 가까운 값).
-10. 퇴직금: 평균임금 소수 처리, 3개월 기간의 휴직 제외, 퇴직연금(DB·DC)과 IRP 과세이연은 범위 밖입니다.
-11. 메뉴 코드 실제 값과 `payroll_management`에 세무 약관 게이트가 필요한지.
-12. `usage-status` GET 응답 형태, `payroll-payment-categories`가 평탄 목록인지 분류 묶음인지.
-13. 엑셀 업로드 원본 양식(xlsx) 열 정의. 지금은 CSV로 대신합니다.
-
----
-
-# 2부: 급여대장, 명세서, 퇴직금, 원천세 연계
-
-## 9. 범위와 구조
-
-| 폴더 | 내용 | DB (`0031-payroll-cards.sql`) |
-| --- | --- | --- |
-| `cards/` | 카드·행·항목·명세서·특이사항·시프티. BPO 라우트(`bpo.routes.ts`)와 legacy 라우트(`legacy.routes.ts`)가 같은 서비스를 씁니다 | `payroll_cards`, `payroll_rows`, `payroll_card_items`, `payroll_payslips`, `payroll_payslip_notifications`, `payroll_manager_memos`, `payroll_legacy_preferences`, `payroll_external_integrations` |
-| `severance/` | 퇴직금 정산(퇴직·중간) | `severance_settlements`, `severance_monthly_wages` |
-| `withholding/` | 원천세 신고 요건 연동, 지급월 집계 | `filing_requirements`(기존) |
-| `reports/` | 인건비 보고서 | 없음 |
-| `adapters/` | 데스크 내보내기, 시프티. 명세서는 HR 어댑터를 다시 씁니다 | 없음 |
-
-- 직원 정보는 HR `employees.repository`, `contracts.repository` 함수로만 읽습니다. 행에는 계산을 다시 할 수 있도록 HR 값의 스냅숏(`snapshot`)을 남깁니다.
-- 서비스는 트랜잭션을 열지 않고 라우트가 감쌉니다. 어댑터를 부르는 단계(명세서 발송, 데스크 내보내기, 시프티)만 "트랜잭션 → 어댑터 → 트랜잭션"으로 나눕니다.
-
-## 10. 카드 상태 기계
-
-`card-status.ts`의 `CARD_TRANSITIONS` 한 곳에서 정합니다.
-
-| 전이 | 출발 | 도착 | 행위자 | 원천세 신고 후 |
-| --- | --- | --- | --- | --- |
-| `confirmInput` (PUT `status: calculated`, legacy `calculate`) | `inputting` | `calculated` | 고객, 담당자 | 409 |
-| `reopenInput` (PUT `status: inputting`) | `calculated` | `inputting` | 담당자 | 409 |
-| `requestApproval` | `calculated` | `approval_requested` | 담당자 | 허용 |
-| `approve` | `approval_requested` | `approved` | 고객 | 허용 |
-| `reject` | `approval_requested` | `calculated` | 고객 | 409 |
-| `withdrawApprovalRequest` (`cancel-approval`, 승인 전) | `approval_requested` | `calculated` | 담당자 | 409 |
-| `cancelApproval` (`cancel-approval`, 승인 후) | `approved`, `payslips_sent` | `approval_requested` | 고객 | 409 |
-| `sendPayslips` | 승인 이후 | `payslips_sent` (`exported`는 유지) | 고객, 담당자 | 허용 |
-| `exportToDesk` | 승인 이후 | `exported` | 담당자 | 허용 |
-| `legacyFix` (확장) | `calculated` | `approved` | 담당자 | 허용 |
-| `legacyRelease` (확장) | `calculated`, `approved`, `payslips_sent` | `inputting` | 담당자 | 409 |
-
-- 버전: 전이마다 `version`이 1씩 오르고 `ETag: "n"`으로 내려갑니다. BPO 전이는 `If-Match`가 없으면 428, 다르면 412 `VERSION_CONFLICT`입니다. legacy 클라이언트는 `If-Match`를 보내지 않으므로 legacy 라우트는 현재 버전을 씁니다.
-- 입력 편집: `inputting`은 고객·담당자, `calculated`는 담당자만, 그 뒤는 아무도 못 합니다.
-- `confirmInput`은 모든 행을 다시 계산합니다. 행을 고치면 계산 결과는 남기고 `is_calculated: false`로 표시합니다.
-- legacy 상태 문자열(`card-status`)은 `inputting → input_available`, `calculated`·`approval_requested → calculating`, 승인 이후 `→ done`입니다(스펙 6절 "추정").
-
-## 11. 추가 카드
-
-같은 귀속월의 첫 카드가 `default`, 나머지가 `addition`입니다. 생성할 수 없는 사유(`can-create-additional-card`의 `reason`, 생성 시 409 `ADDITIONAL_CARD_NOT_ALLOWED`의 `reason`):
-
-1. `no_default_card`, `parent_not_calculated`: 부모 카드가 `계산중`·`완료`가 아닙니다.
-2. `input_card_exists`: 같은 세대(BPO/legacy)에 `inputting` 카드가 있습니다.
-3. `withholding_filed`: 지급월 원천세가 신고되었습니다(이 경우만 코드가 `WITHHOLDING_FILED`).
-4. `withholding_deadline_near`: 지급월 다음 달 10일의 5일 전(그 달 5일)부터입니다. 매뉴얼 예시가 모순이라 기준일은 미확정입니다.
-
-추가 카드에는 근로소득 행을 넣을 수 없습니다(409 `WAGE_INCOME_ON_ADDITIONAL_CARD`). 삭제는 `inputting`일 때만 됩니다.
-
-## 12. 소득 구분과 계산
-
-| BPO `:segment` | legacy 키 | 엔진 `incomeType` | 입력 |
-| --- | --- | --- | --- |
-| `wage-monthly`, `wage-daily`, `wage-hourly` | `wage_salary` (`wage-salary`) | `wage_*` | HR 명부 후보(`candidates`)에서 추가. 기본급·시급·일급은 급여 계약, 일할은 입·퇴사·휴직에서 |
-| `daily` | `daily` | `daily` | 이름·주민번호 직접 입력 또는 HR 일용직, `work_dates` 또는 `work_days` |
-| `business` | `business` | `business` | 업종 코드, 세전/세후 |
-| `other` | `other_labor` (`other-labor`) | `other` | 지급사유 코드(기본 `60`), 필요경비 |
-
-- 4대보험은 귀속월 기준표, 소득세는 지급일 기준표로 계산합니다(1부 미해결 4번을 이렇게 정했습니다).
-- 공제 방식이 `notice`인 보험은 행의 `insurance_notice` 금액을 씁니다. 고지 금액을 받는 연동이 없으므로 기본값은 0입니다.
-- 손으로 넣은 금액(`overrides`)은 계산 뒤에 덮어쓰고 `reset-calculation`이 지웁니다.
-- legacy `data`의 `taxable_incomes`·`other_deductions`는 지급·공제 항목 ID를 키로 하는 원본 맵이고, 저장할 때 행의 항목 금액에 합칩니다.
-
-## 13. 명세서
-
-- 다운로드와 발송은 승인 이후에만 됩니다. 그 전에는 409 `INVALID_TRANSITION`입니다.
-- 발송: 행마다 `in_flight`를 기록한 트랜잭션을 닫고, PDF를 만들어 HR `NotificationAdapter`(템플릿 `payroll_payslip`, PDF 첨부)로 보낸 뒤 `success`/`fail`을 기록합니다. 이메일이 없으면 `fail`(`no_email`)입니다. 다시 보낼 수 있습니다.
-- 수당별 계산식(`payment_formulas`)은 legacy `POST cards/:c/payslip`으로 저장하고, `copy-payment-formulas`는 직전 완료 카드에서 직원별로 가져옵니다.
-
-## 14. 원천세 연계
-
-- 원천세 신고의 `payroll_ledger_closed` 요건(`auto_linked = 1`)은 신고 기간에 지급일이 있는 카드(두 세대 모두)가 하나 이상이고 모두 승인 이후이면 `provided`, 아니면 `pending`입니다. 카드 생성·삭제·지급일 변경·상태 전이와 `scheduleFilings`의 신고 생성 때 다시 계산합니다.
-- 카드가 없는 지급월은 `pending`입니다. 급여가 없는 달을 `not_applicable`로 바꾸는 흐름은 세무 쪽 결정이 필요합니다.
-- 신고가 `filed`·`settled`이면 그 지급월 카드는 재계산·입력 되돌리기·반려·승인 취소·추가 카드·지급일 이동이 409 `WITHHOLDING_FILED`입니다(`payment_month` 포함).
-- `GET /payroll/withholding-summary/:paymentMonth`(담당자 전용)는 완료 카드와 완료 퇴직 정산을 `A01`·`A03`·`A21`·`A25`·`A40`으로 묶습니다. 코드 대응을 확인하지 못해 모든 줄에 `verified: false`를 붙입니다.
-
-## 15. 퇴직금 정산
-
-- 경로 `/payroll/bpo/severance/settlements/**`, 메뉴 `severance_pay_settlement`(급여 구독, 추정). 고객은 읽기, 담당자는 쓰기입니다.
-- 상태는 `in_progress → completed`이고 `exclude`/`include`로 `excluded`와 오갑니다. `complete`·`reopen`·`exclude`·`include`는 `If-Match`가 필요합니다. 퇴직 정산의 상태는 HR `setSeveranceSettlementStatus`로 HR 퇴직 정보에 반영합니다.
-- 중간정산 사유는 9개입니다(`filter-options`의 `interim_reasons`). 완료된 중간정산이 있으면 다음 정산의 근속 시작일은 그 기준일 다음 날이고, 퇴직일이 그보다 이르면 400 `LEAVE_DATE_BEFORE_INTERIM`입니다.
-- 3개월 임금은 기준일 이전 3개 역월입니다. 그 달의 계산된 급여 행이 있으면 그 금액(`source: payroll`), 없으면 급여 계약 금액(`source: contract`)입니다. 담당자가 `temp-save`·`complete`로 고칠 수 있습니다.
-- 기준표 시작(2026-01) 이전 기준일은 가장 오래된 기준표로 계산합니다.
-
-## 16. 인건비 보고서
-
-`/report/labor-cost/:year`(+`/export`, CSV·BOM)는 경리 메뉴 `settlement_reports_profit_loss_labor_cost`를 씁니다. 급여가 경리보다 먼저 마운트되므로 경리의 404 자리표시자를 대신합니다. 귀속월별로 `calculated` 이후 카드의 소득 구분별 지급 총액, 사업주 부담 4대보험, 합계와 누계, HR 명부의 재직·입사·퇴사 인원을 냅니다.
-
-## 17. 엔드포인트
-
-### 17.1 BPO `/api/company/:id/payroll/bpo` (메뉴 `payroll_settlement`)
-
-| 동사 | 경로 | 비고 |
-| --- | --- | --- |
-| GET | `payment-date-list?attribution_month` | 당월·익월 지급일, 신고된 지급월은 `available: false` |
-| GET | `card-summary?year&status&limit&offset` | DRF 페이지 |
-| POST | `card` | 기본 또는 추가 카드 |
-| GET, PUT, DELETE | `card/:c` | PUT의 `status` 변경만 `If-Match` 필요 |
-| GET | `card/:c/status` | |
-| POST | `card/:c/{request-approval,approve,reject,cancel-approval}` | `If-Match` |
-| POST | `card/:c/export-to-desk?export_type=payroll_ledger\|journal` | 담당자, `If-Match`. `export_type` 값은 추정 |
-| GET, POST | `card/:c/{payment,deduction}-items`, `…/bulk` | `employment_type` 필터 |
-| GET, POST | `card/:c/:segment/payroll-input/candidates` | |
-| GET, POST | `card/:c/:segment/payroll-input` | POST는 일용·사업·기타 |
-| POST | `card/:c/:segment/payroll-input/{excel,update,calculate,delete,refresh-employee-info,reset-calculation}` | `excel`은 CSV multipart `file` |
-| GET | `card/:c/:segment/payroll-input/:r/{work-infos,payroll-info}` | |
-| PUT | `card/:c/:segment/payroll-input/:r` | 근로 행 |
-| GET, POST | `card/:c/:segment/work-input` | 근무 시트 |
-| GET | `card/:c/:group/payslip`, `card/:c/:group/payslip/:r` | `group`: `wage`, `daily`, `business`, `other` |
-| POST | `card/:c/payslip/download` | `application/pdf` |
-| POST | `card/:c/payslip/send` | 행별 `notification_status` |
-| GET, POST | `manager-memo` | 쓰기는 담당자 |
-| GET, POST, DELETE | `shiftee-integration` | 해제 후 재연동은 409 `SHIFTEE_RELINK_BLOCKED` |
-| … | `severance/settlements/**` | 15절. 스펙 5.9의 15개를 모두 구현 |
-
-### 17.2 legacy `/api/company/:id/payroll` (메뉴 `payroll_management`)
-
-스펙 5.1의 1~24번을 모두 구현했습니다. 25~30번은 1부의 계정 경로입니다. 다음은 스펙에 없는 확장입니다.
-
-| 동사 | 경로 | 이유 |
-| --- | --- | --- |
-| POST | `cards` | 운영의 월간 자동 생성 배치를 대신합니다. 기본 카드면 HR 명부의 근로자로 채웁니다 |
-| POST | `cards/:c/extensions/fix` | 담당자가 desk에서 하는 확정(`계산중 → 완료`) |
-| POST | `cards/:c/extensions/release` | 확정 해제(`→ 입력가능`) |
-
-`GET/POST /api/company/new-payroll/maintain-payroll/:id`는 회사 마운트 밖이라 public 라우터에서 인증·회사 범위·메뉴를 직접 검사합니다.
-
-### 17.3 기타
-
-| 동사 | 경로 | 비고 |
-| --- | --- | --- |
-| GET | `/api/company/:id/payroll/withholding-summary/:paymentMonth` | 담당자 전용 |
-| GET | `/api/company/:id/report/labor-cost/:year`, `…/export` | 16절 |
-
-## 18. 오류 코드
-
-| 코드 | 상태 | 뜻 |
-| --- | --- | --- |
-| `WITHHOLDING_FILED` | 409 | 지급월 원천세 신고 완료 (`payment_month`) |
-| `ADDITIONAL_CARD_NOT_ALLOWED` | 409 | 11절 사유 (`reason`) |
-| `WAGE_INCOME_ON_ADDITIONAL_CARD` | 409 | 추가 카드에 근로소득 |
-| `SHIFTEE_RELINK_BLOCKED` | 409 | 해제 후 재연동 |
-| `LEAVE_DATE_BEFORE_INTERIM` | 400 | 퇴직일이 완료된 중간정산 기준일 이전 |
-| `INVALID_TRANSITION`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `PERMISSION_DENIED` | 409, 412, 428, 403 | 공통 |
-
-## 19. 추정 응답
-
-| 응답 | 형태 | 근거 |
-| --- | --- | --- |
-| 카드 | `{id, generation, kind, parent_card_id, title, name, attribution_month, payment_date, period_start, period_end, status, legacy_status, step, step_count, version, …_at, export_type, headcount_by_type, total_by_type, gross_total, net_total, uncalculated_count, withholding_filed}` | 목록 화면의 `n/3`, 소득별 인원·합계 |
-| 행 | `{id, income_type, legacy_income_type, employee_id, name, resident_number(마스킹), …입력값, overrides, is_calculated, gross_pay, taxable_pay, non_taxable_pay, income_tax, local_income_tax, employee_insurance_total, employer_insurance_total, deduction_total, net_pay, calculation}` | `calculation`은 급여계산기 응답과 같은 형태 |
-| legacy 카드 | 카드 + `{attr_date, status(input_available\|calculating\|done), card_status, headcount, net_pay_total_by_type, wage_salary[], daily[], business[], other_labor[]}`, 행에 `taxable_incomes`·`other_deductions` | 스펙 5.1 5번 |
-| 명세서 발송 | `{results: [{row_id, notification_status, fail_reason}], card}` | 스펙 3.5 |
-
-## 20. 메뉴 트리
-
-`default-menu-tree.ts`(공유 파일)에 7절 제안에 더해 다음 leaf가 필요합니다.
-
-```ts
-leaf(514, '퇴직금 정산', 'severance_pay_settlement', '/severance-pay-settlement'),
+```
+GET  /rate-tables?month=2026-03          그 달에 적용되는 기준표(없으면 전체 목록)
+GET  /rate-tables/{rateTableId}
+GET  /payroll-reference-codes            사업소득 업종, 기타소득 지급사유(경비율), 특고 직종. 항목마다 verified
+POST /payroll-calculator:simulate        저장하지 않는 행 계산(실수령액 계산기)
 ```
 
-## 21. 미해결 질문 (2부)
+- 기준표는 버전이 있는 참조 데이터입니다. 고시가 바뀌면 새 `effectiveFrom`을 더하고 지난 표는 고치지 않습니다. 지금은 2026-01, 2026-03(간이세액표 자녀 공제액 개정), 2026-07(국민연금 상하한), 2026-11(장기요양 비율 반올림 법정화) 네 버전을 코드에 두고 메모리 저장소에 올립니다
+- **4대보험·최저임금은 귀속월, 원천세는 지급월 기준표를 씁니다.** 두 표가 다르면 소득세·지방소득세만 지급월 표로 다시 계산해 바꿉니다
+- 그 달에 적용할 표가 없으면 422 `RATE_TABLE_NOT_FOUND`(`month`)입니다
 
-1. 세액 감면(중소기업 취업자 감면 등)은 지원하지 않습니다.
-2. 보험 `notice` 방식의 고지 금액 연동이 없어 기본값이 0입니다.
-3. 퇴직금 3개월 임금은 급여 행 또는 계약 금액의 근사치입니다. 휴직 기간 제외, 상여·연차수당 3개월분 안분은 담당자 입력에 맡깁니다.
-4. `export-to-desk`의 `export_type` 값(`payroll_ledger`, `journal`)과 데스크 응답은 확인되지 않았습니다.
-5. 카드가 없는 지급월의 `payroll_ledger_closed`는 `pending`입니다. 자동 `not_applicable` 여부는 세무 쪽 결정이 필요합니다.
-6. 추가 카드 마감 기준일(11절 4번)과 legacy `card-status` 문자열.
-7. 원천세 집계 코드 대응(A01·A03·A21·A25·A40)과 일용 소액부징수 판정 단위.
-8. legacy 자동 생성 배치의 실행 시점. 지금은 확장 `POST cards`로 대신합니다.
+### 급여 설정
+
+```
+GET   /payroll-settings
+PATCH /payroll-settings    If-Match(선택)
+```
+
+| 필드 | 뜻 | 현행 이전 기본값 |
+|---|---|---|
+| `wagePeriodStartDay` | 임금산정 기간 시작일(1~28) | 1 |
+| `paymentMonth`, `paymentDay` | 지급월(`SAME`·`NEXT`)과 지급일 | `SAME`, 25 |
+| `underFiveEmployees` | 5인 미만 여부 | `false` |
+| `multipliers` | 연장·야간·휴일·휴일연장 배수(ppm) | 5인 이상 기본값 |
+| `deductionMethods` | 국민연금·건강보험·고용보험(`RATE`·`NOTICE`), 소득세(`TAX_TABLE`·`MANUAL`·`NONE`) | `NOTICE`, `NOTICE`, `RATE`, `TAX_TABLE` |
+| `workflow` | 대장 운영 방식 | `DIRECT_CLOSE` |
+
+- `underFiveEmployees`를 바꾸면서 `multipliers`를 보내지 않으면 새 규모의 기본 배수로 바꿉니다(매뉴얼 FAQ)
+- `workflow` 변경은 `payroll-workflow:update` 권한이 더 필요합니다. 급여 아웃소싱 계약은 Billing의 일이라 보통 운영자만 바꿉니다
+- 설정은 **새 대장에만** 적용됩니다. 대장은 만들 때 운영 방식과 지급일을 복사합니다
+- 지급·공제 항목 카탈로그, 근무 일정 정책, 근로조건은 아직 없습니다([구현 상태](#구현-상태))
+
+## 급여대장
+
+### 리소스
+
+```
+PayrollLedger                              pyl_
+├─ kind, workflow, status, step
+├─ title, attributionMonth, paymentDate, paymentMonth, wagePeriod
+├─ rowCount, totals { grossPay, deductionTotal, netPay, incomeTax, localIncomeTax, employerInsurance }
+├─ rejection { reason, rejectedAt } | null, reopenReason
+├─ withholdingFiled                       # 지급월 원천세 신고 여부(Tax 포트)
+├─ allowedActions[], warnings[] { code, message, rowId? }
+├─ calculatedAt, closedAt, version, createdAt, updatedAt
+└─ rows[] (별도 경로)
+    PayrollRow                             pyr_
+    ├─ employeeId | null, payeeName, incomeType
+    ├─ input                               # incomeType별 판별 유니온
+    ├─ snapshot                            # 계산에 쓴 HR 정보
+    └─ result
+```
+
+```
+GET    /payroll-ledgers?attributionMonth=&paymentMonth=&status=&limit=&cursor=
+POST   /payroll-ledgers                      { attributionMonth, paymentDate?, title? }          201 + ETag
+GET    /payroll-ledgers/{ledgerId}                                                               ETag
+PATCH  /payroll-ledgers/{ledgerId}           { paymentDate?, title? }                            If-Match
+DELETE /payroll-ledgers/{ledgerId}                                                               If-Match, 204
+GET    /payroll-ledgers/{ledgerId}/rows
+POST   /payroll-ledgers/{ledgerId}/rows      { employeeId? | payeeName?, input }                 If-Match
+PATCH  /payroll-ledgers/{ledgerId}/rows/{rowId}  { payeeName?, input? }                         If-Match
+DELETE /payroll-ledgers/{ledgerId}/rows/{rowId}                                                  If-Match
+POST   /payroll-ledgers/{ledgerId}:recalculate                                                   If-Match
+POST   /payroll-ledgers/{ledgerId}:{transition}                                                  If-Match
+POST   /payroll-ledgers/{ledgerId}:approve | :reject { reason }                                   If-Match
+```
+
+- **귀속월의 첫 대장이 정기 대장, 그다음이 추가 대장입니다.** 정기 대장을 만들 때 HR의 근로소득자(임금산정 기간 중 하루라도 재직)로 근로 행을 채우고, 중도 입·퇴사자는 역일 일할 입력을 넣습니다
+- 지급일을 주지 않으면 설정의 지급월·지급일로 정하고, 추가 대장은 정기 대장의 지급일을 씁니다
+- **행은 대장을 통해서만 바뀝니다.** 행을 저장하면 같은 요청에서 계산하고 대장 `version`을 올립니다. 행의 `If-Match`는 대장 버전입니다
+- 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 이름 중 하나가 필수입니다. 이름과 함께 `employeeId`를 주어도 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`)
+- `:recalculate`는 HR 정보를 다시 받아 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
+- 정기 대장은 추가 대장이 있으면 지울 수 없습니다(409 `PAYROLL_LEDGER_HAS_ADDITIONAL`). 대장 삭제는 입력 상태에서만 됩니다
+
+### 상태
+
+```mermaid
+stateDiagram-v2
+  [*] --> DRAFT: POST /payroll-ledgers
+  DRAFT --> SUBMITTED: :submit (고객·담당자)
+  SUBMITTED --> DRAFT: :return-to-draft (담당자, 직접 운영은 둘 다)
+  SUBMITTED --> PENDING_APPROVAL: :request-approval (담당자, 아웃소싱)
+  PENDING_APPROVAL --> SUBMITTED: :withdraw-approval-request (담당자)
+  PENDING_APPROVAL --> CLOSED: :approve (고객)
+  PENDING_APPROVAL --> SUBMITTED: :reject {reason} (고객)
+  DRAFT --> CLOSED: :close (직접 운영)
+  SUBMITTED --> CLOSED: :close (직접 운영)
+  CLOSED --> SUBMITTED: :reopen {reason}
+```
+
+| 커맨드 | 출발 → 도착 | 아웃소싱 행위자 | 직접 운영 행위자 | 권한 | 신고 후 |
+|---|---|---|---|---|---|
+| `:submit` | `DRAFT` → `SUBMITTED` | 고객·담당자 | 고객·담당자 | `payroll-ledger:submit` | 막음 |
+| `:return-to-draft` | `SUBMITTED` → `DRAFT` | 담당자 | 고객·담당자 | `payroll-ledger:submit` | 막음 |
+| `:request-approval` | `SUBMITTED` → `PENDING_APPROVAL` | 담당자 | 없음 | `payroll-ledger:submit` | 허용 |
+| `:withdraw-approval-request` | `PENDING_APPROVAL` → `SUBMITTED` | 담당자 | 없음 | `payroll-ledger:submit` | 막음 |
+| `:approve` | `PENDING_APPROVAL` → `CLOSED` | 고객 | 없음 | `payroll-ledger:approve` | 허용 |
+| `:reject` | `PENDING_APPROVAL` → `SUBMITTED` | 고객 | 없음 | `payroll-ledger:approve` | 막음 |
+| `:close` | `DRAFT`·`SUBMITTED` → `CLOSED` | 없음 | 고객·담당자 | `payroll-ledger:close` | 허용 |
+| `:reopen` | `CLOSED` → `SUBMITTED` | 고객·담당자 | 고객·담당자 | `payroll-ledger:close` | 막음 |
+
+- 전이표 하나([ledger-status.ts](../../apps/api/src/modules/payroll/ledgers/ledger-status.ts))를 서비스, `allowedActions`, 픽스처 테스트가 함께 봅니다. 규칙 문서는 [payroll-ledger-transitions](../reference/rules/payroll-ledger-transitions.md)입니다
+- 검사 순서는 권한 → 버전 → 상태·운영 방식·행위자(409 `PAYROLL_LEDGER_TRANSITION_INVALID`, `ledgerStatus`, `action`) → 신고 잠금(409 `WITHHOLDING_FILED`)입니다
+- **입력은 `DRAFT`에서 고객·담당자, `SUBMITTED`에서 담당자만 고칩니다.** 그 밖에는 409 `PAYROLL_LEDGER_READ_ONLY`입니다. 승인 대기 중에 고치려면 요청을 철회합니다
+- `allowedActions`는 보는 행위자가 지금 보낼 수 있는 전이와 `EDIT_ROWS`, `RECALCULATE`, `DELETE`입니다. 신고 잠금에 걸리는 동작은 넣지 않습니다
+- 명세서 발송과 데스크 내보내기는 상태가 아닙니다. 마감된 대장에 남는 기록입니다
+
+### 추가 대장과 근로소득 중복
+
+- 추가 대장은 귀속월의 정기 대장이 제출 이후일 때만 만들고, 처음 걸린 이유 하나를 409 `ADDITIONAL_LEDGER_BLOCKED`(`reason`: `NO_REGULAR_LEDGER`·`REGULAR_LEDGER_NOT_SUBMITTED`·`DRAFT_LEDGER_EXISTS`·`WITHHOLDING_DEADLINE_NEAR`)로 돌려줍니다. 원천세가 신고된 지급월은 409 `WITHHOLDING_FILED`입니다([additional-payroll-ledger](../reference/rules/additional-payroll-ledger.md))
+- 추가 대장은 일용·사업·기타 행만 받습니다(409 `WAGE_ROW_ON_ADDITIONAL_LEDGER`). 한 직원은 귀속월마다 근로 행 하나뿐입니다(409 `WAGE_INCOME_DUPLICATED`, `ledgerId`)([duplicate-wage-income](../reference/rules/duplicate-wage-income.md))
+
+### 원천세 신고 잠금
+
+`WithholdingFilingLock.isFiled(companyId, paymentMonth)`가 참이면 그 지급월 대장의 다음을 409 `WITHHOLDING_FILED`(`paymentMonth`)로 막습니다.
+
+- 금액을 되돌리는 전이: `:submit`, `:return-to-draft`, `:withdraw-approval-request`, `:reject`, `:reopen`
+- 행 추가·수정·삭제, `:recalculate`, 대장 삭제
+- 추가 대장 생성, 신고된 지급월로 또는 신고된 지급월에서 지급일 옮기기
+
+마감 방향(`:request-approval`, `:approve`, `:close`)은 막지 않습니다. 신고 뒤에 늦게 승인하는 일은 금액을 바꾸지 않습니다.
+
+## 엑셀 가져오기
+
+현행 엑셀 업로드를 대장에 붙은 `Job`으로 바꿉니다. **설계만 있고 구현은 없습니다.**
+
+```
+GET  /payroll-ledgers/{ledgerId}/import-template?incomeType=WAGE_MONTHLY     양식 파일
+POST /payroll-ledgers/{ledgerId}/imports        { fileId, incomeType, mode: MERGE|REPLACE }   Idempotency-Key, If-Match → 202 Job
+GET  /jobs/{jobId}                                                                            결과: { imported, skipped, errors[] { rowNumber, column, code } }
+```
+
+- 파일은 파일 저장소에 먼저 올리고 `fileId`만 넘깁니다(현행 회사 경로 밖 multipart를 없앰)
+- 작업은 대장이 입력 가능한 상태인지, 행위자가 고칠 수 있는지를 시작할 때와 쓰기 직전에 다시 봅니다. 버전이 바뀌었으면 작업이 `FAILED`(`VERSION_MISMATCH`)입니다
+- 모든 행을 검증한 뒤 오류가 하나라도 있으면 아무것도 쓰지 않습니다. 오류가 없으면 행 추가·계산을 한 트랜잭션으로 하고 대장 `version`을 한 번 올립니다
+- 직원은 주민번호 뒤 마스킹이 아닌 사번이나 HR `employeeId`로 맞춥니다. 이름만으로는 맞추지 않습니다
+
+## 급여명세서
+
+```
+GET  /payslips?ledgerId=&paymentMonth=
+GET  /payslips/{payslipId}
+POST /payslips:send     { payslipIds[] }      Idempotency-Key 필수(없으면 428) → 202 Job
+```
+
+- 명세서는 **마감된 대장 행의 보기**입니다. 따로 저장하는 것은 발송 기록(`deliveries[] { sentAt, status: SENT|FAILED, reason }`)뿐이라 계산이 바뀌면 명세서도 바로 바뀝니다. 마감 전 대장의 행은 404 `PAYSLIP_NOT_FOUND`입니다
+- 발송은 `PayslipMailer` 포트로 하고 결과를 `Job`(`SUCCEEDED`·`PARTIALLY_SUCCEEDED`·`FAILED`)에 담습니다. 이메일이 없으면 `NO_EMAIL`로 실패합니다. 같은 키로 다시 보내면 처음 작업을 돌려줍니다
+- 발송은 대장 상태를 바꾸지 않습니다
+- 현행 명세서 계산식 편집(`payment-formulas`)은 엔진의 `breakdown[].formula`가 대신합니다. 회사가 문구를 고치는 기능은 [열린 질문](#열린-질문)에 있습니다
+
+## 퇴직금 정산
+
+```
+GET   /severance-settlements?status=
+POST  /severance-settlements            { employeeId, input? }               201 + ETag
+GET   /severance-settlements/{settlementId}
+PATCH /severance-settlements/{settlementId}   { input }                      If-Match, CALCULATED만
+POST  /severance-settlements/{settlementId}:complete | :reopen | :exclude {reason} | :include
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> CALCULATED: POST (퇴사일·퇴직금 제도 확인)
+  CALCULATED --> COMPLETED: :complete
+  COMPLETED --> CALCULATED: :reopen
+  CALCULATED --> EXCLUDED: :exclude {reason}
+  EXCLUDED --> CALCULATED: :include
+```
+
+- HR의 퇴사일이 없으면 422 `SEVERANCE_NOT_APPLICABLE`(`NOT_LEFT`), 퇴직급여 형태가 퇴직금이 아니면(`DB`·`DC`) `NOT_SEVERANCE_PAY_PLAN`입니다. 같은 직원의 정산이 이미 있으면 409 `SEVERANCE_SETTLEMENT_EXISTS`(`settlementId`)입니다
+- 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다. 상여·연차수당·통상임금(일)은 입력으로 받습니다
+- 퇴직소득세는 **퇴직월** 기준표를 씁니다. 규칙은 [severance-pay](../reference/rules/severance-pay.md)입니다
+- 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
+
+## 인건비
+
+```
+GET /labor-cost-reports/{year}    → { year, hasData, months[12] { month, amounts{wage,daily,business,other}, total, employerInsurance, totalWithEmployerInsurance, headcount{…}, employment{employed,joined,left} }, totals, updatedAt }
+```
+
+- 귀속월 기준으로, 제출 이후(`DRAFT`가 아닌) 대장의 행만 셉니다. 현행처럼 계산 확정 이후 금액만 보입니다
+- 인원은 직원 ID(없으면 이름)로 중복 없이 셉니다. 재직·입사·퇴사 인원은 HR 포트에서 받습니다
+- 현행 화면은 경리(결산 보고서) 메뉴에 있지만 데이터 주인은 급여입니다 (P3). 급여는 이 경로와 함께 공개 서비스 `PayrollLaborCost.monthly(companyId, year)`를 내고, Bookkeeping의 결산 보고서와 엑셀 내보내기가 그것을 씁니다. 그래서 이 경로는 `PAYROLL`과 `TAXATION` 플랜 중 하나면 엽니다
+
+## 다른 컨텍스트와의 연결
+
+```mermaid
+flowchart LR
+  HR[HR] -- PayrollEmployeeDirectory --> PAY[Payroll]
+  PAY -- payroll_pay_month.closed / reopened --> TAX[Tax]
+  TAX -- WithholdingFilingLock.isFiled --> PAY
+  PAY -- PayrollLedgerSummary.summaryFor --> TAX
+  PAY -- PayrollLaborCost.monthly --> BK[Bookkeeping]
+  PAY -- PayslipMailer.send --> INT[Integrations / 메일]
+```
+
+| 방향 | 이름 | 형태 |
+|---|---|---|
+| 포트(HR 구현) | `PayrollEmployeeDirectory` | `listWageEarners(companyId, { start, end })`, `find(companyId, employeeId, asOf) → Option`, `employmentTrend(companyId, month) → { employed, joined, left }` |
+| 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean` |
+| 포트(메일 구현) | `PayslipMailer` | `send({ payslipId, to, subject }) → { ok: true } \| { ok: false, reason: NO_EMAIL \| REJECTED }` |
+| 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 지금은 메모리 |
+| 내보냄(이벤트) | `payroll_pay_month.closed` | `{ eventId, companyId, paymentMonth, ledgerIds[], withholding[] { incomeKind, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }, occurredAt }` |
+| 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, ledgerIds[], occurredAt }` |
+| 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
+| 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
+
+- `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
+- **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
+- 원천세 집계는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 싣습니다. 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax입니다
+- Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다
+- 다른 컨텍스트는 [payroll.public.ts](../../apps/api/src/modules/payroll/payroll.public.ts)만 가져옵니다. 급여는 HR·Tax 저장소를 읽지 않습니다
+
+## 접근 요건
+
+모든 경로는 플랜 `PAYROLL`(인건비 보고서는 `PAYROLL` 또는 `TAXATION`)과 약관 동의가 필요합니다.
+
+| 엔드포인트 | 권한 |
+|---|---|
+| 급여 설정 조회 / 수정 | `payroll-setting:read` / `payroll-setting:update` (+ `workflow`는 `payroll-workflow:update`) |
+| 기준표, 참조 코드 | `payroll-rate-table:read` |
+| 계산기 | `payroll-calculator:simulate` |
+| 대장·행 조회 | `payroll-ledger:read` |
+| 대장 생성 / 수정·행·재계산 / 삭제 | `payroll-ledger:create` / `payroll-ledger:update` / `payroll-ledger:delete` |
+| `:submit`, `:return-to-draft`, `:request-approval`, `:withdraw-approval-request` | `payroll-ledger:submit` |
+| `:approve`, `:reject` | `payroll-ledger:approve` |
+| `:close`, `:reopen` | `payroll-ledger:close` |
+| 명세서 조회 / 발송 | `payslip:read` / `payslip:send` |
+| 퇴직금 조회 / 생성 / 입력·제외·포함 / 확정·다시 열기 | `severance-settlement:read` / `:create` / `:update` / `:complete` |
+| 인건비 보고서 | `labor-cost-report:read` |
+
+- 권한은 "이 사용자가 할 수 있는가", 전이표의 행위자는 "이 대장에서 누구 차례인가"입니다. 담당자가 `:approve`를 보내면 권한이 있어도 409 `PAYROLL_LEDGER_TRANSITION_INVALID`입니다
+- 역할별 권한 묶음은 Identity & Access의 역할 템플릿에 넣어야 합니다([공유 변경](#열린-질문))
+
+## 오류 코드
+
+| 상태 | `code` | 언제 | 추가 필드 |
+|---|---|---|---|
+| 400 | `VALIDATION_FAILED` | 스키마 위반(소수 금액, 없는 달, 빈 사유) | `violations` |
+| 403 | `PERMISSION_DENIED`, `ENTITLEMENT_REQUIRED`, `TERMS_REAGREEMENT_REQUIRED` | 접근 요건 | 공통 |
+| 404 | `PAYROLL_LEDGER_NOT_FOUND` | 없거나 다른 회사 대장 | |
+| 404 | `PAYROLL_ROW_NOT_FOUND` | 대장에 없는 행 | |
+| 404 | `RATE_TABLE_ID_NOT_FOUND` | 없는 기준표 ID | |
+| 404 | `PAYSLIP_NOT_FOUND` | 없거나 마감 전 대장의 행 | |
+| 404 | `SEVERANCE_SETTLEMENT_NOT_FOUND` | 없는 정산 | |
+| 409 | `PAYROLL_LEDGER_TRANSITION_INVALID` | 상태·운영 방식·행위자가 전이와 맞지 않음 | `ledgerStatus`, `action` |
+| 409 | `PAYROLL_LEDGER_READ_ONLY` | 지금 상태에서 이 행위자가 입력을 고칠 수 없음 | `ledgerStatus` |
+| 409 | `WITHHOLDING_FILED` | 원천세가 신고된 지급월의 금액 변경 | `paymentMonth` |
+| 409 | `ADDITIONAL_LEDGER_BLOCKED` | 추가 대장 생성 조건 위반 | `reason` |
+| 409 | `WAGE_ROW_ON_ADDITIONAL_LEDGER` | 추가 대장에 근로 행 | |
+| 409 | `WAGE_INCOME_DUPLICATED` | 같은 귀속월 같은 직원의 두 번째 근로 행 | `ledgerId` |
+| 409 | `PAYROLL_LEDGER_HAS_ADDITIONAL` | 추가 대장이 있는 정기 대장 삭제 | |
+| 409 | `SEVERANCE_SETTLEMENT_EXISTS` | 같은 직원의 두 번째 정산 | `settlementId` |
+| 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
+| 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
+| 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음, 이름 없음, 소득 종류 변경 | `reason` |
+| 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
+| 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
+| 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
+| 428 | `IDEMPOTENCY_KEY_REQUIRED` | 키 없는 명세서 발송 | |
+
+## 현행 엔드포인트 대응
+
+번호는 스펙 5절의 번호입니다. 현행 경로는 `/api/company/:id/payroll` 아래(표시가 없으면), BPO는 그 아래 `/bpo`입니다.
+
+### legacy 급여카드 (1-30)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 1-2 | `GET/POST /api/company/new-payroll/maintain-payroll/:id/` | 없앰. 기존 설정 유지 여부는 이관 때 한 번 정하는 일이고, 이관은 [기본값](#급여-설정)으로 합니다 |
+| 3 | `GET /card-summary/` | `GET /payroll-ledgers` (`totals`, `rowCount`) |
+| 4 | `GET /card-summary/group-by-attr-date/` | `GET /payroll-ledgers?attributionMonth=` (묶음은 클라이언트) |
+| 5 | `GET /cards/:c/` | `GET /payroll-ledgers/{ledgerId}` + `GET .../rows`. 같은 귀속월 합본은 목록 필터로 |
+| 6 | `POST /cards/:c/data/` | `POST`/`PATCH /payroll-ledgers/{ledgerId}/rows[/{rowId}]` (저장과 계산을 한 요청에) |
+| 7 | `PATCH /cards/:c/update-name/` | `PATCH /payroll-ledgers/{ledgerId} { title }` |
+| 8 | `POST /cards/:c/calculate/` | `POST /payroll-ledgers/{ledgerId}:submit` |
+| 9 | `GET /cards/:c/card-status/` | `GET /payroll-ledgers/{ledgerId}`의 `status`, `step`, `allowedActions` |
+| 10 | `GET /cards/:c/fixed-payrolls/` | `GET /payroll-ledgers/{ledgerId}/rows` |
+| 11 | `GET /cards/fixed-payrolls-with-keyword/` | 없앰. 이전 급여 불러오기는 정기 대장 생성 때 HR 정보로 채우고, 지난 대장 행은 `GET .../rows`로 봄 |
+| 12 | `GET /cards/employee-names/` | HR 직원 검색 (급여 밖) |
+| 13 | `POST /cards/:c/additional-card/` | `POST /payroll-ledgers { attributionMonth }` (정기 대장이 있으면 추가 대장) |
+| 14 | `DELETE /cards/:c/` | `DELETE /payroll-ledgers/{ledgerId}` |
+| 15 | `POST /cards/:c/refresh-wage-employees-list/` | `POST /payroll-ledgers/{ledgerId}:recalculate` (사본 갱신). 명부 추가·제외는 행 추가·삭제 |
+| 16 | `GET /cards/:c/inquire-wage-employees-change/` | 미구현. 대장 `warnings`에 명부 변동(`ROSTER_CHANGED`)을 넣는 안 ([열린 질문](#열린-질문)) |
+| 17 | `GET /cards/:c/can-create-additional-card/` | 없앰. `POST /payroll-ledgers`가 409 `ADDITIONAL_LEDGER_BLOCKED`(`reason`)로 답함 |
+| 18 | `GET /cards/:c/payslip/` | `GET /payslips?ledgerId=` |
+| 19 | `POST /cards/:c/payslip/` | 없앰. 계산식은 `breakdown[].formula`, 이메일은 HR 직원 정보 |
+| 20 | `GET /cards/:c/payslip/wage-salary/notifications/` | `GET /payslips?ledgerId=`의 `deliveries`, `GET /jobs/{jobId}` |
+| 21 | `POST /cards/:c/payslip/wage-salary/notifications/` | `POST /payslips:send` (Idempotency-Key) |
+| 22 | `POST /cards/:c/payslip/wage-salary/copy-payment-formulas/` | 없앰. 계산식은 엔진이 만듦 |
+| 23-24 | `GET/POST /cards/:c/copy/` | 미구현. 이전 대장 입력 복사 `POST /payroll-ledgers { copyFromLedgerId }` 안 |
+| 25 | `GET /api/payroll/business-income-types/` | `GET /payroll-reference-codes` (`businessIncome`) |
+| 26 | `GET /api/payroll/special-occ-types/` | `GET /payroll-reference-codes` (`businessIncome`의 `ARTIST`·`SPECIAL` 구분) |
+| 27 | `GET /api/payroll/other-labor-income-types/` | `GET /payroll-reference-codes` (`otherIncome`, 경비율 포함) |
+| 28 | `GET /api/payroll/nation-codes/` | 공통 참조 데이터 (급여 밖). 외국인 정보는 HR |
+| 29 | `GET /api/payroll/excel/` | `GET /payroll-ledgers/{ledgerId}/import-template` (미구현) |
+| 30 | `POST /api/payroll/excel/` | `POST /payroll-ledgers/{ledgerId}/imports` → `Job` (미구현) |
+
+### 계산기·세율표 (31-33)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 31 | `POST /api/payroll/calculator/simulate` | `POST /payroll-calculator:simulate` (행 입력과 같은 스키마) |
+| 32 | `GET /api/tax-rates/simple/` | `GET /rate-tables?month=` (간이세액은 산식이라 표 대신 계산기로 확인) |
+| 33 | `GET /api/tax-rates/necessary-expenses/` | `GET /payroll-reference-codes` (`otherIncome[].expenseRatePpm`) |
+
+### BPO 대장 (34-45)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 34 | `GET /bpo/payment-date-list/` | 없앰. 지급일은 설정으로 기본값을 정하고 아무 날이나 받음 |
+| 35 | `GET /bpo/card-summary/` | `GET /payroll-ledgers` |
+| 36 | `POST /bpo/card/` | `POST /payroll-ledgers` |
+| 37 | `GET /bpo/card/:c/` | `GET /payroll-ledgers/{ledgerId}` |
+| 38 | `PUT /bpo/card/:c/` | `PATCH /payroll-ledgers/{ledgerId}`. 검토 요청은 `:submit` |
+| 39 | `DELETE /bpo/card/:c/` | `DELETE /payroll-ledgers/{ledgerId}` |
+| 40 | `GET /bpo/card/:c/status/` | `GET /payroll-ledgers/{ledgerId}`의 `status`, `step` |
+| 41 | `POST /bpo/card/:c/reject/` | `POST /payroll-ledgers/{ledgerId}:reject { reason }` |
+| 42 | `POST /bpo/card/:c/approve/` | `POST /payroll-ledgers/{ledgerId}:approve` |
+| 43 | `POST /bpo/card/:c/request-approval/` | `POST /payroll-ledgers/{ledgerId}:request-approval` |
+| 44 | `POST /bpo/card/:c/cancel-approval/` | `:withdraw-approval-request`(승인 대기) 또는 `:reopen { reason }`(마감 후) |
+| 45 | `POST /bpo/card/:c/export-to-desk/` | 미구현. 데스크(세무 대리인 도구)는 범위 밖. 필요하면 `payroll_pay_month.closed`를 구독 |
+
+### BPO 입력 (46-98)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 46-48, 85-87 | `GET /bpo/card/:c/:seg/payroll-input/` | `GET /payroll-ledgers/{ledgerId}/rows` (`incomeType`으로 거름) |
+| 49-51 | `GET .../payroll-input/:r/work-infos/` | 행 `input.work`(분) |
+| 52-54 | `GET .../payroll-input/:r/payroll-info/` | 행 `result.breakdown` |
+| 55-57, 94-96 | `POST .../payroll-input/delete/` | `DELETE /payroll-ledgers/{ledgerId}/rows/{rowId}` |
+| 58-60 | `PUT .../payroll-input/:r/` | `PATCH /payroll-ledgers/{ledgerId}/rows/{rowId}` |
+| 61-63, 88-90 | `POST .../payroll-input/update/`, `POST .../payroll-input/` | 행마다 `POST`/`PATCH`. 일괄 저장은 엑셀 가져오기 `Job` |
+| 64-66, 91-93 | `POST .../payroll-input/calculate/` | 없앰. 저장하면 계산. 전체 다시 계산은 `:recalculate` |
+| 67-69 | `POST .../payroll-input/refresh-employee-info/` | `POST /payroll-ledgers/{ledgerId}:recalculate` |
+| 70-72 | `POST .../payroll-input/reset-calculation/` | 없앰. 계산 안 된 행이 없음 |
+| 73-78, 97-98 | `GET/POST .../work-input/`, `.../daily/work-input/` | 행 `input.work`, 일용 행 `input.workDays`. 근무 시트 화면은 행 목록으로 그림 |
+| 79-80 | `GET/POST .../:seg/payroll-input/candidates/` | 후보는 HR 직원 검색, 추가는 `POST .../rows { employeeId }` |
+| 81-84 | `GET/POST .../payment-items/`, `.../deduction-items/` (+ `/bulk/`) | 행 `input.paymentItems[]`, `otherDeductions[]`. 대장 단위 항목 표는 미구현 |
+
+### BPO 명세서·메모·시프티 (99-113)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 99-102 | `GET .../{wage,business,daily,other}/payslip/` | `GET /payslips?ledgerId=` |
+| 103-106 | `GET .../{…}/payslip/:r/` | `GET /payslips/{payslipId}` |
+| 107 | `POST .../payslip/download/` | 미구현. PDF 렌더링은 Documents와 함께 정함 ([열린 질문](#열린-질문)) |
+| 108 | `POST .../payslip/send/` | `POST /payslips:send` |
+| 109-110 | `GET/POST /bpo/manager-memo/` | 미구현. 회사 메모는 Identity & Access의 회사 메모나 대장 `note`로 ([열린 질문](#열린-질문)) |
+| 111-113 | `GET/POST/DELETE /bpo/shiftee-integration` | Integrations (근태 연동). 급여는 근무 시간을 행 입력으로 받음 |
+
+### 퇴직금 정산 (114-128)
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 114 | `GET /severance/settlements/` | `GET /severance-settlements?status=` |
+| 115 | `GET .../filter-options/` | 없앰. 필터 값은 enum |
+| 116 | `GET .../status-counts/` | 미구현. 목록 응답의 `counts` 안 |
+| 117 | `GET .../:s/` | `GET /severance-settlements/{settlementId}` |
+| 118-119 | `GET .../:s/monthly-wages/[:m/]` | 상세의 `result.breakdown`과 입력 `threeMonthWages` |
+| 120 | `POST .../:s/temp-save/` | `PATCH /severance-settlements/{settlementId} { input }` |
+| 121 | `POST .../:s/complete/` | `POST /severance-settlements/{settlementId}:complete` |
+| 122 | `POST .../:s/reopen/` | `POST /severance-settlements/{settlementId}:reopen` |
+| 123 | `GET .../interim-candidates/` | 미구현 (중간정산) |
+| 124 | `POST .../` `{ kind, employee_ids }` | `POST /severance-settlements { employeeId }` (퇴직만, 한 명씩) |
+| 125 | `DELETE .../:s/` | 없앰. 정산은 지우지 않고 `:exclude`로 뺌 |
+| 126 | `GET .../retirement-candidates/` | 미구현. HR 퇴사자 중 정산이 없는 사람 |
+| 127 | `POST .../:s/exclude/` | `POST /severance-settlements/{settlementId}:exclude { reason }` |
+| 128 | `POST .../:s/include/` | `POST /severance-settlements/{settlementId}:include` |
+
+### 급여 설정 (129-155)
+
+현행 경로는 `/api/company/:id/employment/settings` 아래입니다.
+
+| # | 현행 | 재설계 |
+|---|---|---|
+| 129-134 | `/work-conditions/` CRUD, `usage-status` | HR (근로조건은 직원 계약의 일부) |
+| 135-136 | `GET/PATCH /payroll-terms/` | `GET/PATCH /payroll-settings` (지급일·임금산정 기간·배수·운영 방식) |
+| 137-141 | `/payroll-payment-items/` CRUD | 미구현. `/payroll-payment-items` 카탈로그(통상임금·최저임금 산입, 비과세 유형) 안 |
+| 142 | `GET /payroll-payment-categories/` | 미구현. 위 카탈로그의 표준 항목 |
+| 143-144 | `GET/PATCH /payroll-deduction/` | `GET/PATCH /payroll-settings` (`deductionMethods`) |
+| 145-149 | `/payroll-deduction-items/` CRUD | 미구현. `/payroll-deduction-items` 안 |
+| 150-155 | `/work-schedule-policies/` CRUD, `usage-status` | HR 또는 근태 (근무 일정은 급여 입력의 출처) |
+
+### 인건비 (Bookkeeping 스펙 N32-N33)
+
+| 현행 | 재설계 |
+|---|---|
+| `GET /api/company/:id/report/labor-cost/:year/` | `GET /labor-cost-reports/{year}` + 공개 `PayrollLaborCost.monthly` |
+| `GET /api/company/:id/report/labor-cost/:year/export/` | Bookkeeping 결산 엑셀 내보내기가 `PayrollLaborCost`로 만듦 (급여에는 없음) |
+
+## 구현 상태
+
+| 영역 | 상태 |
+|---|---|
+| 계산 엔진 (근로 3종·일용·사업·기타, 4대보험, 간이세액, 비과세, 가산수당, 일할, 최저임금, 퇴직금) | 구현 ([engine/](../../apps/api/src/modules/payroll/engine/)) |
+| 기준표 2026-01·2026-07, 참조 코드, 계산기 | 구현 (메모리) |
+| 급여 설정 | 구현 (메모리) |
+| 급여대장·행·재계산·전이 9개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
+| 지급월 마감 이벤트 | 구현. `PayrollEventPublisher.layerMemory`(아웃박스 없음) |
+| 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
+| 퇴직금 정산 (퇴직) | 구현 (메모리) |
+| 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary` | 구현 |
+| 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
+| 엑셀 가져오기 `Job`, 양식 | 설계만 |
+| 지급·공제 항목 카탈로그, 근무 일정 정책 | 없음 |
+| 행 결과 수동 덮어쓰기(고지액 입력 외) | 없음 |
+| 중간정산, 후보 목록, `LEAVE_DATE_BEFORE_INTERIM` | 없음 |
+| 데스크 내보내기, 담당자 메모, 시프티, 명세서 PDF, CSV 내보내기 | 없음 |
+
+규칙 픽스처 14개 59건은 모두 [engine.fixtures.test.ts](../../apps/api/src/modules/payroll/engine/engine.fixtures.test.ts)와 [ledger.fixtures.test.ts](../../apps/api/src/modules/payroll/ledgers/ledger.fixtures.test.ts)로 옮겼습니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
+
+## 열린 질문
+
+1. **간이세액표.** 공식 표(300만원·1인 74,350원)와 산식(60,380원)이 크게 다릅니다. 공식 표를 기준표 데이터로 넣고 `lookupSimpleTaxTable`로 바꿀지 확인이 필요합니다
+2. **퇴직금 지급과 원천세.** 퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 A21에 언제 넘길지 Tax와 정해야 합니다
+3. **지급일 이동 잠금.** 지급일을 신고된 달로, 또는 신고된 달에서 옮기는 것을 모두 막습니다. 신고 정정과 함께 허용할지 정해야 합니다
+4. **명부 변동 알림.** 현행 `inquire-wage-employees-change`를 대장 `warnings`(`ROSTER_CHANGED`)로 줄지, HR 이벤트(`employee.joined`·`left`)를 받아 대장에 표시할지 정해야 합니다
+5. **상여 대장.** 근로소득이 있는 별도 대장은 지금 막습니다. 상여를 따로 지급하는 회사가 있으면 간이세액 특례(지급대상기간)와 함께 설계합니다
+6. **명세서 문구와 PDF.** 회사가 계산식 문구를 고치던 기능과 PDF 다운로드를 Documents의 렌더링으로 할지 정해야 합니다
+7. **공유 변경.**
+   - Identity & Access 역할 템플릿에 [접근 요건](#접근-요건)의 권한을 넣어야 합니다
+   - ID 접두사(`pyl`·`pyr`·`psl`·`sev`·`rtb`)는 공유 목록에 이미 있어 변경이 필요 없습니다
+   - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다
+   - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
+8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
+9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))

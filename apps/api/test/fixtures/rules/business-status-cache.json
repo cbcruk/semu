@@ -1,0 +1,41 @@
+{
+  "rule": "business-status-cache",
+  "description": "Whether a cached NTS business status lookup is still fresh for today.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/partners/partners.service.ts", "lines": "39, 219-231" }
+  ],
+  "inputSchema": {
+    "checkedAt": "RFC 3339 time of the cached lookup",
+    "today": "company date YYYY-MM-DD"
+  },
+  "cases": [
+    {
+      "name": "a lookup from this morning is reused",
+      "input": { "checkedAt": "2026-11-05T01:00:00+09:00", "today": "2026-11-05" },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "a lookup from last night has expired",
+      "input": { "checkedAt": "2026-11-04T23:59:00+09:00", "today": "2026-11-05" },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "an early morning lookup stored in UTC",
+      "input": { "checkedAt": "2026-11-04T16:00:00Z", "today": "2026-11-05" },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "a lookup from two days ago has expired",
+      "input": { "checkedAt": "2026-11-03T03:00:00Z", "today": "2026-11-05" },
+      "expected": false,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 `checked_at.slice(0, 10)`(UTC 날짜)로 비교해 한국 시간 0~9시에 조회한 결과가 같은 날인데도 만료됩니다. 재설계는 회사 시간대 날짜로 비교합니다.",
+    "현행 조회는 같은 사업자번호의 거래처 `business_status`도 고칩니다. 재설계 조회 엔드포인트는 아직 거래처를 고치지 않습니다."
+  ]
+}

@@ -1,28 +1,23 @@
-import type { PaymentItemInput, PaymentLine, PayrollWarning } from './engine.types'
-import { formatWon } from './engine.utils'
-import type { NonTaxableCategory, PayrollRateTable } from './rate-table.types'
+import { formatWon } from './engine-math.ts'
+import type { PaymentItemInput, PaymentLine, PayrollWarning } from './engine.types.ts'
+import type { NonTaxableCategory, PayrollRateTable } from './rate-table.types.ts'
 
-/** Result of {@linkcode splitNonTaxable}. */
+/** {@link splitNonTaxable}의 결과입니다. */
 export interface NonTaxableSplit {
   lines: PaymentLine[]
   warnings: PayrollWarning[]
 }
 
 /**
- * Splits payment items into taxable and non-taxable parts under the statutory and company limits.
+ * 지급 항목을 법정·회사 한도 안에서 과세분과 비과세분으로 나눕니다.
  *
- * The limit of a category is shared by every item in it and consumed in item
- * order. The effective monthly limit is the smaller of the statutory monthly
- * limit and the company limit; annual limits subtract `annualNonTaxableUsed`.
- * Amounts over the limit become taxable (4.6절). A category with neither limit
- * is fully non-taxable.
+ * 한 유형의 한도는 그 유형의 모든 항목이 함께 쓰고, 항목 순서대로 소진합니다. 월 한도는 법정 월 한도와
+ * 회사 한도 중 작은 값이고, 연 한도는 `annualNonTaxableUsed`를 뺀 나머지입니다. 한도를 넘는 금액은
+ * 과세로 바꾸고 `NON_TAXABLE_LIMIT_EXCEEDED` 경고를 붙입니다. 어느 한도도 없는 유형은 전액 비과세입니다.
  *
- * @example Meal allowance over the cap
+ * @example 식대 250,000원
  * ```ts
- * import { splitNonTaxable } from './non-taxable'
- * import { RATES_2026_01 } from './rate-table-2026'
- *
- * splitNonTaxable([{ code: 'meal', name: '식대', amount: 250_000, nonTaxableCategory: 'meal' }], RATES_2026_01)
+ * splitNonTaxable([{ code: 'MEAL', name: '식대', amount: 250_000, nonTaxableCategory: 'MEAL' }], RATES_2026_01)
  *   .lines[0] // { taxableAmount: 50_000, nonTaxableAmount: 200_000, ... }
  * ```
  */
@@ -32,10 +27,24 @@ export function splitNonTaxable(items: readonly PaymentItemInput[], rates: Payro
   const lines = items.map((item): PaymentLine => {
     const category = item.nonTaxableCategory
     if (item.preclassifiedNonTaxable === true && item.amount > 0) {
-      return { code: item.code, name: item.name, amount: item.amount, taxableAmount: 0, nonTaxableAmount: item.amount, formula: `비과세 ${formatWon(item.amount)}` }
+      return {
+        code: item.code,
+        name: item.name,
+        amount: item.amount,
+        taxableAmount: 0,
+        nonTaxableAmount: item.amount,
+        formula: `비과세 ${formatWon(item.amount)}`,
+      }
     }
     if (category === undefined || item.amount <= 0) {
-      return { code: item.code, name: item.name, amount: item.amount, taxableAmount: item.amount, nonTaxableAmount: 0, formula: `${formatWon(item.amount)} (과세)` }
+      return {
+        code: item.code,
+        name: item.name,
+        amount: item.amount,
+        taxableAmount: item.amount,
+        nonTaxableAmount: 0,
+        formula: `${formatWon(item.amount)} (과세)`,
+      }
     }
     const left = remaining.get(category) ?? initialLimit(item, category, rates)
     const nonTaxableAmount = Math.min(item.amount, left)
@@ -60,7 +69,7 @@ export function splitNonTaxable(items: readonly PaymentItemInput[], rates: Payro
   return { lines, warnings }
 }
 
-/** Returns the statutory monthly non-taxable limit of a category, or `null` when it has none. */
+/** 비과세 유형의 법정 월 한도입니다. 없으면 `null`입니다. */
 export function statutoryMonthlyLimit(category: NonTaxableCategory, rates: PayrollRateTable): number | null {
   return rates.nonTaxable[category].monthlyLimit
 }
@@ -69,7 +78,9 @@ function initialLimit(item: PaymentItemInput, category: NonTaxableCategory, rate
   const statutory = rates.nonTaxable[category]
   const candidates: number[] = []
   if (statutory.monthlyLimit !== null) candidates.push(statutory.monthlyLimit)
-  if (statutory.annualLimit !== null) candidates.push(Math.max(0, statutory.annualLimit - (item.annualNonTaxableUsed ?? 0)))
+  if (statutory.annualLimit !== null) {
+    candidates.push(Math.max(0, statutory.annualLimit - (item.annualNonTaxableUsed ?? 0)))
+  }
   if (item.companyNonTaxableLimit !== undefined) candidates.push(item.companyNonTaxableLimit)
   return candidates.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...candidates)
 }

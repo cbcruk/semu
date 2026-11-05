@@ -1,0 +1,103 @@
+{
+  "rule": "cash-status-other-change",
+  "description": "Opening, deposit, withdrawal, other change and closing amounts of the cash status for a period.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/realtime-reports/realtime-reports.service.ts", "lines": "193-249" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/bank/bank.repository.ts", "lines": "124-133" }
+  ],
+  "inputSchema": {
+    "snapshotsByAccount": "[[{ date, closingBalance }]] one list per cash account",
+    "transactions": "[signed amount]",
+    "start": "YYYY-MM-DD",
+    "end": "YYYY-MM-DD"
+  },
+  "cases": [
+    {
+      "name": "the demo day leaves interest as other change",
+      "input": {
+        "snapshotsByAccount": [
+          [
+            { "date": "2026-10-30", "closingBalance": 71730000 },
+            { "date": "2026-10-31", "closingBalance": 73450000 }
+          ]
+        ],
+        "transactions": [2000000, -300000],
+        "start": "2026-10-31",
+        "end": "2026-10-31"
+      },
+      "expected": {
+        "openingAmount": 71730000,
+        "depositAmount": 2000000,
+        "withdrawalAmount": -300000,
+        "otherChangeAmount": 20000,
+        "closingAmount": 73450000
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "a quiet day carries the last balance",
+      "input": {
+        "snapshotsByAccount": [[{ "date": "2026-10-28", "closingBalance": 1000000 }]],
+        "transactions": [],
+        "start": "2026-10-31",
+        "end": "2026-10-31"
+      },
+      "expected": {
+        "openingAmount": 1000000,
+        "depositAmount": 0,
+        "withdrawalAmount": 0,
+        "otherChangeAmount": 0,
+        "closingAmount": 1000000
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "the first snapshot of a new account is other change",
+      "input": {
+        "snapshotsByAccount": [
+          [{ "date": "2026-10-31", "closingBalance": 100 }],
+          [
+            { "date": "2026-10-30", "closingBalance": 50 },
+            { "date": "2026-10-31", "closingBalance": 70 }
+          ]
+        ],
+        "transactions": [],
+        "start": "2026-10-31",
+        "end": "2026-10-31"
+      },
+      "expected": {
+        "openingAmount": 50,
+        "depositAmount": 0,
+        "withdrawalAmount": 0,
+        "otherChangeAmount": 120,
+        "closingAmount": 170
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "a month range opens on the last day of the previous month",
+      "input": {
+        "snapshotsByAccount": [
+          [
+            { "date": "2026-09-30", "closingBalance": 1000 },
+            { "date": "2026-10-31", "closingBalance": 1500 }
+          ]
+        ],
+        "transactions": [700, -300],
+        "start": "2026-10-01",
+        "end": "2026-10-31"
+      },
+      "expected": {
+        "openingAmount": 1000,
+        "depositAmount": 700,
+        "withdrawalAmount": -300,
+        "otherChangeAmount": 100,
+        "closingAmount": 1500
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "기타 변동은 수집 누락·이자 결산·외화 환산을 구분하지 않습니다. 외화 계좌(`31`) 잔액을 원화로 바꾸는 규칙이 현행에 없습니다."
+  ]
+}

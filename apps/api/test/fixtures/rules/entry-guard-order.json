@@ -1,0 +1,245 @@
+{
+  "rule": "entry-guard-order",
+  "description": "Client route guard chain on every navigation (auth, signup consent, tax consent, company presence, menu access or promotion, system admin) with its redirect targets, plus the company selection priority and email-mismatch logout of app initialization.",
+  "sources": [
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "29-39",
+      "origin": "index.pretty.js B:104680-104830, B:105086-105140, B:77945-77947"
+    }
+  ],
+  "inputSchema": {
+    "check": "guard | selectCompany | initialize.",
+    "route": "{path, public?, companyNotRequired?, requiresMenuAccess?, requiresSystemAdmin?}.",
+    "state": "{loggedIn, signupConsentPending, taxConsentPending, hasTaxationCompany, companies (count), activeInvitations (count), menuAccess: 'allowed' | 'denied' | {promotionUrl}, isSystemAdmin}.",
+    "query": "URL query of the first entry (_company_id is the sf id, _nexus_company_id the nexus id).",
+    "cookie": "SELECTED_COMPANY_ID cookie value.",
+    "companies": "user.companies [{id, sfCompanyId}] in API order."
+  },
+  "cases": [
+    {
+      "name": "private route without login goes to /login with next",
+      "input": { "check": "guard", "route": { "path": "/tax/surtax" }, "state": { "loggedIn": false } },
+      "expected": { "redirect": "/login?next=/tax/surtax" },
+      "derivation": "traced"
+    },
+    {
+      "name": "public route without login passes",
+      "input": { "check": "guard", "route": { "path": "/signup", "public": true }, "state": { "loggedIn": false } },
+      "expected": { "redirect": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "signup consent is checked before the company",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/today" },
+        "state": { "loggedIn": true, "signupConsentPending": true, "companies": 0, "activeInvitations": 0 }
+      },
+      "expected": { "redirect": "/agree-terms?next=/today" },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax consent for a taxation customer",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/today" },
+        "state": {
+          "loggedIn": true,
+          "signupConsentPending": false,
+          "hasTaxationCompany": true,
+          "taxConsentPending": true,
+          "companies": 1
+        }
+      },
+      "expected": { "redirect": "/tax-agree-terms" },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax consent skipped without a taxation company",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/today" },
+        "state": {
+          "loggedIn": true,
+          "signupConsentPending": false,
+          "hasTaxationCompany": false,
+          "taxConsentPending": true,
+          "companies": 1,
+          "menuAccess": "allowed"
+        }
+      },
+      "expected": { "redirect": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "no company with an active invitation goes to /no-company",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/today" },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 0, "activeInvitations": 1 }
+      },
+      "expected": { "redirect": "/no-company" },
+      "derivation": "traced"
+    },
+    {
+      "name": "no company and no invitation goes to /register-company",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/today" },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 0, "activeInvitations": 0 }
+      },
+      "expected": { "redirect": "/register-company?showToast=true" },
+      "derivation": "traced"
+    },
+    {
+      "name": "register-company route does not require a company",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/register-company", "companyNotRequired": true },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 0, "activeInvitations": 0 }
+      },
+      "expected": { "redirect": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "menu route not in the user's menu tree goes to /dashboard",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/payroll-settlement", "requiresMenuAccess": true },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 1, "menuAccess": "denied" }
+      },
+      "expected": { "redirect": "/dashboard" },
+      "derivation": "traced"
+    },
+    {
+      "name": "promotion menu route goes to its promotionUrl",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/tax/surtax", "requiresMenuAccess": true },
+        "state": {
+          "loggedIn": true,
+          "signupConsentPending": false,
+          "hasTaxationCompany": false,
+          "companies": 1,
+          "menuAccess": { "promotionUrl": "/settings/plan/detail" }
+        }
+      },
+      "expected": { "redirect": "/settings/plan/detail" },
+      "derivation": "traced"
+    },
+    {
+      "name": "ai-agent for a non system admin goes to /dashboard",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/ai-agent", "requiresSystemAdmin": true },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 1, "isSystemAdmin": false }
+      },
+      "expected": { "redirect": "/dashboard" },
+      "derivation": "traced"
+    },
+    {
+      "name": "ai-agent for the system admin passes",
+      "input": {
+        "check": "guard",
+        "route": { "path": "/ai-agent", "requiresSystemAdmin": true },
+        "state": { "loggedIn": true, "signupConsentPending": false, "hasTaxationCompany": false, "companies": 1, "isSystemAdmin": true }
+      },
+      "expected": { "redirect": null },
+      "derivation": "traced"
+    },
+    {
+      "name": "company from the sf id query wins over everything",
+      "input": {
+        "check": "selectCompany",
+        "query": { "_company_id": "502", "_nexus_company_id": "11" },
+        "cookie": "12",
+        "companies": [
+          { "id": 11, "sfCompanyId": 501 },
+          { "id": 12, "sfCompanyId": 502 },
+          { "id": 13, "sfCompanyId": 503 }
+        ]
+      },
+      "expected": { "companyId": 12, "removeQuery": ["_nexus_company_id", "_company_id", "aff"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "company from the nexus id query when no sf id",
+      "input": {
+        "check": "selectCompany",
+        "query": { "_nexus_company_id": "11" },
+        "cookie": "12",
+        "companies": [
+          { "id": 11, "sfCompanyId": 501 },
+          { "id": 12, "sfCompanyId": 502 }
+        ]
+      },
+      "expected": { "companyId": 11 },
+      "derivation": "traced"
+    },
+    {
+      "name": "company from the cookie when no query",
+      "input": {
+        "check": "selectCompany",
+        "query": {},
+        "cookie": "11",
+        "companies": [
+          { "id": 11, "sfCompanyId": 501 },
+          { "id": 12, "sfCompanyId": 502 }
+        ]
+      },
+      "expected": { "companyId": 11 },
+      "derivation": "traced"
+    },
+    {
+      "name": "last company when nothing else is set",
+      "input": {
+        "check": "selectCompany",
+        "query": {},
+        "cookie": null,
+        "companies": [
+          { "id": 11, "sfCompanyId": 501 },
+          { "id": 12, "sfCompanyId": 502 }
+        ]
+      },
+      "expected": { "companyId": 12 },
+      "derivation": "traced"
+    },
+    {
+      "name": "query id the user does not belong to falls through",
+      "input": {
+        "check": "selectCompany",
+        "query": { "_nexus_company_id": "99" },
+        "cookie": null,
+        "companies": [
+          { "id": 11, "sfCompanyId": 501 },
+          { "id": 12, "sfCompanyId": 502 }
+        ]
+      },
+      "expected": { "companyId": 12 },
+      "derivation": "traced"
+    },
+    {
+      "name": "different nexus and sf emails log the user out",
+      "input": { "check": "initialize", "nexusMe": { "email": "a@example.com" }, "sfProfile": { "email": "b@example.com" } },
+      "expected": { "logout": true, "reason": "User Mismatch" },
+      "derivation": "traced"
+    },
+    {
+      "name": "matching emails continue with JWT reissue and parallel loads",
+      "input": { "check": "initialize", "nexusMe": { "email": "a@example.com" }, "sfProfile": { "email": "a@example.com" } },
+      "expected": {
+        "logout": false,
+        "steps": ["selectCompany", "removeLocalStorageJWT", "issueJWT", "loadCompanyDetail", "loadPermissions", "loadSubscriptions"]
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "What happens when a query or cookie company id is not among user.companies (fall through to the next source, or error) is not visible; the fixture assumes fall-through.",
+    "Whether the email comparison in initializeUser is case-sensitive is not visible.",
+    "The last company in user.companies is the default, but the API order of companies is not specified (creation order assumed).",
+    "The tax consent step uses any taxation company of the user, not the selected company, so its effect in a multi-company account is unclear.",
+    "Whether /no-company and /register-company also pass the consent guards for users without companies is assumed from the order, not observed."
+  ]
+}

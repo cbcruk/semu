@@ -1,135 +1,77 @@
-/** `AccountType` of the bank integration: 01 demand deposit, 02 savings, 11 trust, 21 fund, 31 foreign currency or gold, 41 loan, 51 insurance, 61 pension. */
-export type BankAccountType = '01' | '02' | '11' | '21' | '31' | '41' | '51' | '61'
+import type { Id } from '../../../shared/ids/ids.types.ts'
+import type { Classification } from '../evidence/evidence.types.ts'
 
-/** Whether a bank transaction is linked to the evidence it settles. */
-export type SettlementStatus = 'partner_required' | 'unmatched' | 'matched' | 'not_applicable'
+/** 은행 연동의 `AccountType` 코드입니다. `01` 입출금, `02` 예적금, `11` 신탁, `21` 펀드, `31` 외화·골드, `41` 대출, `51` 보험, `61` 연금. */
+export type BankAccountTypeCode = '01' | '02' | '11' | '21' | '31' | '41' | '51' | '61'
 
-/** A row of `bank_accounts`. */
-export interface BankAccountRow {
-  id: string
-  company_id: string
-  integration_id: string | null
-  bank_code: string
-  account_number_enc: string
-  account_number_digest: string
-  account_number_tail: string
-  account_name: string | null
-  account_type: BankAccountType
-  is_corporate: 0 | 1
-  currency_code: string
+/** 입금·출금입니다. */
+export type Direction = 'DEPOSIT' | 'WITHDRAWAL'
+
+/** 저장한 은행 계좌입니다. 계좌번호 원문은 암호문으로만 둡니다. */
+export interface BankAccountRecord {
+  id: Id<'bankAccount'>
+  companyId: Id<'company'>
+  bankCode: string
+  accountNumberEncrypted: string
+  /** 숫자만 남긴 계좌번호의 SHA-256입니다. 수집 레코드를 기존 계좌에 맞추는 키입니다. */
+  accountNumberDigest: string
+  accountNumberLast4: string
+  alias: string | null
+  accountTypeCode: BankAccountTypeCode
+  isCorporate: boolean
+  currencyCode: string
   holder: string | null
-  open_date: string | null
-  end_date: string | null
+  openedOn: string | null
+  maturesOn: string | null
+  /** 원화 잔액입니다. 외화 계좌는 환산한 값입니다. */
   balance: number | null
-  balance_fx: string | null
-  fx_rate: string | null
-  is_dormant: 0 | 1
-  is_active: 0 | 1
-  is_visible_on_cash_report: 0 | 1
-  last_transaction_date: string | null
-  external_key: string | null
-  created_at: string
-  updated_at: string
+  status: 'ACTIVE' | 'INACTIVE' | 'DORMANT'
+  /** 자금 현황에 넣을지입니다(계좌 표시 설정). */
+  cashReport: 'INCLUDED' | 'EXCLUDED'
+  lastTransactionOn: string | null
+  version: number
 }
 
-/** A bank account in wire shape; the number is masked except its last six digits. */
-export interface BankAccount {
+/** 하루 마감 잔액입니다. 은행이 준 값(`SCRAPED`)이 거래 잔액으로 만든 값(`DERIVED`)보다 우선합니다. */
+export interface BalanceSnapshotRecord {
+  /** `<계좌 ID>:<날짜>`입니다. */
   id: string
-  integration_id: string | null
-  bank_code: string
-  account_number: string
-  account_name: string | null
-  account_type: BankAccountType
-  is_corporate: boolean
-  currency_code: string
-  holder: string | null
-  open_date: string | null
-  end_date: string | null
-  balance: number
-  balance_fx: string | null
-  fx_rate: string | null
-  is_dormant: boolean
-  is_active: boolean
-  is_visible_on_cash_report: boolean
-  last_transaction_date: string | null
+  companyId: Id<'company'>
+  bankAccountId: Id<'bankAccount'>
+  date: string
+  closingBalance: number
+  source: 'SCRAPED' | 'DERIVED'
 }
 
-/** Asset buckets of the account list summary. */
-export type AssetBucket = 'demand' | 'foreign_currency' | 'savings' | 'fund' | 'trust' | 'insurance' | 'pension'
-
-/** Summary block of the account list. */
-export interface BankAccountSummary {
-  account_count: number
-  total_assets: number
-  assets_by_type: Record<AssetBucket, number>
-  total_liabilities: number
-}
-
-/** A row of `bank_transactions`. */
-export interface BankTransactionRow {
-  id: string
-  company_id: string
-  account_id: string
-  external_key: string
-  transacted_at: string
-  direction: 'deposit' | 'withdrawal'
+/** 저장한 입출금 거래입니다. `amount`는 부호가 있고 출금은 음수입니다. */
+export interface BankTransactionRecord {
+  id: Id<'bankTransaction'>
+  companyId: Id<'company'>
+  bankAccountId: Id<'bankAccount'>
+  externalKey: string
+  /** 분 단위 시각입니다. 예: `2026-10-06T10:00:00+09:00` */
+  transactedAt: string
+  direction: Direction
   amount: number
-  balance_after: number | null
+  balanceAfter: number | null
   summary: string | null
-  currency_code: string
-  amount_fx: string | null
-  account_title_id: string | null
-  classified_by: 'manual' | 'rule' | null
-  classified_rule_id: string | null
-  partner_id: string | null
+  currencyCode: string
+  partnerId: Id<'partner'> | null
+  classification: Classification
   memo: string | null
-  settlement_status: SettlementStatus
-  synced_at: string
+  syncedAt: string
+  version: number
 }
 
-/** A bank transaction in wire shape. */
-export interface BankTransaction {
-  id: string
-  account_id: string
-  bank_code: string
-  account_number_tail: string
-  account_name: string | null
-  transacted_at: string
-  direction: 'deposit' | 'withdrawal'
+/** 입출금 거래와 그 거래가 정산한 증빙의 연결입니다. 부분 입금·묶음 입금 때문에 N:M입니다. */
+export interface SettlementLinkRecord {
+  id: Id<'settlementLink'>
+  companyId: Id<'company'>
+  bankTransactionId: Id<'bankTransaction'>
+  evidenceId: Id<'evidence'>
   amount: number
-  balance_after: number | null
-  summary: string | null
-  currency_code: string
-  amount_fx: string | null
-  account_title_id: string | null
-  account_title_name: string | null
-  classified_by: 'manual' | 'rule' | null
-  classified_rule_id: string | null
-  partner_id: string | null
-  partner_name: string | null
-  memo: string | null
-  settlement_status: SettlementStatus
-  settled_amount: number
+  createdAt: string
 }
 
-/** Filters of the bank transaction list, already validated. */
-export interface BankTransactionFilter {
-  start: string
-  end: string
-  direction: 'deposit' | 'withdrawal' | undefined
-  accountIds: string[]
-  accountTitleIds: string[]
-  classification: 'classified' | 'unclassified' | undefined
-  partnerId: string | undefined
-  search: string | undefined
-}
-
-/** One link between a bank transaction and the evidence it settles. */
-export interface SettlementLink {
-  id: string
-  bank_transaction_id: string
-  evidence_side: 'sales' | 'purchase'
-  evidence_id: string
-  amount: number
-  created_at: string
-}
+/** 증빙 연결 상태입니다. 저장하지 않고 분류·거래처·연결 금액에서 계산합니다. */
+export type SettlementMatchStatus = 'PARTNER_REQUIRED' | 'UNMATCHED' | 'MATCHED' | 'NOT_APPLICABLE'

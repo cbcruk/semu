@@ -1,0 +1,168 @@
+{
+  "rule": "scraped-record-ingestion",
+  "description": "Processing order of a scraped batch, how a card approval becomes purchase evidence, and which evidence records are rejected.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/ingestion/ingest-scraped-records.ts", "lines": "61-153, 220-238, 363-365" }
+  ],
+  "inputSchema": {
+    "call": "'order' | 'card' | 'rejection'",
+    "types": "record type list (order)",
+    "record": "ScrapedCardApproval (card) or ScrapedEvidence (rejection)"
+  },
+  "cases": [
+    {
+      "name": "accounts first and the rest in sent order",
+      "input": {
+        "call": "order",
+        "types": ["BANK_TRANSACTION", "BANK_BALANCE", "BANK_ACCOUNT", "PURCHASE_EVIDENCE", "BANK_ACCOUNT"]
+      },
+      "expected": [2, 4, 0, 1, 3],
+      "derivation": "traced"
+    },
+    {
+      "name": "a card approval becomes purchase card evidence",
+      "input": {
+        "call": "card",
+        "record": {
+          "type": "CARD_APPROVAL",
+          "cardNumberMasked": "1234-****-****-5678",
+          "approvalNo": "30012345",
+          "approvedAt": "2026-10-12T12:30:00+09:00",
+          "merchantName": "한우마을",
+          "amount": 880000,
+          "vatAmount": 80000
+        }
+      },
+      "expected": {
+        "externalKey": "30012345:1234-****-****-5678:2026-10-12T12:30:00+09:00",
+        "writtenOn": "2026-10-12",
+        "totalAmount": 880000,
+        "supplyAmount": 800000,
+        "vatAmount": 80000,
+        "isCanceled": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "a card approval without VAT keeps the whole amount as supply",
+      "input": {
+        "call": "card",
+        "record": {
+          "type": "CARD_APPROVAL",
+          "cardNumberMasked": "1234-****-****-5678",
+          "approvalNo": "30012346",
+          "approvedAt": "2026-10-13T09:00:00+09:00",
+          "amount": -55000
+        }
+      },
+      "expected": {
+        "externalKey": "30012346:1234-****-****-5678:2026-10-13T09:00:00+09:00",
+        "writtenOn": "2026-10-13",
+        "totalAmount": -55000,
+        "supplyAmount": -55000,
+        "vatAmount": 0,
+        "isCanceled": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "a card approval stamped in UTC",
+      "input": {
+        "call": "card",
+        "record": {
+          "type": "CARD_APPROVAL",
+          "cardNumberMasked": "1234-****-****-5678",
+          "approvalNo": "30012347",
+          "approvedAt": "2026-10-13T16:30:00Z",
+          "amount": 11000,
+          "vatAmount": 1000
+        }
+      },
+      "expected": {
+        "externalKey": "30012347:1234-****-****-5678:2026-10-13T16:30:00Z",
+        "writtenOn": "2026-10-13",
+        "totalAmount": 11000,
+        "supplyAmount": 10000,
+        "vatAmount": 1000,
+        "isCanceled": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "valid evidence is accepted",
+      "input": {
+        "call": "rejection",
+        "record": {
+          "type": "SALES_EVIDENCE",
+          "source": "TAX_INVOICE",
+          "externalKey": "2026101041000001",
+          "writtenOn": "2026-10-10",
+          "totalAmount": 33000000,
+          "supplyAmount": 30000000,
+          "vatAmount": 3000000
+        }
+      },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "an invalid date is rejected",
+      "input": {
+        "call": "rejection",
+        "record": {
+          "type": "PURCHASE_EVIDENCE",
+          "source": "TAX_INVOICE",
+          "externalKey": "k-1",
+          "writtenOn": "2026-13-01",
+          "supplyAmount": 1000
+        }
+      },
+      "expected": "DATE_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "evidence without amounts",
+      "input": {
+        "call": "rejection",
+        "record": { "type": "SALES_EVIDENCE", "source": "CASH_RECEIPT", "externalKey": "k-2", "writtenOn": "2026-10-10" }
+      },
+      "expected": "BATCH_FAILS",
+      "derivation": "traced"
+    },
+    {
+      "name": "PG evidence sent as purchase",
+      "input": {
+        "call": "rejection",
+        "record": {
+          "type": "PURCHASE_EVIDENCE",
+          "source": "PG",
+          "externalKey": "k-3",
+          "writtenOn": "2026-10-10",
+          "totalAmount": 1000
+        }
+      },
+      "expected": "BATCH_FAILS",
+      "derivation": "traced"
+    },
+    {
+      "name": "evidence with a blank external key",
+      "input": {
+        "call": "rejection",
+        "record": {
+          "type": "SALES_EVIDENCE",
+          "source": "CARD",
+          "externalKey": " ",
+          "writtenOn": "2026-10-10",
+          "totalAmount": 1000
+        }
+      },
+      "expected": null,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행 카드 승인은 `approved_at.slice(0, 10)`로 날짜를 잡아 UTC로 온 시각이면 하루 앞당겨질 수 있습니다. 재설계는 회사 시간대 날짜를 씁니다.",
+    "현행은 금액 없는 매출 증빙(합계 `NOT NULL`)과 매입으로 온 PG·쇼핑몰·배달 증빙(원천 `CHECK`)을 DB 제약 오류로 받아 묶음 전체를 되돌립니다(`BATCH_FAILS`). 빈 수집 키는 그대로 받습니다. 재설계는 그 레코드만 `AMOUNTS_MISSING`, `SOURCE_SIDE_MISMATCH`, `EXTERNAL_KEY_MISSING`으로 거절합니다.",
+    "카드 승인에 세액이 없으면 0으로 둬 전액이 공급가액이 됩니다. 간이과세·면세 가맹점을 구분할 근거가 수집 데이터에 없습니다."
+  ]
+}

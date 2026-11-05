@@ -1,0 +1,163 @@
+{
+  "rule": "realtime-pl-inclusion",
+  "description": "Which classified evidence and bank transactions enter the realtime profit and loss, with which amount and sign.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/realtime-reports/realtime-reports.service.ts", "lines": "53-119" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/realtime-reports/realtime-reports.utils.ts", "lines": "8-181" },
+    { "file": "docs/reference/spec/bookkeeping.md", "lines": "1-400", "origin": "spec" }
+  ],
+  "inputSchema": {
+    "month": "YYYY-MM month to read",
+    "cumulative": "boolean (default false)",
+    "policy": "{ basis: 'SUPPLY' | 'TOTAL', includeBank: boolean } (default SUPPLY, true)",
+    "evidence": "[{ side, date, account: default account code | null, supplyAmount, totalAmount }]",
+    "bank": "[{ date, account: default account code | null, amount }]"
+  },
+  "cases": [
+    {
+      "name": "sales evidence counts at supply amount",
+      "input": {
+        "month": "2026-10",
+        "evidence": [
+          { "side": "SALES", "date": "2026-10-05", "account": "sales.revenue", "supplyAmount": 10000000, "totalAmount": 11000000 }
+        ],
+        "bank": []
+      },
+      "expected": {
+        "revenueAmount": 10000000,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 10000000,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "the total basis counts VAT included",
+      "input": {
+        "month": "2026-10",
+        "policy": { "basis": "TOTAL", "includeBank": true },
+        "evidence": [
+          { "side": "SALES", "date": "2026-10-05", "account": "sales.revenue", "supplyAmount": 10000000, "totalAmount": 11000000 }
+        ],
+        "bank": []
+      },
+      "expected": {
+        "revenueAmount": 11000000,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 11000000,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "trade payments are not counted twice",
+      "input": {
+        "month": "2026-10",
+        "evidence": [
+          { "side": "SALES", "date": "2026-10-05", "account": "sales.revenue", "supplyAmount": 30000000, "totalAmount": 33000000 }
+        ],
+        "bank": [{ "date": "2026-10-06", "account": "trade.sales_in.partner", "amount": 33000000 }]
+      },
+      "expected": {
+        "revenueAmount": 30000000,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 30000000,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "salary paid from the bank is an expense",
+      "input": {
+        "month": "2026-10",
+        "evidence": [
+          { "side": "PURCHASE", "date": "2026-10-12", "account": "sga.welfare", "supplyAmount": 800000, "totalAmount": 880000 },
+          { "side": "PURCHASE", "date": "2026-10-15", "account": "cogs.goods", "supplyAmount": 10000000, "totalAmount": 11000000 }
+        ],
+        "bank": [
+          { "date": "2026-10-25", "account": "sga.salary", "amount": -8000000 },
+          { "date": "2026-10-31", "account": "non_op_income.interest", "amount": 30000 }
+        ]
+      },
+      "expected": {
+        "revenueAmount": 0,
+        "costOfSalesAmount": 10000000,
+        "sgaAmount": 8800000,
+        "nonOperatingIncomeAmount": 30000,
+        "netIncomeAmount": -18770000,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "bank rows are left out when the policy says so",
+      "input": {
+        "month": "2026-10",
+        "policy": { "basis": "SUPPLY", "includeBank": false },
+        "evidence": [],
+        "bank": [{ "date": "2026-10-25", "account": "sga.salary", "amount": -8000000 }]
+      },
+      "expected": {
+        "revenueAmount": 0,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 0,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "unclassified rows are only counted",
+      "input": {
+        "month": "2026-10",
+        "evidence": [
+          { "side": "SALES", "date": "2026-10-05", "account": null, "supplyAmount": 1000, "totalAmount": 1100 },
+          { "side": "PURCHASE", "date": "2026-10-05", "account": null, "supplyAmount": 1000, "totalAmount": 1100 }
+        ],
+        "bank": [{ "date": "2026-10-05", "account": null, "amount": -300000 }]
+      },
+      "expected": {
+        "revenueAmount": 0,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 0,
+        "unclassifiedCount": { "sales": 1, "purchase": 1, "bank": 1 }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cumulative months add up from January",
+      "input": {
+        "month": "2026-10",
+        "cumulative": true,
+        "evidence": [
+          { "side": "SALES", "date": "2026-09-10", "account": "sales.revenue", "supplyAmount": 5000000, "totalAmount": 5500000 },
+          { "side": "SALES", "date": "2026-10-10", "account": "sales.revenue", "supplyAmount": 3000000, "totalAmount": 3300000 },
+          { "side": "SALES", "date": "2025-10-10", "account": "sales.revenue", "supplyAmount": 9000000, "totalAmount": 9900000 }
+        ],
+        "bank": []
+      },
+      "expected": {
+        "revenueAmount": 8000000,
+        "costOfSalesAmount": 0,
+        "sgaAmount": 0,
+        "nonOperatingIncomeAmount": 0,
+        "netIncomeAmount": 8000000,
+        "unclassifiedCount": { "sales": 0, "purchase": 0, "bank": 0 }
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 회사별 손익 정책(`bookkeeping_settings`의 공급가액/합계, 입출금 포함)을 읽지만 바꾸는 엔드포인트가 없습니다. 재설계는 기본값(공급가액, 포함)만 씁니다.",
+    "증빙이 있는 비용을 입출금으로도 분류하면(예: 카드 결제 대금을 판관비로 분류) 두 번 잡힙니다. 현행은 사용자 분류에 맡깁니다."
+  ]
+}

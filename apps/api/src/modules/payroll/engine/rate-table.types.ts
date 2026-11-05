@@ -1,16 +1,13 @@
-/**
- * A calendar month in `YYYY-MM` form, used as the effective month of a rate table and as the attribution month of a payroll row.
- */
+/** 귀속월·기준표 적용 시작월처럼 달이 단위인 값입니다. 형식은 `YYYY-MM`입니다. */
 export type YearMonth = string
 
-/** Rounding unit in won: truncate to whole won (1), to 10 won, and so on. */
+/** 절사 단위(원)입니다. 1이면 원 미만, 10이면 10원 미만을 버립니다. */
 export type RoundingUnit = 1 | 10 | 100 | 1000
 
 /**
- * One segment of a piecewise-linear schedule.
+ * 구간별 선형식의 한 구간입니다. `x`가 `upTo` 이하이면 `base + (x − over) × ratePpm / 1,000,000`입니다.
  *
- * For an input `x` up to `upTo` (inclusive), the value is `base + (x − over) × ratePpm / 1,000,000`.
- * The last segment has `upTo: null`.
+ * 마지막 구간은 `upTo`가 `null`입니다.
  */
 export interface LinearBracket {
   upTo: number | null
@@ -20,9 +17,9 @@ export interface LinearBracket {
 }
 
 /**
- * One income band of the 간이세액표 special deduction estimate.
+ * 간이세액표 특별소득공제 추정식의 한 구간입니다.
  *
- * The value is `base + total × ratePpm` plus, for each adjustment, `max(0, total − over) × ratePpm` (signed).
+ * 값은 `base + 총급여 × ratePpm`에 조정마다 `max(0, 총급여 − over) × ratePpm`(부호 포함)을 더한 것입니다.
  */
 export interface SpecialDeductionBracket {
   upTo: number | null
@@ -31,7 +28,7 @@ export interface SpecialDeductionBracket {
   adjustments: readonly { over: number; ratePpm: number }[]
 }
 
-/** Segment of a per-unit schedule: `base + (x − over) × perUnit` for `x` up to `upTo` (inclusive). */
+/** 단위당 계단식의 한 구간입니다. `x`가 `upTo` 이하이면 `base + (x − over) × perUnit`입니다. 근속연수공제에 씁니다. */
 export interface PerUnitBracket {
   upTo: number | null
   base: number
@@ -39,61 +36,61 @@ export interface PerUnitBracket {
   over: number
 }
 
-/** Progressive tax band: `taxable × ratePpm − progressiveDeduction` for taxable income up to `upTo`. */
+/** 종합소득 기본세율 구간입니다. 과세표준이 `upTo` 이하이면 `과세표준 × ratePpm − progressiveDeduction`입니다. */
 export interface ProgressiveBracket {
   upTo: number | null
   ratePpm: number
   progressiveDeduction: number
 }
 
-/** Limit on the 근로소득세액공제 for a band of total annual pay. */
+/** 총급여 구간별 근로소득세액공제 한도입니다. */
 export interface EarnedIncomeCreditLimit {
   upTo: number | null
   base: number
-  /** Reduction per won of pay above `over`, in ppm. */
+  /** `over`를 넘는 총급여 1원당 줄어드는 한도(ppm)입니다. */
   reductionPpm: number
   over: number
   floor: number
 }
 
-/** Width of the 간이세액표 rows in a pay range: rows start at `from` and step by `step` until `to` (exclusive). */
+/** 간이세액표 행 폭입니다. `from`부터 `to` 전까지 `step`원 간격으로 행이 있습니다. */
 export interface SimpleTaxRowBand {
   from: number
   to: number
   step: number
 }
 
-/** Statutory non-taxable allowance categories recognised by the engine. */
+/** 엔진이 아는 근로소득 비과세 유형입니다. */
 export type NonTaxableCategory =
-  | 'meal'
-  | 'vehicle'
-  | 'childcare'
-  | 'research'
-  | 'overseas'
-  | 'overseas_special'
-  | 'night_shift'
-  | 'parental_leave'
-  | 'tuition'
-  | 'invention'
+  | 'MEAL'
+  | 'VEHICLE'
+  | 'CHILDCARE'
+  | 'RESEARCH'
+  | 'OVERSEAS'
+  | 'OVERSEAS_SPECIAL'
+  | 'NIGHT_SHIFT'
+  | 'PARENTAL_LEAVE'
+  | 'TUITION'
+  | 'INVENTION'
 
-/** Statutory limit of a non-taxable category; `null` means no limit of that period. */
+/** 비과세 유형의 법정 한도입니다. `null`이면 그 기간 한도가 없습니다. */
 export interface NonTaxableLimit {
   monthlyLimit: number | null
   annualLimit: number | null
 }
 
-/** Provenance of one rate-table value. */
+/** 기준표 값 하나의 출처입니다. */
 export interface RateVerification {
-  /** `true` only when the spec notes or a product screen confirm the value. */
+  /** 스펙 노트·제품 화면이나 법령·고시 원문으로 확인한 값만 `true`입니다. 원문으로 확인하지 못한 값은 `false`이고 `source`에 이유를 적습니다. */
   verified: boolean
   source: string
 }
 
 /**
- * Payroll rates, limits and tax schedules in force from one month.
+ * 한 달부터 적용하는 급여 요율·한도·세액 산식 묶음입니다.
  *
- * Rates are integers in parts per million (ppm, 1% = 10,000 ppm) so 3.595% stays exact.
- * Amounts are integer won. Every leaf value has an entry in {@linkcode PayrollRateTable.verification}.
+ * 요율은 ppm 정수(1% = 10,000)라 3.595%도 정확히 담습니다. 금액은 원 단위 정수입니다.
+ * 모든 값은 {@link PayrollRateTable.verification}에 출처가 있습니다.
  */
 export interface PayrollRateTable {
   effectiveFrom: YearMonth

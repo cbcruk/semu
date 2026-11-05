@@ -1,0 +1,73 @@
+{
+  "rule": "overtime-multipliers",
+  "description": "Overtime, night and holiday premiums pay minutes x ordinary hourly rate x the company multiplier; under-five workplaces add no premium.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "437-456", "origin": "spec 4.8, 4.9" },
+    { "file": "alfred-manual/08-설정/03-급여-설정.md", "lines": "146-162", "origin": "manual" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "297-360", "origin": "legacy-verified" }
+  ],
+  "inputSchema": {
+    "incomeType": "WAGE_MONTHLY | WAGE_HOURLY",
+    "work": "minutes",
+    "dailyRestMinutes": "minutes of weekly rest per day",
+    "multipliers": "FIVE_OR_MORE | UNDER_FIVE"
+  },
+  "cases": [
+    {
+      "name": "monthly overtime on ordinary wage with absence deduction",
+      "input": {
+        "incomeType": "WAGE_MONTHLY",
+        "basePay": 2090000,
+        "monthlyStandardHours": 209,
+        "paymentItems": [{ "code": "POSITION", "name": "직책수당", "amount": 209000, "includeInOrdinaryWage": true }],
+        "work": { "overtimeMinutes": 600, "nightMinutes": 120, "absenceMinutes": 240 },
+        "multipliers": "FIVE_OR_MORE"
+      },
+      "expected": {
+        "payments": { "BASE_PAY": 2090000, "OVERTIME_PAY": 165000, "NIGHT_PAY": 11000, "ATTENDANCE_DEDUCTION": -44000, "POSITION": 209000 },
+        "grossPay": 2431000
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hourly part-timer at a workplace of five or more",
+      "input": {
+        "incomeType": "WAGE_HOURLY",
+        "hourlyWage": 12000,
+        "weeklyHolidayWeeks": 4,
+        "dailyRestMinutes": 240,
+        "monthlyStandardHours": 104,
+        "work": { "regularMinutes": 4800, "overtimeMinutes": 600, "nightMinutes": 240 },
+        "multipliers": "FIVE_OR_MORE"
+      },
+      "expected": {
+        "payments": { "BASE_PAY": 960000, "WEEKLY_HOLIDAY_PAY": 192000, "OVERTIME_PAY": 180000, "NIGHT_PAY": 24000 },
+        "grossPay": 1356000,
+        "employmentInsurance": 12200
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hourly part-timer at a workplace under five",
+      "input": {
+        "incomeType": "WAGE_HOURLY",
+        "hourlyWage": 12000,
+        "weeklyHolidayWeeks": 4,
+        "dailyRestMinutes": 240,
+        "monthlyStandardHours": 104,
+        "work": { "regularMinutes": 4800, "overtimeMinutes": 600, "nightMinutes": 240 },
+        "multipliers": "UNDER_FIVE"
+      },
+      "expected": {
+        "payments": { "BASE_PAY": 960000, "WEEKLY_HOLIDAY_PAY": 192000, "OVERTIME_PAY": 120000 },
+        "grossPay": 1272000,
+        "employmentInsurance": 11440
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Whether fixed overtime above the contracted hours pays the difference (spec 4.8).",
+    "Weekly rest conversion: 4.345 weeks per month or actual weeks (spec 4.9)."
+  ]
+}

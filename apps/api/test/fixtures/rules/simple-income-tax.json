@@ -1,0 +1,59 @@
+{
+  "rule": "simple-income-tax",
+  "description": "Monthly wage income tax from the simple tax table formula, scaled by the withholding ratio; local income tax is 10%.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "367-375", "origin": "spec 4.2" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "122-167", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/engine/wage-income-tax.ts", "lines": "1-200" }
+  ],
+  "inputSchema": {
+    "monthlyTaxablePay": "won",
+    "dependants": "including the employee",
+    "childrenAged8To20": "count",
+    "withholdingRatePpm": "800000 | 1000000 | 1200000",
+    "strategy": "EXACT_FORMULA | MIDPOINT_FORMULA"
+  },
+  "cases": [
+    {
+      "name": "exact formula 3,000,000 one dependant",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "EXACT_FORMULA" },
+      "expected": { "incomeTax": 59080, "localIncomeTax": 5900 },
+      "derivation": "traced"
+    },
+    {
+      "name": "midpoint of the 3,000,000-3,020,000 row",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "MIDPOINT_FORMULA" },
+      "expected": { "incomeTax": 60380, "localIncomeTax": 6030 },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding ratio 80%",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 800000, "strategy": "EXACT_FORMULA" },
+      "expected": { "incomeTax": 47260, "localIncomeTax": 4720 },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding ratio 120%",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1200000, "strategy": "EXACT_FORMULA" },
+      "expected": { "incomeTax": 70890, "localIncomeTax": 7080 },
+      "derivation": "traced"
+    },
+    {
+      "name": "two dependants with one child credit",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 2, "childrenAged8To20": 1, "withholdingRatePpm": 1000000, "strategy": "EXACT_FORMULA" },
+      "expected": { "incomeTax": 29680, "localIncomeTax": 2960 },
+      "derivation": "traced"
+    },
+    {
+      "name": "below the first table row",
+      "input": { "monthlyTaxablePay": 700000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "MIDPOINT_FORMULA" },
+      "expected": { "incomeTax": 0, "localIncomeTax": 0 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The official table gives 74,350 for 3,010,000 and one dependant, but the formula gives 60,380; the official table is not loaded and the gap is unexplained.",
+    "Whether the simple tax table changed for 2026 is unverified (spec 4.2).",
+    "SME employee reduction rate and annual limit are unverified."
+  ]
+}

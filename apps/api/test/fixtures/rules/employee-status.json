@@ -1,0 +1,151 @@
+{
+  "rule": "employee-status",
+  "description": "Derives PRE_JOINED, JOINED, LEAVE or RESIGNED from join date, leave date and leave periods as of a date.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/employees/employee-view.sql.ts",
+      "lines": "15-24"
+    }
+  ],
+  "inputSchema": {
+    "dates": "joinDate, leaveDate (퇴사일) and leave periods {startDate, endDate, actualReturnDate}.",
+    "asOf": "Company-local date."
+  },
+  "cases": [
+    {
+      "name": "before join date",
+      "input": {
+        "dates": {
+          "joinDate": "2026-03-02",
+          "leaves": []
+        },
+        "asOf": "2026-03-01"
+      },
+      "expected": "PRE_JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "on join date",
+      "input": {
+        "dates": {
+          "joinDate": "2026-03-02",
+          "leaves": []
+        },
+        "asOf": "2026-03-02"
+      },
+      "expected": "JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "no join date counts as joined",
+      "input": {
+        "dates": {
+          "leaves": []
+        },
+        "asOf": "2026-03-02"
+      },
+      "expected": "JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "on leave date still joined",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaveDate": "2026-03-31",
+          "leaves": []
+        },
+        "asOf": "2026-03-31"
+      },
+      "expected": "JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "day after leave date resigned",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaveDate": "2026-03-31",
+          "leaves": []
+        },
+        "asOf": "2026-04-01"
+      },
+      "expected": "RESIGNED",
+      "derivation": "traced"
+    },
+    {
+      "name": "inside leave period",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaves": [
+            {
+              "startDate": "2026-02-01",
+              "endDate": "2026-04-30"
+            }
+          ]
+        },
+        "asOf": "2026-04-30"
+      },
+      "expected": "LEAVE",
+      "derivation": "traced"
+    },
+    {
+      "name": "day after leave end",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaves": [
+            {
+              "startDate": "2026-02-01",
+              "endDate": "2026-04-30"
+            }
+          ]
+        },
+        "asOf": "2026-05-01"
+      },
+      "expected": "JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "early return ends leave on return date",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaves": [
+            {
+              "startDate": "2026-02-01",
+              "endDate": "2026-04-30",
+              "actualReturnDate": "2026-03-16"
+            }
+          ]
+        },
+        "asOf": "2026-03-16"
+      },
+      "expected": "JOINED",
+      "derivation": "traced"
+    },
+    {
+      "name": "resignation wins over leave",
+      "input": {
+        "dates": {
+          "joinDate": "2025-01-02",
+          "leaveDate": "2026-02-28",
+          "leaves": [
+            {
+              "startDate": "2026-02-01",
+              "endDate": "2026-04-30"
+            }
+          ]
+        },
+        "asOf": "2026-03-02"
+      },
+      "expected": "RESIGNED",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "퇴사일 당일을 재직으로 보는데(퇴사일 다음날부터 RESIGNED), 화면 문구와 4대보험 상실일(퇴사일 다음날)과 맞는지 확인할까요",
+    "입사일이 없는 직원을 재직으로 보는데, 입사일을 필수로 바꾸면 이 경우가 없어집니다. 필수로 할까요"
+  ]
+}

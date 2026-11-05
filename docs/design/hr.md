@@ -1,182 +1,471 @@
-# 인사(HR) 도메인 설계
+# HR: 직원·조직·계약·휴직·퇴직
 
-`apps/api/src/modules/hr/**`와 마이그레이션 `0020-hr.sql`의 설계 기록입니다. 근거 스펙은 [`docs/spec-notes/hr.md`](../spec-notes/hr.md), 공통 규칙은 [`docs/api-architecture.md`](../api-architecture.md)입니다.
+직원(근로·일용·사업·기타소득자)과 직원에 딸린 장기 데이터(근로·급여계약, 4대보험 설정, 소득세 공제, 인적공제 대상자, 휴직, 퇴직, 메모, 문서 보관함), 부서·직위를 다룹니다. 전자서명·제증명·서식 모음은 [documents.md](documents.md), 급여 계산과 퇴직금 정산은 [payroll.md](payroll.md)에 있습니다.
 
-## 범위
+## 현행에서 고칠 점
 
-- 스펙 §5의 엔드포인트 101개를 모두 구현했습니다. 경로는 스펙 그대로이고 끝 슬래시 없이 정의합니다(앱이 `strict: false`라 `/`가 붙은 요청도 받습니다).
-- 신규 설계로 추가한 엔드포인트
-  - `GET/POST /employment/{daily,business,other}-employees`, `GET .../:id`: 번들에는 `PATCH`만 있습니다. 급여 카드 없이도 관리할 수 있게 목록·생성·조회를 추가했습니다.
-  - 전자서명: `POST e-sign-requests/:id/send`, 회사 직인 이미지 `GET`, 증명서 `:id/file`.
-- 모듈 구성: `employees`(구성원·상태·목록), `memo`, `family`, `leaves`, `contracts`(근로·급여계약), `retirement`, `social-insurance`, `deduction`, `documents`(문서 보관함), `organization`(부서·직위), `non-wage`, `legacy`(직원 관리), `document-forms`(서식 모음), `e-sign`, `certificates`, `adapters`, `shared`.
+- **직원 종류마다 경로 묶음이 따로 있습니다.** `wage-employees`만 전체 CRUD와 하위 리소스가 있고 `daily/business/other-employees`는 `PATCH`만 있습니다. 서버 테이블도 종류별 4개 + generic FK(`wageemployee` 등 Django ContentType 이름)입니다 ([spec §2.1](../reference/spec/hr.md))
+- **같은 직원 목록이 두 세대입니다.** 세무 기장 고객은 레거시 `GET /employee/`(한글 `employment_status`), 급여 구독 고객은 `wage-employees`(영문 `status`, 쿼리는 정수 `1`–`5`)를 씁니다. 급여 구독이면 레거시 메뉴를 클라이언트가 숨깁니다(P1)
+- **한글·소문자 상태가 섞여 있습니다.** `재직/휴직/퇴사/임시저장/입사처리중/퇴사처리중/휴직처리중`, `scheduled/active/expired`, `in_progress/completed/excluded`(P4)
+- **상태가 저장값인지 계산값인지 드러나지 않습니다.** `WORKING`과 `JOINED`의 차이가 화면 필터에만 있고, "처리중"은 4대보험 신고 작업 플래그(`employee_work.is_*_work`)에서 나옵니다
+- **퇴직이 `PUT/DELETE retirement-info`입니다.** 퇴직금 유형 같은 설정 저장과 퇴직 등록(상태 변경 + 상실신고)이 한 요청에 섞여, 어떤 저장이 상태를 바꾸는지 경로에서 보이지 않습니다
+- **검증 전용 엔드포인트가 있습니다.** `social-insurance-info/preview`(미저장 값)와 `redetermine`(저장값)이 같은 판정을 두 경로로 부릅니다. 클라이언트가 `AbortSignal`로 취소합니다
+- **일괄 교체가 삭제를 겸합니다.** `departments/bulk`는 목록 전체를 교체하고 빠진 항목을 지웁니다. 사용 중인 항목이 빠지면 400입니다
+- **주민등록번호·계좌번호를 마스킹 값으로 되돌려 보내면 "변경 없음"으로 해석합니다.** 응답 값과 요청 값의 의미가 다릅니다
+- **메모 이력 경로만 끝 슬래시가 없습니다** (`memo-histories`). FormData 업로드는 클라이언트가 snake_case 키를 직접 씁니다(P4)
+- **첨부가 여러 호출입니다.** 문서 보관함·가족 첨부는 멀티파트 한 번이지만, 전자서명 완료본을 보관함에 넣는 일은 서버 후속처리(추정)라 보이지 않습니다(P2)
 
-## 주요 결정
+## 용어
 
-### 식별자와 개인정보
+| 업무 용어 | 키 |
+|---|---|
+| 직원(구성원) | `Employee` |
+| 소득 유형: 근로·일용·사업·기타소득자 | `kind`: `WAGE` / `DAILY` / `BUSINESS` / `OTHER` |
+| 재직 상태: 입사예정·재직·휴직·퇴직 | `status`: `PRE_JOINED` / `JOINED` / `LEAVE` / `RESIGNED` (파생) |
+| 주민등록번호·외국인등록번호·여권번호 | `registrationNumber` (응답은 `registrationNumberMasked`), `identityNumberType`: `RRN` / `PASSPORT` |
+| 내외국인 | `isForeigner` |
+| 국적 / 체류자격 | `nationalityCode` (ISO 3166-1 alpha-2) / `visaCode` (`E-9`) |
+| 담당업무(4대보험 직종코드) | `occupationCode` |
+| 사번 | `employeeNumber` |
+| 입사일 / 퇴직일 | `joinDate` / `resignation.leaveDate` |
+| 퇴직(상실)사유 / 상세사유 | `leavingReasonCode` / `leavingDetailReasonCode` (고용보험 상실사유 코드 그대로) |
+| 퇴직금·퇴직연금 유형 | `retirementPlan.benefitType`: `SEVERANCE_PAY` / `DB` / `DC` |
+| 퇴직금 중간정산 | `retirementPlan.interimSettlement` |
+| 퇴직금 정산 상태 | `severanceSettlementStatus`: `IN_PROGRESS` / `COMPLETED` / `EXCLUDED` (Payroll이 알려 줌) |
+| 휴직 / 복직 | `Leave` / `:return` |
+| 휴직사유: 출산전후휴가·육아휴직·질병·기타 | `reason`: `MATERNITY` / `PARENTAL` / `ILLNESS` / `OTHER` |
+| 근로계약 / 급여계약 | `WorkContract` / `PayrollContract` |
+| 계약 형태: 정규직·계약직(기간제) | `contractType`: `PERMANENT` / `FIXED_TERM` |
+| 근로형태: 일반·단시간·초단시간 | `workType`: `FULL_TIME` / `PART_TIME` / `SHORT_PART_TIME` |
+| 임금 산정 방식 | `wageType`: `MONTHLY` / `DAILY` / `HOURLY` |
+| 무기계약 전환 | `indefiniteConversion` |
+| 4대보험: 국민연금·건강·고용·산재 | `nps` / `nhis` / `ei` / `iais` |
+| 4대보험 자격 판정 | `InsuranceEligibility` |
+| 4대보험 신고(취득·상실·휴직·복직·피부양자) | `InsuranceFiling`, `kind`: `ACQUISITION` / `LOSS` / `LEAVE` / `RETURN` / `DEPENDANT` |
+| 소득세 및 기타공제 | `TaxWithholding` |
+| 인적공제 대상자 | `FamilyMember` |
+| 특이사항 | `Memo` |
+| 문서 보관함 | `EmployeeDocument` |
+| 부서 / 직위 | `Department` / `Position` |
 
-- HR 테이블의 ID는 `INTEGER`입니다. 스펙 응답의 `id`가 숫자이고 문서 인덱스·발급번호 같은 순번이 많아서입니다. 회사 ID는 플랫폼과 같은 `TEXT`입니다.
-- 주민등록번호와 여권번호는 `deps.cipher`(AES-256-GCM)로 암호화해 `registration_number_enc`에 저장합니다. 응답에는 항상 `900101-1******` 형태로 마스킹해서 내보냅니다.
-- 중복 검사(`DUPLICATE_EMPLOYEE`)는 **HMAC-SHA256 keyed hash**(`registration_number_hash`)로 합니다. 키는 처음 쓸 때 무작위 32바이트로 만들고, `deps.cipher`로 암호화해 `hr_secrets('registration_number_hmac')`에 둡니다. 암호문은 매번 달라서 비교할 수 없고, 평문 해시는 사전 공격에 약해서 이렇게 했습니다. `ENCRYPTION_KEY`를 교체할 때는 이 키도 같이 재암호화해야 합니다.
-- 같은 종류(`kind`) 안에서 해시가 같은 직원이 있으면 거절합니다. 예외는 `is_rejoin: true`이고 일치하는 직원이 모두 퇴사 상태인 경우입니다. 에러 본문에 `duplicate_employee_id`가 들어갑니다.
-- 수정 요청에서 `*`가 섞인 주민등록번호(마스킹 값)나 생략된 값은 기존 값을 유지한다는 뜻입니다.
-- 계좌번호도 암호화하고 끝 4자리만 보여 줍니다.
+## 직원 애그리거트
 
-### 상태 모델
-
-- 직원 상태는 저장하지 않고 날짜로 계산합니다(`employee-view.sql.ts`): `RESIGNED`(퇴사일 < 오늘) → `PRE_JOINED`(입사일 > 오늘) → `LEAVE`(오늘이 휴직 기간 안) → `JOINED`.
-- `WORKING`은 목록 필터로만 쓰고 `JOINED`와 같은 집합입니다. `count-by-status`의 `joined`는 재직 전체(`JOINED + LEAVE`), `working`은 휴직자를 뺀 수입니다.
-- 레거시 `employment_status`(한글)는 `legacy.utils.ts`가 계산합니다. 주민등록번호가 없으면 `임시저장`이고, 대기 중인 4대보험 신고(`employee_insurance_filings`)가 있으면 `퇴사처리중 > 휴직처리중 > 입사처리중` 순으로 정합니다. 나머지는 재직·휴직·퇴사입니다. 입사 예정자는 레거시에 없는 상태라 재직으로 냅니다.
-- 4대보험 신고는 스펙 권고대로 `employee_insurance_filings`로 정규화했습니다. 입사, 퇴사, 휴직, 피부양자 등록이 `pending` 신고를 만듭니다. 처리(`done`) API는 세무 담당 도메인 몫이라 이번 범위에 넣지 않았습니다.
-
-### 동시성
-
-- 상태가 바뀌는 쓰기는 `If-Match`(직원 `version`)가 필요합니다: 휴직 등록·수정·삭제, 퇴사일이 바뀌는 퇴직 정보 `PUT`, 퇴직 정보 `DELETE`, 전자서명 발송·취소·무효화, 증명서 상태 전이. 헤더가 없으면 428, 버전이 다르면 412 `VERSION_CONFLICT`입니다. 응답의 `ETag`로 현재 버전을 알려 줍니다.
-- 일반 필드 수정(기본 정보, 계약, 4대보험, 공제, 가족, 메모)은 마지막 쓰기가 이깁니다.
-
-### 유효일(effective dating)
-
-- 4대보험 설정과 공제 설정은 `effective_from`별로 행을 쌓습니다(`UNIQUE(employee, effective_from)`). `PUT`은 `effective_date`(기본값 오늘)부터 효력이 생기고, `GET`은 오늘 효력이 있는 행을 돌려줍니다.
-- 근로·급여계약은 `start_date`/`end_date` 구간으로 조회합니다.
-
-### 규칙 구현 메모
-
-- 근로계약(R7): 기간제는 종료일이 필수입니다. 1년 미만 계약은 수습 감액을 할 수 없습니다.
-- 무기계약 전환 알림: 이어지는 기간제 계약(공백 없이 연속)을 체인으로 묶습니다. 체인 시작 + 24개월이 전환일이고, 전환일 90일 전부터 `approaching`, 넘으면 `exceeded`입니다. 체인 시작일 기준 만 55세 이상은 예외입니다.
-- 계약 만료 경고는 종료일 30일 전부터입니다(`CONTRACT_EXPIRY_WARNING_DAYS`).
-- 최저임금은 2026년 시급 10,320원을 씁니다. 고정 연장·야간·휴일 수당 배율(R10)은 확인하지 못해 모두 1.0으로 두었습니다.
-- 4대보험 판정: 만 60세 이상이면 국민연금 제외, 주 15시간 미만이면 3개 보험 제외, 월 60시간 미만이면 국민연금 제외, 대표자·임원·동거 친족이면 고용보험 제외, 만 65세 이후 신규 취업이면 고용보험 제외, 외국인은 체류자격 목록으로 판정합니다. `redetermine`은 저장하지 않고 권장값과 `changed_fields`만 돌려줍니다.
-- 육아휴직은 365일 한도이고 근속기간에 항상 포함합니다. 1개월 이상 휴직이면 건강보험 고지 유예를 켭니다.
-- 퇴직: 퇴사일은 중간정산일보다 앞설 수 없습니다(`LEAVE_DATE_BEFORE_INTERIM`). 퇴직금 정산이 `completed`인 직원은 삭제할 수 없고 퇴직 정보도 지울 수 없습니다(`RETIREMENT_COMPLETED`).
-- 부서·직위(R4): 한 번이라도 배정된 항목은 `is_used=1`이 되고, 일괄 저장에서 빠지면 `DEPARTMENT_IN_USE`/`POSITION_IN_USE`로 거절합니다. 일괄 저장은 목록 전체를 교체하는 방식이고 순서가 표시 순서가 됩니다.
-- 공제 정보의 `dependents_count`는 본인을 포함한 수입니다(간이세액표 기준).
-
-### 전자서명·제증명
-
-- 기본 템플릿 16종(13–16은 증명서)은 TS 상수로 두고, 회사별 덮어쓰기와 끄기만 `esign_template_overrides`에 저장합니다.
-- 발송은 `send: true`로 생성하거나 `POST :id/send`(If-Match)로 합니다. 서명 기한은 발송일 + 16일입니다.
-- 서명 링크 토큰은 sha256 해시만 저장합니다. 본인 확인(이름 + 생년월일)에 성공하면 `X-ESign-Session` 세션(30분)을 줍니다. 5번 실패하면 잠기고 429 `IDENTITY_VERIFICATION_LOCKED`입니다.
-- 기한 만료는 조회할 때 처리하고(lazy), 배치용 `expireOverdueESignRequests(context, null)`도 있습니다.
-- 서명이 완료되면(R29) 근로계약, 급여계약, 문서 보관함 항목을 만들고, 직원이 없으면 새로 등록합니다.
-- 증명서 발급번호는 `YYYY-NNNN`이고 삭제된 번호는 다시 쓰지 않습니다. 링크는 30일 동안 유효하고 재발송하면 토큰을 새로 만듭니다. 여러 건을 내려받으면 ZIP입니다.
-
-### 어댑터
-
-`AppDeps`에 선택 필드 `notifier`, `pdfRenderer`, `identityVerifier`를 추가했습니다. 넘기지 않으면 HR 모듈이 가짜 구현을 씁니다(`adapters/fake-adapters.ts`).
-
-- 알림: 메모리 outbox. `@fail.invalid` 주소는 실패로 처리합니다.
-- PDF: 결정적인 PDF와 `% hr-data:` 메타데이터 줄.
-- 본인 확인: 이름과 생년월일 비교.
-
-### 에러 코드
-
-공통 `ErrorCode` 유니언은 플랫폼이 소유하는 닫힌 타입이라, `HrError`(`DomainError` 하위 클래스)가 런타임에 `code`와 `status`를 바꿔 씁니다. 병합할 때 아래 코드를 공통 유니언에 추가하는 것을 제안합니다.
-
-| 코드 | HTTP |
-| --- | --- |
-| `DUPLICATE_EMPLOYEE`, `RETIREMENT_COMPLETED`, `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_OVERLAP`, `DEPARTMENT_IN_USE`, `POSITION_IN_USE`, `SEAL_LIMIT_EXCEEDED` | 400 |
-| `SIGNER_SESSION_REQUIRED`, `SIGNER_SESSION_INVALID` | 401 |
-| `IDENTITY_VERIFICATION_FAILED` | 403 |
-| `SIGNING_TOKEN_INVALID` | 404 |
-| `SIGNING_CLOSED` | 410 |
-| `IDENTITY_VERIFICATION_LOCKED` | 429 |
-
-## 스펙과 다른 점
-
-- 메뉴 `employee_management`의 path를 `/employment`(레거시 리포트 앱 경로)로 바꿨습니다. 현재 메뉴 트리 leaf의 `to`는 `/employee`라서 같이 바꿔야 합니다(아래 메뉴 절 참고).
-- 서식 모음은 테이블 없이 TS 상수(`document-forms.catalog.ts`)로 둡니다. 매뉴얼 목록이 39종이고(스펙 본문의 40은 목록 페이지를 센 것), 원본 파일이 저장소에 없어 `file_url`은 `null`입니다.
-- `/nexus-api/document-form*`은 `/api/*` 밖이라 라우트마다 `authenticate(deps)`를 붙였습니다. 구독과 관계없이 로그인한 사용자 누구나 쓸 수 있습니다.
-- 근로자가 올린 파일(서명자 직인, 서명 PDF)의 `files.uploaded_by`는 요청을 만든 회사 사용자로 기록합니다. `files.uploaded_by`가 사용자 FK라서입니다.
-- 직원을 삭제해도 `files` 행은 남깁니다(다른 참조와 공유할 수 있음). 블롭 정리는 저장소 GC 몫입니다.
-- 회사의 급여 플랜(`has_payroll_plan`) 시드는 플랫폼 몫이라 그대로 두었습니다. 그래서 데모 `c-corp`는 구성원 정보 화면이 403이고, 테스트는 헬퍼(`createHrTestContext`)가 플랜을 켭니다.
-- 고용보험 상호주의 국가 목록(`EI_RECIPROCITY_COUNTRIES`)은 확인한 자료가 없어 비워 두었습니다.
-- 공통 PATCH(전자서명 초안 수정)는 If-Match 없이 받고, `send: true`일 때만 요구합니다.
-
-## 추정 응답
-
-번들에서 확인하지 못해 추정한 응답 형태입니다.
-
-| 엔드포인트 | 응답 |
-| --- | --- |
-| `GET /nexus-api/document-form` | DRF 페이지 `{count,next,previous,results:[{id,title,description,type,file_url}]}` |
-| `GET /nexus-api/document-form/type-count` | `[{type,count}]` (6개 카테고리 고정 순서) |
-| `GET employee/leaving-reason` | `[{code,name,children:[{code,name}]}]` (고용보험 상실사유 코드) |
-| `GET employee` (`simple=False`) | 목업 필드 + `employee_work`는 `is_{kind}_work`, `{kind}_work_time`만 |
-| `GET wage-employees/count-by-status` | `{all,pre_joined,working,joined,leave,resigned}` |
-| `GET wage-employees/contract-expiry-alert` | `{threshold_days,threshold_date,expiring_soon_count,expired_count,employees:[{id,name,department_name,position_name,contract_end_date,days_left,status}]}` |
-| `GET work-contracts/indefinite-conversion-alert` | `{is_target,status,is_exempt,exempt_reason,chain_start_date,chain_end_date,total_contract_days,conversion_date,days_until_conversion}` |
-| `GET social-insurance-info/redetermine` | 설정 + `{determinations,messages,recommended,changed_fields,is_saved}` |
-| `GET/POST departments`, `positions` (+`/bulk`) | DRF 봉투 `{count,next:null,previous:null,results:[{id,name,order,is_used}]}`; 요청은 `[{id?,name}]` 또는 `{items:[...]}` |
-| `GET documents` | DRF 페이지, 항목 `{id,employee,category:{id,code,name},source_type,source_id,file_name,mime_type,size,created,created_by}` |
-| `GET memo-histories` | DRF 페이지 `{id,action,content,created,created_by}` |
-| 비근로소득자 `PATCH`/`GET` | 공통 정보 + `{status,join_date,leave_date,daily_wage,business_code,other_income_code,bank_code,account_number(마스킹),account_holder}` |
-| `GET settings/document-categories` | `[{id,code,name}]` |
-| 서명자 `summary` | `{status,company_name,recipient_name(마스킹),documents,due_date,expired,requires_birth_date}` |
-| 서명자 `verify` | `{session_token,expires_at}` |
-| 서명자 `complete` | `{status,signed_at,employee_id}` |
-| 증명서 `summary` | `{status,company_name,employee_name(마스킹),title,issue_number,issued_at,token_expires_at}` |
-
-## 급여 도메인용 저장소 계약
-
-급여는 `modules/hr/employees/employees.repository.ts`에서만 가져다 씁니다. 날짜 인자는 `PlainDate`(`YYYY-MM-DD`)입니다.
-
-```ts
-findEmployee(db, companyId: string, employeeId: number, today: PlainDate): EmployeeRecord | undefined
-listEmployees(db, companyId: string, today: PlainDate, kinds?: readonly EmployeeKind[]): EmployeeRecord[]
-listEmployeesEmployedBetween(db, companyId: string, from: PlainDate, to: PlainDate, kinds?: readonly EmployeeKind[]): EmployeeRecord[]
-getEmployeeStatusAsOf(db, companyId: string, employeeId: number, date: PlainDate): 'PRE_JOINED' | 'JOINED' | 'LEAVE' | 'RESIGNED' | undefined
-revealRegistrationNumber(db, cipher, companyId: string, employeeId: number): string | null
-findWorkContractAsOf(db, companyId: string, employeeId: number, date: PlainDate): WorkContractRow | undefined
-listWorkContracts(db, companyId: string, employeeId: number): WorkContractRow[]
-findPayrollContractAsOf(db, cipher, companyId: string, employeeId: number, date: PlainDate): PayrollContractRecord | undefined
-findDeductionInfoAsOf(db, companyId: string, employeeId: number, date: PlainDate): DeductionInfoRow | undefined
-findSocialInsuranceAsOf(db, companyId: string, employeeId: number, date: PlainDate): SocialInsuranceRow | undefined
-countDependantsAsOf(db, companyId: string, employeeId: number, date: PlainDate): DependantCounts
-listLeavesOverlapping(db, companyId: string, employeeId: number, from: PlainDate, to: PlainDate): LeaveRow[]
-findRetirementInfo(db, companyId: string, employeeId: number): RetirementInfoRow | undefined
-setSeveranceSettlementStatus(db, companyId: string, employeeId: number, status: 'in_progress' | 'completed' | 'excluded' | null, now: string): boolean
-toEmploymentType(kind) / fromEmploymentType(type)
-CONTRACT_EXPIRY_WARNING_DAYS = 30
+```
+Employee
+├─ id, kind: WAGE | DAILY | BUSINESS | OTHER
+├─ identity: name, englishName?, identityNumberType, registrationNumber(암호문), registrationNumberHash(HMAC), birthDate
+├─ nationality: isForeigner, nationalityCode?, visaCode?, isResident, countryOfResidence
+├─ contact: email?, phone?
+├─ placement: employeeNumber?, departmentId?, positionId?, occupationCode?
+├─ joinDate, isRejoin
+├─ retirementPlan: { benefitType, interimSettlement?: { date, reasonCode } }
+├─ resignation?: { leaveDate, leavingReasonCode, leavingDetailReasonCode?, severanceAmount? }
+├─ severanceSettlementStatus? (Payroll 이벤트로 갱신)
+├─ paymentAccount?: { bankCode, accountNumber(암호문), accountHolder }   # DAILY·BUSINESS·OTHER만
+├─ source: MANUAL | ESIGN | ERP_IMPORT
+├─ status (파생, 저장 안 함), warnings[] (파생), allowedActions[]
+└─ version
 ```
 
-- `findPayrollContractAsOf`는 계좌번호를 복호화한 `account_number`와 파싱한 `payment_items`를 돌려줍니다.
-- `setSeveranceSettlementStatus('completed')`가 되면 직원 삭제와 퇴직 정보 삭제가 막힙니다.
+- **직원은 `kind` 하나로 구분하는 한 애그리거트입니다.** 현행 4개 경로 묶음과 종류별 테이블을 `/employees` 하나로 합칩니다. 하위 리소스(계약·4대보험·공제·가족·휴직)는 `WAGE`만 받고, 다른 종류에 만들면 422 `EMPLOYEE_KIND_NOT_SUPPORTED`입니다. 계좌는 `WAGE`면 급여계약에, 나머지는 직원에 둡니다
+- **같은 사람이 두 종류로 등록될 수 있습니다** (근로자이면서 기타소득 지급 대상). 중복 판정은 같은 `kind` 안에서만 합니다 ([employee-duplicate-rrn](../reference/rules/employee-duplicate-rrn.md))
+- **레거시 "직원 관리"와 "구성원 정보"를 합칩니다.** 세무 기장 고객(`TAXATION`)과 급여 구독 고객(`PAYROLL`)이 같은 `/employees`를 씁니다. 메뉴 숨김 규칙은 [identity-access.md](identity-access.md)의 메뉴 트리가 서버에서 정합니다
 
-## 메뉴
+### 상태 파생
 
-| 코드 | 경로 | 조건 |
-| --- | --- | --- |
-| `employee_management` | `/employment` | 세무 플랜, 권한 필요. 급여 구독이면 메뉴 트리에서 숨김 |
-| `employment_employee` | `/employee` | 급여 플랜, 권한 필요 |
-| `employment_e_sign` | `/e-signature` | 급여 플랜, 권한 필요 |
-| `employment_certificate` | `/certificate-issuance` | 급여 플랜, 권한 필요 |
-| `settings_e_sign` | `/e-signature-setting/e-signature-templates` | 급여 플랜, 권한 필요 |
-| `document_form` | `/document/document-form-list` | 전체, 권한 불필요 |
+상태는 저장하지 않고, 조회 시점(`asOf`, 기본은 회사 시간대 오늘)의 날짜로 계산합니다 ([employee-status](../reference/rules/employee-status.md)).
 
-`default-menu-tree.ts`에 추가하거나 고칠 leaf입니다(이 브랜치에서는 수정하지 않음).
+```mermaid
+stateDiagram-v2
+  [*] --> PRE_JOINED: POST /employees (joinDate > 오늘)
+  [*] --> JOINED: POST /employees (joinDate ≤ 오늘)
+  PRE_JOINED --> JOINED: 입사일 도달
+  JOINED --> LEAVE: 휴직 시작일 도달
+  LEAVE --> JOINED: 휴직 종료일 다음날 또는 :return
+  JOINED --> RESIGNED: :resign 후 퇴직일 다음날
+  LEAVE --> RESIGNED: :resign 후 퇴직일 다음날
+  RESIGNED --> JOINED: :cancel-resignation
+```
 
-- 인사(411) `직원 관리`: `to`를 `/employee`에서 `/employment`로 변경
-- 인사 그룹에 추가: `구성원 정보`(`employment_employee`, `/employee`), `전자서명`(`employment_e_sign`, `/e-signature`), `제증명 발급`(`employment_certificate`, `/certificate-issuance`)
-- 설정 영역에 추가: `전자서명·제증명 관리`(`settings_e_sign`, `/e-signature-setting/e-signature-templates`)
-- 서식·증명서 영역에 추가: `서식 모음`(`document_form`, `/document/document-form-list`)
-- 급여 구독 시 `employee_management` 숨김 규칙(`MENU_EXCLUSION_RULES`)
+| 순서 | 조건 | 상태 |
+|---:|---|---|
+| 1 | `resignation.leaveDate < asOf` | `RESIGNED` (퇴직일 당일까지 재직) |
+| 2 | `joinDate > asOf` | `PRE_JOINED` |
+| 3 | `start ≤ asOf < (actualReturnDate ?? endDate + 1)`인 휴직이 있음 | `LEAVE` |
+| 4 | 그 밖 | `JOINED` |
 
-## 시드
+- 현행 `WORKING`(재직이면서 휴직 아님)은 이 표의 `JOINED`와 같습니다. 재직 전체는 `?status=JOINED,LEAVE`로 조회합니다
+- 탭 건수는 `GET /employees:count?groupBy=status`입니다. 현행 `count-by-status`의 `{all, joined, …}` 키를 상태 enum으로 바꿉니다
+- **레거시 한글 상태는 쓰지 않습니다.** `임시저장`은 `warnings`의 `MISSING_REGISTRATION_NUMBER`, `○○처리중`은 열린 4대보험 신고(`pendingInsuranceFilings`)로 표현합니다. 이관 매핑은 [legacy-employment-status](../reference/rules/legacy-employment-status.md)에 있습니다
 
-`hr.seed.ts`가 `c-corp`에 부서 3개, 직위 4개, 직원 4명을 넣습니다. 날짜는 시드 시각을 기준으로 잡아서 언제 시드해도 상태가 유지됩니다.
+### 경고
 
-- 김민준: 정규직, 근로·급여계약 있음, 초안 전자서명 요청 1건
-- 이서연: 육아휴직 중
-- 박지훈: 2025-12-31 퇴사
-- 최유진: 기간제, 계약이 20일 뒤 만료
+목록·상세 응답의 `warnings[]`는 서버가 계산합니다. 현행 목록의 ▲ 아이콘과 `contract-expiry-alert` 배너를 대신합니다.
 
-시드는 바깥 트랜잭션 안에서 저장소 함수를 직접 호출하고 파일 블롭은 쓰지 않습니다.
+| `code` | 조건 | 규칙 |
+|---|---|---|
+| `MISSING_REGISTRATION_NUMBER` | `WAGE`인데 주민등록번호가 없음 (전자서명으로 생성된 신규 계약자 등) | [contract-expiry-warning](../reference/rules/contract-expiry-warning.md) |
+| `CONTRACT_EXPIRING_SOON` | 퇴직 전이고, 현재 기간제 계약 종료일이 오늘부터 30일 안 | 같음 |
+| `CONTRACT_EXPIRED` | 퇴직 전이고, 현재 기간제 계약 종료일이 지났는데 뒤이은 계약이 없음 | 같음 |
+| `INDEFINITE_CONVERSION_TARGET` | 퇴직 전이고, 연속된 기간제 계약이 2년을 넘었거나 90일 안에 넘음 (만 55세 이상 제외) | [indefinite-conversion-alert](../reference/rules/indefinite-conversion-alert.md) |
+
+### 엔드포인트
+
+```
+GET    /employees?kind=&status=&q=&departmentId=&positionId=&warning=&dateField=&from=&to=&asOf=&sort=&cursor=
+GET    /employees:count?groupBy=status|warning&kind=&q=
+POST   /employees                                    ?dryRun=true 로 중복만 확인
+GET    /employees/{employeeId}
+PATCH  /employees/{employeeId}                       If-Match. registrationNumber를 보내면 새 값으로 바꿈
+DELETE /employees/{employeeId}                       If-Match
+GET    /employees/{employeeId}/registration-number   X-Access-Reason 필수, 열람 기록
+POST   /employees/{employeeId}:resign                If-Match { leaveDate, leavingReasonCode, leavingDetailReasonCode?, severanceAmount? }
+POST   /employees/{employeeId}:cancel-resignation    If-Match
+POST   /employees:export                             X-Access-Reason 필수 → Job (xlsx)
+```
+
+- **등록 필수값은 이름, 주민등록번호(여권이면 여권번호 + 생년월일), 입사일입니다** (`WAGE`). 전자서명 완료로 생기는 직원만 주민등록번호 없이 만들어지고 `MISSING_REGISTRATION_NUMBER` 경고를 받습니다
+- **중복:** 같은 회사·같은 `kind`에 같은 주민등록번호(HMAC)가 있으면 409 `EMPLOYEE_DUPLICATE`(`duplicateEmployeeId`)입니다. `isRejoin: true`이고 겹치는 직원이 모두 `RESIGNED`면 허용합니다. 유일성은 저장소 제약 `(companyId, kind, registrationNumberHash, activeKey)`로 보장합니다
+- **마스킹 값 되돌려 보내기를 없앱니다.** `PATCH`에 `registrationNumber`가 없으면 그대로이고, 있으면 새 값입니다. `*`가 섞인 값은 400 `INVALID_VALUE`입니다
+- **퇴직은 커맨드입니다.** `:resign`이 퇴직일·사유를 기록하고 상실신고(`LOSS`)를 열고 `employee.resigned`를 냅니다. 퇴직금 유형·중간정산 같은 설정은 `PATCH`의 `retirementPlan`으로 저장합니다 ([retirement-validation](../reference/rules/retirement-validation.md))
+- **삭제 가드:** 퇴직금 정산이 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 급여대장에 들어간 직원도 막아야 하지만 그 사실은 Payroll이 알고 있어 [열린 질문](#열린-질문)에 둡니다
+- `allowedActions`: `UPDATE`, `DELETE`, `RESIGN`, `CANCEL_RESIGNATION`, `REGISTER_LEAVE`
+
+## 유효일 하위 리소스
+
+급여 계산은 "그 달에 유효했던 값"이 필요합니다. 계약은 기간(`startDate`–`endDate`)으로, 4대보험·공제 설정은 `effectiveFrom`부터 다음 버전 전까지 유효한 행으로 쌓습니다. 이전 값을 덮어쓰지 않습니다.
+
+### 근로계약
+
+```
+WorkContract
+├─ id, employeeId, origin: MANUAL | ESIGN, esignRequestId?
+├─ contractType: PERMANENT | FIXED_TERM, startDate, endDate?
+├─ workType, occupationCode?, weeklyWorkHours?, workSchedulePolicyId?, workConditionId?
+├─ probation?: { months, payRatePpm }, standardOccupationCode?, termLimitExemption?
+├─ jobDescription?, documentId?
+└─ status (파생): SCHEDULED | ACTIVE | EXPIRED
+```
+
+```
+GET    /employees/{employeeId}/work-contracts
+POST   /employees/{employeeId}/work-contracts
+GET    /work-contracts/{workContractId}
+PUT    /work-contracts/{workContractId}          If-Match
+DELETE /work-contracts/{workContractId}
+GET    /employees/{employeeId}/indefinite-conversion?asOf=
+```
+
+- 기간제는 종료일이 필수이고, 수습 감액(지급률 100% 미만)은 1년 이상 계약에만 허용합니다 ([work-contract-validation](../reference/rules/work-contract-validation.md)). 한국표준직업분류 코드(`standardOccupationCode`)가 대분류 9(단순노무)면 감액을 받지 않습니다
+- 기간제 사용기간 제한의 예외 사유(`termLimitExemption`, 기간제법 제4조 ① 단서)를 계약에 받고, 무기계약 전환 판정이 `exemptReason`으로 돌려줍니다. 예외 사유 없는 계약이 전환일을 넘기면 뒤의 예외 계약과 상관없이 전환입니다(제4조 ②)
+- 지급률은 ppm입니다(`90% = 900000`). 현행 정수 퍼센트(`90`)를 바꿉니다
+
+### 급여계약
+
+```
+PayrollContract
+├─ id, employeeId, esignRequestId?, startDate, endDate?
+├─ wageType, amount, monthlyWorkHours(+source: POLICY|MANUAL), dailyWorkHours?
+├─ paymentItems[]: { paymentItemId, amount, enabled, ordinaryWage, countsTowardMinimumWage }
+├─ fixedAllowances: { overtime|night|holiday|holidayOvertime: { enabled, hours, amount } }, fixedAllowanceAutoCalc
+├─ bonus?: { amount, inOrdinaryWage }, annualSalary?
+├─ payTiming: { month: CURRENT|NEXT, day: 1–31 }, payMethod: TRANSFER|CASH
+├─ account?: { bankCode, accountNumber(암호문), accountHolder }   # 응답은 accountNumberMasked
+└─ derived: baseSalary, baseHourlyWage, ordinaryHourlyWage, probationHourlyWage, minimumWageHourly, warnings[BELOW_MINIMUM_WAGE]
+```
+
+```
+GET    /employees/{employeeId}/payroll-contracts
+POST   /employees/{employeeId}/payroll-contracts
+GET    /payroll-contracts/{payrollContractId}
+PUT    /payroll-contracts/{payrollContractId}     If-Match
+DELETE /payroll-contracts/{payrollContractId}
+GET    /payroll-contracts/{payrollContractId}/account-number    X-Access-Reason 필수
+```
+
+- 파생 금액은 서버가 계산합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md)). 최저임금 미달은 저장을 막지 않고 `warnings`에 `BELOW_MINIMUM_WAGE`로 담습니다. 최저시급은 Payroll의 기준표(`rateTable`)에서 계약 시작일 기준으로 읽습니다
+- 기본 급여조건(지급시기·방법·계좌)은 급여 계산에 쓰므로 급여계약에 둡니다(현행 미확인 사항 10)
+
+### 4대보험 설정과 자격 판정
+
+```
+GET  /employees/{employeeId}/social-insurance?asOf=
+PUT  /employees/{employeeId}/social-insurance             { effectiveFrom, ...설정 }  If-Match
+POST /employees/{employeeId}/social-insurance:determine   { 저장하지 않은 값(선택) } → { determinations, messages, recommended }
+```
+
+- **자격 판정은 순수 규칙입니다** ([social-insurance-eligibility](../reference/rules/social-insurance-eligibility.md)). 입력은 생년월일·입사일·내외국인·체류자격·주 소정근로시간·대표자/친족 여부이고, 출력은 판정 코드와 권장 가입 여부입니다
+- `:determine` 하나가 현행 `preview`(미저장 값)와 `redetermine`(저장값)을 대신합니다. 본문이 비면 저장된 값으로 판정합니다. 저장하지 않으므로 커맨드지만 멱등입니다
+- 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_CHECK`로 대문자를 맞춥니다. 상호주의 국가 목록은 두지 않습니다(D-7·D-8·D-9만 본국법 확인 안내). 당연가입이 아닌 그 밖의 체류자격은 신청 전 미적용으로 권합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
+- 제외 사유는 한글 문장 대신 코드(`AGE_60_OR_OVER`, `SHORT_PART_TIME`, …)로 받고, 표시 문자열은 `GET /reference/insurance-exclusion-reasons`가 줍니다
+- 판정 결과는 권장값입니다. 사용자가 다르게 저장할 수 있고, 그 차이는 `GET` 응답의 `warnings`(`ELIGIBILITY_MISMATCH`)로 보여 줍니다
+
+### 소득세 공제
+
+```
+GET  /employees/{employeeId}/tax-withholding?asOf=
+PUT  /employees/{employeeId}/tax-withholding    { effectiveFrom, ... }  If-Match
+GET  /reference/income-tax-reduction-reasons
+```
+
+- 감면 유형·사유·기간·감면율 검증은 [deduction-validation](../reference/rules/deduction-validation.md)에 있습니다. 조정비율은 ppm(`80% = 800000`)입니다
+- `dependantsCount`, `childrenAged8To20Count`는 인적공제 대상자에서 파생하는 읽기 전용 값입니다 ([dependant-count](../reference/rules/dependant-count.md))
+
+### 인적공제 대상자
+
+```
+GET    /employees/{employeeId}/family-members
+POST   /employees/{employeeId}/family-members
+GET    /family-members/{familyMemberId}
+PUT    /family-members/{familyMemberId}
+DELETE /family-members/{familyMemberId}
+POST   /family-members/{familyMemberId}/attachments           multipart (file) → { fileId }
+DELETE /family-members/{familyMemberId}/attachments/{fileId}
+GET    /family-members/{familyMemberId}/registration-number   X-Access-Reason 필수
+```
+
+- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(육아수당) 대상은 만 6세 이하 자녀·손자녀만 허용합니다
+- `healthInsuranceDependant`를 켜면 피부양자 신고(`DEPENDANT`)를 엽니다
+
+## 휴직
+
+```
+Leave
+├─ id, employeeId, reason: MATERNITY | PARENTAL | ILLNESS | OTHER
+├─ startDate, endDate, expectedReturnDate, actualReturnDate?
+├─ paid?: { allowance }, includeInServiceYears
+├─ npsPaymentException, nhisNoticeDeferral
+└─ status (파생): SCHEDULED | ONGOING | ENDED
+```
+
+```
+GET    /employees/{employeeId}/leaves
+POST   /employees/{employeeId}/leaves             If-Match(직원 버전)
+GET    /employees/{employeeId}/leaves:summary?asOf=
+GET    /leaves/{leaveId}
+PATCH  /leaves/{leaveId}                          If-Match
+DELETE /leaves/{leaveId}                          If-Match
+POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → 복직
+```
+
+- 휴직 등록·수정·삭제는 직원 상태를 바꾸므로 휴직과 직원의 `version`을 함께 올립니다
+- **복직은 커맨드입니다.** 현행은 `PUT`에 `actual_return_date`를 넣었습니다. `:return`이 복직일을 기록하고 복직 신고(`RETURN`)를 엽니다
+- 기간 겹침은 422 `LEAVE_OVERLAP`(`overlappingLeaveId`)입니다. 육아휴직은 근속에 항상 포함하고, 건강보험 납입고지유예는 유예되는 달이 있는 휴직에만 허용합니다(국민건강보험법 시행규칙 제50조 ④, [leave-validation](../reference/rules/leave-validation.md))
+- 육아휴직 누적 365일 초과는 막지 않고 `warnings`(`PARENTAL_LEAVE_LIMIT_EXCEEDED`)로 알립니다. 자녀별 한도라 자녀를 모르는 서버가 막을 수 없습니다
+- 휴직 등록이 휴직 신고(`LEAVE`)를 엽니다. 국민연금 납부예외·건강보험 고지유예 옵션은 신고 내용에 들어갑니다
+
+## 퇴직
+
+`POST /employees/{employeeId}:resign`과 `:cancel-resignation`이 맡습니다. 퇴직 사유 코드표는 고용보험 상실사유 코드를 그대로 씁니다(`GET /reference/leaving-reasons`).
+
+- 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`)
+- 고른 (상세)사유는 상실신고(`LOSS`)에 그대로 들어갑니다
+- 퇴직금 정산이 `COMPLETED`면 `:cancel-resignation`과 `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. 정산 상태는 Payroll의 `severance-settlement.status-changed` 이벤트로 받습니다
+- 퇴직 후 휴직 종료일은 퇴직일을 넘을 수 없습니다
+
+## 4대보험 신고
+
+```
+InsuranceFiling
+├─ id, employeeId, kind: ACQUISITION | LOSS | LEAVE | RETURN | DEPENDANT
+├─ source: { type: EMPLOYEE | LEAVE | FAMILY_MEMBER, id }, payload
+├─ status: PENDING | DONE | FAILED | WITHDRAWN
+└─ requestedAt, processedAt?, resultMessage?
+```
+
+```
+GET  /insurance-filings?status=&employeeId=&kind=
+POST /insurance-filings/{insuranceFilingId}:complete      세무 대리인
+POST /insurance-filings/{insuranceFilingId}:fail          { message }
+```
+
+- 직원 등록·퇴직·휴직·복직·피부양자 등록이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
+- 현행 `employee_work.is_*_work` 플래그와 "○○처리중" 상태를 이 리소스가 대신합니다. 처리 주체는 지금처럼 세무 대리인이고, 자동 EDI는 범위 밖입니다 ([integrations.md](integrations.md))
+
+## 조직
+
+```
+GET    /departments
+POST   /departments                    { name }
+PATCH  /departments/{departmentId}     { name }
+DELETE /departments/{departmentId}     한 번이라도 배정됐으면 409 DEPARTMENT_IN_USE
+POST   /departments:reorder            { ids[] }
+(직위도 같은 형태: /positions, POSITION_IN_USE)
+```
+
+- 현행 `bulk`(전체 교체, 빠진 항목 삭제)를 생성·수정·삭제·재정렬로 나눕니다. 이름은 회사 안에서 유일합니다(409 `DEPARTMENT_NAME_TAKEN`)
+- `inUse`는 직원에 배정된 적이 있으면 `true`이고 다시 `false`가 되지 않습니다 ([organization-unit-in-use](../reference/rules/organization-unit-in-use.md))
+
+## 메모와 문서 보관함
+
+```
+GET    /employees/{employeeId}/memo                 → { content, updatedAt, updatedBy, version }
+PUT    /employees/{employeeId}/memo                 If-Match { content }  빈 문자열이면 비움
+GET    /employees/{employeeId}/memo/revisions
+GET    /employees/{employeeId}/documents?category=
+POST   /employees/{employeeId}/documents            multipart { category, file }
+GET    /employee-documents/{documentId}
+GET    /employee-documents/{documentId}/file        열람 기록
+DELETE /employee-documents/{documentId}             origin=UPLOAD만
+GET    /reference/document-categories
+```
+
+- 카테고리는 `CONTRACT` / `CERTIFICATE` / `CONSENT` / `RESIGNATION` / `OTHER`, 출처는 `UPLOAD` / `ESIGN` / `CERTIFICATE`입니다. 전자서명 완료본과 발급 증명서는 Documents 이벤트로 서버가 넣습니다
+- 파일은 PDF·JPEG·PNG, 10MB 이하이고 MIME은 서버가 내용으로 판정합니다(클라이언트가 보낸 `mime_type`을 믿지 않습니다)
+- 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않습니다(409 `DOCUMENT_LOCKED`)
+
+## 개인정보
+
+[compliance.md](compliance.md#개인정보-최소-노출)를 따릅니다.
+
+- 주민등록번호·외국인등록번호·여권번호·계좌번호는 `PersonalDataCipher`(AES-256-GCM, 필드마다 서버 데이터 키에서 HKDF로 파생한 키와 AAD, 운영은 KMS가 데이터 키를 보관)로 암호화하고, 중복 판정은 회사와 무관한 HMAC 키로 만든 `registrationNumberHash`로 합니다. 암호문은 매번 달라 비교할 수 없고, 평문 해시는 13자리 공간이라 사전 공격에 약하기 때문입니다
+- 응답은 `registrationNumberMasked`(`900101-1******`, 여권은 끝 3자리만), `accountNumberMasked`(끝 4자리)만 넣습니다
+- 원문은 `GET …/registration-number`, `GET …/account-number`로만 주고 `X-Access-Reason`을 필수로 받아 열람 기록(`PersonalDataAccessLog`)을 남깁니다. 권한은 `employee:reveal-rrn`, `employee:reveal-account`로 따로 둡니다
+- 생년월일은 주민등록번호에서 파생하고(7번째 자리로 세기 판정), 여권이면 입력을 받습니다
+
+## Payroll에 주는 조회 서비스
+
+Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.public.ts`의 `HrDirectory`만 씁니다. Documents도 같은 서비스로 수신자·증명서 값을 채웁니다.
+
+| 메서드 | 돌려주는 것 | 쓰는 곳 |
+|---|---|---|
+| `findEmployee(companyId, employeeId, asOf)` | 직원 스냅샷(상태·부서·직위 이름·마스킹 번호 포함) | 급여대장 행, 전자서명 수신자, 증명서 |
+| `listEmployees(companyId, { asOf, kinds?, statuses? })` | 그날 기준 직원 목록 | 급여대장 대상자 |
+| `listEmployeesEmployedBetween(companyId, from, to, kinds?)` | 기간 중 하루라도 재직한 직원 | 귀속월 급여대장, 원천세 |
+| `findWorkContract(companyId, employeeId, asOf)` / `listWorkContracts` | 그날 유효한 근로계약 | 소정근로시간, 수습 |
+| `findPayrollContract(companyId, employeeId, asOf)` | 그날 유효한 급여계약(계좌는 마스킹) | 기본급·지급항목 |
+| `findSocialInsurance(companyId, employeeId, asOf)` | 그날 유효한 4대보험 설정 | 보험료 계산 |
+| `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 | 간이세액 |
+| `listDependants(companyId, employeeId, asOf)` | 인적공제 대상자 | 연말정산, 비과세 수당 |
+| `listLeavesOverlapping(companyId, employeeId, from, to)` | 기간과 겹치는 휴직 | 일할 계산, 근속 |
+| `findRetirement(companyId, employeeId)` | 퇴직일·사유·퇴직금 유형·중간정산·정산 상태 | 퇴직금 정산 |
+| `revealRegistrationNumber(companyId, employeeId, reason)` | 원문 주민등록번호 | 원천세 신고 파일 (열람 기록) |
+
+- 계좌 원문은 이체 파일을 만들 때만 `revealPaymentAccount(companyId, payrollContractId, reason)`로 받습니다
+- 현행 급여가 HR 테이블에 쓰던 `setSeveranceSettlementStatus`는 Payroll 이벤트(`severance-settlement.status-changed`)를 HR이 받는 것으로 바꿉니다
+
+## 이벤트
+
+| 이벤트 | 낼 때 | 받는 곳 |
+|---|---|---|
+| `employee.registered` | `POST /employees`, 전자서명 완료로 신규 생성 | Payroll(급여대장 대상자), Assistant |
+| `employee.updated` | 인적 정보·배치 변경 | Payroll(미확정 급여대장 갱신) |
+| `employee.resigned` / `employee.resignation-canceled` | `:resign` / `:cancel-resignation` | Payroll(퇴직금 정산 시작·취소) |
+| `leave.registered` / `leave.changed` / `leave.returned` | 휴직 등록·수정·삭제·복직 | Payroll(일할 계산) |
+| `work-contract.changed` / `payroll-contract.changed` | 계약 생성·수정·삭제 | Payroll |
+| `insurance-filing.requested` | 신고가 열림 | 세무 대리인 할 일([tax.md](tax.md)) |
+
+| 받는 이벤트 | 하는 일 |
+|---|---|
+| `esign.completed` (Documents) | 근로·연봉계약서면 근로계약(`origin: ESIGN`)과 급여계약을 만들고, 수신자가 직원이 아니면 `WAGE` 직원을 만들고, 완료본을 보관함에 넣고, 사직서면 퇴직 사유 초안을 남깁니다 (현행 R29) |
+| `certificate.issued` (Documents) | 증명서 PDF를 보관함에 넣습니다 |
+| `severance-settlement.status-changed` (Payroll) | `severanceSettlementStatus`를 갱신합니다 |
+
+## 오류 코드
+
+| 코드 | HTTP | 뜻 |
+|---|---:|---|
+| `EMPLOYEE_NOT_FOUND`, `LEAVE_NOT_FOUND`, `WORK_CONTRACT_NOT_FOUND`, `PAYROLL_CONTRACT_NOT_FOUND`, `FAMILY_MEMBER_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `POSITION_NOT_FOUND`, `INSURANCE_FILING_NOT_FOUND` | 404 | |
+| `EMPLOYEE_DUPLICATE` | 409 | 같은 종류에 같은 주민등록번호 (`duplicateEmployeeId`) |
+| `RETIREMENT_COMPLETED` | 409 | 퇴직금 정산 완료 직원의 삭제·퇴직 취소 |
+| `EMPLOYEE_NOT_RESIGNED` | 409 | 퇴직하지 않은 직원의 퇴직 취소 |
+| `DEPARTMENT_IN_USE`, `POSITION_IN_USE` | 409 | 배정된 적 있는 조직 삭제 |
+| `DEPARTMENT_NAME_TAKEN`, `POSITION_NAME_TAKEN` | 409 | 이름 중복 |
+| `INSURANCE_FILING_TRANSITION_INVALID` | 409 | 닫힌 신고 처리 |
+| `DOCUMENT_LOCKED` | 409 | 서명·발급에서 온 문서 삭제 |
+| `EMPLOYEE_KIND_NOT_SUPPORTED` | 422 | `WAGE`가 아닌 직원에 하위 리소스 |
+| `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_DATE_BEFORE_JOIN` | 422 | 퇴직일 검증 |
+| `LEAVING_REASON_INVALID` | 422 | 사유·상세사유 조합이 없음 |
+| `LEAVE_OVERLAP`, `LEAVE_PERIOD_INVALID` | 422 | 휴직 겹침, 기간·복직일·고지유예 조건 위반 (`violations`) |
+| `WORK_CONTRACT_INVALID`, `PAYROLL_CONTRACT_INVALID`, `TAX_WITHHOLDING_INVALID`, `FAMILY_MEMBER_INVALID` | 422 | 규칙 위반 (`violations[].code`) |
+| `EMPLOYEE_INVALID` | 422 | 주민등록번호 형식·여권 생년월일 누락 등 |
+
+현행 `DUPLICATE_EMPLOYEE`는 `EMPLOYEE_DUPLICATE`로, 400이던 업무 규칙 오류는 409/422로 나눕니다.
+
+## 권한
+
+| 권한 | 엔드포인트 | 플랜 |
+|---|---|---|
+| `employee:read` | 직원·하위 리소스 조회, 건수 | `PAYROLL` 또는 `TAXATION` |
+| `employee:create`, `employee:update`, `employee:delete` | 직원 등록·수정·삭제, 하위 리소스 쓰기, 휴직 | 같음 |
+| `employee:resign` | `:resign`, `:cancel-resignation` | 같음 |
+| `employee:reveal-rrn`, `employee:reveal-account` | 원문 조회 | 같음 |
+| `employee:export` | `:export` | 같음 |
+| `organization:read`, `organization:update` | 부서·직위 | 같음 |
+| `insurance-filing:read`, `insurance-filing:process` | 4대보험 신고 목록, 처리 | 같음 (처리는 세무 대리인) |
+
+## 현행 엔드포인트 대응
+
+번호는 [spec §5](../reference/spec/hr.md#5-엔드포인트-표)입니다. `…`은 `/api/company/:companyId/employment`, `WE`는 `…/wage-employees/:employeeId`입니다. 서식 모음·전자서명·제증명(#1–2, #5–13, #75–101)은 [documents.md](documents.md#현행-엔드포인트-대응)에 있습니다.
+
+| # | 현행 | 재설계 | 비고 |
+|---:|---|---|---|
+| 3 | `GET /api/company/:id/employee/` (레거시, `simple`) | `GET /employees` | 한글 `employment_status`를 `status` + `warnings` + `pendingInsuranceFilings`로 |
+| 4 | `GET …/employee/leaving-reason/` | `GET /reference/leaving-reasons` | |
+| 14 | `GET …/wage-employees/` | `GET /employees?kind=WAGE` | 정수 상태 코드 → enum |
+| 15 | `GET …/wage-employees/count-by-status/` | `GET /employees:count?groupBy=status` | |
+| 16 | `GET …/wage-employees/export/` | `POST /employees:export` → Job | X-Access-Reason |
+| 17 | `GET …/wage-employees/contract-expiry-alert/` | `GET /employees?warning=CONTRACT_EXPIRING_SOON,CONTRACT_EXPIRED`, `GET /employees:count?groupBy=warning` | 배너 전용 엔드포인트 제거 |
+| 18 | `POST …/wage-employees/` | `POST /employees` | 409 `EMPLOYEE_DUPLICATE` |
+| 19 | `DELETE WE/` | `DELETE /employees/{employeeId}` | |
+| 20, 21 | `GET/PATCH WE/` | `GET/PATCH /employees/{employeeId}` | |
+| 22, 23 | `GET/PUT WE/common-info/` | 없앰 → `GET/PATCH /employees/{employeeId}` | 인적 정보와 직원 정보를 한 리소스로 |
+| 24 | `GET WE/leave-of-absence-info/` | `GET /employees/{employeeId}/leaves:summary` | |
+| 25, 27 | `GET/POST WE/leave-of-absences/` | `GET/POST /employees/{employeeId}/leaves` | |
+| 26, 28, 29 | `GET/PUT/DELETE WE/leave-of-absences/:loaId/` | `GET/PATCH/DELETE /leaves/{leaveId}`, 복직은 `POST /leaves/{leaveId}:return` | |
+| 30–32 | `GET/PUT/DELETE WE/memo/` | `GET/PUT /employees/{employeeId}/memo` | DELETE는 빈 내용 PUT |
+| 33 | `GET WE/memo-histories` | `GET /employees/{employeeId}/memo/revisions` | |
+| 34, 36 | `GET …/departments/`, `GET …/positions/` | `GET /departments`, `GET /positions` | |
+| 35, 37 | `POST …/departments/bulk/`, `…/positions/bulk/` | `POST/PATCH/DELETE /departments…`, `POST /departments:reorder` (직위 같음) | 전체 교체 제거 |
+| 38–42 | `WE/family-members/…` | `/employees/{employeeId}/family-members`, `/family-members/{familyMemberId}` | |
+| 43–45 | `…/family-members/:familyId/attachments/…` | `POST/DELETE /family-members/{familyMemberId}/attachments…` | PATCH(교체)는 삭제 + 등록 |
+| 46 | `GET WE/work-contracts/indefinite-conversion-alert/` | `GET /employees/{employeeId}/indefinite-conversion` | 목록 경고에도 포함 |
+| 47–51 | `WE/work-contracts/…` | `/employees/{employeeId}/work-contracts`, `/work-contracts/{workContractId}` | |
+| 52–56 | `WE/payroll-contracts/…` | `/employees/{employeeId}/payroll-contracts`, `/payroll-contracts/{payrollContractId}` | |
+| 57, 58 | `GET/PUT WE/social-insurance-info/` | `GET/PUT /employees/{employeeId}/social-insurance` | `effectiveFrom` |
+| 59, 60 | `POST WE/social-insurance-info/preview/`, `GET …/redetermine/` | `POST /employees/{employeeId}/social-insurance:determine` | 둘을 하나로 |
+| 61 | `GET WE/retirement-info/` | `GET /employees/{employeeId}` (`retirementPlan`, `resignation`) | |
+| 62 | `PUT WE/retirement-info/` | 설정: `PATCH /employees/{employeeId}`, 퇴직: `POST /employees/{employeeId}:resign` | 상태를 바꾸는 저장을 커맨드로 |
+| 63 | `DELETE WE/retirement-info/` | `POST /employees/{employeeId}:cancel-resignation` | |
+| 64, 65 | `GET/PUT WE/deduction-info/` | `GET/PUT /employees/{employeeId}/tax-withholding` | `effectiveFrom` |
+| 66 | `GET …/wage-employees/income-tax-reduction-reasons/` | `GET /reference/income-tax-reduction-reasons` | |
+| 67–69 | `PATCH …/{business,daily,other}-employees/:id/` | `PATCH /employees/{employeeId}` | `kind`로 구분 |
+| — | `GET/POST …/{daily,business,other}-employees`, `GET …/:id` (레거시 구현이 추가) | `GET/POST /employees?kind=`, `GET /employees/{employeeId}` | |
+| 70, 72 | `GET/POST WE/documents/` | `GET/POST /employees/{employeeId}/documents` | multipart 키 camelCase, MIME 서버 판정 |
+| 71, 73 | `GET/DELETE WE/documents/:documentId/` | `GET/DELETE /employee-documents/{documentId}` | |
+| 74 | `GET WE/documents/:documentId/download/` | `GET /employee-documents/{documentId}/file` | |
+| 5 | `GET …/settings/document-categories/` | `GET /reference/document-categories` | 문서 보관함과 템플릿이 같이 씀 |
+
+## 구현 상태
+
+`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(SQLite·outbox 미연결, [review.md](review.md#결정) D1), 개인정보 암호화는 서버(`SqliteLive`)에서 `PersonalDataCipher.layerAesGcm`(AES-256-GCM 암호화 + HMAC-SHA256 중복 판정 해시)이고, 테스트와 `HrMemoryLive`만 결정적인 가짜(`PersonalDataCipher.layerFake`)를 씁니다. 데모 급여계약 계좌번호도 그 환경의 암호화로 시드합니다 ([compliance.md](compliance.md#개인정보-최소-노출)). `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
+
+| 영역 | 상태 |
+|---|---|
+| 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 13개 규칙 |
+| 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
+| 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)은 미구현 |
+| 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
+| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
+| 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
+| 4대보험 판정 (`POST /employees/{id}/social-insurance:determine`) | 구현(저장 없는 권장값), HTTP 테스트. 설정 저장(`PUT`) 미구현 |
+| 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
+| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 권장 가입 여부, 주민번호 원문(열람 기록). 4대보험 설정·인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
+| 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
+| 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
+| 퇴직 정보(급여 형태·중간정산), 퇴직금 정산 상태 구독 | 미구현. 정산 상태 필드(`severanceSettlementStatus`)와 삭제·퇴사 취소 가드만 있습니다 |
+| 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기 | 미구현 |
+| 이벤트 발행·구독 (`esign_request.completed` 처리 포함) | 미구현. 이벤트 버스가 없습니다 |
+| 멱등성 키 재응답 | 미구현 |
 
 ## 열린 질문
 
-- 레거시 직원 관리의 등록·수정 API는 리포트 앱 번들에 있어 확인하지 못했습니다. 목록과 퇴사 사유만 구현했습니다.
-- 4대보험 신고 처리(`done`/`failed`) API와 담당자 화면은 어느 도메인이 맡을지 정해야 합니다.
-- R10 고정수당 배율, 고용보험 상호주의 국가 목록, 서명 기한(16일)과 계약 만료 경고(30일), 육아휴직 한도(365일)는 실제 제품 값을 확인해야 합니다.
-- 메뉴 코드 `employment_*`, `settings_e_sign`은 추정 이름입니다.
-- 전자서명 완료 처리(`e-sign-completion.ts`)에 `contracts.service`의 `toWorkContractWrite`/`toPayrollContractWrite`와 겹치는 빌더가 있습니다. 규칙이 갈라지지 않게 하나로 합쳐야 합니다.
-- `expireOverdueESignRequests`를 스케줄 배치(`scripts/schedule-filings.ts`)에 등록해야 합니다. 이 브랜치의 소유 범위 밖이라 등록하지 않았습니다.
-- `ENCRYPTION_KEY`를 교체하는 절차에 `hr_secrets` 재암호화를 넣어야 합니다.
+1. **급여대장에 들어간 직원 삭제:** 현행은 퇴직금 정산 완료만 막습니다. 확정 급여대장에 행이 있는 직원도 막으려면 Payroll이 `HrDirectory` 반대 방향 조회(`PayrollUsage.hasLedgerRows`)를 HR에 줘야 합니다. 포트를 HR에 둘지, 삭제 대신 보관(`ARCHIVED`)만 허용할지 정해야 합니다
+2. **같은 사람의 여러 `kind`:** 근로자를 기타소득자로도 등록할 때 인적 정보를 공유할지(Person 분리) 복사할지. 지금은 복사이고 중복 판정을 `kind`별로 합니다
+3. **고정임금제 가산율(R10):** 화면 값이 가산 없는 1.0배라 그대로 두었습니다. Payroll 계산 엔진과 맞춰야 합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md))
+4. **고용보험 상호주의 국가 목록:** 두지 않기로 했습니다. 고용보험법 시행령 제3조의3은 국가 목록이 아니라 본국법 기준이라 D-7·D-8·D-9는 가입을 권하고 본국법 확인을 안내합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
+5. **계약 만료 경고 30일, 무기계약 전환 사전 알림 90일:** 제품 값을 확인하지 못했습니다. 회사 설정으로 둘지 정해야 합니다
+6. **4대보험 신고 처리 주체:** 세무 대리인 큐로 두었습니다. 급여 구독만 쓰는 회사(대리인 없음)에서 누가 처리하는지 정해야 합니다
+7. **ERP 이관 직원:** 현행 "임시저장"으로 들어오는 더존·세무사랑 직원은 `source: ERP_IMPORT` + `MISSING_REGISTRATION_NUMBER` 경고로 둡니다. 이관 작업의 형태(Job)는 [integrations.md](integrations.md)와 맞춰야 합니다
+8. **급여계약의 최저시급 출처:** 설계는 Payroll 기준표(`rateTable`)에서 계약 시작일 기준으로 읽지만, HR에서 Payroll로 가는 포트가 없어 지금은 HR 상수(2026년 10,320원)로 비교합니다. HR 포트(`MinimumWageSource`)와 `wiring/hr-payroll.ts` 어댑터를 둘지 정해야 합니다
+9. **기간제 예외 기간을 2년 계산에서 뺄지:** 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 계약 기간도 셉니다. 일반 18개월 → 예외 12개월 → 일반 2개월이면 전환으로 보지만, 예외 기간을 빼면 일반 사용기간이 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정해야 합니다([결정](rule-decisions/hr.md#indefinite-conversion-alert))

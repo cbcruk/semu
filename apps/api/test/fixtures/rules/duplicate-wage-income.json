@@ -1,0 +1,46 @@
+{
+  "rule": "duplicate-wage-income",
+  "description": "Wage income goes only on the regular ledger, at most one wage row per employee and attribution month.",
+  "sources": [
+    { "file": "alfred-manual/05-급여/01-급여-관리/02-급여-급여-관리-근로-소득-입력.md", "lines": "23-26", "origin": "manual" },
+    { "file": "alfred-manual/05-급여/01-급여-관리/01-급여-급여-관리-추가-급여-생성-및-입력-업데이트.md", "lines": "15-18", "origin": "manual" },
+    { "file": "docs/reference/spec/payroll.md", "lines": "83, 778", "origin": "spec 1.4, Q17" }
+  ],
+  "inputSchema": {
+    "ledgerKind": "REGULAR | ADDITIONAL, the ledger the row is added to",
+    "existing": "[{ledgerId, attributionMonth, employeeId}] wage rows of the company",
+    "candidate": "{attributionMonth, employeeId}"
+  },
+  "cases": [
+    {
+      "name": "wage row on an additional ledger",
+      "input": { "ledgerKind": "ADDITIONAL", "existing": [], "candidate": { "attributionMonth": "2026-08", "employeeId": "emp_a" } },
+      "expected": { "error": "WAGE_ROW_ON_ADDITIONAL_LEDGER" },
+      "derivation": "traced"
+    },
+    {
+      "name": "second wage row for the same employee and month",
+      "input": {
+        "ledgerKind": "REGULAR",
+        "existing": [{ "ledgerId": "pyl_a", "attributionMonth": "2026-08", "employeeId": "emp_a" }],
+        "candidate": { "attributionMonth": "2026-08", "employeeId": "emp_a" }
+      },
+      "expected": { "error": "WAGE_INCOME_DUPLICATED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "same employee in another month",
+      "input": {
+        "ledgerKind": "REGULAR",
+        "existing": [{ "ledgerId": "pyl_a", "attributionMonth": "2026-08", "employeeId": "emp_a" }],
+        "candidate": { "attributionMonth": "2026-09", "employeeId": "emp_a" }
+      },
+      "expected": { "error": null },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The BPO product shows two ledgers for the same month; how it prevents duplicate wage income is unknown (spec Q17).",
+    "Whether separate bonus ledgers with wage income are needed; they are refused for now."
+  ]
+}

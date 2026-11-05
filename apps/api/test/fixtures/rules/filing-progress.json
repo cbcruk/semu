@@ -1,0 +1,303 @@
+{
+  "rule": "filing-progress",
+  "description": "Legacy progress step shown for a filing status (6 VAT steps, 5 for other taxes) and the derived overdue flag.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/filings/process-step.ts",
+      "lines": "4-38"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/filings/filings.serializer.ts",
+      "lines": "9-13"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/tracker/tracker.service.ts",
+      "lines": "10-30"
+    },
+    {
+      "file": "docs/reference/legacy-design/tax-api-design.md",
+      "lines": "39-68, 252-270, 410-422, 876-882"
+    }
+  ],
+  "inputSchema": {
+    "check": "step or overdue.",
+    "taxType": "Legacy tax type.",
+    "status": "Legacy status.",
+    "today": "Asia/Seoul date."
+  },
+  "cases": [
+    {
+      "name": "VAT requested",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "requested"
+      },
+      "expected": {
+        "step": "자료 제출 가능",
+        "stepIndex": 1,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT submitted",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "submitted"
+      },
+      "expected": {
+        "step": "자료 검토중",
+        "stepIndex": 2,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT reviewing",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "reviewing"
+      },
+      "expected": {
+        "step": "자료 검토중",
+        "stepIndex": 2,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT ledger pending",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "ledger_pending"
+      },
+      "expected": {
+        "step": "매입매출장 확인",
+        "stepIndex": 3,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT preparing",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "preparing"
+      },
+      "expected": {
+        "step": "부가세 작업중",
+        "stepIndex": 4,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT filed",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "filed"
+      },
+      "expected": {
+        "step": "부가세 납부",
+        "stepIndex": 5,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT settled",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "settled"
+      },
+      "expected": {
+        "step": "부가세 마감",
+        "stepIndex": 6,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT scheduled has no step",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "scheduled"
+      },
+      "expected": {
+        "step": null,
+        "stepIndex": 0,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT cancelled has no step",
+      "input": {
+        "check": "step",
+        "taxType": "surtax",
+        "status": "cancelled"
+      },
+      "expected": {
+        "step": null,
+        "stepIndex": 0,
+        "stepCount": 6
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding requested",
+      "input": {
+        "check": "step",
+        "taxType": "withholding_tax",
+        "status": "requested"
+      },
+      "expected": {
+        "step": "자료 제출 가능",
+        "stepIndex": 1,
+        "stepCount": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding reviewing",
+      "input": {
+        "check": "step",
+        "taxType": "withholding_tax",
+        "status": "reviewing"
+      },
+      "expected": {
+        "step": "자료 검토중",
+        "stepIndex": 2,
+        "stepCount": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding preparing",
+      "input": {
+        "check": "step",
+        "taxType": "withholding_tax",
+        "status": "preparing"
+      },
+      "expected": {
+        "step": "작업중",
+        "stepIndex": 3,
+        "stepCount": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "withholding filed",
+      "input": {
+        "check": "step",
+        "taxType": "withholding_tax",
+        "status": "filed"
+      },
+      "expected": {
+        "step": "납부",
+        "stepIndex": 4,
+        "stepCount": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate tax settled",
+      "input": {
+        "check": "step",
+        "taxType": "corporation_tax",
+        "status": "settled"
+      },
+      "expected": {
+        "step": "마감",
+        "stepIndex": 5,
+        "stepCount": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "due date passed before filing",
+      "input": {
+        "check": "overdue",
+        "status": "reviewing",
+        "dueDate": "2026-10-26",
+        "paymentDue": "2026-10-26",
+        "today": "2026-10-27"
+      },
+      "expected": {
+        "isOverdue": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "due date is today",
+      "input": {
+        "check": "overdue",
+        "status": "reviewing",
+        "dueDate": "2026-10-26",
+        "paymentDue": "2026-10-26",
+        "today": "2026-10-26"
+      },
+      "expected": {
+        "isOverdue": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "filed after the due date is not overdue",
+      "input": {
+        "check": "overdue",
+        "status": "filed",
+        "dueDate": "2026-10-26",
+        "paymentDue": "2026-10-26",
+        "today": "2026-11-05"
+      },
+      "expected": {
+        "isOverdue": false
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "notice falls back to the payment deadline",
+      "input": {
+        "check": "overdue",
+        "status": "scheduled",
+        "dueDate": null,
+        "paymentDue": "2026-10-26",
+        "today": "2026-10-27"
+      },
+      "expected": {
+        "isOverdue": true
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancelled is never overdue",
+      "input": {
+        "check": "overdue",
+        "status": "cancelled",
+        "dueDate": "2026-10-26",
+        "paymentDue": "2026-10-26",
+        "today": "2026-11-05"
+      },
+      "expected": {
+        "isOverdue": false
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "단계 이름을 서버가 한글 문구로 내려주는 것을 enum 코드로 바꿀까요",
+    "부가세 외 세목의 단계 이름(작업중·납부·마감)은 부가세 이름에서 세목을 뺀 추정입니다. 따를까요",
+    "`submitted`와 `reviewing`을 같은 단계(자료 검토중)로 묶는 것을 따를까요",
+    "진행 현황(`/home/tracker`)을 신고 건 목록과 별도 엔드포인트로 둘까요",
+    "기한 경과 판정에서 신고 기한이 없으면 납부 기한을 쓰고, 기한 당일은 경과가 아닌 것을 따를까요"
+  ]
+}

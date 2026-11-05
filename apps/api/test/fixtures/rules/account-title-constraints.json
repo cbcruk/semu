@@ -1,0 +1,190 @@
+{
+  "rule": "account-title-constraints",
+  "description": "Which account titles can classify a row, when adding a sub-account creates an automatic etc account, and when deletion is allowed.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/account-titles/account-titles.utils.ts", "lines": "10-40" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/account-titles/account-titles.service.ts", "lines": "35-166" },
+    { "file": "apps/api/legacy/src/db/migrations/0040-bookkeeping.sql", "lines": "1-200" },
+    { "file": "alfred-manual/08-설정/04-경리-설정.md", "lines": "52, 98", "origin": "manual" }
+  ],
+  "inputSchema": {
+    "call": "'assignability' | 'childCreation' | 'deletion'",
+    "code": "default account code (assignability); 'unknown' for an id that does not exist",
+    "scope": "'SALES' | 'PURCHASE' | 'DEPOSIT' | 'WITHDRAWAL' (assignability)",
+    "parent": "{ depth, name } (childCreation)",
+    "siblingNames": "string[] (childCreation)",
+    "classifiedCount": "number (childCreation, deletion)",
+    "name": "string (childCreation)",
+    "target": "{ origin: 'SYSTEM' | 'COMPANY' | 'AUTO_ETC' } (deletion)",
+    "hasChildren": "boolean (deletion)",
+    "moveTo": "'none' | 'self' | default account code (deletion)"
+  },
+  "cases": [
+    {
+      "name": "a leaf account inside its scope is assignable",
+      "input": { "call": "assignability", "code": "sales.revenue", "scope": "SALES" },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "salary cannot classify sales evidence",
+      "input": { "call": "assignability", "code": "sga.salary", "scope": "SALES" },
+      "expected": "SCOPE_MISMATCH",
+      "derivation": "traced"
+    },
+    {
+      "name": "a group heading is not selectable",
+      "input": { "call": "assignability", "code": "sales", "scope": "SALES" },
+      "expected": "NOT_SELECTABLE",
+      "derivation": "traced"
+    },
+    {
+      "name": "a level-two account with sub-accounts is not selectable",
+      "input": { "call": "assignability", "code": "trade.sales_in", "scope": "DEPOSIT" },
+      "expected": "NOT_SELECTABLE",
+      "derivation": "traced"
+    },
+    {
+      "name": "an unknown account",
+      "input": { "call": "assignability", "code": "unknown", "scope": "SALES" },
+      "expected": "UNKNOWN",
+      "derivation": "traced"
+    },
+    {
+      "name": "the first sub-account of a used level-two account creates 기타",
+      "input": {
+        "call": "childCreation",
+        "parent": { "depth": 2, "name": "복리후생비" },
+        "siblingNames": [],
+        "classifiedCount": 2,
+        "name": "식대"
+      },
+      "expected": { "ok": true, "depth": 3, "createAutoEtc": true, "autoEtcName": "기타 복리후생비" },
+      "derivation": "traced"
+    },
+    {
+      "name": "no 기타 when nothing is classified to the parent",
+      "input": {
+        "call": "childCreation",
+        "parent": { "depth": 2, "name": "복리후생비" },
+        "siblingNames": [],
+        "classifiedCount": 0,
+        "name": "식대"
+      },
+      "expected": { "ok": true, "depth": 3, "createAutoEtc": false, "autoEtcName": "기타 복리후생비" },
+      "derivation": "traced"
+    },
+    {
+      "name": "a level-one group gets a level-two child without 기타",
+      "input": {
+        "call": "childCreation",
+        "parent": { "depth": 1, "name": "판매비와관리비" },
+        "siblingNames": ["직원급여"],
+        "classifiedCount": 0,
+        "name": "교육훈련비"
+      },
+      "expected": { "ok": true, "depth": 2, "createAutoEtc": false, "autoEtcName": "기타 판매비와관리비" },
+      "derivation": "traced"
+    },
+    {
+      "name": "no fourth level",
+      "input": {
+        "call": "childCreation",
+        "parent": { "depth": 3, "name": "거래처대금 입금" },
+        "siblingNames": [],
+        "classifiedCount": 0,
+        "name": "하위"
+      },
+      "expected": { "ok": false, "code": "DEPTH_EXCEEDED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "the 기타 name is taken by the automatic account",
+      "input": {
+        "call": "childCreation",
+        "parent": { "depth": 2, "name": "복리후생비" },
+        "siblingNames": [],
+        "classifiedCount": 1,
+        "name": "기타 복리후생비"
+      },
+      "expected": { "ok": false, "code": "NAME_DUPLICATE" },
+      "derivation": "traced"
+    },
+    {
+      "name": "default accounts cannot be deleted",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "SYSTEM" },
+        "hasChildren": false,
+        "classifiedCount": 0,
+        "moveTo": "none"
+      },
+      "expected": "SYSTEM_LOCKED",
+      "derivation": "traced"
+    },
+    {
+      "name": "an account with sub-accounts cannot be deleted",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "COMPANY" },
+        "hasChildren": true,
+        "classifiedCount": 0,
+        "moveTo": "none"
+      },
+      "expected": "HAS_CHILDREN",
+      "derivation": "traced"
+    },
+    {
+      "name": "classified rows need a move target",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "AUTO_ETC" },
+        "hasChildren": false,
+        "classifiedCount": 3,
+        "moveTo": "none"
+      },
+      "expected": "MOVE_TARGET_REQUIRED",
+      "derivation": "traced"
+    },
+    {
+      "name": "the move target cannot be the deleted account",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "COMPANY" },
+        "hasChildren": false,
+        "classifiedCount": 3,
+        "moveTo": "self"
+      },
+      "expected": "MOVE_TARGET_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "the move target must be selectable",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "COMPANY" },
+        "hasChildren": false,
+        "classifiedCount": 3,
+        "moveTo": "sga"
+      },
+      "expected": "MOVE_TARGET_INVALID",
+      "derivation": "traced"
+    },
+    {
+      "name": "an unused company account is deleted without a target",
+      "input": {
+        "call": "deletion",
+        "target": { "origin": "COMPANY" },
+        "hasChildren": false,
+        "classifiedCount": 0,
+        "moveTo": "none"
+      },
+      "expected": null,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "옮길 계정이 적용 범위(매출·매입·입금·출금)에 맞는지는 현행도 보지 않습니다. 매출 증빙이 출금 전용 계정으로 옮겨질 수 있습니다.",
+    "기본 계정 체계 전체(54행)는 현행 마이그레이션의 추정입니다. 현행 서비스 체계와 맞춰 봐야 합니다."
+  ]
+}

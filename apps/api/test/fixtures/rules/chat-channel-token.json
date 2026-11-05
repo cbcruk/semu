@@ -1,0 +1,91 @@
+{
+  "rule": "chat-channel-token",
+  "description": "Consultation chat channel (KakaoTalk/Slack) link token: the client reads action=chat-integration links, verifies the token, lets the user pick a company and connects it; failures are the strings 'token is invalid|used|expired' matched verbatim by the client.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "116, 334, 387-389, 478-479", "origin": "index.pretty.js B:74644-74650, B:100743-100800" },
+    { "file": "docs/reference/legacy-design/platform.md", "lines": "65" },
+    { "file": "apps/api/legacy/src/modules/platform/external/external.service.ts", "lines": "153-200, 222-224" }
+  ],
+  "inputSchema": {
+    "check": "parseLink | verify (GET /api/member/chat-channel/?token=) | connect (POST /api/member/chat-channel/ {token, company_id}).",
+    "url": "parseLink only: the landing URL query.",
+    "token": "{exists, usedAt: RFC 3339|null, expiresAt: RFC 3339} as stored by the issuer, or exists: false.",
+    "now": "Server time.",
+    "isMember": "connect only: whether the signed-in user belongs to company_id."
+  },
+  "cases": [
+    {
+      "name": "link with action=chat-integration starts the flow",
+      "input": { "check": "parseLink", "url": "/?action=chat-integration&token=t1&channel_name=%ED%98%9C%EC%9B%80%EC%83%81%EB%8B%B4&messenger_type=kakaotalk" },
+      "expected": { "start": true, "token": "t1", "channelName": "세무상담", "messengerType": "kakaotalk" },
+      "derivation": "traced"
+    },
+    {
+      "name": "link with another action is ignored",
+      "input": { "check": "parseLink", "url": "/?action=other&token=t1" },
+      "expected": { "start": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "valid token returns the channel",
+      "input": { "check": "verify", "token": { "exists": true, "messengerType": "slack", "channelName": "#acme-tax", "usedAt": null, "expiresAt": "2026-11-01T10:00:00+09:00" }, "now": "2026-11-01T09:00:00+09:00" },
+      "expected": { "messenger_type": "slack", "channel_name": "#acme-tax", "expires_at": "2026-11-01T10:00:00+09:00" },
+      "derivation": "traced"
+    },
+    {
+      "name": "unknown token -> token is invalid",
+      "input": { "check": "verify", "token": { "exists": false }, "now": "2026-11-01T09:00:00+09:00" },
+      "expected": { "status": 422, "failReason": "token is invalid" },
+      "derivation": "traced"
+    },
+    {
+      "name": "used token -> token is used",
+      "input": { "check": "verify", "token": { "exists": true, "usedAt": "2026-11-01T08:00:00+09:00", "expiresAt": "2026-11-01T10:00:00+09:00" }, "now": "2026-11-01T09:00:00+09:00" },
+      "expected": { "status": 422, "failReason": "token is used" },
+      "derivation": "traced"
+    },
+    {
+      "name": "used and expired token reports used first",
+      "input": { "check": "verify", "token": { "exists": true, "usedAt": "2026-11-01T08:00:00+09:00", "expiresAt": "2026-11-01T08:30:00+09:00" }, "now": "2026-11-01T09:00:00+09:00" },
+      "expected": { "status": 422, "failReason": "token is used" },
+      "derivation": "traced"
+    },
+    {
+      "name": "token at exactly expiresAt -> token is expired",
+      "input": { "check": "verify", "token": { "exists": true, "usedAt": null, "expiresAt": "2026-11-01T09:00:00+09:00" }, "now": "2026-11-01T09:00:00+09:00" },
+      "expected": { "status": 422, "failReason": "token is expired" },
+      "derivation": "traced"
+    },
+    {
+      "name": "connect to a company the user belongs to marks the token used",
+      "input": { "check": "connect", "token": { "exists": true, "usedAt": null, "expiresAt": "2026-11-01T10:00:00+09:00" }, "now": "2026-11-01T09:00:00+09:00", "isMember": true, "companyId": "c-corp" },
+      "expected": { "status": 201, "company_id": "c-corp", "connected": true, "tokenAfter": { "usedAt": "2026-11-01T09:00:00+09:00" } },
+      "derivation": "traced"
+    },
+    {
+      "name": "connect to a company the user does not belong to is refused and leaves the token unused",
+      "input": { "check": "connect", "token": { "exists": true, "usedAt": null, "expiresAt": "2026-11-01T10:00:00+09:00" }, "now": "2026-11-01T09:00:00+09:00", "isMember": false, "companyId": "c-other" },
+      "expected": { "status": 403, "code": "PERMISSION_DENIED", "tokenAfter": { "usedAt": null } },
+      "derivation": "traced"
+    },
+    {
+      "name": "second connect with the same token -> token is used",
+      "input": { "check": "connect", "token": { "exists": true, "usedAt": "2026-11-01T09:00:00+09:00", "expiresAt": "2026-11-01T10:00:00+09:00" }, "now": "2026-11-01T09:01:00+09:00", "isMember": true, "companyId": "c-corp" },
+      "expected": { "status": 422, "failReason": "token is used" },
+      "derivation": "traced"
+    },
+    {
+      "name": "client shows the message chosen by the failReason string",
+      "input": { "check": "verify", "token": { "exists": false }, "clientMatches": ["token is invalid", "token is used", "token is expired"] },
+      "expected": { "matchedBy": "exact string of failReason" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Token lifetime is set by the messenger bridge that issues it and is not visible in the client.",
+    "company_id in the POST is the sf company id; with one company id in the redesign the mapping disappears but old links may carry sf ids.",
+    "The client matches English sentences as error codes; any wording change on the server breaks the screen.",
+    "Whether a company can have several channels, or a channel can be re-pointed to another company, is unknown.",
+    "Whether connecting needs a permission beyond membership (for example admin) is not visible."
+  ]
+}

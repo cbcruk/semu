@@ -1,0 +1,110 @@
+{
+  "rule": "assistant-tool-access",
+  "description": "Who may open the AI assistant and which features it offers: the bundle gates /ai-agent and the top-bar AI input to the company's system admin, the manual lists features per plan for everyone, and the legacy server picked tools by menu access and plan; the three disagree.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "36, 118-120, 330-332, 412, 418-419", "origin": "index.pretty.js B:77553, B:99952, B:104680-104830" },
+    { "file": "alfred-manual/02-홈-Universal-Home/02-AI-비서.md", "lines": "5-45, 71-107" },
+    { "file": "alfred-manual/12-알프레드-AI비서.md", "lines": "22-33, 89-121" },
+    { "file": "apps/api/legacy/src/modules/platform/assistant/assistant.service.ts", "lines": "40-52, 80-126" },
+    { "file": "apps/api/legacy/src/modules/platform/platform.menus.ts", "lines": "45-53" }
+  ],
+  "inputSchema": {
+    "side": "bundle (route guard, top bar, menu exclusion) | manual (features per customer kind) | legacy (allowedAssistantTools).",
+    "actor": "{kind: 'client'|'agency', isAdmin, isSystemAdmin, roleMenuCodes: [menu code]}.",
+    "company": "{taxPlan: 'taxation'|null, hasPayrollPlan: boolean, hasPartners: boolean, hometaxCertificateLinked: boolean}."
+  },
+  "cases": [
+    {
+      "name": "bundle: system admin opens /ai-agent",
+      "input": { "side": "bundle", "actor": { "kind": "client", "isAdmin": true, "isSystemAdmin": true }, "company": { "taxPlan": null, "hasPayrollPlan": false } },
+      "expected": { "route": "allowed", "topBarAiInput": "shown", "menuNode": "shown" },
+      "derivation": "traced"
+    },
+    {
+      "name": "bundle: admin who is not the system admin is sent to /dashboard",
+      "input": { "side": "bundle", "actor": { "kind": "client", "isAdmin": true, "isSystemAdmin": false }, "company": { "taxPlan": "taxation", "hasPayrollPlan": true } },
+      "expected": { "route": "redirect /dashboard", "topBarAiInput": "hidden", "menuNode": "excluded" },
+      "derivation": "traced"
+    },
+    {
+      "name": "bundle: general member is sent to /dashboard",
+      "input": { "side": "bundle", "actor": { "kind": "client", "isAdmin": false, "isSystemAdmin": false }, "company": { "taxPlan": null, "hasPayrollPlan": false } },
+      "expected": { "route": "redirect /dashboard", "topBarAiInput": "hidden", "menuNode": "excluded" },
+      "derivation": "traced"
+    },
+    {
+      "name": "bundle: home suggestion card prefills the first message",
+      "input": { "side": "bundle", "actor": { "kind": "client", "isSystemAdmin": true }, "click": "홈 추천 질문 카드" },
+      "expected": { "sessionStorage": "AI_PREFILL_MESSAGE_KEY", "navigate": "/ai-agent" },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual: free customer features",
+      "input": { "side": "manual", "company": { "taxPlan": null, "hasPayrollPlan": false } },
+      "expected": ["재무 정보 확인", "세무·노무 전문지식 문의", "세금계산서 발행"],
+      "derivation": "traced"
+    },
+    {
+      "name": "manual: tax bookkeeping customer features",
+      "input": { "side": "manual", "company": { "taxPlan": "taxation", "hasPayrollPlan": false } },
+      "expected": ["재무 정보 확인", "세무·노무 전문지식 문의", "증명서 발급 요청", "세금계산서 발행", "등록 직원 및 급여 카드 내역 조회"],
+      "derivation": "traced"
+    },
+    {
+      "name": "manual: tax invoice issuing needs partners and a hometax certificate link",
+      "input": { "side": "manual", "company": { "taxPlan": null, "hasPartners": false, "hometaxCertificateLinked": false }, "request": "○○상사에 소프트웨어 100,000원 세금계산서 발행해 주세요." },
+      "expected": { "available": false, "reason": "거래처 등록과 홈택스 인증서 연동이 완료되어야 발행할 수 있습니다." },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual: knowledge answers only from trained data",
+      "input": { "side": "manual", "request": "학습하지 않은 주제" },
+      "expected": { "answer": "임의로 답변을 생성하지 않음" },
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: free admin gets knowledge and finance summary only",
+      "input": { "side": "legacy", "actor": { "kind": "client", "isAdmin": true, "isSystemAdmin": true }, "company": { "taxPlan": null, "hasPayrollPlan": false } },
+      "expected": ["knowledge_qa", "finance_summary"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: member without integrate_transaction loses finance summary",
+      "input": { "side": "legacy", "actor": { "kind": "client", "isAdmin": false, "isSystemAdmin": true, "roleMenuCodes": [] }, "company": { "taxPlan": null, "hasPayrollPlan": false } },
+      "expected": ["knowledge_qa"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: taxation admin gets invoice and certificate tools",
+      "input": { "side": "legacy", "actor": { "kind": "client", "isAdmin": true, "isSystemAdmin": true }, "company": { "taxPlan": "taxation", "hasPayrollPlan": false } },
+      "expected": ["knowledge_qa", "finance_summary", "issue_tax_invoice", "request_certificate"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: payroll plan adds payroll lookup",
+      "input": { "side": "legacy", "actor": { "kind": "client", "isAdmin": true, "isSystemAdmin": true }, "company": { "taxPlan": "taxation", "hasPayrollPlan": true } },
+      "expected": ["knowledge_qa", "finance_summary", "issue_tax_invoice", "request_certificate", "lookup_payroll"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: write tools are proposed with requires_confirmation and never executed",
+      "input": { "side": "legacy", "toolCall": { "tool": "issue_tax_invoice", "requiresConfirmation": true } },
+      "expected": { "executed": false, "tool_calls": [{ "tool": "issue_tax_invoice", "requires_confirmation": true }] },
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: assigned agency staff cannot open the assistant menu",
+      "input": { "side": "legacy", "actor": { "kind": "agency", "isAdmin": true, "isSystemAdmin": false }, "company": { "taxPlan": "taxation", "hasPayrollPlan": false } },
+      "expected": { "menu": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The bundle limits the assistant to the company's system admin while the manual says it is open to everyone; which reflects the product today is unknown.",
+    "The manual lets free customers issue tax invoices through the assistant, but the legacy server offered issue_tax_invoice only to taxation customers.",
+    "The manual ties 직원·급여 조회 to tax bookkeeping customers, the legacy server to the payroll plan.",
+    "Whether a member's role groups (menu permissions) should narrow the assistant's read tools, as the legacy finance_summary check did, is not stated in the manual.",
+    "How write tools (tax invoice issuing, certificate requests) are confirmed and audited is not visible; the API lives in lazy chunks.",
+    "Whether conversations are private to the user or shared within the company is unknown."
+  ]
+}

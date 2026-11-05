@@ -1,0 +1,102 @@
+{
+  "rule": "legacy-employment-status",
+  "description": "Maps the derived status and pending insurance filings to the legacy Korean employment status shown in the old employee list.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/legacy/legacy.utils.ts",
+      "lines": "4-31"
+    }
+  ],
+  "inputSchema": {
+    "hasRegistrationNumber": "Whether the employee has a registration number.",
+    "status": "Derived status.",
+    "pendingFilings": "Kinds of pending 4대보험 filings: ACQUISITION (join), LEAVE (leave of absence), LOSS (resignation)."
+  },
+  "cases": [
+    {
+      "name": "no registration number is 임시저장",
+      "input": {
+        "hasRegistrationNumber": false,
+        "status": "JOINED",
+        "pendingFilings": [
+          "LOSS"
+        ]
+      },
+      "expected": "임시저장",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending loss wins",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "LEAVE",
+        "pendingFilings": [
+          "ACQUISITION",
+          "LEAVE",
+          "LOSS"
+        ]
+      },
+      "expected": "퇴사처리중",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending leave over join",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "JOINED",
+        "pendingFilings": [
+          "ACQUISITION",
+          "LEAVE"
+        ]
+      },
+      "expected": "휴직처리중",
+      "derivation": "traced"
+    },
+    {
+      "name": "pending join",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "JOINED",
+        "pendingFilings": [
+          "ACQUISITION"
+        ]
+      },
+      "expected": "입사처리중",
+      "derivation": "traced"
+    },
+    {
+      "name": "on leave",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "LEAVE",
+        "pendingFilings": []
+      },
+      "expected": "휴직",
+      "derivation": "traced"
+    },
+    {
+      "name": "resigned",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "RESIGNED",
+        "pendingFilings": []
+      },
+      "expected": "퇴사",
+      "derivation": "traced"
+    },
+    {
+      "name": "pre-joined shows as 재직",
+      "input": {
+        "hasRegistrationNumber": true,
+        "status": "PRE_JOINED",
+        "pendingFilings": []
+      },
+      "expected": "재직",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "재설계는 이 상태를 저장하지 않고 status·warnings·insuranceFilings로 나눕니다. 이관 때 처리중 상태를 열린 신고(PENDING)로 옮기면 될까요",
+    "입사 전 직원이 현행 목록에서 재직으로 보이는 것을 재설계 PRE_JOINED로 바꿔도 될까요"
+  ]
+}

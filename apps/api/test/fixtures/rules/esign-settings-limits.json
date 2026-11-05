@@ -1,0 +1,122 @@
+{
+  "rule": "esign-settings-limits",
+  "description": "A company keeps at most five active seals and three e-sign notification recipients; with none configured the representative is notified.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign-settings.service.ts",
+      "lines": "25, 100-160"
+    },
+    {
+      "file": "alfred-manual/04-인사/03-전자서명.md",
+      "lines": "52"
+    },
+    {
+      "file": "alfred-manual/08-설정/05-전자서명·제증명-관리.md",
+      "lines": "43"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "660-661"
+    }
+  ],
+  "inputSchema": {
+    "check": "addSeal | targets.",
+    "activeSealCount": "Seals not deleted.",
+    "configured": "Configured recipients.",
+    "representative": "Representative contact."
+  },
+  "cases": [
+    {
+      "name": "fourth seal",
+      "input": {
+        "check": "addSeal",
+        "activeSealCount": 4
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "sixth seal refused",
+      "input": {
+        "check": "addSeal",
+        "activeSealCount": 5
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "configured recipients",
+      "input": {
+        "check": "targets",
+        "configured": [
+          {
+            "phone": "01011112222"
+          }
+        ],
+        "representative": {
+          "phone": "01099998888"
+        }
+      },
+      "expected": [
+        {
+          "phone": "01011112222"
+        }
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "no configured falls back to representative",
+      "input": {
+        "check": "targets",
+        "configured": [],
+        "representative": {
+          "phone": "01099998888"
+        }
+      },
+      "expected": [
+        {
+          "phone": "01099998888"
+        }
+      ],
+      "derivation": "traced"
+    },
+    {
+      "name": "no one to notify",
+      "input": {
+        "check": "targets",
+        "configured": []
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "four recipients refused",
+      "input": {
+        "check": "targets",
+        "configured": [
+          {
+            "phone": "010-1"
+          },
+          {
+            "phone": "010-2"
+          },
+          {
+            "phone": "010-3"
+          },
+          {
+            "phone": "010-4"
+          }
+        ],
+        "representative": {
+          "phone": "010-9"
+        }
+      },
+      "expected": "RECIPIENT_LIMIT_EXCEEDED",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "지운 도장은 한도에 세지 않지만 지운 도장으로 찍은 완료 문서는 그대로 남습니다. 지운 도장 파일을 계속 보관할까요",
+    "대표자 연락처는 회사 컨텍스트 소유입니다. 문서 컨텍스트가 포트로 읽으면 될까요"
+  ]
+}

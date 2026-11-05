@@ -1,34 +1,29 @@
-import type { InsurancePremiums, SocialInsuranceInput, SocialInsuranceResult, TraceEntry } from './engine.types'
-import { applyPpm, formatPpm, formatWon, truncateTo } from './engine.utils'
-import type { PayrollRateTable } from './rate-table.types'
+import { applyPpm, formatPpm, formatWon, truncateTo } from './engine-math.ts'
+import type { InsurancePremiums, SocialInsuranceInput, SocialInsuranceResult, TraceEntry } from './engine.types.ts'
+import type { PayrollRateTable } from './rate-table.types.ts'
 
 /**
- * Calculates the employee and employer shares of the four social insurances for one month.
+ * 한 달 4대보험료의 근로자·사업주 부담분을 계산합니다.
  *
- * Rounding, per {@linkcode PayrollRateTable} (unverified practice):
+ * 절사 단위는 기준표 값입니다. 국민연금·건강보험·장기요양은 법령으로 확인했고(국민연금법 제117조, 국민건강보험법 제107조,
+ * 노인장기요양보험법 제64조), 고용·산재보험은 조문을 찾지 못해 미확인입니다.
  *
- * - 국민연금: 기준소득월액 is clamped to the base limits and truncated below
- *   1,000 won, then `base × rate` is truncated below 10 won.
- * - 건강보험: `보수월액 × rate`, truncated below 10 won.
- * - 장기요양: `건강보험료 × ratio`, truncated below 10 won, per side.
- * - 고용보험: `보수 × rate`, truncated below 10 won. The employer side adds the
- *   고용안정·직업능력개발 rate.
- * - 산재보험: employer only, `보수 × company rate`.
+ * - 국민연금: 기준소득월액을 상하한으로 자른 뒤 천원 미만 절사, `기준소득월액 × 요율`을 10원 미만 절사
+ * - 건강보험: `보수월액 × 요율`, 10원 미만 절사
+ * - 장기요양: 각 측 `건강보험료 × 비율`, 10원 미만 절사
+ * - 고용보험: `보수 × 요율`, 10원 미만 절사. 사업주는 고용안정·직업능력개발 요율을 더합니다
+ * - 산재보험: 사업주만 `보수 × 회사 요율`
  *
- * With `notice`, the noticed amount is taken as is and nothing is computed for
- * that insurance; with `exempt`, both sides are zero.
+ * `NOTICE`는 고지액을 그대로 쓰고 계산하지 않습니다. `EXEMPT`는 양쪽 모두 0입니다.
  *
- * @example A 3,000,000 won salary by rate
+ * @example 월 3,000,000원을 요율로
  * ```ts
- * import { calculateSocialInsurance } from './social-insurance'
- * import { RATES_2026_01 } from './rate-table-2026'
- *
  * const result = calculateSocialInsurance(
  *   {
  *     insurablePay: 3_000_000,
- *     nationalPension: { mode: 'rate' },
- *     healthInsurance: { mode: 'rate' },
- *     employmentInsurance: { mode: 'rate' },
+ *     nationalPension: { mode: 'RATE' },
+ *     healthInsurance: { mode: 'RATE' },
+ *     employmentInsurance: { mode: 'RATE' },
  *   },
  *   RATES_2026_01,
  * )
@@ -41,18 +36,18 @@ export function calculateSocialInsurance(input: SocialInsuranceInput, rates: Pay
   const employer = emptyPremiums()
 
   const pension = input.nationalPension
-  if (pension.mode === 'notice') {
+  if (pension.mode === 'NOTICE') {
     employee.nationalPension = pension.noticeAmount ?? 0
     employer.nationalPension = pension.employerNoticeAmount ?? employee.nationalPension
-    trace.push({ code: 'national_pension', label: '국민연금', amount: employee.nationalPension, formula: '고지 금액' })
-  } else if (pension.mode === 'rate') {
+    trace.push({ code: 'NATIONAL_PENSION', label: '국민연금', amount: employee.nationalPension, formula: '고지 금액' })
+  } else if (pension.mode === 'RATE') {
     const table = rates.nationalPension
     const reported = pension.baseMonthlyIncome ?? input.insurablePay
     const base = truncateTo(Math.min(Math.max(reported, table.baseMin), table.baseMax), table.baseRoundingUnit)
     employee.nationalPension = truncateTo(applyPpm(base, table.employeeRatePpm), table.premiumRoundingUnit)
     employer.nationalPension = truncateTo(applyPpm(base, table.employerRatePpm), table.premiumRoundingUnit)
     trace.push({
-      code: 'national_pension',
+      code: 'NATIONAL_PENSION',
       label: '국민연금',
       amount: employee.nationalPension,
       formula: `기준소득월액 ${formatWon(base)} × ${formatPpm(table.employeeRatePpm)} (${formatWon(table.baseMin)}~${formatWon(table.baseMax)}, ${table.premiumRoundingUnit}원 미만 절사)`,
@@ -60,29 +55,35 @@ export function calculateSocialInsurance(input: SocialInsuranceInput, rates: Pay
   }
 
   const health = input.healthInsurance
-  if (health.mode === 'notice') {
+  if (health.mode === 'NOTICE') {
     employee.healthInsurance = health.noticeAmount ?? 0
     employer.healthInsurance = health.employerNoticeAmount ?? employee.healthInsurance
     employee.longTermCare = health.longTermCareNoticeAmount ?? 0
     employer.longTermCare = employee.longTermCare
-    trace.push({ code: 'health_insurance', label: '건강보험', amount: employee.healthInsurance, formula: '고지 금액' })
-    trace.push({ code: 'long_term_care', label: '장기요양보험', amount: employee.longTermCare, formula: '고지 금액' })
-  } else if (health.mode === 'rate') {
+    trace.push({ code: 'HEALTH_INSURANCE', label: '건강보험', amount: employee.healthInsurance, formula: '고지 금액' })
+    trace.push({ code: 'LONG_TERM_CARE', label: '장기요양보험', amount: employee.longTermCare, formula: '고지 금액' })
+  } else if (health.mode === 'RATE') {
     const table = rates.healthInsurance
     const care = rates.longTermCare
     const base = health.baseMonthlyIncome ?? input.insurablePay
     employee.healthInsurance = truncateTo(applyPpm(base, table.employeeRatePpm), table.premiumRoundingUnit)
     employer.healthInsurance = truncateTo(applyPpm(base, table.employerRatePpm), table.premiumRoundingUnit)
-    employee.longTermCare = truncateTo(applyPpm(employee.healthInsurance, care.ratioOfHealthPpm), care.premiumRoundingUnit)
-    employer.longTermCare = truncateTo(applyPpm(employer.healthInsurance, care.ratioOfHealthPpm), care.premiumRoundingUnit)
+    employee.longTermCare = truncateTo(
+      applyPpm(employee.healthInsurance, care.ratioOfHealthPpm),
+      care.premiumRoundingUnit,
+    )
+    employer.longTermCare = truncateTo(
+      applyPpm(employer.healthInsurance, care.ratioOfHealthPpm),
+      care.premiumRoundingUnit,
+    )
     trace.push({
-      code: 'health_insurance',
+      code: 'HEALTH_INSURANCE',
       label: '건강보험',
       amount: employee.healthInsurance,
       formula: `${formatWon(base)} × ${formatPpm(table.employeeRatePpm)} (${table.premiumRoundingUnit}원 미만 절사)`,
     })
     trace.push({
-      code: 'long_term_care',
+      code: 'LONG_TERM_CARE',
       label: '장기요양보험',
       amount: employee.longTermCare,
       formula: `건강보험료 ${formatWon(employee.healthInsurance)} × ${formatPpm(care.ratioOfHealthPpm)} (${care.premiumRoundingUnit}원 미만 절사)`,
@@ -92,19 +93,25 @@ export function calculateSocialInsurance(input: SocialInsuranceInput, rates: Pay
   const employment = input.employmentInsurance
   const ei = rates.employmentInsurance
   const stabilityPpm = input.employerStabilityRatePpm ?? ei.employerStabilityRatePpm
-  if (employment.mode === 'notice') {
+  if (employment.mode === 'NOTICE') {
     employee.employmentInsurance = employment.noticeAmount ?? 0
     employer.employmentInsurance =
       employment.employerNoticeAmount ??
       truncateTo(applyPpm(input.insurablePay, ei.employerUnemploymentRatePpm + stabilityPpm), ei.premiumRoundingUnit)
-    trace.push({ code: 'employment_insurance', label: '고용보험', amount: employee.employmentInsurance, formula: '고지 금액' })
-  } else if (employment.mode === 'rate') {
-    const employeePpm = employment.kind === 'artist' ? ei.artistEmployeeRatePpm : ei.employeeRatePpm
-    const employerPpm = employment.kind === 'artist' ? ei.artistEmployeeRatePpm : ei.employerUnemploymentRatePpm + stabilityPpm
+    trace.push({
+      code: 'EMPLOYMENT_INSURANCE',
+      label: '고용보험',
+      amount: employee.employmentInsurance,
+      formula: '고지 금액',
+    })
+  } else if (employment.mode === 'RATE') {
+    const artist = employment.kind === 'ARTIST'
+    const employeePpm = artist ? ei.artistEmployeeRatePpm : ei.employeeRatePpm
+    const employerPpm = artist ? ei.artistEmployeeRatePpm : ei.employerUnemploymentRatePpm + stabilityPpm
     employee.employmentInsurance = truncateTo(applyPpm(input.insurablePay, employeePpm), ei.premiumRoundingUnit)
     employer.employmentInsurance = truncateTo(applyPpm(input.insurablePay, employerPpm), ei.premiumRoundingUnit)
     trace.push({
-      code: 'employment_insurance',
+      code: 'EMPLOYMENT_INSURANCE',
       label: '고용보험',
       amount: employee.employmentInsurance,
       formula: `${formatWon(input.insurablePay)} × ${formatPpm(employeePpm)} (${ei.premiumRoundingUnit}원 미만 절사)`,
@@ -121,13 +128,24 @@ export function calculateSocialInsurance(input: SocialInsuranceInput, rates: Pay
 }
 
 function emptyPremiums(): InsurancePremiums {
-  return { nationalPension: 0, healthInsurance: 0, longTermCare: 0, employmentInsurance: 0, industrialAccident: 0, total: 0 }
+  return {
+    nationalPension: 0,
+    healthInsurance: 0,
+    longTermCare: 0,
+    employmentInsurance: 0,
+    industrialAccident: 0,
+    total: 0,
+  }
 }
 
 function withTotal(premiums: InsurancePremiums): InsurancePremiums {
   return {
     ...premiums,
     total:
-      premiums.nationalPension + premiums.healthInsurance + premiums.longTermCare + premiums.employmentInsurance + premiums.industrialAccident,
+      premiums.nationalPension +
+      premiums.healthInsurance +
+      premiums.longTermCare +
+      premiums.employmentInsurance +
+      premiums.industrialAccident,
   }
 }

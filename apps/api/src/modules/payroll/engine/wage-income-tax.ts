@@ -1,8 +1,8 @@
-import type { SimpleTaxInput, SimpleTaxStrategy, TraceEntry, WageIncomeTaxSetting } from './engine.types'
-import { applyPpm, evaluateLinear, formatWon, mulDiv, truncateTo } from './engine.utils'
-import type { PayrollRateTable } from './rate-table.types'
+import { applyPpm, evaluateLinear, formatPpm, formatWon, mulDiv, truncateTo } from './engine-math.ts'
+import type { SimpleTaxInput, SimpleTaxStrategy, TraceEntry, WageIncomeTaxSetting } from './engine.types.ts'
+import type { PayrollRateTable } from './rate-table.types.ts'
 
-/** Intermediate amounts of the annual 간이세액 formula, for traces and tests. */
+/** 간이세액 연 산식의 중간 금액입니다. 계산식 표시와 테스트에 씁니다. */
 export interface AnnualSimpleTaxSteps {
   annualPay: number
   earnedIncomeDeduction: number
@@ -16,17 +16,17 @@ export interface AnnualSimpleTaxSteps {
   annualTax: number
 }
 
-/** One row of a generated or official 간이세액표: pay range and monthly tax by number of dependants. */
+/** 간이세액표 한 행입니다. 월 급여 구간과 공제대상가족 수별 월 세액입니다. */
 export interface SimpleTaxTableRow {
-  /** Lower bound of monthly pay (inclusive). */
+  /** 월 급여 하한(이상)입니다. */
   min: number
-  /** Upper bound of monthly pay (exclusive). */
+  /** 월 급여 상한(미만)입니다. */
   max: number
-  /** Monthly tax for 1 to 11 dependants, before the child credit and the withholding ratio. */
+  /** 공제대상가족 1~11명의 월 세액입니다. 자녀세액공제와 원천징수 비율을 적용하기 전입니다. */
   taxes: readonly number[]
 }
 
-/** Result of {@linkcode calculateWageIncomeTax}. */
+/** {@link calculateWageIncomeTax}의 결과입니다. */
 export interface WageIncomeTaxResult {
   incomeTax: number
   localIncomeTax: number
@@ -34,17 +34,22 @@ export interface WageIncomeTaxResult {
 }
 
 /**
- * Runs the annual formula behind the 간이세액표 for one monthly pay amount.
+ * 월 급여 하나로 간이세액표의 연 산식을 계산합니다.
  *
- * Steps: annualise (× 12) → 근로소득공제 (capped) → 인적공제 (1,500,000 per
- * dependant) → 연금보험료공제 (pension premium on the clamped pay × 12) →
- * 특별소득공제 estimate by dependants → progressive rates → 근로소득세액공제 and
- * its limit. Every step truncates below one won.
+ * 단계: 연 환산(× 12) → 근로소득공제(한도) → 인적공제(1인 150만원) → 연금보험료공제(상하한을 적용한 월급 ×
+ * 근로자 요율 × 12) → 가족 수별 특별소득공제(소득세법 시행령 별표 2 제1호 계산식) → 기본세율 → 근로소득세액공제와 한도. 단계마다 원 미만 절사입니다.
  */
-export function annualSimpleTaxSteps(monthlyPay: number, dependants: number, rates: PayrollRateTable): AnnualSimpleTaxSteps {
+export function annualSimpleTaxSteps(
+  monthlyPay: number,
+  dependants: number,
+  rates: PayrollRateTable,
+): AnnualSimpleTaxSteps {
   const table = rates.wageIncomeTax
   const annualPay = monthlyPay * 12
-  const earnedIncomeDeduction = Math.min(evaluateLinear(table.earnedIncomeDeduction, annualPay), table.earnedIncomeDeductionCap)
+  const earnedIncomeDeduction = Math.min(
+    evaluateLinear(table.earnedIncomeDeduction, annualPay),
+    table.earnedIncomeDeductionCap,
+  )
   const earnedIncome = Math.max(0, annualPay - earnedIncomeDeduction)
   const personalDeduction = table.personalDeductionPerDependant * Math.max(1, dependants)
   const pension = rates.nationalPension
@@ -53,7 +58,10 @@ export function annualSimpleTaxSteps(monthlyPay: number, dependants: number, rat
   const specialDeduction = specialDeductionEstimate(annualPay, dependants, rates)
   const taxBase = Math.max(0, earnedIncome - personalDeduction - pensionDeduction - specialDeduction)
   const calculatedTax = progressiveTax(taxBase, rates)
-  const earnedIncomeCredit = Math.min(earnedIncomeCreditOf(calculatedTax, rates), earnedIncomeCreditLimit(annualPay, rates))
+  const earnedIncomeCredit = Math.min(
+    earnedIncomeCreditOf(calculatedTax, rates),
+    earnedIncomeCreditLimit(annualPay, rates),
+  )
   return {
     annualPay,
     earnedIncomeDeduction,
@@ -68,14 +76,14 @@ export function annualSimpleTaxSteps(monthlyPay: number, dependants: number, rat
   }
 }
 
-/** Applies the progressive income tax rates to a tax base, truncating below one won. */
+/** 과세표준에 기본세율을 적용합니다. 원 미만 절사입니다. */
 export function progressiveTax(taxBase: number, rates: PayrollRateTable): number {
   const bracket = rates.wageIncomeTax.brackets.find((candidate) => candidate.upTo === null || taxBase <= candidate.upTo)
   if (bracket === undefined || taxBase <= 0) return 0
   return Math.max(0, applyPpm(taxBase, bracket.ratePpm) - bracket.progressiveDeduction)
 }
 
-/** Monthly 자녀세액공제 deducted from the 간이세액 for children aged 8 to 20. */
+/** 8~20세 자녀 수에 따른 월 자녀세액공제입니다. 간이세액에서 뺍니다. */
 export function childTaxCredit(children: number, rates: PayrollRateTable): number {
   const credit = rates.wageIncomeTax.childCreditMonthly
   if (children <= 0) return 0
@@ -84,10 +92,9 @@ export function childTaxCredit(children: number, rates: PayrollRateTable): numbe
 }
 
 /**
- * 간이세액 computed with the formula on the exact monthly pay.
+ * 실제 월 급여로 산식을 계산한 간이세액입니다.
  *
- * Differs from the official table by up to the tax on half a table row
- * (2,500–10,000 won of pay), because the table evaluates each row's midpoint.
+ * 공식 표는 행 중간값으로 계산하므로 행 폭 절반(2,500~10,000원)의 급여에 대한 세액만큼 다를 수 있습니다.
  */
 export const EXACT_FORMULA: SimpleTaxStrategy = {
   name: 'formula-exact',
@@ -95,12 +102,10 @@ export const EXACT_FORMULA: SimpleTaxStrategy = {
 }
 
 /**
- * 간이세액 computed with the formula on the midpoint of the 간이세액표 row the pay falls in.
+ * 급여가 속한 간이세액표 행의 중간값으로 산식을 계산한 간이세액입니다. 기본 전략입니다.
  *
- * This reproduces how the official table is built. Remaining differences come
- * from the unverified coefficients of the 특별소득공제 estimate, so treat the
- * result as an estimate until the official table is loaded through
- * {@linkcode lookupSimpleTaxTable}.
+ * 공식 표를 만드는 방식과 같습니다. 계수는 별표 2 원문으로 확인했지만 표 금액과는 차이가 남으므로(review.md D4),
+ * {@link lookupSimpleTaxTable}로 공식 표를 넣기 전까지 결과는 추정치이고 `wageIncomeTax.simpleTaxStrategy`가 미확인입니다.
  */
 export const MIDPOINT_FORMULA: SimpleTaxStrategy = {
   name: 'formula-midpoint',
@@ -108,26 +113,28 @@ export const MIDPOINT_FORMULA: SimpleTaxStrategy = {
 }
 
 /**
- * Builds a strategy that reads monthly tax from loaded 간이세액표 rows.
+ * 간이세액표 행에서 월 세액을 읽는 전략을 만듭니다.
  *
- * Pay above the last row and dependants beyond the row's columns fall back to
- * `fallback`; pay below the first row is taxed at zero.
+ * 마지막 행보다 큰 급여와 행에 없는 가족 수는 `fallback`으로 계산하고, 첫 행보다 작은 급여는 0입니다.
  *
- * @example Plugging in the official table
+ * @example 공식 표 넣기
  * ```ts
- * import { lookupSimpleTaxTable, MIDPOINT_FORMULA } from './wage-income-tax'
- *
  * const strategy = lookupSimpleTaxTable([{ min: 3_000_000, max: 3_020_000, taxes: [74_350] }], MIDPOINT_FORMULA)
  * ```
  */
-export function lookupSimpleTaxTable(rows: readonly SimpleTaxTableRow[], fallback: SimpleTaxStrategy): SimpleTaxStrategy {
+export function lookupSimpleTaxTable(
+  rows: readonly SimpleTaxTableRow[],
+  fallback: SimpleTaxStrategy,
+): SimpleTaxStrategy {
   const sorted = [...rows].sort((a, b) => a.min - b.min)
   return {
     name: 'table-lookup',
     monthlyTax: (input, rates): number => {
       const first = sorted[0]
       if (first !== undefined && input.monthlyTaxablePay < first.min) return 0
-      const row = sorted.find((candidate) => input.monthlyTaxablePay >= candidate.min && input.monthlyTaxablePay < candidate.max)
+      const row = sorted.find(
+        (candidate) => input.monthlyTaxablePay >= candidate.min && input.monthlyTaxablePay < candidate.max,
+      )
       const tax = row?.taxes[Math.max(1, input.dependants) - 1]
       if (tax === undefined) return fallback.monthlyTax(input, rates)
       return Math.max(0, tax - childTaxCredit(input.childrenAged8To20, rates))
@@ -135,18 +142,18 @@ export function lookupSimpleTaxTable(rows: readonly SimpleTaxTableRow[], fallbac
   }
 }
 
-/**
- * Generates 간이세액표 rows from the formula, one row per table band step.
- *
- * Used by `GET /api/tax-rates/simple` until the official table is loaded.
- */
+/** 산식으로 간이세액표 행을 만듭니다. 공식 표를 넣기 전까지 기준표 조회 응답에 씁니다. */
 export function generateSimpleTaxTable(rates: PayrollRateTable, maxDependants = 11): SimpleTaxTableRow[] {
   const rows: SimpleTaxTableRow[] = []
   for (const band of rates.wageIncomeTax.tableRowBands) {
     for (let min = band.from; min < band.to; min += band.step) {
       const midpoint = min + band.step / 2
       const taxes = Array.from({ length: maxDependants }, (_, index) =>
-        formulaMonthlyTax(midpoint, { monthlyTaxablePay: midpoint, dependants: index + 1, childrenAged8To20: 0 }, rates),
+        formulaMonthlyTax(
+          midpoint,
+          { monthlyTaxablePay: midpoint, dependants: index + 1, childrenAged8To20: 0 },
+          rates,
+        ),
       )
       rows.push({ min, max: min + band.step, taxes })
     }
@@ -155,21 +162,16 @@ export function generateSimpleTaxTable(rates: PayrollRateTable, maxDependants = 
 }
 
 /**
- * Calculates the monthly wage income tax and local income tax of one row.
+ * 행 하나의 월 근로소득세와 지방소득세를 계산합니다.
  *
- * Order: 간이세액 by the strategy (child credit included) → 중소기업 취업자
- * 감면 → withholding ratio (80/100/120%) → truncate below 10 won. Local income
- * tax is 10% of the income tax, truncated below 10 won. `manual_input` takes
- * the given amount; `none` withholds nothing.
+ * 순서: 전략으로 간이세액(자녀세액공제 포함) → 중소기업 취업자 감면 → 원천징수 비율(80/100/120%) →
+ * 10원 미만 절사. 지방소득세는 소득세의 10%를 10원 미만 절사합니다. `MANUAL`은 받은 금액을, `NONE`은 0을 씁니다.
  *
- * @example 3,000,000 won, one dependant, exact formula
+ * @example 월 3,000,000원, 공제대상가족 1명, 실제 급여 산식
  * ```ts
- * import { calculateWageIncomeTax, EXACT_FORMULA } from './wage-income-tax'
- * import { RATES_2026_01 } from './rate-table-2026'
- *
  * calculateWageIncomeTax(
  *   3_000_000,
- *   { method: 'tax_table_based', dependants: 1, childrenAged8To20: 0, withholdingRatio: 100 },
+ *   { method: 'TAX_TABLE', dependants: 1, childrenAged8To20: 0, withholdingRatePpm: 1_000_000 },
  *   RATES_2026_01,
  *   EXACT_FORMULA,
  * ) // { incomeTax: 59_080, localIncomeTax: 5_900, ... }
@@ -182,10 +184,10 @@ export function calculateWageIncomeTax(
   strategy: SimpleTaxStrategy,
 ): WageIncomeTaxResult {
   const unit = rates.wageIncomeTax.taxRoundingUnit
-  if (setting.method === 'none') return { incomeTax: 0, localIncomeTax: 0, trace: [] }
+  if (setting.method === 'NONE') return { incomeTax: 0, localIncomeTax: 0, trace: [] }
   let incomeTax: number
   let formula: string
-  if (setting.method === 'manual_input') {
+  if (setting.method === 'MANUAL') {
     incomeTax = setting.manualAmount ?? 0
     formula = '직접 입력'
   } else {
@@ -193,22 +195,30 @@ export function calculateWageIncomeTax(
       { monthlyTaxablePay, dependants: setting.dependants, childrenAged8To20: setting.childrenAged8To20 },
       rates,
     )
-    const reduction = setting.reduction === undefined ? 0 : Math.min(applyPpm(simple, setting.reduction.ratePpm), setting.reduction.remainingAnnualLimit)
-    incomeTax = truncateTo(mulDiv(Math.max(0, simple - reduction), setting.withholdingRatio, 100), unit)
-    formula = `간이세액(${strategy.name}) ${formatWon(simple)}${reduction > 0 ? ` − 감면 ${formatWon(reduction)}` : ''} × ${setting.withholdingRatio}% (공제대상가족 ${setting.dependants}명, 8~20세 자녀 ${setting.childrenAged8To20}명, ${unit}원 미만 절사)`
+    const reduction =
+      setting.reduction === undefined
+        ? 0
+        : Math.min(applyPpm(simple, setting.reduction.ratePpm), setting.reduction.remainingAnnualLimit)
+    incomeTax = truncateTo(mulDiv(Math.max(0, simple - reduction), setting.withholdingRatePpm, 1_000_000), unit)
+    formula = `간이세액(${strategy.name}) ${formatWon(simple)}${reduction > 0 ? ` − 감면 ${formatWon(reduction)}` : ''} × ${formatPpm(setting.withholdingRatePpm)} (공제대상가족 ${setting.dependants}명, 8~20세 자녀 ${setting.childrenAged8To20}명, ${unit}원 미만 절사)`
   }
   const localIncomeTax = localIncomeTaxOf(incomeTax, rates)
   return {
     incomeTax,
     localIncomeTax,
     trace: [
-      { code: 'income_tax', label: '소득세', amount: incomeTax, formula },
-      { code: 'local_income_tax', label: '지방소득세', amount: localIncomeTax, formula: `소득세 ${formatWon(incomeTax)} × 10% (${rates.localIncomeTax.roundingUnit}원 미만 절사)` },
+      { code: 'INCOME_TAX', label: '소득세', amount: incomeTax, formula },
+      {
+        code: 'LOCAL_INCOME_TAX',
+        label: '지방소득세',
+        amount: localIncomeTax,
+        formula: `소득세 ${formatWon(incomeTax)} × 10% (${rates.localIncomeTax.roundingUnit}원 미만 절사)`,
+      },
     ],
   }
 }
 
-/** Local income tax (지방소득세) on an income tax amount: 10%, truncated per the table. */
+/** 소득세에 대한 지방소득세입니다. 10%를 기준표 단위로 절사합니다. */
 export function localIncomeTaxOf(incomeTax: number, rates: PayrollRateTable): number {
   return truncateTo(applyPpm(incomeTax, rates.localIncomeTax.ratePpm), rates.localIncomeTax.roundingUnit)
 }
@@ -217,14 +227,19 @@ function formulaMonthlyTax(pay: number, input: SimpleTaxInput, rates: PayrollRat
   const table = rates.wageIncomeTax
   let monthly: number
   if (pay > table.highIncomeThreshold) {
-    const atThreshold = Math.floor(annualSimpleTaxSteps(table.highIncomeThreshold, input.dependants, rates).annualTax / 12)
+    const atThreshold = Math.floor(
+      annualSimpleTaxSteps(table.highIncomeThreshold, input.dependants, rates).annualTax / 12,
+    )
     monthly = truncateTo(atThreshold, table.taxRoundingUnit) + evaluateLinear(table.highIncomeBrackets, pay)
   } else if (pay < table.tableMinimumPay) {
     monthly = 0
   } else {
     monthly = Math.floor(annualSimpleTaxSteps(pay, input.dependants, rates).annualTax / 12)
   }
-  return truncateTo(Math.max(0, truncateTo(monthly, table.taxRoundingUnit) - childTaxCredit(input.childrenAged8To20, rates)), table.taxRoundingUnit)
+  return truncateTo(
+    Math.max(0, truncateTo(monthly, table.taxRoundingUnit) - childTaxCredit(input.childrenAged8To20, rates)),
+    table.taxRoundingUnit,
+  )
 }
 
 function tableMidpoint(pay: number, rates: PayrollRateTable): number {
@@ -240,7 +255,9 @@ function specialDeductionEstimate(annualPay: number, dependants: number, rates: 
   const bracket = group?.brackets.find((candidate) => candidate.upTo === null || annualPay <= candidate.upTo)
   if (bracket === undefined) return 0
   let value = bracket.base + applyPpm(annualPay, bracket.ratePpm)
-  for (const adjustment of bracket.adjustments) value += applyPpm(Math.max(0, annualPay - adjustment.over), adjustment.ratePpm)
+  for (const adjustment of bracket.adjustments) {
+    value += applyPpm(Math.max(0, annualPay - adjustment.over), adjustment.ratePpm)
+  }
   return Math.max(0, value)
 }
 
@@ -251,7 +268,9 @@ function earnedIncomeCreditOf(calculatedTax: number, rates: PayrollRateTable): n
 }
 
 function earnedIncomeCreditLimit(annualPay: number, rates: PayrollRateTable): number {
-  const limit = rates.wageIncomeTax.earnedIncomeCreditLimits.find((candidate) => candidate.upTo === null || annualPay <= candidate.upTo)
+  const limit = rates.wageIncomeTax.earnedIncomeCreditLimits.find(
+    (candidate) => candidate.upTo === null || annualPay <= candidate.upTo,
+  )
   if (limit === undefined) return 0
   return Math.max(limit.floor, limit.base - applyPpm(Math.max(0, annualPay - limit.over), limit.reductionPpm))
 }

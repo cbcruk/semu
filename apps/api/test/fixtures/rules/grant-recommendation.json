@@ -1,0 +1,162 @@
+{
+  "rule": "grant-recommendation",
+  "description": "Grant listing and tailored recommendation: show calls open today (start <= today <= end, or always-open), recommend up to 15 that match the company's industry and region (no industry filter when the industry is unclear), refreshed daily at 04:00; the legacy server skipped the start-date check and the 15 cap.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "121, 333" },
+    { "file": "alfred-manual/02-홈-Universal-Home/06-지원금-추천.md", "lines": "5-65" },
+    { "file": "apps/api/legacy/src/modules/platform/assistant/assistant.service.ts", "lines": "134-169" }
+  ],
+  "inputSchema": {
+    "side": "manual (product behaviour as documented) | legacy (recommendGrants).",
+    "list": "all (전체 지원금) | tailored (맞춤 추천).",
+    "today": "Business date YYYY-MM-DD.",
+    "company": "{industryCodes: [code] (empty when unclear), regionCode: string|null}.",
+    "grants": "[{id, applyStartOn, applyEndOn: date|null (상시), industryCodes: [code] (empty = any), regionCodes: [code] (empty = nationwide)}]."
+  },
+  "cases": [
+    {
+      "name": "all: open call is listed",
+      "input": { "side": "manual", "list": "all", "today": "2026-11-05", "grants": [{ "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": "2026-11-30", "industryCodes": [], "regionCodes": [] }] },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "all: call ending today is still listed",
+      "input": { "side": "manual", "list": "all", "today": "2026-11-05", "grants": [{ "id": "g1", "applyStartOn": "2026-10-01", "applyEndOn": "2026-11-05", "industryCodes": [], "regionCodes": [] }] },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "all: closed call is left out",
+      "input": { "side": "manual", "list": "all", "today": "2026-11-05", "grants": [{ "id": "g1", "applyStartOn": "2026-10-01", "applyEndOn": "2026-11-04", "industryCodes": [], "regionCodes": [] }] },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "all: call not started yet is left out",
+      "input": { "side": "manual", "list": "all", "today": "2026-11-05", "grants": [{ "id": "g1", "applyStartOn": "2026-11-06", "applyEndOn": "2026-12-31", "industryCodes": [], "regionCodes": [] }] },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "all: always-open call is listed from its start",
+      "input": { "side": "manual", "list": "all", "today": "2026-11-05", "grants": [{ "id": "g1", "applyStartOn": "2026-01-01", "applyEndOn": null, "industryCodes": [], "regionCodes": [] }] },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "tailored: industry and region both match",
+      "input": {
+        "side": "manual",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": ["J62"], "regionCode": "11" },
+        "grants": [
+          { "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": ["J62"], "regionCodes": ["11"] },
+          { "id": "g2", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": ["C10"], "regionCodes": ["11"] },
+          { "id": "g3", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": ["J62"], "regionCodes": ["26"] }
+        ]
+      },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "tailored: nationwide grant without industry limit matches every company",
+      "input": {
+        "side": "manual",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": ["J62"], "regionCode": "11" },
+        "grants": [{ "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": [], "regionCodes": [] }]
+      },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "tailored: unclear industry is not limited by industry",
+      "input": {
+        "side": "manual",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": [], "regionCode": "11" },
+        "grants": [{ "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": ["C10"], "regionCodes": ["11"] }]
+      },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "tailored: at most 15 recommendations",
+      "input": { "side": "manual", "list": "tailored", "today": "2026-11-05", "company": { "industryCodes": [], "regionCode": "11" }, "grantsMatching": 20 },
+      "expected": { "count": 15 },
+      "derivation": "traced"
+    },
+    {
+      "name": "list refreshes daily at 04:00",
+      "input": { "side": "manual", "list": "all", "event": "새 공고 신청 시작" },
+      "expected": { "visibleFrom": "다음 04:00 갱신" },
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: unclear industry matches only grants without industry limit",
+      "input": {
+        "side": "legacy",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": [], "regionCode": "11" },
+        "grants": [
+          { "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": ["C10"], "regionCodes": ["11"] },
+          { "id": "g2", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": [], "regionCodes": ["11"] }
+        ]
+      },
+      "expected": ["g2"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: call not started yet is still recommended",
+      "input": {
+        "side": "legacy",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": ["J62"], "regionCode": "11" },
+        "grants": [{ "id": "g1", "applyStartOn": "2026-12-01", "applyEndOn": "2026-12-31", "industryCodes": [], "regionCodes": [] }]
+      },
+      "expected": ["g1"],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: company without region misses region-limited grants",
+      "input": {
+        "side": "legacy",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": ["J62"], "regionCode": null },
+        "grants": [{ "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": [], "regionCodes": ["11"] }]
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "legacy: ordered by end date with always-open calls last, no 15 cap",
+      "input": {
+        "side": "legacy",
+        "list": "tailored",
+        "today": "2026-11-05",
+        "company": { "industryCodes": [], "regionCode": "11" },
+        "grants": [
+          { "id": "g1", "applyStartOn": "2026-11-01", "applyEndOn": null, "industryCodes": [], "regionCodes": [] },
+          { "id": "g2", "applyStartOn": "2026-11-01", "applyEndOn": "2026-12-31", "industryCodes": [], "regionCodes": [] },
+          { "id": "g3", "applyStartOn": "2026-11-01", "applyEndOn": "2026-11-20", "industryCodes": [], "regionCodes": [] }
+        ]
+      },
+      "expected": ["g3", "g2", "g1"],
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The manual says recommendations are chosen by AI, but only industry and region matching is documented; the ranking used to pick 15 out of more matches is unknown.",
+    "The legacy server treated a company with no industry as matching only unrestricted grants, the opposite of the manual's 'not limited by industry'.",
+    "The legacy server did not check the application start date, so calls that have not opened yet were recommended.",
+    "Where the company's industry and region come from (company settings address, hometax business types, or both) is not specified.",
+    "The grant data source (기업마당 or similar) and its industry and region code systems are unknown."
+  ]
+}

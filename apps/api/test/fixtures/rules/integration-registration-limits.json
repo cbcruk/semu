@@ -1,0 +1,151 @@
+{
+  "rule": "integration-registration-limits",
+  "description": "Per-type constraints when registering institution links: 20-item caps for cards, bank accounts, PG MIDs and delivery stores, PG key sets per PG company, refused CF_ Toss MIDs, ID/PW-only corporate cards, speed-bank-only banks, certificate-only Giro without storing Giro credentials, and hometax ID (lookup only) vs certificate (issuing).",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "91-103, 236-283", "origin": "index.pretty.js B:89170-89290, B:90244, B:89899" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/README.md", "lines": "28-96" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "25-44" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13-30, 54-61" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/07-KG이니시스.md", "lines": "27-40" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/06-나이스페이먼츠.md", "lines": "14, 32-46" },
+    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "82-120, 143-149" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.utils.ts", "lines": "8-31" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.service.ts", "lines": "57-200, 489-494" }
+  ],
+  "inputSchema": {
+    "type": "IntegrationType being registered: hometax | cardsales | creditcard | bank | speedbank | giro | pg | delivery.",
+    "existing": "Count of items (cards, accounts, PG MIDs, stores) already registered for the type, or existing links.",
+    "request": "Registration body in legacy wire terms: auth {account_id, account_pw} or {cert_id, sign_pw}; pg {pg_company, mid, keys}; delivery {delivery_corp}; card/bank {codes, is_corporate, selected}.",
+    "company": "{businessType: 'INDIVIDUAL'|'CORPORATION'}."
+  },
+  "cases": [
+    {
+      "name": "bank: 19 accounts registered, adding 1 is accepted",
+      "input": { "type": "bank", "existing": 19, "request": { "selected": 1 } },
+      "expected": { "ok": true, "maxRegisterBankAccountCount": 20 },
+      "derivation": "traced"
+    },
+    {
+      "name": "bank: 19 accounts registered, adding 2 exceeds 20",
+      "input": { "type": "bank", "existing": 19, "request": { "selected": 2 } },
+      "expected": { "ok": false, "status": 400, "field": "items" },
+      "derivation": "traced"
+    },
+    {
+      "name": "creditcard: selecting only already registered cards is refused",
+      "input": { "type": "creditcard", "existing": 3, "request": { "selected": 0, "alreadyRegistered": 2 } },
+      "expected": { "ok": false, "status": 400, "field": "cards" },
+      "derivation": "traced"
+    },
+    {
+      "name": "creditcard: ID login with two card companies at once is refused",
+      "input": { "type": "creditcard", "existing": 0, "request": { "codes": ["001", "002"], "auth": { "account_id": "biz", "account_pw": "***" } } },
+      "expected": { "ok": false, "status": 400, "field": "card_codes", "reason": "ID login covers one institution at a time" },
+      "derivation": "traced"
+    },
+    {
+      "name": "creditcard: corporate 하나·롯데·삼성 cards only via ID/PW",
+      "input": { "type": "creditcard", "company": { "businessType": "CORPORATION" }, "request": { "codes": ["하나", "롯데", "삼성"], "is_corporate": true, "auth": { "cert_id": "crt-1", "sign_pw": "***" } } },
+      "expected": { "ok": false, "manual": "하나/롯데/삼성 법인 카드의 경우에는 인증서 연동을 지원하지 않기 때문에, ID/PW 로그인 방식으로만 연동이 가능합니다." },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: TOSSPAYMENTS MID starting with CF_ is refused",
+      "input": { "type": "pg", "existing": 0, "request": { "pg_company": "TOSSPAYMENTS", "mid": "CF_shop01", "keys": { "secret_key": "sk" } } },
+      "expected": { "ok": false, "status": 400, "field": "mid" },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: CF_ prefix on another PG company is not checked",
+      "input": { "type": "pg", "existing": 0, "request": { "pg_company": "KSNET", "mid": "CF_shop01", "keys": { "reconciliation_api_key": "k" } } },
+      "expected": { "ok": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: NAVERPAY needs settlement_api_key, client_id, client_secret and chain_id",
+      "input": { "type": "pg", "existing": 0, "request": { "pg_company": "NAVERPAY", "mid": "np01", "keys": { "settlement_api_key": "k", "client_id": "c" } } },
+      "expected": { "ok": false, "status": 400, "field": "client_secret", "missing": ["client_secret", "chain_id"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: NICEPAY needs usr_id and merchant_key; secret keys are masked in responses",
+      "input": { "type": "pg", "existing": 0, "request": { "pg_company": "NICEPAY", "mid": "nice01", "keys": { "usr_id": "admin", "merchant_key": "mk" } } },
+      "expected": { "ok": true, "keys": { "usr_id": "admin", "merchant_key": "********" }, "ipWhitelist": "52.78.5.241" },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: same PG company with a second MID (단건 + 정기) is a separate link",
+      "input": { "type": "pg", "existing": 1, "existingLinks": [{ "pg_company": "TOSSPAYMENTS", "mid": "single01" }], "request": { "pg_company": "TOSSPAYMENTS", "mid": "billing01", "keys": { "secret_key": "sk" } } },
+      "expected": { "ok": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: same PG company and MID again is a conflict",
+      "input": { "type": "pg", "existing": 1, "existingLinks": [{ "pg_company": "TOSSPAYMENTS", "mid": "single01" }], "request": { "pg_company": "TOSSPAYMENTS", "mid": "single01", "keys": { "secret_key": "sk" } } },
+      "expected": { "ok": false, "status": 409, "code": "CONFLICT" },
+      "derivation": "traced"
+    },
+    {
+      "name": "pg: 20 MIDs registered, the 21st is refused",
+      "input": { "type": "pg", "existing": 20, "request": { "pg_company": "HECTO", "mid": "h21", "keys": { "license_key": "l" } } },
+      "expected": { "ok": false, "status": 400, "field": "mid", "maxRegisterPgCount": 20 },
+      "derivation": "traced"
+    },
+    {
+      "name": "delivery: account whose stores are all registered is a conflict",
+      "input": { "type": "delivery", "existing": 2, "request": { "delivery_corp": "baemin", "storesReported": 2, "storesNew": 0 } },
+      "expected": { "ok": false, "status": 409, "code": "CONFLICT" },
+      "derivation": "traced"
+    },
+    {
+      "name": "delivery: certificate login is not accepted",
+      "input": { "type": "delivery", "existing": 0, "request": { "delivery_corp": "yogiyo", "auth": { "cert_id": "crt-1", "sign_pw": "***" } } },
+      "expected": { "ok": false, "status": 400, "field": "cert_id" },
+      "derivation": "traced"
+    },
+    {
+      "name": "giro: ID/PW login is refused, a certificate is required",
+      "input": { "type": "giro", "request": { "auth": { "account_id": "giro", "account_pw": "***" } } },
+      "expected": { "ok": false, "status": 400, "field": "cert_id" },
+      "derivation": "traced"
+    },
+    {
+      "name": "giro: giro_id/giro_pw passed for signup or first login are not stored",
+      "input": { "type": "giro", "request": { "auth": { "cert_id": "crt-1", "sign_pw": "***" }, "giro_id": "myid", "giro_pw": "***" } },
+      "expected": { "ok": true, "storedCredential": null, "manual": "아이디, 비밀번호는 서비스에서 저장하지 않습니다." },
+      "derivation": "traced"
+    },
+    {
+      "name": "hometax: ID/PW link allows lookup only",
+      "input": { "type": "hometax", "request": { "auth": { "account_id": "hometax", "account_pw": "***" } } },
+      "expected": { "ok": true, "authType": "ID", "canIssueTaxInvoice": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "hometax: certificate link allows tax invoice issuing and may coexist with an ID link",
+      "input": { "type": "hometax", "existingLinks": [{ "authType": "ID" }], "request": { "auth": { "cert_id": "crt-1", "sign_pw": "***" } } },
+      "expected": { "ok": true, "authType": "CERTIFICATE", "canIssueTaxInvoice": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "hometax: second ID link is a conflict",
+      "input": { "type": "hometax", "existingLinks": [{ "authType": "ID" }], "request": { "auth": { "account_id": "hometax2", "account_pw": "***" } } },
+      "expected": { "ok": false, "status": 409, "code": "CONFLICT" },
+      "derivation": "traced"
+    },
+    {
+      "name": "speedbank: 신한은행 registers through the speed lookup account, not internet banking ID",
+      "input": { "type": "speedbank", "request": { "bank_code": "088", "auth": { "account_id": "quick", "account_pw": "***" } } },
+      "expected": { "ok": true, "authType": "speedbank", "usableForTaxFiling": true },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The 20-item cap is counted per item kind in legacy (cards, accounts, stores) but per link for PG, and whether inactive or deleted items count is not specified.",
+    "Which corporate card companies are ID/PW-only (하나·롯데·삼성 per the manual) and which banks are speed-lookup-only are manual text, not codes in the bundle; the legacy server enforces neither.",
+    "The CF_ restriction is described for Cafe24-issued Toss Payments MIDs; whether TOSSPAY or UPLUS MIDs can also start with CF_ is unknown.",
+    "Whether the hometax ID/PW of 세무신고 기관 연동 and the hometax ID link of 내역 수집 기관 연동 are the same record is unknown.",
+    "NICEPAY and INICIS need the fixed egress IP 52.78.5.241 whitelisted at the PG; the server cannot verify that before the first reconciliation call.",
+    "Legacy registration calls the scraping vendor synchronously with a 120s timeout; whether registration should become an asynchronous job is open."
+  ]
+}

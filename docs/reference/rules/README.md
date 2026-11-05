@@ -1,0 +1,81 @@
+# 현행 클라이언트 규칙
+
+현행 웹 클라이언트와 매뉴얼에 드러난 업무 규칙을 정리한 문서입니다. 서버로 옮길 때 무엇을 그대로 따르고 무엇을 바꿀지 정하는 근거로 씁니다.
+
+- **케이스 출처:** 각 규칙의 픽스처(`apps/api/test/fixtures/rules/<rule>.json`)는 엔트리 번들 분석([`docs/reference/spec/`](../spec/))과 매뉴얼([`alfred-manual/`](../../../alfred-manual/README.md))을 읽고 적은 케이스입니다. 화면 컴포넌트가 번들에 없어 원본 함수를 실행할 수 없으므로 모든 케이스가 `traced`입니다. 실제 서버는 호출하지 않았고 케이스의 회사·직원·금액 값은 모두 만든 값입니다
+- **현행 동작 그대로:** 버그로 보이는 동작도 고치지 않고 담았습니다. 각 문서의 "서버 이전 시 주의"와 픽스처의 `openQuestions`가 결정할 목록이고, 결정은 [`docs/design/rule-decisions/`](../../design/rule-decisions/README.md)에 있습니다
+- **원본 위치:** 번들 줄 번호는 spec 문서의 표기(`B:73510`)를 그대로 씁니다. 번들 자체는 이 저장소에 없으므로, 판단에 필요한 근거는 각 문서의 "근거" 절에 발췌해 두었습니다
+- **검사:** `pnpm test`가 픽스처 형식, `sources[].file` 경로, 문서 짝을 확인합니다 (`apps/api/test/rule-fixtures.test.ts`)
+
+규칙 68개, 케이스 765건 (모두 추적), 열린 질문 233개.
+
+| 영역 | 규칙 | 내용 | 케이스 | 열린 질문 |
+|---|---|---|---:|---:|
+| 세무 | [filing-status-transitions](filing-status-transitions.md) | Tax filing status transitions: allowed source states, the actor (client or agency) and guards of each named transition. | 35 | 8 |
+| 세무 | [filing-requirements](filing-requirements.md) | Requirement checklist copied into a filing, how client answers and attached files set each item, and the auto-linked payroll ledger item. | 18 | 6 |
+| 세무 | [filing-progress](filing-progress.md) | Legacy progress step shown for a filing status (6 VAT steps, 5 for other taxes) and the derived overdue flag. | 19 | 5 |
+| 세무 | [filing-deadline-rollover](filing-deadline-rollover.md) | Moves a statutory tax deadline past weekends and listed holidays to the next business day. | 13 | 3 |
+| 세무 | [filing-obligations](filing-obligations.md) | Which filings a general taxpayer owes (VAT, withholding, corporate and income tax), their periods and deadlines, and how the scheduler reconciles stored filings with them. | 26 | 6 |
+| 세무 | [action-card-lifecycle](action-card-lifecycle.md) | Home to-do cards opened and closed by filing transitions, the status a user closing a card gets, and list ordering. | 35 | 6 |
+| 세무 | [estimated-vat](estimated-vat.md) | Estimated VAT for the current quarter or half from collected evidence, and the half-yearly trend that prefers filed amounts for taxation customers. | 16 | 7 |
+| 인증·회사 | [terms-reagreement](terms-reagreement.md) | Client-side terms consent check: which purposes are checked (signup always, tax only for taxation companies), per-term needsConsent (required terms need an agreement at the current version, optional terms are asked again on every new version) and the redirect it triggers. | 20 | 6 |
+| 인증·회사 | [entry-guard-order](entry-guard-order.md) | Client route guard chain on every navigation (auth, signup consent, tax consent, company presence, menu access or promotion, system admin) with its redirect targets, plus the company selection priority and email-mismatch logout of app initialization. | 19 | 5 |
+| 인증·회사 | [menu-visibility](menu-visibility.md) | Menu tree filtering per user: business-type applicability, role-group permission (admin sees all), system-admin-only menus, plan entitlement with promotion nodes for free (and HQ-agency) companies, the payroll-subscriber exclusion of employee_management, tax-terms gate that keeps the menu but blocks data, and pruning of empty groups. | 20 | 6 |
+| 인증·회사 | [password-policy](password-policy.md) | Password rules: 8-20 characters mixing letters and digits (client), no whitespace (legacy server), confirmation match, demo accounts cannot change, change revokes sessions, and the reset flow (always 202, single-use token with a 30-minute expiry). | 19 | 5 |
+| 인증·회사 | [internal-invitation](internal-invitation.md) | Company user invitations: admin-only, 30-day validity derived from time, one pending invitation per company and email, members cannot be invited, only pending invitations can be canceled, re-invite after expiry or cancel, display status with remaining days, and acceptance rules for existing and new users. | 20 | 6 |
+| 인증·회사 | [business-number-checksum](business-number-checksum.md) | Check digits of the 10-digit business registration number (weights 1,3,7,1,3,7,1,3,5 plus floor(9th*5/10)) and the 13-digit corporate registration number (weights 1,2 alternating), after stripping hyphens. | 16 | 4 |
+| 결제 | [subscription-entitlement](subscription-entitlement.md) | Plan flags derived from the subscription list on the client (hasTaxPlan, hasPayrollPlan, isFree) and the legacy server's isSubscribedOn date window that feeds them and the taxPlan cache. | 15 | 5 |
+| 결제 | [payment-schedule](payment-schedule.md) | CMS auto-withdrawal of service fees: billing day moved past weekends and holidays, result reflected the next afternoon, D-1 notice, payment statuses and their transitions (retry is an agency action), and the 2025-12 payroll-only payment list. | 19 | 6 |
+| 연동 | [scrap-cooldown](scrap-cooldown.md) | Manual collection cooldown and progress: canScrapping/remainSeconds of the last scrap request (600s after a user request, blocked while a request runs until its 600s timeout), 429 on early requests, request-all skipping, and PROGRESS/SUCCESS/FAIL polling. | 17 | 6 |
+| 연동 | [scrap-retryable](scrap-retryable.md) | Whether the integration status screen offers 'retry' per integration type (hometax ID vs certificate, certificate-gated giro/bank, default-true cardsales/delivery, as-is pg/allra), and the legacy server's single-formula simplification. | 18 | 5 |
+| 연동 | [certificate-eligibility](certificate-eligibility.md) | Which joint certificates (공동인증서) a company may register and use per institution: owner must match the business or representative, allowed type/usage per business type and per institution (hometax, giro, bank, card), OID classification, derived status and remaining days. | 20 | 6 |
+| 연동 | [integration-registration-limits](integration-registration-limits.md) | Per-type constraints when registering institution links: 20-item caps for cards, bank accounts, PG MIDs and delivery stores, PG key sets per PG company, refused CF_ Toss MIDs, ID/PW-only corporate cards, speed-bank-only banks, certificate-only Giro without storing Giro credentials, and hometax ID (lookup only) vs certificate (issuing). | 20 | 6 |
+| 연동 | [chat-channel-token](chat-channel-token.md) | Consultation chat channel (KakaoTalk/Slack) link token: the client reads action=chat-integration links, verifies the token, lets the user pick a company and connects it; failures are the strings 'token is invalid|used|expired' matched verbatim by the client. | 11 | 5 |
+| AI 비서 | [assistant-tool-access](assistant-tool-access.md) | Who may open the AI assistant and which features it offers: the bundle gates /ai-agent and the top-bar AI input to the company's system admin, the manual lists features per plan for everyone, and the legacy server picked tools by menu access and plan; the three disagree. | 14 | 6 |
+| AI 비서 | [grant-recommendation](grant-recommendation.md) | Grant listing and tailored recommendation: show calls open today (start <= today <= end, or always-open), recommend up to 15 that match the company's industry and region (no industry filter when the industry is unclear), refreshed daily at 04:00; the legacy server skipped the start-date check and the 15 cap. | 14 | 5 |
+| 인사 | [employee-duplicate-rrn](employee-duplicate-rrn.md) | Blocks a second employee of the same kind with the same registration number unless the match has resigned and the new one is a rejoin. | 7 | 2 |
+| 인사 | [employee-status](employee-status.md) | Derives PRE_JOINED, JOINED, LEAVE or RESIGNED from join date, leave date and leave periods as of a date. | 9 | 2 |
+| 인사 | [legacy-employment-status](legacy-employment-status.md) | Maps the derived status and pending insurance filings to the legacy Korean employment status shown in the old employee list. | 7 | 2 |
+| 인사 | [contract-expiry-warning](contract-expiry-warning.md) | Lists the warnings behind the employee list warning icon: missing registration number, fixed-term contract expiring or expired, indefinite conversion target. | 9 | 3 |
+| 인사 | [work-contract-validation](work-contract-validation.md) | Validates a work contract: fixed-term end date, period order, probation months and reduced probation pay only for contracts of one year or longer. | 10 | 3 |
+| 인사 | [payroll-contract-wage](payroll-contract-wage.md) | Splits a payroll contract wage into base salary, base and ordinary hourly wages, fixed allowances and the minimum wage verdict. | 11 | 3 |
+| 인사 | [indefinite-conversion-alert](indefinite-conversion-alert.md) | Chains consecutive fixed-term contracts and flags employees whose chain reaches two years or will within 90 days, exempting those 55 or older at the chain start. | 7 | 3 |
+| 인사 | [social-insurance-eligibility](social-insurance-eligibility.md) | Recommends 4대보험 enrollment from age, work hours, executive status and foreign visa, with determination codes and messages. | 11 | 3 |
+| 인사 | [leave-validation](leave-validation.md) | Validates a leave of absence against the employment period, return date and other leaves, and fills expected return date and service-year inclusion. | 13 | 3 |
+| 인사 | [retirement-validation](retirement-validation.md) | Rejects a resignation whose leave date precedes the interim settlement or join date, or whose leaving reason is unknown. | 7 | 3 |
+| 인사 | [organization-unit-in-use](organization-unit-in-use.md) | A department or position that was ever assigned cannot be deleted; names are unique per company after trimming. | 6 | 2 |
+| 인사 | [deduction-validation](deduction-validation.md) | Validates withholding settings: manual tax amount, adjustment rate 80/100/120%, income tax reduction reason, period and rate, student loan. | 9 | 3 |
+| 인사 | [dependant-count](dependant-count.md) | Counts dependants for the simplified tax table (self plus year-end targets born by the date) and children aged 8 to 20 by year of birth. | 8 | 2 |
+| 전자서명·제증명 | [esign-request-transitions](esign-request-transitions.md) | E-sign request state machine: draft edits and sends, cancel while waiting, void after completion, revert or delete closed requests. | 17 | 3 |
+| 전자서명·제증명 | [esign-send-validation](esign-send-validation.md) | Checks an e-sign request before sending: recipient email and foreign visa, active templates, required admin fields, and the company seal to stamp. | 11 | 3 |
+| 전자서명·제증명 | [esign-identity-verification](esign-identity-verification.md) | Signer identity check: five failures lock the link, a mismatch reports remaining attempts, success resets failures; closed links refuse verification. | 8 | 2 |
+| 전자서명·제증명 | [certificate-issuance](certificate-issuance.md) | Certificate issue numbers YYYY-NNNN per company and year, and send/resend transitions; retirement certificates need a leave date. | 9 | 3 |
+| 전자서명·제증명 | [esign-settings-limits](esign-settings-limits.md) | A company keeps at most five active seals and three e-sign notification recipients; with none configured the representative is notified. | 6 | 2 |
+| 급여 | [social-insurance-premiums](social-insurance-premiums.md) | Employee social insurance premiums by rate: pension on a capped base truncated to 1,000 won, premiums truncated to 10 won. | 4 | 3 |
+| 급여 | [simple-income-tax](simple-income-tax.md) | Monthly wage income tax from the simple tax table formula, scaled by the withholding ratio; local income tax is 10%. | 6 | 3 |
+| 급여 | [daily-worker-withholding](daily-worker-withholding.md) | Daily worker tax: (daily pay - 150,000) x 6% less a 55% credit, exempt under 1,000 won; employment insurance only. | 3 | 3 |
+| 급여 | [business-income-withholding](business-income-withholding.md) | Business income withholds 3% plus 10% local tax, grosses up after-tax amounts, and adds artist employment insurance. | 4 | 3 |
+| 급여 | [other-income-withholding](other-income-withholding.md) | Other income tax: 20% of pay less necessary expenses, nothing when income is 50,000 won or less, plus 10% local tax. | 3 | 2 |
+| 급여 | [non-taxable-limits](non-taxable-limits.md) | Non-taxable wage items are capped at the smaller of the statutory and company limits; the excess becomes taxable. | 3 | 2 |
+| 급여 | [overtime-multipliers](overtime-multipliers.md) | Overtime, night and holiday premiums pay minutes x ordinary hourly rate x the company multiplier; under-five workplaces add no premium. | 3 | 2 |
+| 급여 | [wage-proration](wage-proration.md) | Monthly pay of a mid-month joiner or leaver is prorated by calendar days and truncated to the won. | 3 | 1 |
+| 급여 | [minimum-wage-warning](minimum-wage-warning.md) | A wage row whose minimum-wage pay per standard hour is below the hourly minimum gets a warning but is still saved. | 2 | 2 |
+| 급여 | [severance-pay](severance-pay.md) | Severance pays 30 days of average daily wage per year of service after a year, raised to ordinary wage, less retirement income tax. | 3 | 3 |
+| 급여 | [payroll-ledger-transitions](payroll-ledger-transitions.md) | Payroll ledger state machine: who may move a ledger between DRAFT, SUBMITTED, PENDING_APPROVAL and CLOSED, and which moves a filed withholding return locks. | 12 | 4 |
+| 급여 | [additional-payroll-ledger](additional-payroll-ledger.md) | An additional ledger needs a submitted regular ledger, no draft ledger, an unfiled withholding month, and more than five days before the 10th of the next month. | 6 | 2 |
+| 급여 | [duplicate-wage-income](duplicate-wage-income.md) | Wage income goes only on the regular ledger, at most one wage row per employee and attribution month. | 3 | 2 |
+| 급여 | [withholding-ledger-closed](withholding-ledger-closed.md) | A payment month counts as ledger-closed for withholding when it has ledgers and every ledger paid in it is CLOSED. | 4 | 2 |
+| 경리 | [classification-rule-matching](classification-rule-matching.md) | Whether an auto-classification rule matches a row and which conditions are valid for a rule scope. | 12 | 2 |
+| 경리 | [classification-apply-mode](classification-apply-mode.md) | What a matching rule writes to a row under fill-empty and overwrite modes, keeping manual classifications. | 7 | 1 |
+| 경리 | [account-title-constraints](account-title-constraints.md) | Which account titles can classify a row, when adding a sub-account creates an automatic etc account, and when deletion is allowed. | 16 | 2 |
+| 경리 | [settlement-match-status](settlement-match-status.md) | Evidence-link status of a bank transaction and the checks for replacing its settlement links. | 10 | 3 |
+| 경리 | [bank-balance-snapshot](bank-balance-snapshot.md) | Which daily closing balance wins, how a missing day carries the last balance, and how transactions derive a closing balance. | 9 | 2 |
+| 경리 | [partner-outstanding-amount](partner-outstanding-amount.md) | Realtime unsettled sales and purchase amounts per partner from classified evidence minus settlement links. | 4 | 2 |
+| 경리 | [business-status-cache](business-status-cache.md) | Whether a cached NTS business status lookup is still fresh for today. | 4 | 2 |
+| 경리 | [realtime-pl-inclusion](realtime-pl-inclusion.md) | Which classified evidence and bank transactions enter the realtime profit and loss, with which amount and sign. | 7 | 2 |
+| 경리 | [cash-status-other-change](cash-status-other-change.md) | Opening, deposit, withdrawal, other change and closing amounts of the cash status for a period. | 4 | 1 |
+| 경리 | [vat-due-date-approximation](vat-due-date-approximation.md) | Home summary VAT due date as the 25th of the month after the estimate period, without holiday adjustment. | 4 | 2 |
+| 경리 | [scraped-record-ingestion](scraped-record-ingestion.md) | Processing order of a scraped batch, how a card approval becomes purchase evidence, and which evidence records are rejected. | 9 | 3 |
+| 경리 | [evidence-amounts](evidence-amounts.md) | How missing supply, VAT and total amounts of evidence are filled in. | 8 | 2 |
+| 경리 | [sales-statement-totals](sales-statement-totals.md) | Validation of a sales statement's totals and invoice codes, its edit lock after issuance, and the item summary. | 10 | 3 |
+| 경리 | [giro-status-transitions](giro-status-transitions.md) | Giro bill status changes from user commands and from a full internet giro refresh. | 13 | 2 |

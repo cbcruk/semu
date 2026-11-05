@@ -1,129 +1,125 @@
-import type { PlainDate } from '../../../lib/plain-date.types'
-import type { NonTaxableCategory, PayrollRateTable, YearMonth } from './rate-table.types'
+import type { NonTaxableCategory, PayrollRateTable, YearMonth } from './rate-table.types.ts'
 
-/** One step of a calculation, shown behind the `fx` icon of an amount cell and on payslips. */
+/** 계산 한 단계입니다. 금액 셀의 `fx` 아이콘과 명세서에 보여 줍니다. */
 export interface TraceEntry {
   code: string
   label: string
   amount: number
-  /** Human-readable formula with the actual operands, such as `3,000,000 × 4.75%`. */
+  /** 실제 피연산자를 넣은 계산식입니다. 예: `3,000,000 × 4.75%` */
   formula: string
 }
 
-/** How a social insurance premium is deducted: by rate, by the agency's notice, or not at all. */
-export type InsuranceMode = 'rate' | 'notice' | 'exempt'
+/** 4대보험 공제 방식입니다. 요율로 계산(`RATE`), 공단 고지액(`NOTICE`), 공제하지 않음(`EXEMPT`)입니다. */
+export type InsuranceMode = 'RATE' | 'NOTICE' | 'EXEMPT'
 
-/** Per-insurance deduction setting for one row. */
+/** 행 하나의 보험별 공제 설정입니다. */
 export interface InsuranceSetting {
   mode: InsuranceMode
-  /** Employee premium from the agency notice, used when `mode` is `notice`. */
+  /** `NOTICE`일 때 쓰는 근로자 고지액입니다. */
   noticeAmount?: number
-  /** Employer premium from the notice; defaults to the employee notice amount for pension and health. */
+  /** 사업주 고지액입니다. 국민연금·건강보험은 없으면 근로자 고지액과 같습니다. */
   employerNoticeAmount?: number
 }
 
-/** Inputs of {@linkcode calculateSocialInsurance}. */
+/** {@link calculateSocialInsurance}의 입력입니다. */
 export interface SocialInsuranceInput {
-  /** Monthly pay subject to premiums (보수), normally taxable pay. */
+  /** 보험료 대상 보수(월)입니다. 보통 과세 급여입니다. */
   insurablePay: number
   nationalPension: InsuranceSetting & {
-    /** Reported 기준소득월액; defaults to `insurablePay`. */
+    /** 신고한 기준소득월액입니다. 없으면 `insurablePay`입니다. */
     baseMonthlyIncome?: number
   }
   healthInsurance: InsuranceSetting & {
-    /** Reported 보수월액; defaults to `insurablePay`. */
+    /** 신고한 보수월액입니다. 없으면 `insurablePay`입니다. */
     baseMonthlyIncome?: number
-    /** Long-term care premium from the notice when health insurance uses `notice`. */
+    /** 건강보험이 `NOTICE`일 때의 장기요양 고지액입니다. */
     longTermCareNoticeAmount?: number
   }
   employmentInsurance: InsuranceSetting & {
-    /** `artist` applies the 예술인·노무제공자 employee rate. */
-    kind?: 'standard' | 'artist'
+    /** `ARTIST`는 예술인·노무제공자 근로자 요율을 씁니다. */
+    kind?: 'STANDARD' | 'ARTIST'
   }
-  /** 산재보험 employer rate in ppm; defaults to the table's default rate. */
+  /** 산재보험 사업주 요율(ppm)입니다. 없으면 기준표 기본값입니다. */
   industrialAccidentRatePpm?: number
-  /** 고용안정·직업능력개발 employer rate in ppm, which depends on company size. */
+  /** 고용안정·직업능력개발 사업주 요율(ppm)입니다. 회사 규모마다 다릅니다. */
   employerStabilityRatePpm?: number
 }
 
-/** Premiums of the four social insurances for one side (employee or employer). */
+/** 한쪽(근로자 또는 사업주)의 4대보험료입니다. */
 export interface InsurancePremiums {
   nationalPension: number
   healthInsurance: number
   longTermCare: number
   employmentInsurance: number
-  /** Always zero on the employee side. */
+  /** 근로자 쪽은 항상 0입니다. */
   industrialAccident: number
   total: number
 }
 
-/** Result of {@linkcode calculateSocialInsurance}. */
+/** {@link calculateSocialInsurance}의 결과입니다. */
 export interface SocialInsuranceResult {
   employee: InsurancePremiums
   employer: InsurancePremiums
   trace: TraceEntry[]
 }
 
-/** 원천징수 비율 the employee chose for wage income tax (80/100/120%). */
-export type WithholdingRatio = 80 | 100 | 120
-
-/** Inputs of the simple wage income tax (간이세액) lookup. */
+/** 간이세액 계산 입력입니다. */
 export interface SimpleTaxInput {
-  /** Monthly taxable pay, excluding non-taxable allowances. */
+  /** 비과세를 뺀 월 과세 급여입니다. */
   monthlyTaxablePay: number
-  /** 공제대상가족 수 including the employee; at least 1. */
+  /** 본인을 포함한 공제대상가족 수입니다. 1 이상입니다. */
   dependants: number
-  /** Number of children aged 8 to 20 among the dependants. */
+  /** 공제대상가족 중 8~20세 자녀 수입니다. */
   childrenAged8To20: number
 }
 
 /**
- * Computes the monthly 간이세액 before the withholding ratio.
+ * 원천징수 비율을 곱하기 전의 월 간이세액을 구하는 방법입니다.
  *
- * Built-ins are {@linkcode EXACT_FORMULA}, {@linkcode MIDPOINT_FORMULA} and
- * {@linkcode lookupSimpleTaxTable}; a strategy backed by the official table can
- * replace them without touching callers.
+ * 내장 전략은 {@link EXACT_FORMULA}, {@link MIDPOINT_FORMULA}, {@link lookupSimpleTaxTable}입니다.
+ * 공식 간이세액표를 넣은 전략으로 바꿔도 호출하는 쪽은 바뀌지 않습니다.
  */
 export interface SimpleTaxStrategy {
   name: string
   monthlyTax(input: SimpleTaxInput, rates: PayrollRateTable): number
 }
 
-/** How wage income tax is withheld, mirroring `INCOME_TAX_CALC_METHOD`. */
-export type IncomeTaxMethod = 'tax_table_based' | 'manual_input' | 'none'
+/** 근로소득세 원천징수 방법입니다. 간이세액표(`TAX_TABLE`), 직접 입력(`MANUAL`), 미적용(`NONE`)입니다. */
+export type IncomeTaxMethod = 'TAX_TABLE' | 'MANUAL' | 'NONE'
 
-/** Wage income tax setting of one row. */
+/** 행 하나의 근로소득세 설정입니다. */
 export interface WageIncomeTaxSetting {
   method: IncomeTaxMethod
   dependants: number
   childrenAged8To20: number
-  withholdingRatio: WithholdingRatio
-  /** Income tax entered by hand when `method` is `manual_input`. */
+  /** 근로자가 고른 원천징수 비율(ppm)입니다. 80%·100%·120% 중 하나입니다. */
+  withholdingRatePpm: number
+  /** `MANUAL`일 때 손으로 넣은 소득세입니다. */
   manualAmount?: number
-  /** 중소기업 취업자 감면 applied monthly (`INCOME_TAX_REDUCTION_APPLICATION_TYPE = payroll`). */
+  /** 매월 반영하는 중소기업 취업자 감면입니다. */
   reduction?: { ratePpm: number; remainingAnnualLimit: number }
 }
 
-/** A payment item on a wage row: base pay, allowance or non-taxable benefit. */
+/** 근로 행의 지급 항목입니다. 기본급·수당·비과세 항목입니다. */
 export interface PaymentItemInput {
   code: string
   name: string
   amount: number
-  /** Statutory non-taxable category; `undefined` for taxable items. */
+  /** 법정 비과세 유형입니다. 과세 항목은 없습니다. */
   nonTaxableCategory?: NonTaxableCategory
-  /** Treats the whole amount as non-taxable without a limit, for amounts the caller already classified. */
+  /** 이미 분류한 금액이라 한도 없이 전액 비과세로 봅니다. */
   preclassifiedNonTaxable?: boolean
-  /** Company-set non-taxable limit, applied together with the statutory limit (the smaller wins). */
+  /** 회사가 정한 비과세 한도입니다. 법정 한도와 작은 쪽을 씁니다. */
   companyNonTaxableLimit?: number
-  /** Non-taxable amount of this category already used this year, for annual limits. */
+  /** 올해 이미 쓴 같은 유형의 비과세 금액입니다. 연 한도에 씁니다. */
   annualNonTaxableUsed?: number
   includeInOrdinaryWage?: boolean
   includeInMinimumWage?: boolean
-  /** Whether the item is prorated together with base pay. */
+  /** 기본급과 함께 일할계산하는 항목인지입니다. */
   prorate?: boolean
 }
 
-/** A payment line after non-taxable limits are applied. */
+/** 비과세 한도를 적용한 지급 줄입니다. */
 export interface PaymentLine {
   code: string
   name: string
@@ -133,7 +129,7 @@ export interface PaymentLine {
   formula: string
 }
 
-/** A deduction line: social insurance, taxes, or a company deduction item. */
+/** 공제 줄입니다. 4대보험, 세금, 회사 공제 항목입니다. */
 export interface DeductionLine {
   code: string
   name: string
@@ -141,157 +137,160 @@ export interface DeductionLine {
   formula: string
 }
 
-/** A company deduction item (선지급금, 동호회비…) entered on a row. */
+/** 행에 넣은 회사 공제 항목입니다. 선지급금, 동호회비 등입니다. */
 export interface OtherDeductionInput {
   code: string
   name: string
   amount: number
 }
 
-/** Premium multipliers of 연장·야간·휴일·휴일연장 work, from `payroll_terms`. */
+/** 연장·야간·휴일·휴일연장 지급배수(ppm)입니다. 1.5배는 `1_500_000`입니다. 급여 설정에서 옵니다. */
 export interface PremiumMultipliers {
-  overtime: number
-  night: number
-  holiday: number
-  holidayOvertime: number
+  overtimeRatePpm: number
+  nightRatePpm: number
+  holidayRatePpm: number
+  holidayOvertimeRatePpm: number
 }
 
-/** Hours worked in a month, from the work sheet. All values are decimal hours. */
-export interface WorkHoursInput {
-  /** Regular hours paid at the base rate (hourly workers). */
-  regularHours?: number
-  overtimeHours?: number
-  nightHours?: number
-  holidayHours?: number
-  holidayOvertimeHours?: number
-  /** Late arrival, early leave and absence hours deducted from monthly pay. */
-  absenceHours?: number
-  /** Weeks whose 주휴 is forfeited by absence (monthly pay), deducted at the daily rest hours. */
+/** 근무 시트의 월 근무 시간입니다. 모두 분 단위 정수입니다. */
+export interface WorkMinutesInput {
+  /** 시급제의 기본 시간입니다. */
+  regularMinutes?: number
+  overtimeMinutes?: number
+  nightMinutes?: number
+  holidayMinutes?: number
+  holidayOvertimeMinutes?: number
+  /** 월급제에서 빼는 지각·조퇴·결근 시간입니다. */
+  absenceMinutes?: number
+  /** 결근으로 주휴를 잃은 일수입니다(월급제). 1일 주휴시간만큼 공제합니다. */
   weeklyHolidayDeductionDays?: number
 }
 
-/** Proration (일할계산) of monthly items. */
+/** 일할계산 방식입니다. 역일(`CALENDAR_DAYS`) 또는 소정근로일(`SCHEDULED_DAYS`)로 나눕니다. */
+export type ProrationMethod = 'CALENDAR_DAYS' | 'SCHEDULED_DAYS'
+
+/** 월 단위 항목의 일할계산 입력입니다. */
 export interface ProrationInput {
-  method: 'calendar_days' | 'scheduled_days'
-  /** Days the employee was employed and paid within the period. */
+  method: ProrationMethod
+  /** 기간 안에서 재직하고 급여를 받는 일수입니다. */
   payableDays: number
-  /** Calendar days of the month, or scheduled work days for `scheduled_days`. */
+  /** 그 달 역일수, 또는 `SCHEDULED_DAYS`면 소정근로일수입니다. */
   totalDays: number
 }
 
-/** Fields shared by every wage row. */
 interface WageRowBase {
   attributionMonth: YearMonth
   paymentItems: readonly PaymentItemInput[]
-  work?: WorkHoursInput
+  work?: WorkMinutesInput
   multipliers: PremiumMultipliers
-  /** 월 소정근로시간 including paid weekly rest; 209 for a 40-hour week. */
+  /** 유급 주휴를 포함한 월 소정근로시간입니다. 주 40시간이면 209입니다. */
   monthlyStandardHours: number
-  /** 1일 주휴시간, used for 주휴 allowances and deductions. */
-  dailyRestHours?: number
+  /** 1일 주휴시간(분)입니다. 주휴수당과 주휴공제에 씁니다. 없으면 480분입니다. */
+  dailyRestMinutes?: number
   insurance: Omit<SocialInsuranceInput, 'insurablePay'>
   incomeTax: WageIncomeTaxSetting
   otherDeductions?: readonly OtherDeductionInput[]
 }
 
-/** A monthly-salaried wage row (`wage-monthly`). */
+/** 월급제 근로 행입니다. */
 export interface MonthlyWageRowInput extends WageRowBase {
-  incomeType: 'wage_monthly'
+  incomeType: 'WAGE_MONTHLY'
   basePay: number
   proration?: ProrationInput
 }
 
-/** An hourly-paid wage row (`wage-hourly`). */
+/** 시급제 근로 행입니다. */
 export interface HourlyWageRowInput extends WageRowBase {
-  incomeType: 'wage_hourly'
+  incomeType: 'WAGE_HOURLY'
   hourlyWage: number
-  /** Weeks in the month that earn 주휴수당 (소정근로일 개근 and 15+ hours a week). */
+  /** 주휴수당을 받는 주 수입니다(소정근로일 개근, 주 15시간 이상). */
   weeklyHolidayWeeks?: number
 }
 
-/** A daily-paid wage row (`wage-daily`), distinct from daily workers. */
+/** 일급제 근로 행입니다. 일용근로소득과 다릅니다. */
 export interface DailyWageRowInput extends WageRowBase {
-  incomeType: 'wage_daily'
+  incomeType: 'WAGE_DAILY'
   dailyWage: number
   workedDays: number
-  /** 1일 소정근로시간 used to derive the hourly rate; defaults to 8. */
-  dailyContractualHours?: number
+  /** 시간당 임금을 구할 1일 소정근로시간(분)입니다. 없으면 480분입니다. */
+  dailyContractualMinutes?: number
   weeklyHolidayWeeks?: number
 }
 
-/** Any wage row. */
+/** 근로 행입니다. */
 export type WageRowInput = MonthlyWageRowInput | HourlyWageRowInput | DailyWageRowInput
 
-/** A daily worker row (일용근로소득, `daily`). */
+/** 일용근로소득 행입니다. */
 export interface DailyWorkerRowInput {
-  incomeType: 'daily'
+  incomeType: 'DAILY'
   attributionMonth: YearMonth
-  /** Total pay of the row. */
+  /** 행의 지급 총액입니다. */
   payAmount: number
   workDays: number
-  /** Pay of each work day; when omitted the total is split evenly. */
+  /** 근무일별 지급액입니다. 없으면 총액을 균등 분할합니다. */
   dailyPays?: readonly number[]
-  /** Average hours per work day, used for the social insurance threshold. */
-  averageDailyHours?: number
+  /** 1일 평균 근무시간(분)입니다. 4대보험 가입 기준 판정에 씁니다. */
+  averageDailyMinutes?: number
   insurance: Omit<SocialInsuranceInput, 'insurablePay'>
   otherDeductions?: readonly OtherDeductionInput[]
 }
 
-/** Whether a row's amount is before tax (`before_tax`) or the net amount to be grossed up (`after_tax`). */
-export type TaxDeductionMode = 'before_tax' | 'after_tax'
+/** 지급액이 세전(`BEFORE_TAX`)인지, 역산할 세후 금액(`AFTER_TAX`)인지입니다. */
+export type TaxDeductionMode = 'BEFORE_TAX' | 'AFTER_TAX'
 
-/** A business income row (사업소득, `business`). */
+/** 사업소득 행입니다. */
 export interface BusinessRowInput {
-  incomeType: 'business'
+  incomeType: 'BUSINESS'
   attributionMonth: YearMonth
   payAmount: number
   taxDeductionMode?: TaxDeductionMode
-  /** 예술인·노무제공자 employment insurance. */
+  /** 예술인·노무제공자 고용보험입니다. */
   employmentInsurance?: { applicable: boolean; insurableEarnings?: number }
   otherDeductions?: readonly OtherDeductionInput[]
 }
 
-/** How necessary expenses of other income are determined. */
-export type NecessaryExpense = { kind: 'deemed'; ratePpm: number } | { kind: 'actual'; amount: number }
+/** 기타소득 필요경비를 정하는 방법입니다. 의제 경비율 또는 실제 경비입니다. */
+export type NecessaryExpense = { kind: 'DEEMED'; ratePpm: number } | { kind: 'ACTUAL'; amount: number }
 
-/** An other income row (기타소득, `other`). */
+/** 기타소득 행입니다. */
 export interface OtherIncomeRowInput {
-  incomeType: 'other'
+  incomeType: 'OTHER'
   attributionMonth: YearMonth
   payAmount: number
   necessaryExpense: NecessaryExpense
-  /** Income tax rate in ppm; defaults to the table's 20%. */
+  /** 소득세율(ppm)입니다. 없으면 기준표의 20%입니다. */
   taxRatePpm?: number
   taxDeductionMode?: TaxDeductionMode
   otherDeductions?: readonly OtherDeductionInput[]
 }
 
-/** Input of {@linkcode calculatePayrollRow}, discriminated by `incomeType`. */
+/** {@link calculatePayrollRow}의 입력입니다. `incomeType`으로 구분합니다. */
 export type PayrollRowInput = WageRowInput | DailyWorkerRowInput | BusinessRowInput | OtherIncomeRowInput
 
-/** Income type of a payroll row, matching the BPO segments with underscores. */
+/** 급여 행의 소득 구분입니다. */
 export type PayrollIncomeType = PayrollRowInput['incomeType']
 
-/** Options of {@linkcode calculatePayrollRow}. */
+/** {@link calculatePayrollRow}의 선택 입력입니다. */
 export interface PayrollRowOptions {
-  /** Strategy for 간이세액; defaults to {@linkcode MIDPOINT_FORMULA}. */
+  /** 간이세액 전략입니다. 없으면 {@link MIDPOINT_FORMULA}입니다. */
   simpleTax?: SimpleTaxStrategy
 }
 
-/** Warning codes raised without blocking the calculation. */
-export type PayrollWarningCode = 'BELOW_MINIMUM_WAGE' | 'NON_TAXABLE_LIMIT_EXCEEDED' | 'DAILY_WORKER_SOCIAL_INSURANCE_REQUIRED'
+/** 계산을 막지 않는 경고 코드입니다. */
+export type PayrollWarningCode =
+  'BELOW_MINIMUM_WAGE' | 'NON_TAXABLE_LIMIT_EXCEEDED' | 'DAILY_WORKER_SOCIAL_INSURANCE_REQUIRED'
 
-/** A non-blocking warning attached to a result. */
+/** 계산 결과에 붙는 경고입니다. 저장을 막지 않습니다. */
 export interface PayrollWarning {
   code: PayrollWarningCode
   message: string
 }
 
-/** Result of {@linkcode calculatePayrollRow}. */
+/** {@link calculatePayrollRow}의 결과입니다. */
 export interface PayrollRowResult {
   incomeType: PayrollIncomeType
   attributionMonth: YearMonth
-  /** Effective month of the rate table that was used. */
+  /** 계산에 쓴 기준표의 적용 시작월입니다. */
   rateTable: YearMonth
   payments: PaymentLine[]
   grossPay: number
@@ -303,35 +302,35 @@ export interface PayrollRowResult {
   deductions: DeductionLine[]
   deductionTotal: number
   netPay: number
-  /** Employer share of social insurance, for labour cost reports. */
+  /** 사업주 부담 4대보험 합계입니다. 인건비 보고서에 씁니다. */
   employerInsuranceTotal: number
   breakdown: TraceEntry[]
   warnings: PayrollWarning[]
 }
 
-/** Inputs of {@linkcode calculateSeverancePay}. */
+/** {@link calculateSeverancePay}의 입력입니다. 날짜는 `YYYY-MM-DD`입니다. */
 export interface SeveranceInput {
-  joinDate: PlainDate
-  /** Last day worked; the retirement date (산정사유 발생일) is the next day. */
-  lastWorkDate: PlainDate
-  /** Wages paid in the three calendar months before the retirement date. */
+  joinDate: string
+  /** 마지막 근무일입니다. 퇴직일(산정사유 발생일)은 그다음 날입니다. */
+  lastWorkDate: string
+  /** 퇴직일 이전 3개 역월에 지급한 임금입니다. */
   threeMonthWages: number
-  /** Days in that three-month period; defaults to {@linkcode averageWagePeriodDays}. */
+  /** 그 3개월의 일수입니다. 없으면 {@link averageWagePeriodDays}입니다. */
   threeMonthDays?: number
-  /** Annual bonus paid in the last 12 months; 3/12 is added. */
+  /** 최근 12개월 상여 총액입니다. 3/12을 더합니다. */
   annualBonus?: number
-  /** Unused annual leave pay of the previous year; 3/12 is added. */
+  /** 전년도 미사용 연차수당입니다. 3/12을 더합니다. */
   annualLeavePay?: number
-  /** 1일 통상임금, used when it exceeds the average daily wage. */
+  /** 1일 통상임금입니다. 평균임금보다 높으면 이것을 씁니다. */
   ordinaryDailyWage?: number
 }
 
-/** Result of {@linkcode calculateSeverancePay}. */
+/** {@link calculateSeverancePay}의 결과입니다. */
 export interface SeveranceResult {
   eligible: boolean
   serviceDays: number
   averageDailyWage: number
-  /** Whether the ordinary daily wage replaced a lower average daily wage. */
+  /** 통상임금(일)이 더 낮은 평균임금을 대신했는지입니다. */
   usedOrdinaryWage: boolean
   severancePay: number
   retirementIncomeTax: number

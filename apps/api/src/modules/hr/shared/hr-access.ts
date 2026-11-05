@@ -1,21 +1,14 @@
-import type { MiddlewareHandler } from 'hono'
-import type { AppEnv } from '../../../app.types'
-import { assertAllowed } from '../../../middleware/access'
-import { decide } from '../../access/access'
-import type { MenuCode } from '../../access/access.types'
+import { EntitlementRequired, PermissionDenied, TermsReagreementRequired } from '../../../shared/problem/problem.ts'
+import type { Permission, Plan } from '../../identity-access/actor.types.ts'
+import type { AccessRequirement } from '../../identity-access/authorization.ts'
 
-/**
- * Allows the request when the user may open any one of the menus.
- *
- * Shared lookups such as departments or templates are read from several
- * screens, so they accept any of those screens' menus. When every menu is
- * denied, the first menu's denial decides the error.
- */
-export function requireAnyMenu(codes: readonly [MenuCode, ...MenuCode[]]): MiddlewareHandler<AppEnv> {
-  return async (c, next): Promise<void> => {
-    const decisions = codes.map((code) => decide(c.var.access, code))
-    const allowed = decisions.find((decision) => decision.ok)
-    assertAllowed(allowed ?? decisions[0] ?? { ok: false, reason: 'NOT_FOUND', promotionUrl: null })
-    await next()
-  }
+/** 인사 기능을 쓰는 플랜입니다. 급여·세무 중 하나만 구독해도 됩니다. */
+export const HR_PLANS: ReadonlyArray<Plan> = ['PAYROLL', 'TAXATION']
+
+/** 인증이 필요한 모든 인사 엔드포인트가 선언하는 접근 오류입니다. */
+export const ACCESS_ERRORS = [PermissionDenied, EntitlementRequired, TermsReagreementRequired] as const
+
+/** 인사 엔드포인트의 접근 요건입니다. 약관 동의가 필요합니다. */
+export function hrAccess(permission: Permission): AccessRequirement {
+  return { permission, plans: HR_PLANS, requiresTerms: true }
 }
