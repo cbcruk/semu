@@ -86,4 +86,5 @@ flowchart LR
 | [events.md](events.md) | 도메인 이벤트와 컨텍스트 간 연계 |
 | [compliance.md](compliance.md) | 세법·개인정보 법적 요구가 설계에 주는 제약 |
 | [review.md](review.md) | 설계 검토: 현행 대비 매핑, 위험, 결정 필요 사항 |
+| [bff.md](bff.md) | 현행 클라이언트 호환 계층: 위치, 인증·회사 전환 번역, 키·enum·오류 번역, 화면 이전과 폐기 (D2) |
 | [rule-decisions/](rule-decisions/README.md) | 현행 클라이언트 규칙의 열린 질문에 대한 서버 결정 (컨텍스트별) |

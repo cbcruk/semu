@@ -46,6 +46,8 @@ export interface HttpTestJson {
 
 /** 같은 저장소를 공유하며 여러 요청을 보내는 테스트 앱입니다. */
 export interface HttpTestApp {
+  /** 앱의 웹 핸들러입니다. 경로를 그대로 받습니다. 다른 앱(BFF)이 이 API를 프로세스 안에서 부를 때 씁니다. */
+  handler(request: Request): Promise<Response>
   request(method: string, path: string, options?: HttpTestRequest): Promise<HttpTestResponse>
   /** 요청을 보내고 상태·헤더·JSON 본문을 함께 돌려줍니다. */
   json(method: string, path: string, options?: HttpTestRequest): Promise<HttpTestJson>
@@ -93,6 +95,7 @@ export function httpTestApp(options: HttpTestAppOptions = {}): HttpTestApp {
     return app.handler(new Request(`http://localhost${basePath}${path}`, requestInit))
   }
   return {
+    handler: (request) => app.handler(request),
     request,
     json: async (method, path, init) => {
       const response = await request(method, path, init)

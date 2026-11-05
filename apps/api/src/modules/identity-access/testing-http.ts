@@ -13,6 +13,8 @@ export type TestResponse = HttpTestResponse
 
 /** 메모리 저장소와 데모 시드로 띄운 앱입니다. 테스트 하나가 상태를 공유하며 여러 요청을 보냅니다. */
 export interface TestApp {
+  /** 앱의 웹 핸들러입니다. 다른 앱(BFF)이 이 API를 프로세스 안에서 부를 때 씁니다. */
+  handler(request: Request): Promise<Response>
   request(method: string, path: string, options?: TestRequest): Promise<TestResponse>
   /** 데모 계정으로 로그인하고 access token과 refresh 쿠키를 돌려줍니다. */
   signIn(email: string, options?: { companyId?: string; password?: string }): Promise<SignedIn>
@@ -66,7 +68,7 @@ export function makeTestApp(): TestApp {
     if (mail === undefined) throw new Error('no mail was sent')
     return mail.token
   }
-  return { request: app.request, signIn, lastMailToken, dispose: app.dispose }
+  return { handler: app.handler, request: app.request, signIn, lastMailToken, dispose: app.dispose }
 }
 
 /** 응답의 `Set-Cookie`에서 다음 요청에 보낼 `name=value`만 꺼냅니다. */
