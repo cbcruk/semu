@@ -1,4 +1,4 @@
-import { Effect } from 'effect'
+import { Effect, Option } from 'effect'
 import type { Id } from '../../shared/ids/ids.types.ts'
 import { systemAccountTitleIdOf } from './account-titles/system-account-titles.ts'
 import type { ClassificationRuleRecord } from './classification/classification-rule.types.ts'
@@ -20,6 +20,9 @@ import type { PartnerRecord } from './partners/partner.types.ts'
 export const DEMO_COMPANY_ID = 'cmp_01JBQ000000000000000000001' as Id<'company'>
 
 const SEEDED_AT = '2026-11-01T06:00:00+09:00'
+
+/** 데모 시드가 마지막에 쓰는 입출금–증빙 연결입니다. 있으면 시드를 이미 넣은 것입니다. */
+const DEMO_SETTLEMENT_LINK_ID = 'stl_01JBQ000000000000000000001' as Id<'settlementLink'>
 
 /** 데모 거래처 ID입니다. */
 export const DEMO_PARTNERS = {
@@ -269,6 +272,8 @@ const GIROS: GiroRecord[] = [
 /**
  * 현행 데모 시드(`legacy/src/db/seeds/`)의 숫자를 옮긴 데모 데이터를 넣습니다. 수집은 실제 수신 서비스를 거칩니다.
  *
+ * 데모 연결이 이미 있으면 아무것도 하지 않습니다(재시작에 멱등).
+ *
  * 2026년 10월 실시간 손익(공급가액 기준): 매출 44,000,000, 매출원가 10,000,000, 판관비 11,000,000,
  * 영업외수익 30,000, 순이익 23,030,000. 10월 31일 자금: 시작 71,730,000, 입금 2,000,000, 출금 −300,000,
  * 기타 20,000, 마감 73,450,000.
@@ -281,6 +286,10 @@ export const seedDemo = Effect.gen(function* () {
   const links = yield* SettlementLinkRepository
   const giros = yield* GiroRepository
   const ingestion = yield* ScrapedRecordIngestion
+
+  // 저장소가 SQLite면 재시작해도 데이터가 남습니다. 마지막에 쓰는 연결이 있으면 이미 넣은 것이니, 사용자가 바꾼 값을 덮어쓰지 않도록 건너뜁니다.
+  // 중간에 멈췄다면 처음부터 다시 넣습니다. 고정 ID와 수집 `externalKey`로 맞추므로 중복이 생기지 않습니다.
+  if (Option.isSome(yield* links.findById(DEMO_COMPANY_ID, DEMO_SETTLEMENT_LINK_ID))) return
 
   yield* partners.saveAll([
     partner(DEMO_PARTNERS.ecopro, '에코프로비엠', '1108100011', 'SALES'),
@@ -321,7 +330,7 @@ export const seedDemo = Effect.gen(function* () {
   const invoice = byKey.get('20261005-41000000-00000001')
   if (salesIn !== undefined && invoice !== undefined) {
     yield* links.save({
-      id: 'stl_01JBQ000000000000000000001' as Id<'settlementLink'>,
+      id: DEMO_SETTLEMENT_LINK_ID,
       companyId: DEMO_COMPANY_ID,
       bankTransactionId: salesIn.id,
       evidenceId: invoice.id,

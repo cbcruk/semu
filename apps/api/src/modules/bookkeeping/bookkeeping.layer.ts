@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { AccountTitleService } from './account-titles/account-title-service.ts'
 import { AccountTitlesHttpLive } from './account-titles/account-titles.http.ts'
 import { BankService } from './bank/bank-service.ts'
@@ -6,7 +7,7 @@ import { BankHttpLive } from './bank/bank.http.ts'
 import { ClassificationRuleService } from './classification/classification-rule-service.ts'
 import { ClassificationRulesHttpLive } from './classification/classification-rules.http.ts'
 import { Classifier } from './classification/classifier.ts'
-import { BookkeepingRepositoriesMemory } from './common/repositories.ts'
+import { BookkeepingRepositoriesLive } from './common/repositories.ts'
 import { seedDemo } from './demo-seed.ts'
 import { EvidenceService } from './evidence/evidence-service.ts'
 import { EvidenceHttpLive } from './evidence/evidence.http.ts'
@@ -84,14 +85,18 @@ export const BookkeepingPortFakesLive = Layer.mergeAll(
 const DemoSeedLive = Layer.effectDiscard(seedDemo).pipe(Layer.provide(BookkeepingPublicLive))
 
 /**
- * Bookkeeping이 소유한 저장소와 계좌번호 암호화를 메모리 구현과 결정적인 가짜로 채웁니다.
+ * Bookkeeping이 소유한 저장소와 계좌번호 암호화입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 두고, 암호화는 아직 결정적인 가짜입니다.
  *
  * 공개 서비스(`BookkeepingPublicLive`)도 같은 저장소 위에 만들어 내보내고, 데모 회사에 현행 데모 숫자를 넣어 둡니다.
+ * 데모 데이터가 이미 있으면(SQLite 재시작) 다시 넣지 않습니다.
  * 다른 컨텍스트가 구현하는 포트는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
-export const BookkeepingMemoryStoreLive = Layer.mergeAll(BookkeepingPublicLive, DemoSeedLive).pipe(
-  Layer.provideMerge(Layer.mergeAll(BookkeepingRepositoriesMemory, AccountNumberCipher.layerFake)),
+export const BookkeepingStoreLive = Layer.mergeAll(BookkeepingPublicLive, DemoSeedLive).pipe(
+  Layer.provideMerge(Layer.mergeAll(BookkeepingRepositoriesLive, AccountNumberCipher.layerFake)),
 )
+
+/** {@link BookkeepingStoreLive}를 메모리 표로 채웁니다. */
+export const BookkeepingMemoryStoreLive = BookkeepingStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
 
 /**
  * 증빙·계정과목·자동분류·입출금·거래처·세금계산서·지로·결산 보고서 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다.
