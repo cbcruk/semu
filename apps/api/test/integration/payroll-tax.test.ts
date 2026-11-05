@@ -56,6 +56,7 @@ describe('HR → Payroll', () => {
         effectiveFrom: '2026-01-05',
         dependantsCount: 2,
         childrenAged8To20Count: 1,
+        childcareChildrenCount: 2,
         calcMethod: 'MANUAL',
         manualIncomeTax: 40_000,
         adjustmentRatePpm: 1_200_000,
@@ -88,8 +89,40 @@ describe('HR → Payroll', () => {
       payeeName: '최계약',
       incomeType: 'WAGE_MONTHLY',
       input: { basePay: 2_800_000 },
-      snapshot: { dependants: 2, childrenAged8To20: 1, withholdingRatePpm: 1_200_000, manualIncomeTax: 40_000 },
+      snapshot: {
+        dependants: 2,
+        childrenAged8To20: 1,
+        childcareChildren: 2,
+        withholdingRatePpm: 1_200_000,
+        manualIncomeTax: 40_000,
+      },
     })
+    expect(row.snapshot).not.toHaveProperty('childcareChildren')
+
+    // 보육수당 한도는 자녀 1명당 20만원이라 HR의 6세 이하 자녀 2명이면 월 40만원까지 비과세입니다.
+    const childcare = await app.request('PATCH', `/v1/payroll-ledgers/${ledgerId}/rows/${contractedRow.id}`, {
+      token: owner,
+      ifMatch: `"${ledger.version}"`,
+      body: {
+        input: {
+          incomeType: 'WAGE_MONTHLY',
+          basePay: 2_800_000,
+          paymentItems: [
+            { code: 'CHILDCARE', name: '보육수당', amount: 300_000, nonTaxableCategory: 'CHILDCARE' },
+            { code: 'CHILDCARE_2', name: '가족수당(보육)', amount: 200_000, nonTaxableCategory: 'CHILDCARE' },
+          ],
+        },
+      },
+    })
+    expect(childcare.status).toBe(200)
+    const childcareRow = await childcare.json()
+    expect(
+      childcareRow.result.payments.filter((line: { code: string }) => line.code.startsWith('CHILDCARE')),
+    ).toMatchObject([
+      { nonTaxableAmount: 300_000, taxableAmount: 0 },
+      { nonTaxableAmount: 100_000, taxableAmount: 100_000 },
+    ])
+    expect(childcareRow.result).toMatchObject({ nonTaxablePay: 400_000 })
 
     const demoRow = rows.items.find((item: { employeeId: string }) => item.employeeId === DEMO_WAGE_EMPLOYEE)
     expect(demoRow).toMatchObject({

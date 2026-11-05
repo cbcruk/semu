@@ -146,6 +146,11 @@ export type PayrollRowInputValue = typeof PayrollRowInputSchema.Type
 export const EmployeeSnapshotSchema = Schema.Struct({
   dependants: PositiveCount,
   childrenAged8To20: Count,
+  /**
+   * 보육수당 비과세 대상 자녀 수(과세기간 개시일 현재 6세 이하)입니다. 보육수당 월 한도 = 20만원 × 이 값입니다.
+   * 없으면 모르는 값이라 1명으로 보고 경고합니다. 이 값을 넣기 전에 저장한 스냅숏에는 없습니다.
+   */
+  childcareChildren: Schema.optionalKey(Count),
   withholdingRatePpm: Schema.Literals([800_000, 1_000_000, 1_200_000]),
   manualIncomeTax: Schema.NullOr(Won),
   socialInsurance: Schema.Struct({

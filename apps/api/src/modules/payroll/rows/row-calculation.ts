@@ -15,7 +15,10 @@ import {
 import type { PayrollSettingRecord } from '../settings/payroll-setting.types.ts'
 import type { EmployeeSnapshot, PayrollRowInputValue, PayrollRowResultValue } from './payroll-row-input.ts'
 
-/** HR 정보가 없는 근로 행에 쓰는 기본값입니다. 현행 `DEFAULT_SNAPSHOT`(본인 1인, 4대보험 모두, 209시간, 주휴 8시간)입니다. */
+/**
+ * HR 정보가 없는 근로 행에 쓰는 기본값입니다. 현행 `DEFAULT_SNAPSHOT`(본인 1인, 4대보험 모두, 209시간, 주휴 8시간)입니다.
+ * 보육수당 대상 자녀 수(`childcareChildren`)는 모르는 값이라 비워 둡니다.
+ */
 export const DEFAULT_EMPLOYEE_SNAPSHOT: EmployeeSnapshot = {
   dependants: 1,
   childrenAged8To20: 0,
@@ -80,6 +83,7 @@ export function engineInputOf(
           ),
         },
         incomeTax: incomeTaxSetting(employee, methods.incomeTax),
+        ...(employee.childcareChildren === undefined ? {} : { childcareChildren: employee.childcareChildren }),
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
       if (input.incomeType === 'WAGE_HOURLY') {

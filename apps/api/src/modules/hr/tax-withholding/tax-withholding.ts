@@ -16,6 +16,12 @@ const terms = {
   /** 간이세액표의 공제대상 가족 수입니다. 본인을 포함합니다. */
   dependantsCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   childrenAged8To20Count: Count,
+  /**
+   * 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인
+   * 자녀입니다(소득세법 제12조제3호머목2)). 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡습니다.
+   * 공제대상 가족과 따로 셉니다(배우자가 기본공제를 받는 자녀도 셉니다). 없으면 모르는 값이라 급여가 1명으로 봅니다.
+   */
+  childcareChildrenCount: Schema.optionalKey(Count),
   /** `TAX_TABLE`은 간이세액표, `MANUAL`은 `manualIncomeTax`를 그대로 씁니다. */
   calcMethod: Schema.Literals(['TAX_TABLE', 'MANUAL']),
   manualIncomeTax: Schema.optionalKey(Won),

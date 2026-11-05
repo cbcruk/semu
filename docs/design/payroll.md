@@ -70,7 +70,7 @@
 | [daily-worker-withholding](../reference/rules/daily-worker-withholding.md) | 확인 | 스펙 4.3 |
 | [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8% 확인, 역산·예술인 필요경비·업종코드 미확인 | 스펙 4.4, 보험료징수법 시행령 |
 | [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·과세최저한 확인, 지급사유 코드 미확인 | 스펙 4.5 |
-| [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 10종 한도 확인, 보육수당 자녀 1명당 한도는 미반영 | 스펙 4.6, 소득세법·시행령 |
+| [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 10종 한도 확인, 보육수당은 자녀 1명당 한도 × HR의 대상 자녀 수(모르면 1명 + 경고) | 스펙 4.6, 소득세법·시행령 |
 | [overtime-multipliers](../reference/rules/overtime-multipliers.md) | 확인 (배수는 회사 설정) | 스펙 4.8, 매뉴얼 |
 | [wage-proration](../reference/rules/wage-proration.md) | 식 확인, 역일·소정근로일 선택 미확인 | 스펙 4.10 |
 | [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인(고용노동부고시 제2025-47호), 경고만 하는 것은 추정 | 스펙 4.7 |
@@ -87,7 +87,7 @@ result
 ├─ deductionTotal, netPay
 ├─ employerInsurance { nationalPension, healthInsurance, longTermCare, employmentInsurance, industrialAccident }
 ├─ breakdown[] { code, label, amount, formula }       # "3,000,000 × 4.75%" 같은 근거
-└─ warnings[]  { code, message }                      # BELOW_MINIMUM_WAGE, NON_TAXABLE_LIMIT_EXCEEDED, ...
+└─ warnings[]  { code, message }                      # BELOW_MINIMUM_WAGE, NON_TAXABLE_LIMIT_EXCEEDED, CHILDCARE_CHILDREN_UNKNOWN, ...
 ```
 
 ## 기준표와 급여 설정
@@ -314,7 +314,8 @@ flowchart LR
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 
-- `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
+- `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
+- `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수)이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`으로 들어갑니다. 엔진은 보육수당(`CHILDCARE`) 월 비과세 한도를 20만원 × 이 값으로 잡고(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분), 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
 - 원천세 집계는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 싣습니다. 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax입니다
 - Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다

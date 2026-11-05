@@ -189,6 +189,12 @@ interface WageRowBase {
   dailyRestMinutes?: number
   insurance: Omit<SocialInsuranceInput, 'insurablePay'>
   incomeTax: WageIncomeTaxSetting
+  /**
+   * 보육수당(`CHILDCARE`) 비과세 대상 자녀 수입니다. 과세기간 개시일(1월 1일) 현재 6세 이하 자녀입니다.
+   * 보육수당 월 한도는 법정 한도 × 이 값이고, 0명이면 비과세가 없습니다. 없으면 모르는 값이라 1명으로 보고
+   * `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다(자녀 수를 받기 전과 같은 한도).
+   */
+  childcareChildren?: number
   otherDeductions?: readonly OtherDeductionInput[]
 }
 
@@ -278,7 +284,10 @@ export interface PayrollRowOptions {
 
 /** 계산을 막지 않는 경고 코드입니다. */
 export type PayrollWarningCode =
-  'BELOW_MINIMUM_WAGE' | 'NON_TAXABLE_LIMIT_EXCEEDED' | 'DAILY_WORKER_SOCIAL_INSURANCE_REQUIRED'
+  | 'BELOW_MINIMUM_WAGE'
+  | 'NON_TAXABLE_LIMIT_EXCEEDED'
+  | 'CHILDCARE_CHILDREN_UNKNOWN'
+  | 'DAILY_WORKER_SOCIAL_INSURANCE_REQUIRED'
 
 /** 계산 결과에 붙는 경고입니다. 저장을 막지 않습니다. */
 export interface PayrollWarning {

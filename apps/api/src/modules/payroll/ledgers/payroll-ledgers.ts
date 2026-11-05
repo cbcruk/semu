@@ -570,6 +570,9 @@ export function snapshotOf(employee: PayrollEmployee): EmployeeSnapshot {
   return {
     dependants: Math.max(1, employee.incomeTax.dependants),
     childrenAged8To20: employee.incomeTax.childrenAged8To20,
+    ...(employee.incomeTax.childcareChildren === null
+      ? {}
+      : { childcareChildren: employee.incomeTax.childcareChildren }),
     withholdingRatePpm: ratio === 800_000 || ratio === 1_200_000 ? ratio : 1_000_000,
     manualIncomeTax: employee.incomeTax.manualAmount,
     socialInsurance: { ...employee.socialInsurance },

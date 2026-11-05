@@ -1,7 +1,6 @@
-import { ageOn } from '../../../shared/time/calendar.ts'
 import type { DependantCounts, FamilyRelation } from './family-member.types.ts'
 
-/** 비과세 육아수당 대상 자녀의 최대 나이(만 6세)입니다. */
+/** 비과세 보육수당 대상 자녀의 최대 나이(과세기간 개시일 현재 6세)입니다. 소득세법 제12조제3호머목2)입니다. */
 export const TAX_FREE_CHILD_MAX_AGE = 6
 
 /**
@@ -23,8 +22,17 @@ export function countDependants(
   return { dependantsCount: 1 + targets.length, childrenAged8To20Count: children.length }
 }
 
-/** 비과세 육아수당 대상이 될 수 있는지입니다. 만 6세 이하 자녀·손자녀만 됩니다. */
+/**
+ * 비과세 보육수당 대상이 될 수 있는지입니다. 자녀·손자녀 중 `asOf`가 속한 과세기간 개시일(1월 1일) 현재 6세 이하인
+ * 사람만 됩니다.
+ *
+ * 소득세법 제12조제3호머목2)는 6세 이하를 "6세가 되는 날과 그 이전 기간"으로 정의합니다. 1월 1일 현재 6세 생일이
+ * 지나지 않았거나 그날이 6세 생일이면 대상이라, `asOf`의 연도 − 출생 연도가 6 이하인지와 같습니다. 그해 중 6세가
+ * 되면 그 과세기간 내내 대상이고, 전년에 이미 6세가 됐으면 `asOf`에 만 6세여도 대상이 아닙니다. `asOf`에 아직
+ * 태어나지 않았으면 대상이 아닙니다.
+ */
 export function canBeTaxFreeTarget(member: { relation: FamilyRelation; birthDate: string }, asOf: string): boolean {
   const isChild = member.relation === 'CHILD' || member.relation === 'GRANDCHILD'
-  return isChild && ageOn(member.birthDate, asOf) <= TAX_FREE_CHILD_MAX_AGE
+  const ageByYear = Number(asOf.slice(0, 4)) - Number(member.birthDate.slice(0, 4))
+  return isChild && member.birthDate <= asOf && ageByYear <= TAX_FREE_CHILD_MAX_AGE
 }

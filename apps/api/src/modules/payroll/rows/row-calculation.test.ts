@@ -61,3 +61,28 @@ describe('calculateRow across rate table boundaries', () => {
     expect(november.employeeInsurance.longTermCare).toBe(14_170)
   })
 })
+
+describe('childcare child count from the snapshot', () => {
+  const withChildcare: PayrollRowInputValue = {
+    incomeType: 'WAGE_MONTHLY',
+    basePay: 3_000_000,
+    paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
+  }
+
+  it('raises the childcare limit to 200,000 per qualifying child', () => {
+    const result = calculateRow(withChildcare, { ...snapshot, childcareChildren: 2 }, context('2026-03', '2026-03'))
+
+    expect(result.nonTaxablePay).toBe(400_000)
+    expect(result.warnings.map((warning) => warning.code)).toEqual(['NON_TAXABLE_LIMIT_EXCEEDED'])
+  })
+
+  it('keeps one 200,000 limit and warns for snapshots saved without the count', () => {
+    const result = calculateRow(withChildcare, snapshot, context('2026-03', '2026-03'))
+
+    expect(result.nonTaxablePay).toBe(200_000)
+    expect(result.warnings.map((warning) => warning.code)).toEqual([
+      'CHILDCARE_CHILDREN_UNKNOWN',
+      'NON_TAXABLE_LIMIT_EXCEEDED',
+    ])
+  })
+})

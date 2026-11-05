@@ -84,6 +84,56 @@ describe('splitNonTaxable', () => {
       'NON_TAXABLE_LIMIT_EXCEEDED',
     ])
   })
+
+  describe('childcare is limited per qualifying child', () => {
+    const childcare = [
+      { code: 'CHILDCARE', name: '보육수당', amount: 300_000, nonTaxableCategory: 'CHILDCARE' as const },
+      { code: 'CHILDCARE_2', name: '가족수당(보육)', amount: 200_000, nonTaxableCategory: 'CHILDCARE' as const },
+    ]
+
+    it.each([
+      { label: 'two children share 400,000 across items', children: 2, nonTaxable: [300_000, 100_000] },
+      { label: 'three children cover 500,000', children: 3, nonTaxable: [300_000, 200_000] },
+      { label: 'no child means no non-taxable childcare', children: 0, nonTaxable: [0, 0] },
+    ])('$label', ({ children, nonTaxable }) => {
+      const split = splitNonTaxable(childcare, rates, { childcareChildren: children })
+
+      expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual(nonTaxable)
+      expect(split.warnings.map((warning) => warning.code)).not.toContain('CHILDCARE_CHILDREN_UNKNOWN')
+    })
+
+    it('treats an unknown count as one child and warns', () => {
+      const split = splitNonTaxable(childcare, rates)
+
+      expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual([200_000, 0])
+      expect(split.warnings.map((warning) => warning.code)).toEqual([
+        'CHILDCARE_CHILDREN_UNKNOWN',
+        'NON_TAXABLE_LIMIT_EXCEEDED',
+        'NON_TAXABLE_LIMIT_EXCEEDED',
+      ])
+    })
+
+    it('does not warn about the child count without a childcare item', () => {
+      const split = splitNonTaxable(
+        [{ code: 'MEAL', name: '식대', amount: 200_000, nonTaxableCategory: 'MEAL' }],
+        rates,
+      )
+
+      expect(split.warnings).toEqual([])
+    })
+
+    it('does not multiply other categories by the child count', () => {
+      const split = splitNonTaxable(
+        [{ code: 'MEAL', name: '식대', amount: 400_000, nonTaxableCategory: 'MEAL' }],
+        rates,
+        {
+          childcareChildren: 2,
+        },
+      )
+
+      expect(split.lines[0]).toMatchObject({ nonTaxableAmount: 200_000, taxableAmount: 200_000 })
+    })
+  })
 })
 
 describe('working time', () => {
@@ -153,6 +203,19 @@ describe('calculatePayrollRow', () => {
 
     expect([row.taxablePay, row.nonTaxablePay]).toEqual([3_050_000, 200_000])
     expect(row.warnings.map((warning) => warning.code)).toContain('NON_TAXABLE_LIMIT_EXCEEDED')
+  })
+
+  it('passes the childcare child count to the non-taxable limit', () => {
+    const row = calculatePayrollRow(
+      monthly({
+        paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 400_000, nonTaxableCategory: 'CHILDCARE' }],
+        childcareChildren: 2,
+      }),
+      rates,
+    )
+
+    expect([row.taxablePay, row.nonTaxablePay]).toEqual([3_000_000, 400_000])
+    expect(row.warnings).toEqual([])
   })
 
   it('pays overtime on the ordinary wage and deducts absence hours', () => {
