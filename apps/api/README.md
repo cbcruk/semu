@@ -25,4 +25,4 @@ pnpm build
 
 ## 상태
 
-저장소는 모두 메모리 구현입니다(`MemoryLive`). PostgreSQL + outbox 연결은 [`docs/design/review.md`](../../docs/design/review.md)의 열린 결정입니다.
+저장소는 모두 메모리 구현입니다(`MemoryLive`). SQLite + outbox로 정했고([`docs/design/review.md`](../../docs/design/review.md) D1) 구현 중입니다.

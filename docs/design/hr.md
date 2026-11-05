@@ -437,7 +437,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 ## 구현 상태
 
-`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(PostgreSQL·outbox 미연결), 개인정보 암호화는 결정적인 가짜(`PersonalDataCipher.layerFake`)입니다. `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
+`apps/api/src/modules/hr/`에 있습니다. 저장소는 메모리 구현만 있고(SQLite·outbox 미연결, [review.md](review.md#결정) D1), 개인정보 암호화는 결정적인 가짜(`PersonalDataCipher.layerFake`)입니다. `HrMemoryLive`에 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
 
 | 영역 | 상태 |
 |---|---|
