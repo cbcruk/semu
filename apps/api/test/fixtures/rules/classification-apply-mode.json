@@ -1,0 +1,93 @@
+{
+  "rule": "classification-apply-mode",
+  "description": "What a matching rule writes to a row under fill-empty and overwrite modes, keeping manual classifications.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/classification/classification.utils.ts", "lines": "15-20, 82-102" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/classification/classification.service.ts", "lines": "1-267" },
+    {
+      "file": "alfred-manual/03-경리/01-매출-증빙-관리/01-경리-규칙기반-자동분류.md",
+      "lines": "35-36",
+      "origin": "manual"
+    }
+  ],
+  "inputSchema": {
+    "row": "{ accountTitleId: string | null, method: 'MANUAL' | 'RULE' | null, partnerId: string | null }",
+    "result": "{ accountTitleId: string | null, partnerId: string | null }",
+    "mode": "'FILL_EMPTY' | 'OVERWRITE'"
+  },
+  "cases": [
+    {
+      "name": "fill empty writes both empty values",
+      "input": {
+        "row": { "accountTitleId": null, "method": null, "partnerId": null },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "FILL_EMPTY"
+      },
+      "expected": { "accountTitleId": "A", "partnerId": "P" },
+      "derivation": "traced"
+    },
+    {
+      "name": "fill empty keeps an existing account and fills the partner",
+      "input": {
+        "row": { "accountTitleId": "B", "method": "RULE", "partnerId": null },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "FILL_EMPTY"
+      },
+      "expected": { "partnerId": "P" },
+      "derivation": "traced"
+    },
+    {
+      "name": "fill empty fills the partner of a manually classified row",
+      "input": {
+        "row": { "accountTitleId": "B", "method": "MANUAL", "partnerId": null },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "FILL_EMPTY"
+      },
+      "expected": { "partnerId": "P" },
+      "derivation": "traced"
+    },
+    {
+      "name": "overwrite replaces a rule classification",
+      "input": {
+        "row": { "accountTitleId": "B", "method": "RULE", "partnerId": "Q" },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "OVERWRITE"
+      },
+      "expected": { "accountTitleId": "A", "partnerId": "P" },
+      "derivation": "traced"
+    },
+    {
+      "name": "overwrite leaves manual rows alone",
+      "input": {
+        "row": { "accountTitleId": "B", "method": "MANUAL", "partnerId": null },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "OVERWRITE"
+      },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "the same rule result is not written again",
+      "input": {
+        "row": { "accountTitleId": "A", "method": "RULE", "partnerId": "P" },
+        "result": { "accountTitleId": "A", "partnerId": "P" },
+        "mode": "OVERWRITE"
+      },
+      "expected": null,
+      "derivation": "traced"
+    },
+    {
+      "name": "a rule without an account only sets the partner",
+      "input": {
+        "row": { "accountTitleId": null, "method": null, "partnerId": null },
+        "result": { "accountTitleId": null, "partnerId": "P" },
+        "mode": "FILL_EMPTY"
+      },
+      "expected": { "partnerId": "P" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "매뉴얼은 '입력된 항목도 덮어쓰기'라고만 하고 사람이 직접 분류한 행을 덮을지 말하지 않습니다. 현행 서버는 상수(`OVERWRITE_KEEPS_MANUAL = true`)로 건너뜁니다."
+  ]
+}

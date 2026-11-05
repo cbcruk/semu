@@ -1,0 +1,145 @@
+{
+  "rule": "sales-statement-totals",
+  "description": "Validation of a sales statement's totals and invoice codes, its edit lock after issuance, and the item summary.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/transaction-sales/transaction-sales.service.ts", "lines": "167-185" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/transaction-sales/transaction-sales.repository.ts", "lines": "12" },
+    { "file": "apps/api/legacy/src/modules/bookkeeping/transaction-sales/transaction-sales.utils.ts", "lines": "56-60" }
+  ],
+  "inputSchema": {
+    "call": "'validate' | 'lock' | 'summary'",
+    "statement": "{ invoiceClassCode, invoiceKindCode, items: [{ supplyAmount, vatAmount }], supplyAmount, vatAmount, totalAmount } (validate)",
+    "invoices": "[{ status: 'ISSUING' | 'ISSUED' | 'FAILED' }] (lock)",
+    "items": "[{ name }] (summary)"
+  },
+  "cases": [
+    {
+      "name": "a balanced tax invoice passes",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "01",
+          "invoiceKindCode": "01",
+          "items": [
+            { "supplyAmount": 20000000, "vatAmount": 2000000 },
+            { "supplyAmount": 10000000, "vatAmount": 1000000 }
+          ],
+          "supplyAmount": 30000000,
+          "vatAmount": 3000000,
+          "totalAmount": 33000000
+        }
+      },
+      "expected": [],
+      "derivation": "traced"
+    },
+    {
+      "name": "the supply total must equal the items",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "01",
+          "invoiceKindCode": "01",
+          "items": [{ "supplyAmount": 1000, "vatAmount": 100 }],
+          "supplyAmount": 1100,
+          "vatAmount": 100,
+          "totalAmount": 1200
+        }
+      },
+      "expected": [{ "code": "AMOUNT_MISMATCH", "field": "supplyAmount" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "the total must be supply plus VAT",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "01",
+          "invoiceKindCode": "01",
+          "items": [{ "supplyAmount": 1000, "vatAmount": 100 }],
+          "supplyAmount": 1000,
+          "vatAmount": 100,
+          "totalAmount": 1000
+        }
+      },
+      "expected": [{ "code": "AMOUNT_MISMATCH", "field": "totalAmount" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "a zero-rated invoice carries no VAT",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "01",
+          "invoiceKindCode": "02",
+          "items": [{ "supplyAmount": 1000, "vatAmount": 100 }],
+          "supplyAmount": 1000,
+          "vatAmount": 100,
+          "totalAmount": 1100
+        }
+      },
+      "expected": [{ "code": "AMOUNT_MISMATCH", "field": "vatAmount" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "delegated invoices are not supported",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "01",
+          "invoiceKindCode": "03",
+          "items": [{ "supplyAmount": 1000, "vatAmount": 100 }],
+          "supplyAmount": 1000,
+          "vatAmount": 100,
+          "totalAmount": 1100
+        }
+      },
+      "expected": [{ "code": "UNSUPPORTED", "field": "invoiceKindCode" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "amended invoices are not supported",
+      "input": {
+        "call": "validate",
+        "statement": {
+          "invoiceClassCode": "02",
+          "invoiceKindCode": "01",
+          "items": [{ "supplyAmount": 1000, "vatAmount": 100 }],
+          "supplyAmount": 1000,
+          "vatAmount": 100,
+          "totalAmount": 1100
+        }
+      },
+      "expected": [{ "code": "UNSUPPORTED", "field": "invoiceClassCode" }],
+      "derivation": "traced"
+    },
+    {
+      "name": "an issued statement is locked",
+      "input": { "call": "lock", "invoices": [{ "status": "FAILED" }, { "status": "ISSUED" }] },
+      "expected": "ISSUED",
+      "derivation": "traced"
+    },
+    {
+      "name": "a failed issue leaves the statement editable",
+      "input": { "call": "lock", "invoices": [{ "status": "FAILED" }] },
+      "expected": "EDITABLE",
+      "derivation": "traced"
+    },
+    {
+      "name": "the summary names the first item and counts the rest",
+      "input": { "call": "summary", "items": [{ "name": "양극재" }, { "name": "운송비" }, { "name": "포장비" }] },
+      "expected": "양극재 외 2건",
+      "derivation": "traced"
+    },
+    {
+      "name": "a single item is its own summary",
+      "input": { "call": "summary", "items": [{ "name": "양극재" }] },
+      "expected": "양극재",
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "현행은 첫 위반 하나만 던집니다. 재설계는 `problems`로 모두 돌려줍니다. 위반이 둘 이상인 케이스는 넣지 않았습니다.",
+    "발급 중(`ISSUING`) 상태는 현행에 없습니다. 재설계는 홈택스 응답을 기다리는 동안 수정과 재발급을 막습니다.",
+    "수정 발행(`02`·`04`)과 위수탁(`03`·`04`)을 언제 지원할지 정해야 합니다."
+  ]
+}

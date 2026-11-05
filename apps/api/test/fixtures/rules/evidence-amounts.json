@@ -1,0 +1,67 @@
+{
+  "rule": "evidence-amounts",
+  "description": "How missing supply, VAT and total amounts of evidence are filled in.",
+  "sources": [
+    { "file": "apps/api/legacy/src/modules/bookkeeping/evidence/evidence.utils.ts", "lines": "22-30" },
+    { "file": "apps/api/legacy/src/lib/money.ts", "lines": "16-22" }
+  ],
+  "inputSchema": {
+    "totalAmount": "number | null",
+    "supplyAmount": "number | null",
+    "vatAmount": "number | null"
+  },
+  "cases": [
+    {
+      "name": "a card sale splits VAT from the total",
+      "input": { "totalAmount": 11000, "supplyAmount": null, "vatAmount": null },
+      "expected": { "supplyAmount": 10000, "vatAmount": 1000, "totalAmount": 11000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "the split rounds the supply amount down",
+      "input": { "totalAmount": 10000, "supplyAmount": null, "vatAmount": null },
+      "expected": { "supplyAmount": 9090, "vatAmount": 910, "totalAmount": 10000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "a canceled total keeps the sign",
+      "input": { "totalAmount": -11000, "supplyAmount": null, "vatAmount": null },
+      "expected": { "supplyAmount": -10000, "vatAmount": -1000, "totalAmount": -11000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "VAT is the total minus a known supply",
+      "input": { "totalAmount": 11000, "supplyAmount": 10500, "vatAmount": null },
+      "expected": { "supplyAmount": 10500, "vatAmount": 500, "totalAmount": 11000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "zero VAT keeps the whole total as supply",
+      "input": { "totalAmount": 11000, "supplyAmount": null, "vatAmount": 0 },
+      "expected": { "supplyAmount": 11000, "vatAmount": 0, "totalAmount": 11000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "purchase evidence without a total adds supply and VAT",
+      "input": { "totalAmount": null, "supplyAmount": 2000000, "vatAmount": 200000 },
+      "expected": { "supplyAmount": 2000000, "vatAmount": 200000, "totalAmount": 2200000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "missing VAT without a total is zero",
+      "input": { "totalAmount": null, "supplyAmount": 10000, "vatAmount": null },
+      "expected": { "supplyAmount": 10000, "vatAmount": 0, "totalAmount": 10000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "inconsistent amounts are kept as given",
+      "input": { "totalAmount": 12000, "supplyAmount": 10000, "vatAmount": 1000 },
+      "expected": { "supplyAmount": 10000, "vatAmount": 1000, "totalAmount": 12000 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "세 금액이 서로 맞지 않아도(합계 ≠ 공급가액 + 세액) 그대로 둡니다. 어느 값을 믿을지 정해야 합니다.",
+    "합계에서 나눈 세액은 추정입니다. 재설계는 `vatEstimated`로 표시하지만 현행 화면은 구분하지 않습니다."
+  ]
+}
