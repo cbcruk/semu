@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { CertificateIssuanceRepository } from './certificates/certificate-issuance.ts'
 import { Certificates } from './certificates/certificates.ts'
 import { CertificatesHttpLive } from './certificates/certificates.http.ts'
@@ -24,13 +25,21 @@ export const DocumentsHttpLive = Layer.mergeAll(
   CertificatesHttpLive,
 ).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer)))
 
-/** 전자서명·제증명 발급·서식 모음 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다. */
-export const DocumentsMemoryLive = Layer.mergeAll(
-  EsignRequestRepository.layerMemory(),
+/**
+ * 전자서명·제증명 발급·서식 모음 컨텍스트의 저장소와 외부 연동입니다. 요청·발급 기록은 `TableFactory`(메모리 또는 SQLite)에 둡니다.
+ *
+ * 기본 템플릿은 코드에 있는 참조 데이터라 표에 두지 않습니다. 알림·PDF·본인확인은 아직 외부 구현이 없어 결정적인 가짜이고,
+ * 이벤트는 아직 소비자가 없어 메모리에 쌓습니다.
+ */
+export const DocumentsStoreLive = Layer.mergeAll(
+  EsignRequestRepository.layer(),
   EsignTemplateRepository.layerMemory(),
-  CertificateIssuanceRepository.layerMemory(),
+  CertificateIssuanceRepository.layer(),
   DocumentNotifier.layerFake,
   PdfRenderer.layerFake,
   SignerIdentityVerifier.layerNameAndBirthDate,
   DocumentEvents.layerMemory,
 )
+
+/** {@link DocumentsStoreLive}를 메모리 표로 채웁니다. 로컬 개발과 테스트에 씁니다. */
+export const DocumentsMemoryLive = DocumentsStoreLive.pipe(Layer.provide(TableFactory.layerMemory))

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { keepOnRollback } from '../../../shared/persistence/unit-of-work.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import { HrDirectory } from '../../hr/hr.public.ts'
@@ -95,7 +96,7 @@ export class Signing extends Context.Service<
 
       const findByToken = (token: string) =>
         requests
-          .findAcrossCompanies((record) => record.linkTokenHash === hashToken(token))
+          .findByLinkTokenHash(hashToken(token))
           .pipe(
             Effect.flatMap(
               Option.match({ onNone: () => Effect.fail(new EsignLinkNotFound({})), onSome: Effect.succeed }),
@@ -141,7 +142,8 @@ export class Signing extends Context.Service<
           const decision = decideVerification({ failures: record.verifyFailures, matches })
           if (decision.outcome === 'LOCKED') return yield* new EsignVerificationLocked({})
           if (decision.outcome === 'FAILED') {
-            yield* requests.save({ ...record, verifyFailures: decision.failures })
+            // 실패 응답(4xx)은 트랜잭션을 되돌리지만 실패 횟수는 남겨야 잠금이 걸립니다.
+            yield* keepOnRollback(requests.save({ ...record, verifyFailures: decision.failures }))
             return yield* new EsignVerificationFailed({ remainingAttempts: decision.remainingAttempts })
           }
           const sessionToken = randomBytes(24).toString('base64url')

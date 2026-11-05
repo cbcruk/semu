@@ -3,7 +3,7 @@ import { HttpApiError } from 'effect/http-api'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { CertificateIssuanceId, EmployeeId, EsignTemplateId, Violations } from '../shared/documents-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { CertificateStatus } from './certificate-rules.types.ts'
 
 /** 제증명 발급 상태입니다. */
@@ -61,9 +61,16 @@ export class CertificateIssuanceRepository extends Context.Service<
   CertificateIssuanceRepository,
   TenantTable<CertificateIssuanceRecord>
 >()('semu/documents/CertificateIssuanceRepository') {
+  /** `documents_certificate_issuances` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<CertificateIssuanceRecord> = []) =>
+    Layer.effect(
+      CertificateIssuanceRepository,
+      makeTenantTable<CertificateIssuanceRecord>('documents_certificate_issuances', seed),
+    )
+
   /** `seed`로 시작해 프로세스 메모리에 발급 기록을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<CertificateIssuanceRecord> = []) =>
-    Layer.effect(CertificateIssuanceRepository, makeMemoryTable(seed))
+    CertificateIssuanceRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 발급 기록이 없습니다. */

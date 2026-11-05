@@ -22,7 +22,7 @@ import {
 } from '../shared/identity-number.ts'
 import { PersonalDataAccessLog } from '../shared/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../shared/personal-data-cipher.ts'
-import { stripUndefined } from '../shared/tenant-table.ts'
+import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import type { EmployeeKind } from './employee-kind.types.ts'
 import { findBlockingDuplicate } from './employee-duplicate.ts'
 import { EmployeeRepository } from './employee-repository.ts'

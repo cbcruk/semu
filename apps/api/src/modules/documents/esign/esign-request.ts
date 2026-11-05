@@ -1,4 +1,4 @@
-import { Context, Layer, Schema } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
@@ -11,7 +11,7 @@ import {
   FileId,
   Violations,
 } from '../shared/documents-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { EsignRequestStatus } from './esign-request-status.types.ts'
 
 /** 전자서명 요청 상태입니다. */
@@ -127,12 +127,45 @@ export interface EsignRequestRecord {
 }
 
 /** 전자서명 요청 저장소입니다. */
-export class EsignRequestRepository extends Context.Service<EsignRequestRepository, TenantTable<EsignRequestRecord>>()(
-  'semu/documents/EsignRequestRepository',
-) {
+export class EsignRequestRepository extends Context.Service<
+  EsignRequestRepository,
+  TenantTable<EsignRequestRecord> & {
+    /** 서명 링크 토큰 해시로 찾습니다. 비로그인 링크라 회사와 상관없이 찾습니다. */
+    findByLinkTokenHash(hash: string): Effect.Effect<Option.Option<EsignRequestRecord>>
+  }
+>()('semu/documents/EsignRequestRepository') {
+  /** `documents_esign_requests` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<EsignRequestRecord> = []) =>
+    Layer.effect(
+      EsignRequestRepository,
+      Effect.gen(function* () {
+        const table = yield* (yield* TableFactory).make<EsignRequestRecord>('documents_esign_requests', {
+          seed,
+          companyOf: (record) => record.companyId,
+        })
+        return EsignRequestRepository.of({
+          list: (companyId) => table.byCompany(companyId),
+          find: (companyId, id) =>
+            Effect.map(
+              table.get(id),
+              Option.filter((record) => record.companyId === companyId),
+            ),
+          save: (record) => table.put(record),
+          remove: (companyId, id) =>
+            Effect.flatMap(table.get(id), (found) =>
+              Option.isSome(found) && found.value.companyId === companyId ? table.remove(id) : Effect.void,
+            ),
+          findByLinkTokenHash: (hash) =>
+            Effect.map(table.all(), (records) =>
+              Option.fromNullishOr(records.find((record) => record.linkTokenHash === hash)),
+            ),
+        })
+      }),
+    )
+
   /** `seed`로 시작해 프로세스 메모리에 요청을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<EsignRequestRecord> = []) =>
-    Layer.effect(EsignRequestRepository, makeMemoryTable(seed))
+    EsignRequestRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 요청이 없거나 다른 회사의 요청입니다. */

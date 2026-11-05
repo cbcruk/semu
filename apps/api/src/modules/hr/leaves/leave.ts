@@ -4,7 +4,7 @@ import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { EmployeeId, LeaveId, Violations } from '../shared/hr-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { LeaveReason } from './leave-rules.types.ts'
 
 /** 휴직 사유입니다. 출산전후·육아·질병·기타입니다. */
@@ -63,9 +63,13 @@ export interface LeaveRecord {
 export class LeaveRepository extends Context.Service<LeaveRepository, TenantTable<LeaveRecord>>()(
   'semu/hr/LeaveRepository',
 ) {
+  /** `hr_leaves` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<LeaveRecord> = []) =>
+    Layer.effect(LeaveRepository, makeTenantTable<LeaveRecord>('hr_leaves', seed))
+
   /** `seed`로 시작해 프로세스 메모리에 휴직을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<LeaveRecord> = []) =>
-    Layer.effect(LeaveRepository, makeMemoryTable(seed))
+    LeaveRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 휴직이 없거나 다른 직원의 휴직입니다. */
