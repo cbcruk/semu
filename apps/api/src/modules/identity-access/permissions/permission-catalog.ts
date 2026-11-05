@@ -223,6 +223,23 @@ export function permissionsForLegacyMenus(codes: Iterable<string>): Permission[]
   return [...permissions].sort()
 }
 
+/** 권한 그룹 화면에 보여 줄 권한 하나입니다. */
+export interface GrantablePermission {
+  permission: string
+  area: PermissionArea
+  requiredPlans: ReadonlyArray<Plan>
+}
+
+/** 권한 그룹에 넣을 수 있는 권한 전체입니다. 카탈로그 순서를 따릅니다. */
+export function grantablePermissions(): GrantablePermission[] {
+  return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) =>
+    entry.actions
+      .map((action) => `${resource}:${action}`)
+      .filter(isGrantable)
+      .map((permission) => ({ permission, area: entry.area, requiredPlans: entry.plans ?? [] })),
+  )
+}
+
 function catalogEntry(resource: string): ResourcePermissions | undefined {
   return Object.hasOwn(PERMISSION_CATALOG, resource)
     ? (PERMISSION_CATALOG as Record<string, ResourcePermissions>)[resource]

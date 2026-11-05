@@ -1,4 +1,14 @@
 import { Layer } from 'effect'
+import { AuditLogsHttpLive } from './audit/audit-logs.http.ts'
+import { Companies } from './companies/companies.ts'
+import { CompanyRegistrationsHttpLive, CurrentCompanyHttpLive } from './companies/companies.http.ts'
+import { InvitationRepository } from './invitations/invitation-repository.ts'
+import { InvitationLinksHttpLive, InvitationsHttpLive } from './invitations/invitations.http.ts'
+import { Invitations } from './invitations/invitations.ts'
+import { MembersHttpLive } from './members/members.http.ts'
+import { Members } from './members/members.ts'
+import { RolesHttpLive } from './roles/roles.http.ts'
+import { Roles } from './roles/roles.ts'
 import { ActorDirectory } from './access/actor-directory.ts'
 import { UserRepository } from './accounts/user-repository.ts'
 import { AgencyAssignmentRepository } from './agency/agency-assignment-repository.ts'
@@ -24,9 +34,9 @@ import { Sessions } from './sessions/sessions.ts'
 import { TermRepository } from './terms/term-repository.ts'
 import { TermAgreementsHttpLive, TermsHttpLive } from './terms/terms.http.ts'
 import { Terms } from './terms/terms.ts'
-import { InvitationRepository } from './invitations/invitation-repository.ts'
 
-const ServicesLive = Layer.mergeAll(Terms.layer, MeService.layer).pipe(
+const ServicesLive = Layer.mergeAll(Invitations.layer, MeService.layer).pipe(
+  Layer.provideMerge(Layer.mergeAll(Terms.layer, Companies.layer, Members.layer, Roles.layer)),
   Layer.provideMerge(Sessions.layer),
   Layer.provideMerge(ActorDirectory.layer),
 )
@@ -41,6 +51,13 @@ export const IdentityAccessHttpLive = Layer.mergeAll(
   MeHttpLive,
   TermsHttpLive,
   TermAgreementsHttpLive,
+  CurrentCompanyHttpLive,
+  CompanyRegistrationsHttpLive,
+  MembersHttpLive,
+  RolesHttpLive,
+  InvitationsHttpLive,
+  InvitationLinksHttpLive,
+  AuditLogsHttpLive,
 ).pipe(Layer.provide(ServicesLive))
 
 /**

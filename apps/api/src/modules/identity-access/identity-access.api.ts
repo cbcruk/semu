@@ -1,5 +1,10 @@
 import { HttpApi } from 'effect/http-api'
+import { AuditLogsApi } from './audit/audit-logs.api.ts'
+import { CompanyRegistrationsApi, CurrentCompanyApi } from './companies/companies.api.ts'
+import { InvitationLinksApi, InvitationsApi } from './invitations/invitations.api.ts'
 import { MeApi } from './me/me.api.ts'
+import { MembersApi } from './members/members.api.ts'
+import { RolesApi } from './roles/roles.api.ts'
 import { SessionsApi } from './sessions/sessions.api.ts'
 import { TermAgreementsApi, TermsApi } from './terms/terms.api.ts'
 
@@ -13,3 +18,10 @@ export const IdentityAccessApi = HttpApi.make('identity-access')
   .add(MeApi)
   .add(TermsApi)
   .add(TermAgreementsApi)
+  .add(CurrentCompanyApi)
+  .add(CompanyRegistrationsApi)
+  .add(MembersApi)
+  .add(RolesApi)
+  .add(InvitationsApi)
+  .add(InvitationLinksApi)
+  .add(AuditLogsApi)
