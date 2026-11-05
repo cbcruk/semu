@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api'
 import { EntitlementRequired, PermissionDenied, TermsReagreementRequired } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
-import { CalendarDate } from '../filings/filing.ts'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { VatEstimateResponse, VatTrendResponse } from './vat-estimates.ts'
 
 const accessErrors = [PermissionDenied, EntitlementRequired, TermsReagreementRequired]

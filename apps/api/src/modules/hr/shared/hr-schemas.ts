@@ -1,11 +1,5 @@
 import { Schema } from 'effect'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
-import { isCalendarDate } from '../../../shared/time/date-format.ts'
-
-/** `YYYY-MM-DD` 형식의 달력 날짜입니다. */
-export const CalendarDate = Schema.String.pipe(
-  Schema.check(Schema.makeFilter<string>((value) => isCalendarDate(value))),
-)
 
 /** 직원 ID입니다. 예: `emp_01J...` */
 export const EmployeeId = IdSchema('employee')

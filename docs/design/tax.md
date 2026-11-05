@@ -359,8 +359,7 @@ flowchart LR
 1. **대리인 업무 큐.** 담당 회사 전체를 가로지르는 `GET /desk/filings`는 회사 토큰 하나로 풀 수 없습니다. 대리인 전용 토큰(회사 없음) + `GET /agency/filings?companyId=&status=&dueBefore=`로 둘지, Identity & Access의 대리인 배정 모델과 함께 정해야 합니다
 2. **파일 저장소의 소유.** `fileId`(`fle_`)를 누가 발급하고 다운로드 권한을 어떻게 신고 건 상태(문서 노출)와 맞출지 정해야 합니다. 지금은 신고 건이 `fileId`만 들고 노출 판정은 Tax가 합니다
 3. **문서 열람 기록의 경로.** `GET /filings/{filingId}/documents/{documentId}`가 첫 열람을 기록합니다(GET에 부수효과). 다운로드 URL 발급을 `POST .../documents/{documentId}:open`으로 바꿀지 파일 저장소 설계와 함께 정합니다
-4. **공유 ID 접두사.** 신고 건 문서 ID(`fdc_`)가 공유 목록에 없어 모듈 안에서 붙입니다. `ID_PREFIXES`에 `filingDocument: 'fdc'`를 넣어야 합니다
-5. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다
-6. **법인세·종합소득세 자료.** 체크리스트가 없어 고객 흐름이 비어 있습니다. 결산 자료(재고·가지급금 등) 항목을 만들지 업무 확인이 필요합니다
-7. **간이과세자·중간예납·연말정산·분납 기한.** 일정에 없습니다 ([rule-decisions](rule-decisions/tax.md) 보류 2건)
-8. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
+4. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다
+5. **법인세·종합소득세 자료.** 체크리스트가 없어 고객 흐름이 비어 있습니다. 결산 자료(재고·가지급금 등) 항목을 만들지 업무 확인이 필요합니다
+6. **간이과세자·중간예납·연말정산·분납 기한.** 일정에 없습니다 ([rule-decisions](rule-decisions/tax.md) 보류 2건)
+7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다

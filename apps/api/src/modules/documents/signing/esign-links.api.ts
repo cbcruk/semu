@@ -1,7 +1,8 @@
 import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { EsignRequestStatusSchema } from '../esign/esign-request.ts'
-import { CalendarDate, FileId } from '../shared/documents-schemas.ts'
+import { FileId } from '../shared/documents-schemas.ts'
 import {
   EsignLinkClosed,
   EsignLinkNotFound,

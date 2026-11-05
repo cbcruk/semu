@@ -1,9 +1,10 @@
 import { Context, Layer, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import {
-  CalendarDate,
+  CompanySealId,
   EmployeeId,
   EsignRequestId,
   EsignTemplateId,
@@ -60,7 +61,7 @@ export const EsignRequestDraft = Schema.Struct({
   fieldValues: Schema.optionalKey(FieldValues),
   /** 문서 번호별로 숨긴 조항 필드 키입니다. */
   hiddenFields: Schema.optionalKey(HiddenFields),
-  companySealId: Schema.optionalKey(FileId),
+  companySealId: Schema.optionalKey(CompanySealId),
   dueDate: Schema.optionalKey(CalendarDate),
 })
 
@@ -74,7 +75,7 @@ export const EsignRequest = Schema.Struct({
   templateIds: Schema.Array(EsignTemplateId),
   fieldValues: FieldValues,
   hiddenFields: HiddenFields,
-  companySealId: Schema.optionalKey(FileId),
+  companySealId: Schema.optionalKey(CompanySealId),
   dueDate: Schema.optionalKey(CalendarDate),
   sentAt: Schema.optionalKey(Schema.String),
   completedAt: Schema.optionalKey(Schema.String),
@@ -111,7 +112,7 @@ export interface EsignRequestRecord {
   templateIds: ReadonlyArray<Id<'esignTemplate'>>
   fieldValues: Readonly<Record<string, Readonly<Record<string, unknown>>>>
   hiddenFields: Readonly<Record<string, ReadonlyArray<string>>>
-  companySealId?: Id<'file'> | undefined
+  companySealId?: Id<'companySeal'> | undefined
   dueDate?: string | undefined
   sentAt?: string | undefined
   completedAt?: string | undefined

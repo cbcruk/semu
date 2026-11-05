@@ -3,7 +3,7 @@ import { HttpApiError } from 'effect/http-api'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import type { TemplateField } from '../esign/esign-send-validation.types.ts'
-import { EsignTemplateId, FileId } from '../shared/documents-schemas.ts'
+import { CompanySealId, EsignTemplateId } from '../shared/documents-schemas.ts'
 
 /** 템플릿이 만드는 문서 종류입니다. 증명서 종류는 제증명 발급에만 씁니다. */
 export const DocumentKind = Schema.Literals([
@@ -31,7 +31,7 @@ export const EsignTemplate = Schema.Struct({
   title: Schema.String,
   kind: DocumentKind,
   isActive: Schema.Boolean,
-  defaultCompanySealId: Schema.optionalKey(FileId),
+  defaultCompanySealId: Schema.optionalKey(CompanySealId),
   fields: Schema.Array(TemplateFieldView),
 })
 
@@ -44,7 +44,7 @@ export interface EsignTemplateRecord {
   title: string
   kind: typeof DocumentKind.Type
   isActive: boolean
-  defaultCompanySealId?: Id<'file'> | undefined
+  defaultCompanySealId?: Id<'companySeal'> | undefined
   fields: ReadonlyArray<TemplateField>
 }
 

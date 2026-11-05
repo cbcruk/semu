@@ -1,9 +1,10 @@
 import { Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import type { SeveranceSettlementStatus } from '../retirement/retirement.types.ts'
-import { CalendarDate, DepartmentId, EmployeeId, PositionId, Violations } from '../shared/hr-schemas.ts'
+import { DepartmentId, EmployeeId, PositionId, Violations } from '../shared/hr-schemas.ts'
 import type { IdentityNumberType } from '../shared/identity-number.types.ts'
 import type { EmployeeKind } from './employee-kind.types.ts'
 

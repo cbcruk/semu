@@ -10,8 +10,8 @@ import type {
 } from '../tax.types.ts'
 import type { RequirementCode } from './filing-requirements.types.ts'
 
-/** 신고 건 문서 ID입니다. 공유 ID 접두사 목록에 아직 없어 `fdc_`를 이 모듈에서 붙입니다. */
-export type FilingDocumentId = `fdc_${string}`
+/** 신고 건 문서 ID입니다. 예: `fdc_01J...` */
+export type FilingDocumentId = Id<'filingDocument'>
 
 /** 신고 건의 제출 자료 항목 하나입니다. */
 export interface RequirementRecord {

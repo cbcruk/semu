@@ -213,7 +213,7 @@ export class EsignRequests extends Context.Service<
         const next: EsignRequestRecord = {
           ...record,
           status: delivery.ok ? 'PENDING' : 'SEND_FAILED',
-          companySealId: check.companySealId as Id<'file'> | undefined,
+          companySealId: check.companySealId as Id<'companySeal'> | undefined,
           dueDate: dueDateOnSend(
             record.dueDate !== undefined && record.dueDate >= now.today ? record.dueDate : undefined,
             now.today,

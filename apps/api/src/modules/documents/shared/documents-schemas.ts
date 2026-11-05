@@ -1,14 +1,8 @@
 import { Schema } from 'effect'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { EntitlementRequired, PermissionDenied, TermsReagreementRequired } from '../../../shared/problem/problem.ts'
-import { isCalendarDate } from '../../../shared/time/date-format.ts'
 import type { Permission, Plan } from '../../identity-access/actor.types.ts'
 import type { AccessRequirement } from '../../identity-access/authorization.ts'
-
-/** `YYYY-MM-DD` 형식의 달력 날짜입니다. */
-export const CalendarDate = Schema.String.pipe(
-  Schema.check(Schema.makeFilter<string>((value) => isCalendarDate(value))),
-)
 
 /** 전자서명 요청 ID입니다. 예: `esr_01J...` */
 export const EsignRequestId = IdSchema('esignRequest')
@@ -22,8 +16,11 @@ export const CertificateIssuanceId = IdSchema('certificateIssuance')
 /** 직원 ID입니다. 인사 컨텍스트의 ID를 그대로 씁니다. */
 export const EmployeeId = IdSchema('employee')
 
-/** 파일 ID입니다. 회사 도장도 파일 ID로 가리킵니다. */
+/** 파일 ID입니다. */
 export const FileId = IdSchema('file')
+
+/** 회사 직인 ID입니다. 예: `sel_01J...` */
+export const CompanySealId = IdSchema('companySeal')
 
 /** 다른 사람의 변경을 덮어쓰지 않도록 보내는 버전입니다. 예: `"7"` */
 export const IfMatchHeaders = { 'if-match': Schema.optionalKey(Schema.String) }

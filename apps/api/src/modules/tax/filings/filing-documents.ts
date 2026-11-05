@@ -1,4 +1,4 @@
-import { ulid } from 'ulid'
+import { newId } from '../../../shared/ids/ids.ts'
 import type { FilingDocumentType, FilingStatus } from '../tax.types.ts'
 import type { FilingDocumentId, FilingDocumentRecord } from './filing.types.ts'
 
@@ -45,7 +45,7 @@ export function attachDocument(
   ]
 }
 
-/** 새 신고 건 문서 ID를 만듭니다. 공유 ID 접두사 목록에 `filingDocument`가 생기면 `newId`로 바꿉니다. */
+/** 새 신고 건 문서 ID를 만듭니다. */
 export function newFilingDocumentId(): FilingDocumentId {
-  return `fdc_${ulid()}`
+  return newId('filingDocument')
 }

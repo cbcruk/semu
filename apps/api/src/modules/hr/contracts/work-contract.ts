@@ -1,8 +1,9 @@
 import { Context, Layer, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import { CalendarDate, EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
+import { EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
 import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
 import type { ContractType } from './work-contract-period.types.ts'
 

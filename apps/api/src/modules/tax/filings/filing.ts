@@ -2,10 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import { isCalendarDate } from '../../../shared/time/date-format.ts'
-
-/** `YYYY-MM-DD` 형식의 실제 날짜입니다. */
-export const CalendarDate = Schema.String.pipe(Schema.refine((value): value is string => isCalendarDate(value)))
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 
 /** 신고 건 ID입니다. 예: `fil_01J...` */
 export const FilingId = IdSchema('filing')
@@ -14,9 +11,7 @@ export const FilingId = IdSchema('filing')
 export const FileId = IdSchema('file')
 
 /** 신고 건 문서 ID입니다. 예: `fdc_01J...` */
-export const FilingDocumentId = Schema.String.pipe(
-  Schema.refine((value): value is `fdc_${string}` => /^fdc_[0-9A-HJKMNP-TV-Z]{26}$/.test(value)),
-)
+export const FilingDocumentId = IdSchema('filingDocument')
 
 /** 세목입니다. */
 export const TaxType = Schema.Literals(['VAT', 'WITHHOLDING_TAX', 'CORPORATE_TAX', 'INCOME_TAX'])
