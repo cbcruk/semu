@@ -35,6 +35,44 @@ describe('term limit exemptions', () => {
     expect(indefiniteConversion(contracts, '1960-01-01', '2026-03-01').exemptReason).toBe('AGED_55_OR_OVER')
   })
 
+  it('keeps a conversion that general contracts already reached before an exempt contract', () => {
+    const contracts: ContractPeriod[] = [
+      { contractType: 'FIXED_TERM', startDate: '2023-01-01', endDate: '2023-12-31' },
+      { contractType: 'FIXED_TERM', startDate: '2024-01-01', endDate: '2025-06-30' },
+      { contractType: 'FIXED_TERM', startDate: '2025-07-01', endDate: '2026-06-30', termLimitExemption: 'REPLACEMENT' },
+    ]
+    expect(indefiniteConversion(contracts, '1990-01-01', '2026-03-01')).toMatchObject({
+      isTarget: true,
+      status: 'EXCEEDED',
+      isExempt: false,
+      conversionDate: '2025-01-01',
+    })
+  })
+
+  it('converts when a general contract follows an exempt one past the conversion date', () => {
+    const contracts: ContractPeriod[] = [
+      { contractType: 'FIXED_TERM', startDate: '2023-01-01', endDate: '2024-06-30' },
+      { contractType: 'FIXED_TERM', startDate: '2024-07-01', endDate: '2025-06-30', termLimitExemption: 'REPLACEMENT' },
+      { contractType: 'FIXED_TERM', startDate: '2025-07-01', endDate: '2026-06-30' },
+    ]
+    expect(indefiniteConversion(contracts, '1990-01-01', '2026-03-01')).toMatchObject({
+      isTarget: true,
+      isExempt: false,
+    })
+  })
+
+  it('stays exempt when only exempt contracts run past the conversion date', () => {
+    const contracts: ContractPeriod[] = [
+      { contractType: 'FIXED_TERM', startDate: '2023-01-01', endDate: '2024-06-30' },
+      { contractType: 'FIXED_TERM', startDate: '2024-07-01', endDate: '2026-06-30', termLimitExemption: 'REPLACEMENT' },
+    ]
+    expect(indefiniteConversion(contracts, '1990-01-01', '2026-03-01')).toMatchObject({
+      isTarget: false,
+      isExempt: true,
+      exemptReason: 'REPLACEMENT',
+    })
+  })
+
   it('ignores a reason on an earlier contract', () => {
     const contracts = [{ ...first, termLimitExemption: 'REPLACEMENT' as const }, latest]
     expect(indefiniteConversion(contracts, '1990-01-01', '2026-03-01')).toMatchObject({

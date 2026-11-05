@@ -20,9 +20,16 @@ interface ObligationDraft {
  * 납부 기한은 신고 기한과 같습니다(부가가치세법 제48조 ②·제49조 ②, 법인세법 제63조 ③·제64조 ①,
  * 소득세법 제76조 ①·제128조 ①). 분납은 납세자가 고르는 것이라 신고 건의 `paymentDue`로 덮어씁니다.
  *
- * 중간예납·예정고지·예정부과는 직전 세액이 50만원 미만이거나 신설 첫 해면 생기지 않지만(법인세법 제63조 ①,
- * 소득세법 제65조 ①·제86조, 부가가치세법 제48조 ③·제66조 ①), 프로필은 직전 세액을 모르므로 모두 만들고
- * 대리인이 해당 없는 건을 취소합니다. 연말정산은 2월분 원천세(3월 10일)에 들어가므로 따로 만들지 않습니다
+ * 다음 경우에는 의무가 생기지 않지만 프로필이 직전 세액·기업 규모·설립 연도를 모르므로 모두 만들고 대리인이 해당 없는
+ * 건을 취소합니다.
+ *
+ * - 법인 중간예납: 신설법인의 최초 사업연도, 사업연도 6개월 이하, 직전 사업연도 중소기업으로서 계산액 50만원 미만
+ *   (법인세법 제63조 ①. 50만원 기준은 중소기업에만 적용합니다)
+ * - 개인 중간예납: 그 해 신규 사업자, 중간예납세액 50만원 미만(소득세법 제65조 ①·제86조)
+ * - 부가세 예정고지·예정부과: 징수할 금액 50만원 미만(부가가치세법 제48조 ③·제66조 ①)
+ *
+ * 중간예납기준액이 없는 개인 복식부기의무자가 11월에 중간예납추계액을 신고해야 하는 경우(소득세법 제65조 ⑤)는
+ * 고지 건으로 두고 대리인이 바꿉니다. 연말정산은 2월분 원천세(3월 10일)에 들어가므로 따로 만들지 않습니다
  * (소득세법 제137조 ①). 신고 건은 한 번 만들면 기간을 다시 계산하지 않고, 다시 돌리면 기한만 새로 맞춥니다.
  *
  * @example 12월 결산 법인의 11월 일정
@@ -62,7 +69,7 @@ function finalize(draft: ObligationDraft, holidays: ReadonlySet<string>): Filing
 
 function vatDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[] {
   if (profile.businessType === 'INDIVIDUAL' && profile.vatTaxpayerType === 'SIMPLIFIED')
-    return simplifiedVatDrafts(year)
+    return simplifiedVatDrafts(year, profile.vatSimplifiedInvoiceIssuer === true)
   const filesPreliminary = profile.businessType === 'CORPORATION' && profile.vatPreliminaryMode === 'FILING'
   return ([1, 2] as const).flatMap((half): ObligationDraft[] => {
     const firstMonth = monthOf(year, half === 1 ? 1 : 7)
@@ -92,13 +99,17 @@ function vatDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[]
 
 /**
  * 간이과세자의 부가세입니다. 1–6월은 예정부과(7월 25일, 고지)이고, 1년 확정 신고는 다음 해 1월 25일입니다
- * (부가가치세법 제66조 ①, 제67조 ①).
+ * (부가가치세법 제66조 ①, 제67조 ①). 예정부과기간에 세금계산서를 발급했으면 고지 대신 7월 25일까지 예정 신고합니다
+ * (제66조 ③).
+ *
+ * 과세 유형이 바뀐 해(제5조 ④)는 다루지 않습니다. 그 해에는 과세기간이 반기로 줄고, 간이에서 일반으로 바뀌면
+ * 예정부과도 없습니다(제66조 ① 2호). 프로필에 유형 변경 이력이 없어 대리인이 그 해 신고 건을 고칩니다.
  */
-function simplifiedVatDrafts(year: number): ObligationDraft[] {
+function simplifiedVatDrafts(year: number, issuesTaxInvoices: boolean): ObligationDraft[] {
   return [
     {
       taxType: 'VAT',
-      kind: 'NOTICE',
+      kind: issuesTaxInvoices ? 'PRELIMINARY' : 'NOTICE',
       periodKey: `${year}-H1`,
       periodStart: `${year}-01-01`,
       periodEnd: `${year}-06-30`,

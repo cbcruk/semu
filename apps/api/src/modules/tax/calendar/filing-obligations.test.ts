@@ -78,6 +78,21 @@ describe('simplified VAT taxpayer', () => {
     ])
   })
 
+  it('files a preliminary return instead of a notice after issuing tax invoices', () => {
+    const issuer = { ...simplified, vatSimplifiedInvoiceIssuer: true }
+    const preliminary = resolve(issuer, '2026-07-01', '2026-07-31').find((item) => item.taxType === 'VAT')
+    expect(preliminary).toEqual({
+      taxType: 'VAT',
+      kind: 'PRELIMINARY',
+      periodKey: '2026-H1',
+      periodStart: '2026-01-01',
+      periodEnd: '2026-06-30',
+      statutoryDue: '2026-07-25',
+      dueDate: '2026-07-27',
+      paymentDue: '2026-07-27',
+    })
+  })
+
   it('treats a corporation as a general taxpayer', () => {
     const general = resolve(corporation, '2026-01-01', '2026-12-31').filter((item) => item.taxType === 'VAT')
     const flagged = resolve({ ...corporation, vatTaxpayerType: 'SIMPLIFIED' }, '2026-01-01', '2026-12-31').filter(

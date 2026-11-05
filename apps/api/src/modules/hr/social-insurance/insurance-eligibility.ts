@@ -15,7 +15,8 @@ export const EI_MANDATORY_VISAS: ReadonlyArray<string> = ['F-2', 'F-5', 'F-6', '
  *
  * 고용보험법 시행령 제3조의3 제1호 가목: 법 전부를 적용하되, 고용보험에 상응하는 보험료와 급여에 관한 본국법이
  * 대한민국 국민에게 적용되지 않으면 제외합니다. 국가 목록은 법령이 정하지 않으므로 서버는 가입을 권하고 본국법 확인을 안내합니다.
- * 그 밖의 취업 체류자격(E-1~E-7 등)과 재외동포(F-4)는 신청해야 적용되는 임의가입입니다(같은 조 제2호).
+ * 그 밖의 취업 체류자격(E-1~E-7 등)과 재외동포(F-4)는 신청해야 적용되는 임의가입이라(같은 조 제2호) 신청 전 기본값은
+ * 미적용입니다. 목록에 없는 그 밖의 체류자격도 같은 조가 적용하지 않으므로 미적용으로 권합니다.
  */
 export const EI_RECIPROCITY_VISAS: ReadonlyArray<string> = ['D-7', 'D-8', 'D-9']
 
@@ -37,7 +38,8 @@ export const DEFAULT_ENROLLMENT: Readonly<Record<Insurance, InsuranceEnrollment>
  * - 고용보험: 만 65세 이후 입사면 `EI_OVER_65_NEW_HIRE`로 제외. 대표자·임원·동거 친족 제외
  * - 산재보험: 대표자·임원·동거 친족만 제외
  * - 주 15시간 미만이면 국민연금·건강·고용보험 제외
- * - 외국인 고용보험: 주재·기업투자·무역경영은 가입을 권하고 본국 상호주의 확인을 안내, 당연가입 체류자격이 아니면 임의가입 안내
+ * - 외국인 고용보험: 주재·기업투자·무역경영은 가입을 권하고 본국 상호주의 확인을 안내, 당연가입 체류자격이 아니면
+ *   `EXEMPT_FOREIGNER`로 제외하고 신청하면 가입할 수 있다고 안내(`EI_FOREIGNER_OPTIONAL`)
  *
  * 순서가 결과에 영향을 줍니다. 뒤 규칙이 앞 규칙의 제외 사유를 덮어씁니다(현행과 같음).
  *
@@ -102,6 +104,7 @@ export function determineEligibility(
       result.messages.push('EI_FOREIGNER_RECIPROCITY_CHECK')
     } else if (!EI_MANDATORY_VISAS.includes(visa)) {
       result.messages.push('EI_FOREIGNER_OPTIONAL')
+      exclude('ei', 'EXEMPT_FOREIGNER')
     }
   }
   return result

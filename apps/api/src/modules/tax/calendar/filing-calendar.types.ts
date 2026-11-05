@@ -22,6 +22,11 @@ export interface TaxCalendarProfile {
   vatPreliminaryMode: VatPreliminaryMode
   /** 부가세 과세 유형입니다. 법인은 `SIMPLIFIED`여도 일반과세자로 계산합니다. */
   vatTaxpayerType: VatTaxpayerType
+  /**
+   * 간이과세자가 예정부과기간(1–6월)에 세금계산서를 발급했는지입니다. 참이면 예정부과 고지 대신 예정 신고
+   * (`PRELIMINARY`)입니다(부가가치세법 제66조 ③). 없으면 거짓으로 봅니다.
+   */
+  vatSimplifiedInvoiceIssuer?: boolean | undefined
   /** 성실신고확인 대상이면 법인세·종합소득세 기한이 한 달 늦습니다. */
   sincereFilingTarget: boolean
 }

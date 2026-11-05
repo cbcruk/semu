@@ -76,7 +76,7 @@
 |---|---|---|---|
 | 1 | 1월 1일 ~ 12월 31일 계약을 1년 계약으로 볼까요 | **바꿈:** `시작일 + 12개월 ≤ 종료일 + 1일`이면 1년 이상입니다 | 최저임금법 시행령 제3조의 "1년 이상 근로계약"은 기간으로 셉니다. 현행 식은 정확히 1년인 계약을 막습니다 |
 | 2 | 지급률을 ppm으로 받을까요 | **바꿈:** `payRatePpm`(900,000~1,000,000) 정수로 받습니다 | 비율을 정수로 저장하는 규약([conventions](../conventions.md))을 따릅니다 |
-| 3 | 단순노무직종 감액 금지를 검사할까요 | **바꿈:** 근로계약에 한국표준직업분류 코드(`standardOccupationCode`, 선택)를 받고, 대분류 9면 지급률 100% 미만을 422 `PROBATION_REDUCTION_SIMPLE_LABOR`로 거절합니다. 코드가 없으면 검사하지 않습니다 | [최저임금법 제5조 ② 단서](https://www.law.go.kr/법령/최저임금법). 고용노동부고시 제2018-23호가 단순노무직종을 한국표준직업분류 대분류 9(단순노무 종사자)로 정합니다([고용노동부 설명, 정책브리핑 2021-09-23](https://www.korea.kr/news/actuallyView.do?newsId=148893419)) |
+| 3 | 단순노무직종 감액 금지를 검사할까요 | **바꿈:** 근로계약에 한국표준직업분류 코드(`standardOccupationCode`, 선택)를 받고, 대분류 9면 지급률 100% 미만을 422 `PROBATION_REDUCTION_SIMPLE_LABOR`로 거절합니다. 코드가 없으면 검사하지 않습니다 | [최저임금법 제5조 ② 단서](https://www.law.go.kr/법령/최저임금법). [고용노동부고시 제2018-23호](https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000118064)가 단순노무직종을 한국표준직업분류 대분류 9(단순노무 종사자)로 정합니다 |
 
 **바뀌는 케이스:**
 - `reduced probation pay on a one-year contract ending 12-31`: `PROBATION_REDUCTION_NOT_ALLOWED` → 통과
@@ -99,7 +99,7 @@
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
 | 1 | 전환 경계를 시작일 + 24개월로 볼까요 | **따름** | 기간제법 제4조 "2년을 초과하여"를 체인 종료일이 전환일 이상이면 초과로 봅니다 |
-| 2 | 55세 외 예외를 받을까요 | **바꿈:** 근로계약에 `termLimitExemption`(`PROJECT_COMPLETION`·`REPLACEMENT`·`STUDY_OR_TRAINING`·`PROFESSIONAL`·`GOVERNMENT_JOB_PROGRAM`·`OTHER_STATUTORY`)을 받고, 사슬의 가장 늦은 계약에 있으면 예외(`exemptReason`)로 봅니다. 만 55세가 먼저입니다. 증빙은 회사가 보관합니다 | [기간제법 제4조 ① 1–6호](https://www.law.go.kr/법령/기간제및단시간근로자보호등에관한법률), [시행령 제3조](https://www.law.go.kr/법령/기간제및단시간근로자보호등에관한법률시행령). 고령자는 55세 이상입니다([고령자고용법 시행령 제2조 ①](https://www.law.go.kr/법령/고용상연령차별금지및고령자고용촉진에관한법률시행령)) |
+| 2 | 55세 외 예외를 받을까요 | **바꿈:** 근로계약에 `termLimitExemption`(`PROJECT_COMPLETION`·`REPLACEMENT`·`STUDY_OR_TRAINING`·`PROFESSIONAL`·`GOVERNMENT_JOB_PROGRAM`·`OTHER_STATUTORY`)을 받습니다. 예외 사유가 없는 계약이 전환일 이후까지 이어지면 그날 전환된 것으로 보고(제4조 ②) 뒤의 예외 계약은 보지 않습니다. 그런 계약이 없고 사슬의 가장 늦은 계약에 사유가 있으면 예외(`exemptReason`)입니다. 만 55세가 먼저입니다. 증빙은 회사가 보관합니다 | [기간제법 제4조 ① 1–6호](https://www.law.go.kr/법령/기간제및단시간근로자보호등에관한법률), [시행령 제3조](https://www.law.go.kr/법령/기간제및단시간근로자보호등에관한법률시행령). 고령자는 55세 이상입니다([고령자고용법 시행령 제2조 ①](https://www.law.go.kr/법령/고용상연령차별금지및고령자고용촉진에관한법률시행령)) |
 | 3 | 알림 시작 90일을 설정으로 둘까요 | **따름:** 상수 90일 | 현행과 같습니다 |
 
 **바뀌는 케이스:** 없음. 질문 2는 새 입력이라 `indefinite-conversion.fixtures.test.ts`가 따로 확인합니다.
@@ -112,11 +112,11 @@
 
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
-| 1 | 상호주의 국가 목록을 받을까요 | **바꿈:** 국가 목록을 두지 않습니다. 상호주의 체류자격은 D-7·D-8·D-9뿐이고, 가입을 권하며 `EI_FOREIGNER_RECIPROCITY_CHECK`로 본국법 확인을 안내합니다. E-1~E-7·F-4 등은 `EI_FOREIGNER_OPTIONAL`(임의가입)입니다 | [고용보험법 시행령 제3조의3](https://www.law.go.kr/법령/고용보험법시행령): 주재·기업투자·무역경영은 법 전부를 적용하되 본국법이 대한민국 국민에게 고용보험에 상응하는 보험료·급여를 적용하지 않으면 제외합니다(제1호 가목). 국가 목록을 고시로 위임하지 않습니다. 그 밖의 취업 체류자격과 재외동포는 신청해야 적용합니다(제2호) |
+| 1 | 상호주의 국가 목록을 받을까요 | **바꿈:** 국가 목록을 두지 않습니다. 상호주의 체류자격은 D-7·D-8·D-9뿐이고, 가입을 권하며 `EI_FOREIGNER_RECIPROCITY_CHECK`로 본국법 확인을 안내합니다. E-1~E-7·F-4 등 당연가입이 아닌 체류자격은 신청 전 기본값이 미적용이라 고용보험을 `EXEMPT_FOREIGNER`로 제외하고 `EI_FOREIGNER_OPTIONAL`로 신청하면 가입할 수 있다고 안내합니다 | [고용보험법 시행령 제3조의3](https://www.law.go.kr/법령/고용보험법시행령): 주재·기업투자·무역경영은 법 전부를 적용하되 본국법이 대한민국 국민에게 고용보험에 상응하는 보험료·급여를 적용하지 않으면 제외합니다(제1호 가목). 국가 목록을 고시로 위임하지 않습니다. 그 밖의 취업 체류자격과 재외동포는 신청해야 적용합니다(제2호) |
 | 2 | 월 60시간 분기를 정리할까요 | **따름:** 결과가 같으므로 그대로 둡니다 | 주 15시간 미만 검사가 먼저 걸러 결과가 바뀌지 않습니다 |
 | 3 | 60세 이후 임의계속가입을 다룰까요 | **따름:** 다루지 않습니다. 사용자가 권장값을 바꿔 저장할 수 있습니다 | 판정은 권장값이고 저장은 사용자가 합니다 |
 
-**바뀌는 케이스:** `E-7 foreigner without agreement` → 고용보험 가입 유지, 메시지 `EI_FOREIGNER_OPTIONAL`.
+**바뀌는 케이스:** `E-7 foreigner without agreement`, `D-2 foreigner is optional` → 메시지 `EI_FOREIGNER_OPTIONAL`, 고용보험 미적용(`EXEMPT_FOREIGNER`). 응답 코드 `EI_FOREIGNER_RECIPROCITY_AGREEMENT`·`NON_AGREEMENT`는 `EI_FOREIGNER_RECIPROCITY_CHECK` 하나로 바뀝니다.
 
 ## 휴직·퇴사
 
