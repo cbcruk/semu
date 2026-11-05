@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { demoGrantProfiles, demoGrants } from './assistant-seed.ts'
 import { AssistantModel } from './conversations/assistant-model.ts'
 import { ConversationRepository } from './conversations/conversation-repository.ts'
@@ -19,13 +20,16 @@ export const AssistantHttpLive = Layer.mergeAll(ConversationsHttpLive, GrantsHtt
 )
 
 /**
- * AI 비서·지원사업 추천 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ * AI 비서·지원사업 추천 컨텍스트의 저장소와 외부 연동입니다. 저장소 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  *
  * 언어 모델은 낱말로 도구를 고르는 가짜이고, 회사 업종·지역은 데모 회사 값으로 채웁니다.
  */
-export const AssistantMemoryLive = Layer.mergeAll(
-  ConversationRepository.layerMemory(),
-  GrantRepository.layerMemory(demoGrants()),
+export const AssistantStoreLive = Layer.mergeAll(
+  ConversationRepository.layer(),
+  GrantRepository.layer(demoGrants()),
   AssistantModel.layerFake,
   CompanyGrantProfiles.layerMemory(demoGrantProfiles()),
 )
+
+/** {@link AssistantStoreLive}를 메모리 표로 채웁니다. 로컬 개발과 테스트에 씁니다. */
+export const AssistantMemoryLive = AssistantStoreLive.pipe(Layer.provide(TableFactory.layerMemory))

@@ -1,7 +1,8 @@
-import { Context, Effect, Layer, Option, Ref, Schema } from 'effect'
+import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { makeTenantTable, TableFactory } from '../../../shared/persistence/record-table.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 
 /** 홈택스 수임동의 ID입니다. 예: `dlg_01J...` */
@@ -83,31 +84,26 @@ export class DelegationRepository extends Context.Service<
     save(delegation: DelegationRecord): Effect.Effect<void>
   }
 >()('semu/integrations/DelegationRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 수임동의를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<DelegationRecord> = []) =>
+  /** `integrations_hometax_delegations` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<DelegationRecord> = []) =>
     Layer.effect(
       DelegationRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((delegation) => [delegation.id, delegation])))
+        const table = yield* makeTenantTable<DelegationRecord>('integrations_hometax_delegations', seed)
         return DelegationRepository.of({
-          find: (companyId, delegationId) =>
-            Ref.get(store).pipe(
-              Effect.map((all) =>
-                Option.filter(Option.fromNullishOr(all.get(delegationId)), (found) => found.companyId === companyId),
-              ),
-            ),
+          find: (companyId, delegationId) => table.find(companyId, delegationId),
           listByCompany: (companyId) =>
-            Ref.get(store).pipe(
-              Effect.map((all) =>
-                [...all.values()]
-                  .filter((found) => found.companyId === companyId)
-                  .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)),
-              ),
-            ),
-          save: (delegation) => Ref.update(store, (all) => new Map(all).set(delegation.id, delegation)),
+            table
+              .list(companyId)
+              .pipe(Effect.map((all) => all.toSorted((a, b) => b.requestedAt.localeCompare(a.requestedAt)))),
+          save: (delegation) => table.save(delegation),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 수임동의를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<DelegationRecord> = []) =>
+    DelegationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 저장한 수임동의를 응답 형태로 바꿉니다. */

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { makeTenantTable, TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { ConversationRecord } from './conversation.ts'
 
@@ -17,31 +18,36 @@ export class ConversationRepository extends Context.Service<
     save(conversation: ConversationRecord): Effect.Effect<void>
   }
 >()('semu/assistant/ConversationRepository') {
-  /** 프로세스 메모리에 대화를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<ConversationRecord> = []) =>
+  /** `assistant_conversations` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<ConversationRecord> = []) =>
     Layer.effect(
       ConversationRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((conversation) => [conversation.id, conversation])))
-        const visible = (record: ConversationRecord, companyId: Id<'company'>, userId: Id<'user'>): boolean =>
-          record.companyId === companyId && record.userId === userId && record.deletedAt === undefined
+        const table = yield* makeTenantTable<ConversationRecord>('assistant_conversations', seed)
+        const visible = (record: ConversationRecord, userId: Id<'user'>): boolean =>
+          record.userId === userId && record.deletedAt === undefined
         return ConversationRepository.of({
           find: (companyId, userId, conversationId) =>
-            Ref.get(store).pipe(
-              Effect.map((records) =>
-                Option.filter(Option.fromNullishOr(records.get(conversationId)), (r) => visible(r, companyId, userId)),
-              ),
+            Effect.map(
+              table.find(companyId, conversationId),
+              Option.filter((record) => visible(record, userId)),
             ),
           listByUser: (companyId, userId) =>
-            Ref.get(store).pipe(
-              Effect.map((records) =>
-                [...records.values()]
-                  .filter((record) => visible(record, companyId, userId))
-                  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id)),
+            table
+              .list(companyId)
+              .pipe(
+                Effect.map((records) =>
+                  records
+                    .filter((record) => visible(record, userId))
+                    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id)),
+                ),
               ),
-            ),
-          save: (conversation) => Ref.update(store, (records) => new Map(records).set(conversation.id, conversation)),
+          save: (conversation) => table.save(conversation),
         })
       }),
     )
+
+  /** 프로세스 메모리에 대화를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<ConversationRecord> = []) =>
+    ConversationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

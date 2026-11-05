@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { BusinessStatusesHttpLive } from './business-statuses/business-statuses.http.ts'
 import { CertificateRepository } from './certificates/certificate-repository.ts'
 import { SigningCertificatesHttpLive } from './certificates/certificates.http.ts'
@@ -48,17 +49,18 @@ export const IntegrationsHttpLive = Layer.mergeAll(
 ).pipe(Layer.provide(ServicesLive))
 
 /**
- * Integrations가 소유한 저장소·금고와 기관 어댑터를 메모리 구현과 결정적인 가짜로 채웁니다.
+ * Integrations가 소유한 저장소·금고와 기관 어댑터입니다. 저장소 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  *
+ * 금고 키와 기관 어댑터(수집 게이트웨이·사업자 상태조회·홈택스·지로)는 결정적인 가짜입니다.
  * 사업자 상태조회·세금계산서 발급·지로 납부 어댑터는 다른 컨텍스트도 `integrations.public.ts`로 씁니다. 수집 큐는 넣지 않습니다.
  * 워커가 다른 컨텍스트의 `ScrapedRecordSink`를 써서, 그 포트를 채운 뒤 {@link ScrapQueueInlineLive}를 얹습니다.
  */
-export const IntegrationsMemoryStoreLive = Layer.mergeAll(
-  IntegrationRepository.layerMemory(demoIntegrations()),
-  CertificateRepository.layerMemory(demoCertificates()),
-  ScrapRequestRepository.layerMemory(),
-  DelegationRepository.layerMemory(demoDelegations()),
-  ChannelTokenRepository.layerMemory(demoChannelTokens()),
+export const IntegrationsStoreLive = Layer.mergeAll(
+  IntegrationRepository.layer(demoIntegrations()),
+  CertificateRepository.layer(demoCertificates()),
+  ScrapRequestRepository.layer(),
+  DelegationRepository.layer(demoDelegations()),
+  ChannelTokenRepository.layer(demoChannelTokens()),
   CredentialVault.layerMemory(),
   ScrapingGateway.layerFake,
   BusinessStatusClient.layerFake(),
@@ -66,6 +68,9 @@ export const IntegrationsMemoryStoreLive = Layer.mergeAll(
   HometaxInvoiceClient.layerFake,
   GiroPaymentClient.layerFake,
 )
+
+/** {@link IntegrationsStoreLive}를 메모리 표로 채웁니다. */
+export const IntegrationsMemoryStoreLive = IntegrationsStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
 
 /**
  * Identity & Access·Bookkeeping이 구현하는 포트의 가짜입니다. 수집 레코드는 배열에 쌓고, 회사 정보는 데모 회사 표로 답합니다.
