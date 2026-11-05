@@ -142,7 +142,7 @@ WorkContract
 ├─ id, employeeId, origin: MANUAL | ESIGN, esignRequestId?
 ├─ contractType: PERMANENT | FIXED_TERM, startDate, endDate?
 ├─ workType, occupationCode?, weeklyWorkHours?, workSchedulePolicyId?, workConditionId?
-├─ probation?: { months, payRatePpm }
+├─ probation?: { months, payRatePpm }, standardOccupationCode?, termLimitExemption?
 ├─ jobDescription?, documentId?
 └─ status (파생): SCHEDULED | ACTIVE | EXPIRED
 ```
@@ -156,7 +156,8 @@ DELETE /work-contracts/{workContractId}
 GET    /employees/{employeeId}/indefinite-conversion?asOf=
 ```
 
-- 기간제는 종료일이 필수이고, 수습 감액(지급률 100% 미만)은 1년 이상 계약에만 허용합니다 ([work-contract-validation](../reference/rules/work-contract-validation.md))
+- 기간제는 종료일이 필수이고, 수습 감액(지급률 100% 미만)은 1년 이상 계약에만 허용합니다 ([work-contract-validation](../reference/rules/work-contract-validation.md)). 한국표준직업분류 코드(`standardOccupationCode`)가 대분류 9(단순노무)면 감액을 받지 않습니다
+- 기간제 사용기간 제한의 예외 사유(`termLimitExemption`, 기간제법 제4조 ① 단서)를 계약에 받고, 무기계약 전환 판정이 `exemptReason`으로 돌려줍니다
 - 지급률은 ppm입니다(`90% = 900000`). 현행 정수 퍼센트(`90`)를 바꿉니다
 
 ### 급여계약
@@ -195,7 +196,7 @@ POST /employees/{employeeId}/social-insurance:determine   { 저장하지 않은 
 
 - **자격 판정은 순수 규칙입니다** ([social-insurance-eligibility](../reference/rules/social-insurance-eligibility.md)). 입력은 생년월일·입사일·내외국인·체류자격·주 소정근로시간·대표자/친족 여부이고, 출력은 판정 코드와 권장 가입 여부입니다
 - `:determine` 하나가 현행 `preview`(미저장 값)와 `redetermine`(저장값)을 대신합니다. 본문이 비면 저장된 값으로 판정합니다. 저장하지 않으므로 커맨드지만 멱등입니다
-- 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_AGREEMENT`, `EI_FOREIGNER_RECIPROCITY_NON_AGREEMENT`로 대문자를 맞춥니다
+- 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_CHECK`로 대문자를 맞춥니다. 상호주의 국가 목록은 두지 않습니다(D-7·D-8·D-9만 본국법 확인 안내, [결정](rule-decisions/hr.md#social-insurance-eligibility))
 - 제외 사유는 한글 문장 대신 코드(`AGE_60_OR_OVER`, `SHORT_PART_TIME`, …)로 받고, 표시 문자열은 `GET /reference/insurance-exclusion-reasons`가 줍니다
 - 판정 결과는 권장값입니다. 사용자가 다르게 저장할 수 있고, 그 차이는 `GET` 응답의 `warnings`(`ELIGIBILITY_MISMATCH`)로 보여 줍니다
 
@@ -249,7 +250,7 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 - 휴직 등록·수정·삭제는 직원 상태를 바꾸므로 휴직과 직원의 `version`을 함께 올립니다
 - **복직은 커맨드입니다.** 현행은 `PUT`에 `actual_return_date`를 넣었습니다. `:return`이 복직일을 기록하고 복직 신고(`RETURN`)를 엽니다
-- 기간 겹침은 422 `LEAVE_OVERLAP`(`overlappingLeaveId`)입니다. 육아휴직은 근속에 항상 포함하고, 건강보험 납입고지유예는 1개월 이상 휴직에만 허용합니다 ([leave-validation](../reference/rules/leave-validation.md))
+- 기간 겹침은 422 `LEAVE_OVERLAP`(`overlappingLeaveId`)입니다. 육아휴직은 근속에 항상 포함하고, 건강보험 납입고지유예는 유예되는 달이 있는 휴직에만 허용합니다(국민건강보험법 시행규칙 제50조 ④, [leave-validation](../reference/rules/leave-validation.md))
 - 육아휴직 누적 365일 초과는 막지 않고 `warnings`(`PARENTAL_LEAVE_LIMIT_EXCEEDED`)로 알립니다. 자녀별 한도라 자녀를 모르는 서버가 막을 수 없습니다
 - 휴직 등록이 휴직 신고(`LEAVE`)를 엽니다. 국민연금 납부예외·건강보험 고지유예 옵션은 신고 내용에 들어갑니다
 

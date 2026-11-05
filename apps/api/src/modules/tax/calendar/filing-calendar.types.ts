@@ -7,6 +7,12 @@ export type WithholdingCycle = 'MONTHLY' | 'SEMIANNUAL'
 /** 법인 부가세 예정 기간을 신고(`FILING`)로 처리할지 고지(`NOTICE`)로 받을지입니다. 개인은 항상 고지입니다. */
 export type VatPreliminaryMode = 'FILING' | 'NOTICE'
 
+/**
+ * 부가세 과세 유형입니다. 간이과세자(`SIMPLIFIED`)는 개인사업자만 될 수 있고(부가가치세법 제61조),
+ * 과세기간이 1월 1일–12월 31일입니다(제5조 ①).
+ */
+export type VatTaxpayerType = 'GENERAL' | 'SIMPLIFIED'
+
 /** 신고 일정을 정하는 회사의 세무 설정입니다. */
 export interface TaxCalendarProfile {
   businessType: BusinessType
@@ -14,6 +20,8 @@ export interface TaxCalendarProfile {
   fiscalYearEndMonth: number
   withholdingCycle: WithholdingCycle
   vatPreliminaryMode: VatPreliminaryMode
+  /** 부가세 과세 유형입니다. 법인은 `SIMPLIFIED`여도 일반과세자로 계산합니다. */
+  vatTaxpayerType: VatTaxpayerType
   /** 성실신고확인 대상이면 법인세·종합소득세 기한이 한 달 늦습니다. */
   sincereFilingTarget: boolean
 }

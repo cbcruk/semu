@@ -19,6 +19,17 @@ describe('evaluatePayrollContract', () => {
     })
   })
 
+  it('warns when reduced probation pay runs past three months below the minimum wage', () => {
+    const atMinimum = { ...monthly, amount: 2_156_880 }
+    const reduced = { ...context, probationPayRatePpm: 900_000 }
+
+    expect(evaluatePayrollContract(atMinimum, { ...reduced, probationMonths: 3 }).warnings).toEqual([])
+    expect(evaluatePayrollContract(atMinimum, { ...reduced, probationMonths: 6 }).warnings).toEqual([
+      'PROBATION_BELOW_MINIMUM_WAGE',
+    ])
+    expect(evaluatePayrollContract(monthly, { ...reduced, probationMonths: 6 }).warnings).toEqual([])
+  })
+
   it('warns instead of failing below the minimum wage', () => {
     const result = evaluatePayrollContract({ ...monthly, amount: 2_156_879 }, context)
 

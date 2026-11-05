@@ -6,7 +6,7 @@ import type { IndefiniteConversion } from './indefinite-conversion.types.ts'
 /** 2년 도달 몇 일 전부터 `APPROACHING`으로 알리는지입니다. 제품 값은 미확인입니다. */
 export const INDEFINITE_CONVERSION_NOTICE_DAYS = 90
 
-/** 무기계약 전환 예외 나이입니다(기간제법 시행령, 만 55세 이상). */
+/** 무기계약 전환 예외 나이입니다(기간제법 제4조 ① 4호의 고령자, 고령자고용법 시행령 제2조 ①: 만 55세 이상). */
 export const INDEFINITE_CONVERSION_EXEMPT_AGE = 55
 
 /**
@@ -14,7 +14,8 @@ export const INDEFINITE_CONVERSION_EXEMPT_AGE = 55
  *
  * 다음 계약이 앞 계약 종료일 다음날까지 시작하면 이어진 것으로 보고, 가장 늦은 기간제 계약이 속한 사슬만 봅니다.
  * 사슬 시작일 + 24개월이 전환일입니다. 사슬이 전환일에 닿으면 `EXCEEDED`, 아직 끝나지 않았고 전환일이
- * {@link INDEFINITE_CONVERSION_NOTICE_DAYS}일 안이면 `APPROACHING`입니다. 사슬 시작일에 만 55세 이상이면 예외입니다.
+ * {@link INDEFINITE_CONVERSION_NOTICE_DAYS}일 안이면 `APPROACHING`입니다. 사슬 시작일에 만 55세 이상이거나,
+ * 사슬의 가장 늦은 계약에 사용기간 제한 예외 사유(`termLimitExemption`)가 있으면 예외입니다.
  */
 export function indefiniteConversion(
   contracts: ReadonlyArray<ContractPeriod>,
@@ -24,7 +25,7 @@ export function indefiniteConversion(
   const fixedTerm = contracts
     .flatMap((contract) =>
       contract.contractType === 'FIXED_TERM' && contract.endDate !== undefined
-        ? [{ start: contract.startDate, end: contract.endDate }]
+        ? [{ start: contract.startDate, end: contract.endDate, exemption: contract.termLimitExemption }]
         : [],
     )
     .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
@@ -39,7 +40,11 @@ export function indefiniteConversion(
     if (previous.end > chainEnd) chainEnd = previous.end
   }
   const conversionDate = addMonthsToDate(chainStart, 24)
-  const isExempt = birthDate !== undefined && ageOn(birthDate, chainStart) >= INDEFINITE_CONVERSION_EXEMPT_AGE
+  const exemptReason =
+    birthDate !== undefined && ageOn(birthDate, chainStart) >= INDEFINITE_CONVERSION_EXEMPT_AGE
+      ? ('AGED_55_OR_OVER' as const)
+      : last.exemption
+  const isExempt = exemptReason !== undefined
   const daysUntilConversion = daysBetween(asOf, conversionDate)
   const status =
     chainEnd >= conversionDate
@@ -51,7 +56,7 @@ export function indefiniteConversion(
     isTarget: !isExempt && status !== 'NONE',
     status,
     isExempt,
-    ...(isExempt ? { exemptReason: 'AGED_55_OR_OVER' as const } : {}),
+    ...(exemptReason === undefined ? {} : { exemptReason }),
     chainStartDate: chainStart,
     chainEndDate: chainEnd,
     totalContractDays: daysBetween(chainStart, chainEnd) + 1,
