@@ -76,6 +76,34 @@ describe('/payroll-calculator:simulate', () => {
     })
   })
 
+  it('applies the childcare limit per child and bounds the child count', async () => {
+    const employee = {
+      dependants: 1,
+      childrenAged8To20: 0,
+      withholdingRatePpm: 1_000_000,
+      manualIncomeTax: null,
+      socialInsurance: { nationalPension: true, healthInsurance: true, employmentInsurance: true },
+      monthlyStandardHours: 209,
+      dailyRestMinutes: 480,
+    }
+    const row = {
+      incomeType: 'WAGE_MONTHLY',
+      basePay: 3_000_000,
+      paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
+    }
+    const simulate = (childcareChildren: number) =>
+      app.request('POST', '/payroll-calculator:simulate', {
+        body: { attributionMonth: '2026-03', row, employee: { ...employee, childcareChildren } },
+      })
+
+    const two = await simulate(2)
+    expect(two.status).toBe(200)
+    expect(two.body).toMatchObject({ nonTaxablePay: 400_000 })
+    expect((await simulate(20)).status).toBe(200)
+    expect((await simulate(21)).status).toBe(400)
+    expect((await simulate(-1)).status).toBe(400)
+  })
+
   it('grosses up a business payment from the net amount', async () => {
     const response = await app.request('POST', '/payroll-calculator:simulate', {
       body: {

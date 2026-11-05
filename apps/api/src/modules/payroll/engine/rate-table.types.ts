@@ -77,6 +77,11 @@ export type NonTaxableCategory =
 export interface NonTaxableLimit {
   monthlyLimit: number | null
   annualLimit: number | null
+  /**
+   * `true`면 `monthlyLimit`이 대상 자녀 1명당 한도라 엔진이 보육수당 대상 자녀 수를 곱합니다. 보육수당은
+   * 2026. 1. 1. 이후 지급분부터입니다(소득세법 제12조제3호머목2), 법률 제21221호). 그 전 기준표는 두지 않습니다.
+   */
+  perChild?: boolean
 }
 
 /** 기준표 값 하나의 출처입니다. */

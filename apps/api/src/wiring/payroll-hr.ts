@@ -50,7 +50,7 @@ export const PAYROLL_DEFAULTS_WITHOUT_HR = {
  * 지급항목·고정수당을 뺀 값), 시급제의 시급·일급제의 일급(계약 금액). 해당하지 않는 단위의 금액은 0원입니다.
  *
  * 기준일에 적용되는 소득세 공제 설정에서 옮기는 값: 공제대상 가족 수, 8–20세 자녀 수, 보육수당 비과세 대상 자녀 수
- * (`childcareChildrenCount`, 없으면 `null`), 원천징수 비율(조정비율 ppm), 직접 입력 세액(`MANUAL`일 때만, 아니면 `null`).
+ * (`childcareChildrenCount`와 그 설정의 `effectiveFrom`, 없으면 `null`), 원천징수 비율(조정비율 ppm), 직접 입력 세액(`MANUAL`일 때만, 아니면 `null`).
  *
  * 아직 기본값으로 채우는 값입니다.
  * - 급여계약이 없으면 {@link PAYROLL_DEFAULTS_WITHOUT_HR}의 월급제·기본급 300만 원·시급·일급 0원
@@ -168,7 +168,10 @@ function incomeTaxOf(settings: DirectoryTaxWithholding | undefined): PayrollEmpl
   return {
     dependants: settings.dependantsCount,
     childrenAged8To20: settings.childrenAged8To20Count,
-    childcareChildren: settings.childcareChildrenCount ?? null,
+    childcareChildren:
+      settings.childcareChildrenCount === undefined
+        ? null
+        : { count: settings.childcareChildrenCount, effectiveFrom: settings.effectiveFrom },
     withholdingRatePpm: settings.adjustmentRatePpm,
     manualAmount: settings.calcMethod === 'MANUAL' ? (settings.manualIncomeTax ?? null) : null,
   }

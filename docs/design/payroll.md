@@ -87,7 +87,7 @@ result
 ├─ deductionTotal, netPay
 ├─ employerInsurance { nationalPension, healthInsurance, longTermCare, employmentInsurance, industrialAccident }
 ├─ breakdown[] { code, label, amount, formula }       # "3,000,000 × 4.75%" 같은 근거
-└─ warnings[]  { code, message }                      # BELOW_MINIMUM_WAGE, NON_TAXABLE_LIMIT_EXCEEDED, CHILDCARE_CHILDREN_UNKNOWN, ...
+└─ warnings[]  { code, message }                      # BELOW_MINIMUM_WAGE, NON_TAXABLE_LIMIT_EXCEEDED, CHILDCARE_CHILDREN_UNKNOWN, CHILDCARE_CHILDREN_STALE, ...
 ```
 
 ## 기준표와 급여 설정
@@ -314,8 +314,8 @@ flowchart LR
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 
-- `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
-- `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수)이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`으로 들어갑니다. 엔진은 보육수당(`CHILDCARE`) 월 비과세 한도를 20만원 × 이 값으로 잡고(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분), 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
+- `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren { count, effectiveFrom } | null, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
+- `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수, 0–20)와 그 설정의 `effectiveFrom`이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`·`childcareChildrenEffectiveFrom`으로 들어갑니다. 엔진은 기준표의 보육수당 한도가 자녀 1명당(`perChild`)이면 월 비과세 한도를 20만원 × 이 값으로 잡습니다(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분). 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN`, 설정 연도가 귀속 연도와 다르면 값은 그대로 쓰고 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 법정 한도는 직원 한 명의 그달 유형별 합계이고 회사 한도는 항목마다 봅니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
 - 원천세 집계는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 싣습니다. 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax입니다
 - Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다

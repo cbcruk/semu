@@ -210,7 +210,7 @@ GET  /reference/income-tax-reduction-reasons
 
 - 감면 유형·사유·기간·감면율 검증은 [deduction-validation](../reference/rules/deduction-validation.md)에 있습니다. 조정비율은 ppm(`80% = 800000`)입니다
 - `dependantsCount`, `childrenAged8To20Count`는 인적공제 대상자에서 파생하는 읽기 전용 값입니다 ([dependant-count](../reference/rules/dependant-count.md))
-- `childcareChildrenCount`(선택)는 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인 자녀입니다(소득세법 제12조제3호머목2)). 공제대상 가족과 따로 세어 배우자가 기본공제를 받는 자녀도 넣습니다. 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡고, 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md))
+- `childcareChildrenCount`(선택)는 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인 자녀입니다(소득세법 제12조제3호머목2)). 공제대상 가족과 따로 세어 배우자가 기본공제를 받는 자녀도 넣고, 손자녀는 넣지 않습니다. 0–20입니다. 나이가 과세기간 개시일 기준이라 매년 1월과 자녀가 태어났을 때 새 `effectiveFrom`으로 다시 저장합니다. 설정의 `effectiveFrom` 연도가 귀속 연도와 다르면 급여가 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡고, 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md))
 
 ### 인적공제 대상자
 
@@ -225,7 +225,7 @@ DELETE /family-members/{familyMemberId}/attachments/{fileId}
 GET    /family-members/{familyMemberId}/registration-number   X-Access-Reason 필수
 ```
 
-- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(보육수당) 대상은 과세기간 개시일 현재 6세 이하 자녀·손자녀만 허용합니다(그해 − 출생 연도 ≤ 6, [결정](rule-decisions/hr.md#dependant-count))
+- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(보육수당) 대상은 과세기간 개시일 현재 6세 이하 자녀만 허용합니다. 법이 "근로자 또는 그 배우자의 … 자녀"라 손자녀는 제외합니다(그해 − 출생 연도 ≤ 6, [결정](rule-decisions/hr.md#dependant-count))
 - `healthInsuranceDependant`를 켜면 피부양자 신고(`DEPENDANT`)를 엽니다
 
 ## 휴직

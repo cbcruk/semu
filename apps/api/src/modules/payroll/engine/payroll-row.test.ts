@@ -133,6 +133,61 @@ describe('splitNonTaxable', () => {
 
       expect(split.lines[0]).toMatchObject({ nonTaxableAmount: 200_000, taxableAmount: 200_000 })
     })
+
+    it('treats a negative count as no child', () => {
+      const split = splitNonTaxable(childcare, rates, { childcareChildren: -2 })
+
+      expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual([0, 0])
+    })
+
+    it('keeps a count set for another tax year but warns', () => {
+      const split = splitNonTaxable(childcare, rates, { childcareChildren: 2, childcareChildrenStale: true })
+
+      expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual([300_000, 100_000])
+      expect(split.warnings.map((warning) => warning.code)).toContain('CHILDCARE_CHILDREN_STALE')
+    })
+
+    it('does not multiply a table whose childcare limit is not per child', () => {
+      const perEmployee = {
+        ...rates,
+        nonTaxable: { ...rates.nonTaxable, CHILDCARE: { monthlyLimit: 200_000, annualLimit: null } },
+      }
+      const split = splitNonTaxable(childcare, perEmployee, { childcareChildren: 2 })
+
+      expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual([200_000, 0])
+      expect(split.warnings.map((warning) => warning.code)).toEqual([
+        'NON_TAXABLE_LIMIT_EXCEEDED',
+        'NON_TAXABLE_LIMIT_EXCEEDED',
+      ])
+    })
+  })
+
+  it('caps each item by its own company limit within the category total', () => {
+    const split = splitNonTaxable(
+      [
+        {
+          code: 'CHILDCARE',
+          name: '보육수당',
+          amount: 300_000,
+          nonTaxableCategory: 'CHILDCARE',
+          companyNonTaxableLimit: 100_000,
+        },
+        { code: 'CHILDCARE_2', name: '가족수당(보육)', amount: 300_000, nonTaxableCategory: 'CHILDCARE' },
+        { code: 'MEAL', name: '식대', amount: 150_000, nonTaxableCategory: 'MEAL' },
+        {
+          code: 'MEAL_2',
+          name: '야근식대',
+          amount: 100_000,
+          nonTaxableCategory: 'MEAL',
+          companyNonTaxableLimit: 30_000,
+        },
+      ],
+      rates,
+      { childcareChildren: 2 },
+    )
+
+    // 보육수당 합계 한도 400,000: 첫 항목은 회사 한도 100,000, 둘째는 남은 300,000. 식대 합계 200,000 중 둘째는 회사 한도 30,000.
+    expect(split.lines.map((line) => line.nonTaxableAmount)).toEqual([100_000, 300_000, 150_000, 30_000])
   })
 })
 

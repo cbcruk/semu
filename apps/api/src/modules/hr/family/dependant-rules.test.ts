@@ -23,8 +23,8 @@ describe('canBeTaxFreeTarget', () => {
     expect(canBeTaxFreeTarget({ relation: 'CHILD', birthDate }, asOf)).toBe(target)
   })
 
-  it('accepts grandchildren and rejects other relations', () => {
-    expect(canBeTaxFreeTarget({ relation: 'GRANDCHILD', birthDate: '2024-05-01' }, '2026-06-01')).toBe(true)
+  it('rejects grandchildren and other relations: the statute names only children of the worker or spouse', () => {
+    expect(canBeTaxFreeTarget({ relation: 'GRANDCHILD', birthDate: '2024-05-01' }, '2026-06-01')).toBe(false)
     expect(canBeTaxFreeTarget({ relation: 'SPOUSE', birthDate: '2024-05-01' }, '2026-06-01')).toBe(false)
   })
 })

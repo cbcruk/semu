@@ -192,11 +192,12 @@ export function calculateWageRow(
     item.prorate === true && proration !== undefined ? { ...item, amount: prorate(item.amount, proration) } : item,
   )
 
-  const split = splitNonTaxable(
-    [...generated, ...items],
-    rates,
-    input.childcareChildren === undefined ? {} : { childcareChildren: input.childcareChildren },
-  )
+  const split = splitNonTaxable([...generated, ...items], rates, {
+    ...(input.childcareChildren === undefined ? {} : { childcareChildren: input.childcareChildren }),
+    childcareChildrenStale:
+      input.childcareChildrenEffectiveFrom !== undefined &&
+      input.childcareChildrenEffectiveFrom.slice(0, 4) !== input.attributionMonth.slice(0, 4),
+  })
   warnings.push(...split.warnings)
   const payments = split.lines.map((line) => {
     const formula = formulas.get(line.code)

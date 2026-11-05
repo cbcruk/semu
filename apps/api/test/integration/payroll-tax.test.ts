@@ -93,6 +93,7 @@ describe('HR → Payroll', () => {
         dependants: 2,
         childrenAged8To20: 1,
         childcareChildren: 2,
+        childcareChildrenEffectiveFrom: '2026-01-05',
         withholdingRatePpm: 1_200_000,
         manualIncomeTax: 40_000,
       },

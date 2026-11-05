@@ -84,6 +84,9 @@ export function engineInputOf(
         },
         incomeTax: incomeTaxSetting(employee, methods.incomeTax),
         ...(employee.childcareChildren === undefined ? {} : { childcareChildren: employee.childcareChildren }),
+        ...(employee.childcareChildrenEffectiveFrom === undefined
+          ? {}
+          : { childcareChildrenEffectiveFrom: employee.childcareChildrenEffectiveFrom }),
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
       if (input.incomeType === 'WAGE_HOURLY') {

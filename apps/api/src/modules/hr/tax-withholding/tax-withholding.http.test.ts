@@ -98,6 +98,12 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
       ifMatch: '"2"',
     })
     expect(negative.status).toBe(400)
+
+    const tooMany = await app.json('PUT', path, {
+      body: { ...settings, childcareChildrenCount: 21 },
+      ifMatch: '"2"',
+    })
+    expect(tooMany.status).toBe(400)
   })
 
   it('rejects a stale If-Match', async () => {

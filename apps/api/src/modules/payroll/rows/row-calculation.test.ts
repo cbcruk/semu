@@ -76,6 +76,16 @@ describe('childcare child count from the snapshot', () => {
     expect(result.warnings.map((warning) => warning.code)).toEqual(['NON_TAXABLE_LIMIT_EXCEEDED'])
   })
 
+  it('warns when the count was set for another tax year', () => {
+    const stale = { ...snapshot, childcareChildren: 2, childcareChildrenEffectiveFrom: '2026-01-01' }
+    const sameYear = calculateRow(withChildcare, stale, context('2026-12', '2026-12'))
+    const nextYear = calculateRow(withChildcare, stale, context('2027-01', '2027-01'))
+
+    expect(sameYear.warnings.map((warning) => warning.code)).not.toContain('CHILDCARE_CHILDREN_STALE')
+    expect(nextYear.nonTaxablePay).toBe(400_000)
+    expect(nextYear.warnings.map((warning) => warning.code)).toContain('CHILDCARE_CHILDREN_STALE')
+  })
+
   it('keeps one 200,000 limit and warns for snapshots saved without the count', () => {
     const result = calculateRow(withChildcare, snapshot, context('2026-03', '2026-03'))
 
