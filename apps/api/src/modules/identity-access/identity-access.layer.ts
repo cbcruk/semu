@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { AuditLogsHttpLive } from './audit/audit-logs.http.ts'
 import { Companies } from './companies/companies.ts'
 import { CompanyDirectory } from './companies/company-directory.ts'
@@ -61,25 +62,29 @@ export const IdentityAccessHttpLive = Layer.mergeAll(
   AuditLogsHttpLive,
 ).pipe(Layer.provide(ServicesLive))
 
-const IdentityAccessMemoryRepositories = Layer.mergeAll(
-  UserRepository.layerMemory(demoUsers()),
-  CompanyRepository.layerMemory(demoCompanies()),
-  MembershipRepository.layerMemory(demoMemberships()),
-  RoleRepository.layerMemory(demoRoles()),
-  AgencyAssignmentRepository.layerMemory(demoAssignments()),
-  TermRepository.layerMemory(demoTerms(), demoAgreements()),
-  InvitationRepository.layerMemory(),
-  SessionRepository.layerMemory(),
-  AuditLog.layerMemory,
+const IdentityAccessRepositories = Layer.mergeAll(
+  UserRepository.layer(demoUsers()),
+  CompanyRepository.layer(demoCompanies()),
+  MembershipRepository.layer(demoMemberships()),
+  RoleRepository.layer(demoRoles()),
+  AgencyAssignmentRepository.layer(demoAssignments()),
+  TermRepository.layer(demoTerms(), demoAgreements()),
+  InvitationRepository.layer(),
+  SessionRepository.layer(),
+  AuditLog.layer,
   Mailer.layerMemory,
 )
 
 /**
- * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트가 소유한 저장소와 메일 발송 가짜입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  *
  * 다른 컨텍스트가 쓰는 `CompanyDirectory`도 같은 회사 저장소 위에 만들어 내보냅니다.
- * `CompanyPlans`는 넣지 않습니다. 구독의 원본인 Billing의 메모리 Layer가 넣습니다.
+ * `CompanyPlans`는 넣지 않습니다. 구독의 원본인 Billing의 저장소 Layer가 넣습니다.
+ * `AccessTokens`도 넣지 않습니다. 호출하는 쪽이 넣습니다.
  */
-export const IdentityAccessMemoryLive = CompanyDirectory.layer.pipe(
-  Layer.provideMerge(IdentityAccessMemoryRepositories),
-)
+export const IdentityAccessStoreLive = CompanyDirectory.layer.pipe(Layer.provideMerge(IdentityAccessRepositories))
+
+/**
+ * {@link IdentityAccessStoreLive}를 메모리 표로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ */
+export const IdentityAccessMemoryLive = IdentityAccessStoreLive.pipe(Layer.provide(TableFactory.layerMemory))

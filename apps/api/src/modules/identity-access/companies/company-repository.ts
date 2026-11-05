@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { Company } from './company.ts'
 
@@ -13,28 +14,28 @@ export class CompanyRepository extends Context.Service<
     save(company: Company): Effect.Effect<void>
   }
 >()('semu/identity-access/CompanyRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 회사를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<Company> = []) =>
+  /** `iam_companies` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<Company> = []) =>
     Layer.effect(
       CompanyRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((company) => [company.id, company])))
+        const table = yield* (yield* TableFactory).make<Company>('iam_companies', {
+          seed,
+          companyOf: (company) => company.id,
+        })
         return CompanyRepository.of({
-          findById: (id) => Ref.get(store).pipe(Effect.map((companies) => Option.fromNullishOr(companies.get(id)))),
+          findById: (id) => table.get(id),
           findByBusinessNumber: (businessNumber) =>
-            Ref.get(store).pipe(
-              Effect.map((companies) =>
-                Option.fromNullishOr(
-                  [...companies.values()].find((company) => company.businessNumber === businessNumber),
-                ),
-              ),
+            Effect.map(table.all(), (companies) =>
+              Option.fromNullishOr(companies.find((company) => company.businessNumber === businessNumber)),
             ),
-          list: () =>
-            Ref.get(store).pipe(
-              Effect.map((companies) => [...companies.values()].toSorted((a, b) => a.id.localeCompare(b.id))),
-            ),
-          save: (company) => Ref.update(store, (companies) => new Map(companies).set(company.id, company)),
+          list: () => Effect.map(table.all(), (companies) => companies.toSorted((a, b) => a.id.localeCompare(b.id))),
+          save: (company) => table.put(company),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 회사를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<Company> = []) =>
+    CompanyRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

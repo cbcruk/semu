@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { SubscriptionId, SubscriptionRecord } from './subscription.ts'
 
@@ -14,28 +15,31 @@ export class SubscriptionRepository extends Context.Service<
     save(subscription: SubscriptionRecord): Effect.Effect<void>
   }
 >()('semu/billing/SubscriptionRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 구독을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<SubscriptionRecord> = []) =>
+  /** `billing_subscriptions` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<SubscriptionRecord> = []) =>
     Layer.effect(
       SubscriptionRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((row) => [row.id, row])))
-        const sorted = (rows: Iterable<SubscriptionRecord>): SubscriptionRecord[] =>
-          [...rows].sort((a, b) => a.startsOn.localeCompare(b.startsOn) || a.id.localeCompare(b.id))
+        const table = yield* (yield* TableFactory).make<SubscriptionRecord>('billing_subscriptions', {
+          seed,
+          companyOf: (row) => row.companyId,
+        })
+        const sorted = (rows: ReadonlyArray<SubscriptionRecord>): SubscriptionRecord[] =>
+          rows.toSorted((a, b) => a.startsOn.localeCompare(b.startsOn) || a.id.localeCompare(b.id))
         return SubscriptionRepository.of({
           find: (companyId, subscriptionId) =>
-            Ref.get(store).pipe(
-              Effect.map((rows) =>
-                Option.filter(Option.fromNullishOr(rows.get(subscriptionId)), (row) => row.companyId === companyId),
-              ),
+            Effect.map(
+              table.get(subscriptionId),
+              Option.filter((row) => row.companyId === companyId),
             ),
-          listByCompany: (companyId) =>
-            Ref.get(store).pipe(
-              Effect.map((rows) => sorted([...rows.values()].filter((row) => row.companyId === companyId))),
-            ),
-          listAll: () => Ref.get(store).pipe(Effect.map((rows) => sorted(rows.values()))),
-          save: (subscription) => Ref.update(store, (rows) => new Map(rows).set(subscription.id, subscription)),
+          listByCompany: (companyId) => Effect.map(table.byCompany(companyId), sorted),
+          listAll: () => Effect.map(table.all(), sorted),
+          save: (subscription) => table.put(subscription),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 구독을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<SubscriptionRecord> = []) =>
+    SubscriptionRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
