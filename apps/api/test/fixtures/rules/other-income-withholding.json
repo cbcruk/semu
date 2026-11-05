@@ -1,0 +1,34 @@
+{
+  "rule": "other-income-withholding",
+  "description": "Other income tax: 20% of pay less necessary expenses, nothing when income is 50,000 won or less, plus 10% local tax.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "398-409", "origin": "spec 4.5" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "421-435", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/reference/reference-data.ts", "lines": "70-84" }
+  ],
+  "inputSchema": { "payAmount": "won", "expenseRatePpm": "deemed necessary expense rate" },
+  "cases": [
+    {
+      "name": "1,000,000 with 60% expenses",
+      "input": { "payAmount": 1000000, "expenseRatePpm": 600000 },
+      "expected": { "incomeTax": 80000, "localIncomeTax": 8000, "netPay": 912000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "income of 50,000 is below the taxable minimum",
+      "input": { "payAmount": 125000, "expenseRatePpm": 600000 },
+      "expected": { "incomeTax": 0, "localIncomeTax": 0, "netPay": 125000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "1,000,000 without expenses",
+      "input": { "payAmount": 1000000, "expenseRatePpm": 0 },
+      "expected": { "incomeTax": 200000, "localIncomeTax": 20000, "netPay": 780000 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Payment reason codes, the 80% expense rate for art sales and the 15% rate for pension termination are unverified (spec 4.5).",
+    "Whether the taxable minimum is judged per payment or per row."
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "rule": "wage-proration",
+  "description": "Monthly pay of a mid-month joiner or leaver is prorated by calendar days and truncated to the won.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "458-461", "origin": "spec 4.10" },
+    { "file": "alfred-manual/05-급여/01-급여-관리/02-급여-급여-관리-근로-소득-입력.md", "lines": "16-18", "origin": "manual" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "248-251, 315-318", "origin": "legacy-verified" }
+  ],
+  "inputSchema": { "amount": "won", "payableDays": "days employed in the period", "totalDays": "calendar days of the period" },
+  "cases": [
+    {
+      "name": "10 of 30 days",
+      "input": { "amount": 3000000, "payableDays": 10, "totalDays": 30 },
+      "expected": { "amount": 1000000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "15 of 31 days",
+      "input": { "amount": 3100000, "payableDays": 15, "totalDays": 31 },
+      "expected": { "amount": 1500000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "16 of 31 days truncates",
+      "input": { "amount": 3000000, "payableDays": 16, "totalDays": 31 },
+      "expected": { "amount": 1548387 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Calendar days or scheduled work days: the spec says both are used and the product choice is unconfirmed (spec 4.10)."
+  ]
+}

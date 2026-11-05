@@ -1,0 +1,45 @@
+{
+  "rule": "business-income-withholding",
+  "description": "Business income withholds 3% plus 10% local tax, grosses up after-tax amounts, and adds artist employment insurance.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "391-396", "origin": "spec 4.4" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "407-419", "origin": "legacy-verified" },
+    { "file": "apps/api/legacy/src/modules/payroll/engine/withholding.ts", "lines": "55-163" }
+  ],
+  "inputSchema": {
+    "payAmount": "won",
+    "taxDeductionMode": "BEFORE_TAX | AFTER_TAX",
+    "artistEmploymentInsurance": "boolean"
+  },
+  "cases": [
+    {
+      "name": "1,000,000 before tax",
+      "input": { "payAmount": 1000000 },
+      "expected": { "grossPay": 1000000, "incomeTax": 30000, "localIncomeTax": 3000, "netPay": 967000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "967,000 after tax grosses up",
+      "input": { "payAmount": 967000, "taxDeductionMode": "AFTER_TAX" },
+      "expected": { "grossPay": 1000000, "incomeTax": 30000, "netPay": 967000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax under 1,000 won is not withheld",
+      "input": { "payAmount": 30000 },
+      "expected": { "grossPay": 30000, "incomeTax": 0, "netPay": 30000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "artist employment insurance 0.8%",
+      "input": { "payAmount": 1000000, "artistEmploymentInsurance": true },
+      "expected": { "employmentInsurance": 8000, "netPay": 959000 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The gross-up divisor (1 - 0.033) is inferred, not confirmed (spec 4.4).",
+    "Artist employment insurance rate 0.8% and its expense deduction are unverified.",
+    "Business income codes are recalled from the simplified statement list and unverified."
+  ]
+}

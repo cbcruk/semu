@@ -1,0 +1,27 @@
+{
+  "rule": "minimum-wage-warning",
+  "description": "A wage row whose minimum-wage pay per standard hour is below the hourly minimum gets a warning but is still saved.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "428-435", "origin": "spec 4.7" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "315-319", "origin": "legacy-verified" }
+  ],
+  "inputSchema": { "basePay": "won, monthly pay over 209 standard hours, 2026" },
+  "cases": [
+    {
+      "name": "2,000,000 is below the 2026 minimum",
+      "input": { "basePay": 2000000 },
+      "expected": { "warnings": ["BELOW_MINIMUM_WAGE"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "exactly the 2026 monthly minimum 2,156,880",
+      "input": { "basePay": 2156880 },
+      "expected": { "warnings": [] },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Warning instead of blocking is inferred (spec 4.7).",
+    "Probation reduction to 90% is not applied."
+  ]
+}

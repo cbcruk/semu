@@ -1,0 +1,34 @@
+{
+  "rule": "non-taxable-limits",
+  "description": "Non-taxable wage items are capped at the smaller of the statutory and company limits; the excess becomes taxable.",
+  "sources": [
+    { "file": "docs/reference/spec/payroll.md", "lines": "411-426", "origin": "spec 4.6" },
+    { "file": "alfred-manual/05-급여/01-급여-관리/02-급여-급여-관리-근로-소득-입력.md", "lines": "40-50", "origin": "manual" },
+    { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "206-231", "origin": "legacy-verified" }
+  ],
+  "inputSchema": { "category": "NonTaxableCategory", "amount": "won", "companyNonTaxableLimit": "won, optional" },
+  "cases": [
+    {
+      "name": "meal 250,000 is capped at 200,000",
+      "input": { "category": "MEAL", "amount": 250000 },
+      "expected": { "nonTaxableAmount": 200000, "taxableAmount": 50000 },
+      "derivation": "traced"
+    },
+    {
+      "name": "meal 200,000 is fully non-taxable",
+      "input": { "category": "MEAL", "amount": 200000 },
+      "expected": { "nonTaxableAmount": 200000, "taxableAmount": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "company limit smaller than the statutory limit",
+      "input": { "category": "MEAL", "amount": 150000, "companyNonTaxableLimit": 100000 },
+      "expected": { "nonTaxableAmount": 100000, "taxableAmount": 50000 },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Limits for night shift, overseas work, parental leave, tuition and inventions are unverified (spec 4.6).",
+    "Using the smaller of the company and statutory limits is inferred."
+  ]
+}
