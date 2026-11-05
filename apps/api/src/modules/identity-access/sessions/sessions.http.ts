@@ -25,6 +25,8 @@ export const SessionsHttpLive = HttpApiBuilder.group(
       refresh: ({ headers }) => sessions.refresh(readRefreshCookie(headers.cookie)).pipe(Effect.map(withRefreshCookie)),
       switchCompany: ({ headers, payload }) =>
         sessions.refresh(readRefreshCookie(headers.cookie), payload.companyId).pipe(Effect.map(withRefreshCookie)),
+      switchAgency: ({ headers }) =>
+        sessions.switchToAgency(readRefreshCookie(headers.cookie)).pipe(Effect.map(withRefreshCookie)),
       signOut: ({ headers }) =>
         sessions
           .signOut(readRefreshCookie(headers.cookie))

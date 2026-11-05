@@ -10,7 +10,7 @@ import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-
 import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
 import { HrHttpLive, HrStoreLive } from './modules/hr/hr.layer.ts'
 import { PersonalDataCipher } from './modules/hr/shared/personal-data-cipher.ts'
-import { AuthenticationLive } from './modules/identity-access/authentication.ts'
+import { AgencyAuthenticationLive, AuthenticationLive } from './modules/identity-access/authentication.ts'
 import { IdentityAccessHttpLive, IdentityAccessStoreLive } from './modules/identity-access/identity-access.layer.ts'
 import { CredentialVault } from './modules/integrations/credentials/credential-vault.ts'
 import {
@@ -94,6 +94,7 @@ export const AppLive = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(SystemLive),
   Layer.provide(ContextsHttpLive),
   Layer.provide(AuthenticationLive),
+  Layer.provide(AgencyAuthenticationLive),
   Layer.provide(RequestValidationLive),
   Layer.merge(ProblemFallback),
   Layer.merge(UnitOfWorkMiddleware),

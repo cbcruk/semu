@@ -1,5 +1,7 @@
 import { Layer } from 'effect'
 import { TableFactory } from '../../shared/persistence/record-table.ts'
+import { AgencyCompanies } from './agency/agency-companies.ts'
+import { AgencyCompaniesHttpLive } from './agency/agency-companies.http.ts'
 import { AuditLogsHttpLive } from './audit/audit-logs.http.ts'
 import { Companies } from './companies/companies.ts'
 import { CompanyDirectory } from './companies/company-directory.ts'
@@ -37,7 +39,7 @@ import { TermRepository } from './terms/term-repository.ts'
 import { TermAgreementsHttpLive, TermsHttpLive } from './terms/terms.http.ts'
 import { Terms } from './terms/terms.ts'
 
-const ServicesLive = Layer.mergeAll(Invitations.layer, MeService.layer).pipe(
+const ServicesLive = Layer.mergeAll(Invitations.layer, MeService.layer, AgencyCompanies.layer).pipe(
   Layer.provideMerge(Layer.mergeAll(Terms.layer, Companies.layer, Members.layer, Roles.layer)),
   Layer.provideMerge(Sessions.layer),
   Layer.provideMerge(ActorDirectory.layer),
@@ -46,7 +48,8 @@ const ServicesLive = Layer.mergeAll(Invitations.layer, MeService.layer).pipe(
 /**
  * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트의 핸들러 전체입니다. 저장소와 외부 연동 포트는 호출하는 쪽이 넣습니다.
  *
- * 필요한 것: 저장소들, `AuditLog`, `Mailer`, `AccessTokens`, 그리고 Billing이 구현하는 `CompanyPlans` 포트입니다.
+ * 필요한 것: 저장소들, `AuditLog`, `Mailer`, `AccessTokens`, Billing이 구현하는 `CompanyPlans` 포트,
+ * Tax가 구현하는 `AgencyWorkload` 포트입니다.
  */
 export const IdentityAccessHttpLive = Layer.mergeAll(
   SessionsHttpLive,
@@ -60,6 +63,7 @@ export const IdentityAccessHttpLive = Layer.mergeAll(
   InvitationsHttpLive,
   InvitationLinksHttpLive,
   AuditLogsHttpLive,
+  AgencyCompaniesHttpLive,
 ).pipe(Layer.provide(ServicesLive))
 
 const IdentityAccessRepositories = Layer.mergeAll(

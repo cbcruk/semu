@@ -3,9 +3,12 @@
  *
  * - `CompanyDirectory`: 회사 공개 조회. Tax의 세무 프로필과 Integrations의 회사 정보가 씁니다
  * - `CompanyPlans`: 회사 플랜 포트. Billing이 구현합니다
+ * - `AgencyWorkload`: 대리인 담당 회사의 세무 일감 개수 포트. Tax가 구현합니다
  *
- * 인증·인가 핵심(`Authentication`, `authorize`, `CurrentActor`, `Actor`, `Plan`)은 각 파일에서 직접 가져옵니다.
+ * 인증·인가 핵심(`Authentication`, `AgencyAuthentication`, `authorize`, `authorizeAgency`, `CurrentActor`, `CurrentAgent`,
+ * `Actor`, `Agent`, `Plan`)은 각 파일에서 직접 가져옵니다.
  */
+export { AgencyWorkload, type CompanyWorkload } from './agency/agency-workload.ts'
 export { CompanyPlans } from './access/company-plans.ts'
 export { DEMO_COMPANY_IDS, DEMO_PLANS, DEMO_USER_IDS } from './demo-seed.ts'
 export { CompanyDirectory, type DirectoryCompany } from './companies/company-directory.ts'

@@ -5,6 +5,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { AccessTokens, hashAccessToken } from '../access-tokens.ts'
 import type { AccessibleCompany } from '../access/actor-directory.ts'
 import { ActorDirectory } from '../access/actor-directory.ts'
+import { isAgentKind } from '../access/agent-directory.ts'
 import { verifyPassword } from '../accounts/password-hash.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
 import { AccountLocked, InvalidCredentials, normalizeEmail, toUserProfile } from '../accounts/user.ts'
@@ -13,7 +14,7 @@ import { AuditLog } from '../audit/audit-log.ts'
 import { CompanyNotFound } from '../companies/company.ts'
 import { randomSecret, sha256, splitRefreshToken } from './refresh-cookie.ts'
 import { SessionRepository } from './session-repository.ts'
-import { SessionInvalid } from './session.ts'
+import { AgencyScopeNotAllowed, SessionInvalid } from './session.ts'
 import type { SessionGrant, SessionRecord, SessionRevocation } from './session.ts'
 
 /** access token 수명(초)입니다. `AccessTokens.layerExpiring`에 같은 값을 넣습니다. */
@@ -67,6 +68,14 @@ export class Sessions extends Context.Service<
       refreshToken: string | undefined,
       companyId?: Id<'company'>,
     ): Effect.Effect<IssuedSession, SessionInvalid | CompanyNotFound>
+    /**
+     * refresh token을 회전하고 대리인 범위 access token을 줍니다. 이후 refresh도 회사로 전환하기 전까지 대리인 범위입니다.
+     *
+     * 고객 사용자는 403 `AGENCY_SCOPE_NOT_ALLOWED`이고 세션은 바뀌지 않습니다.
+     */
+    switchToAgency(
+      refreshToken: string | undefined,
+    ): Effect.Effect<IssuedSession, SessionInvalid | AgencyScopeNotAllowed>
     signOut(refreshToken: string | undefined): Effect.Effect<void>
     /** 사용자의 세션을 모두 폐기합니다. 비밀번호 변경·재설정에 씁니다. */
     revokeAll(userId: Id<'user'>, reason: SessionRevocation): Effect.Effect<void>
@@ -104,7 +113,7 @@ export class Sessions extends Context.Service<
 
         const summaries = companies.map(toCompanySummary)
         if (chosen === undefined) {
-          const { accessTokenHash: _, companyId: __, ...rest } = session
+          const { accessTokenHash: _, companyId: __, scope: ___, ...rest } = session
           const onboardingToken = randomSecret()
           const expiresAt = Math.min(
             (yield* Clock.currentTimeMillis) + ONBOARDING_TOKEN_TTL_SECONDS * 1000,
@@ -122,7 +131,7 @@ export class Sessions extends Context.Service<
         const resolved = yield* directory.resolve(user.id, chosen.company.id)
         if (Option.isNone(resolved)) return yield* new CompanyNotFound({})
         const accessToken = yield* tokens.issue(resolved.value.actor)
-        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, ...rest } = session
+        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, scope: ___, ...rest } = session
         const next: SessionRecord = {
           ...rest,
           companyId: chosen.company.id,
@@ -134,9 +143,30 @@ export class Sessions extends Context.Service<
           accessToken,
           tokenType: 'Bearer',
           expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+          scope: 'COMPANY',
           user: toUserProfile(user),
           company: { ...toCompanySummary(chosen), plans: [...resolved.value.actor.plans] },
           companies: summaries,
+        }
+        return { grant }
+      })
+
+      /** 세션을 대리인 범위로 바꾸고 대리인 범위 access token을 발급합니다. 담당 회사는 토큰에 넣지 않습니다. */
+      const bindAgency = Effect.fn('Sessions.bindAgency')(function* (session: SessionRecord, user: UserRecord) {
+        const userKind = user.kind
+        if (!isAgentKind(userKind)) return yield* new AgencyScopeNotAllowed({})
+        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
+        const accessToken = yield* tokens.issueAgency({ scope: 'AGENCY', userId: user.id, userKind })
+        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, companyId: ___, ...rest } = session
+        yield* sessions.save({ ...rest, scope: 'AGENCY', accessTokenHash: hashAccessToken(accessToken) })
+        const companies = yield* directory.companiesOf(user.id)
+        const grant: SessionGrant = {
+          accessToken,
+          tokenType: 'Bearer',
+          expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+          scope: 'AGENCY',
+          user: toUserProfile(user),
+          companies: companies.map(toCompanySummary),
         }
         return { grant }
       })
@@ -213,10 +243,8 @@ export class Sessions extends Context.Service<
         return session
       })
 
-      const refresh = Effect.fn('Sessions.refresh')(function* (
-        refreshToken: string | undefined,
-        companyId?: Id<'company'>,
-      ) {
+      /** 살아 있는 세션의 refresh token을 회전한 값과 그 사용자입니다. 저장은 범위를 묶을 때 합니다. */
+      const rotate = Effect.fn('Sessions.rotate')(function* (refreshToken: string | undefined) {
         const session = yield* findLive(refreshToken)
         const user = yield* users.findById(session.userId)
         if (Option.isNone(user) || user.value.status !== 'ACTIVE') return yield* new SessionInvalid({})
@@ -226,7 +254,25 @@ export class Sessions extends Context.Service<
           refreshSecretHash: sha256(secret),
           rotatedSecretHashes: [...session.rotatedSecretHashes, session.refreshSecretHash],
         }
-        const bound = yield* bind(rotated, user.value, companyId ?? session.companyId)
+        const remaining = Math.max(
+          0,
+          Math.floor((Date.parse(session.expiresAt) - (yield* Clock.currentTimeMillis)) / 1000),
+        )
+        return { session, rotated, user: user.value, refreshToken: `${session.id}.${secret}`, refreshMaxAge: remaining }
+      })
+
+      const refresh = Effect.fn('Sessions.refresh')(function* (
+        refreshToken: string | undefined,
+        companyId?: Id<'company'>,
+      ) {
+        const { session, rotated, user, ...cookie } = yield* rotate(refreshToken)
+        if (companyId === undefined && session.scope === 'AGENCY') {
+          const bound = yield* bindAgency(rotated, user).pipe(
+            Effect.catchTag('AgencyScopeNotAllowed', () => bind(rotated, user, undefined)),
+          )
+          return { grant: bound.grant, ...cookie }
+        }
+        const bound = yield* bind(rotated, user, companyId ?? session.companyId)
         if (companyId !== undefined && companyId !== session.companyId) {
           yield* audit.record({
             action: 'COMPANY_SWITCHED',
@@ -235,11 +281,16 @@ export class Sessions extends Context.Service<
             actorKind: bound.grant.company?.actorKind,
           })
         }
-        const remaining = Math.max(
-          0,
-          Math.floor((Date.parse(session.expiresAt) - (yield* Clock.currentTimeMillis)) / 1000),
-        )
-        return { grant: bound.grant, refreshToken: `${session.id}.${secret}`, refreshMaxAge: remaining }
+        return { grant: bound.grant, ...cookie }
+      })
+
+      const switchToAgency = Effect.fn('Sessions.switchToAgency')(function* (refreshToken: string | undefined) {
+        const { session, rotated, user, ...cookie } = yield* rotate(refreshToken)
+        const bound = yield* bindAgency(rotated, user)
+        if (session.scope !== 'AGENCY') {
+          yield* audit.record({ action: 'AGENCY_SCOPE_ENTERED', actorUserId: session.userId, actorKind: 'AGENCY' })
+        }
+        return { grant: bound.grant, ...cookie }
       })
 
       const revoke = Effect.fn('Sessions.revoke')(function* (session: SessionRecord, reason: SessionRevocation) {
@@ -289,7 +340,17 @@ export class Sessions extends Context.Service<
         return expired ? Option.none<Id<'user'>>() : Option.some(session.userId)
       })
 
-      return Sessions.of({ signIn, signInDemo, open, refresh, signOut, revokeAll, invalidateAccess, onboardingUser })
+      return Sessions.of({
+        signIn,
+        signInDemo,
+        open,
+        refresh,
+        switchToAgency,
+        signOut,
+        revokeAll,
+        invalidateAccess,
+        onboardingUser,
+      })
     }),
   )
 }

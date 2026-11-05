@@ -1,5 +1,6 @@
 import type { Id } from '../../shared/ids/ids.types.ts'
 import { KOREAN_PUBLIC_HOLIDAYS } from '../../shared/time/public-holidays.ts'
+import { DEMO_COMPANY_IDS } from '../identity-access/identity-access.public.ts'
 import { TEST_COMPANY_ID } from '../identity-access/testing.ts'
 import type { TaxProfile } from './calendar/tax-profiles.ts'
 import type { FilingRecord } from './filings/filing.types.ts'
@@ -63,7 +64,11 @@ export const DEMO_TAX_PROFILE: TaxProfile = {
   taxableCardRatioPpm: 1_000_000,
 }
 
-/** 데모 신고 건입니다. 10월분 원천세는 자료 요청 중, 2기 확정 부가세는 예정 상태입니다. */
+/**
+ * 데모 신고 건입니다. 법인의 10월분 원천세는 자료 요청 중, 2기 확정 부가세는 예정 상태입니다.
+ *
+ * 대리인 작업 큐가 여러 회사를 보이도록 개인 회사(담당 대리인 있음)와 데모 회사(담당 대리인 없음)에 10월분 원천세가 하나씩 있습니다.
+ */
 export const DEMO_FILINGS: ReadonlyArray<FilingRecord> = [
   filingRecord({
     id: 'fil_01JBQ0000000000000000000D1' as Id<'filing'>,
@@ -88,6 +93,32 @@ export const DEMO_FILINGS: ReadonlyArray<FilingRecord> = [
     statutoryDue: '2027-01-25',
     dueDate: '2027-01-25',
     paymentDue: '2027-01-25',
+  }),
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D3' as Id<'filing'>,
+    companyId: DEMO_COMPANY_IDS.individual,
+    taxType: 'WITHHOLDING_TAX',
+    kind: 'MONTHLY',
+    periodKey: '2026-10',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    statutoryDue: '2026-11-10',
+    dueDate: '2026-11-10',
+    paymentDue: '2026-11-10',
+  }),
+  filingRecord({
+    id: 'fil_01JBQ0000000000000000000D4' as Id<'filing'>,
+    companyId: DEMO_COMPANY_IDS.demo,
+    taxType: 'WITHHOLDING_TAX',
+    kind: 'MONTHLY',
+    periodKey: '2026-10',
+    periodStart: '2026-10-01',
+    periodEnd: '2026-10-31',
+    statutoryDue: '2026-11-10',
+    dueDate: '2026-11-10',
+    paymentDue: '2026-11-10',
+    submitDue: '2026-11-06',
+    status: 'REQUESTED',
   }),
 ]
 

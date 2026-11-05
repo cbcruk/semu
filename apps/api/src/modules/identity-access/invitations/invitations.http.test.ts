@@ -136,3 +136,26 @@ describe('audit logs', () => {
     await app.dispose()
   })
 })
+
+describe('invitation acceptance with an agency-scoped token', () => {
+  it('refuses the agency token with 403 TOKEN_SCOPE_MISMATCH instead of ignoring it', async () => {
+    const app = makeTestApp()
+    const owner = await app.signIn('owner@semu.example')
+    await invite(app, owner.token, 'agent@agency.example')
+    const token = await app.lastMailToken()
+    const agent = await app.signIn('agent@agency.example')
+    const switched = await app.request('POST', '/v1/auth/sessions:switch-agency', { cookie: agent.cookie })
+    const agencyToken = (await switched.json()).accessToken
+
+    const response = await app.request('POST', '/v1/invitations:accept', {
+      token: agencyToken,
+      body: { token, password: DEMO_PASSWORD },
+    })
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'TOKEN_SCOPE_MISMATCH', requiredScope: 'COMPANY' })
+    const preview = await (await app.request('POST', '/v1/invitations:preview', { body: { token } })).json()
+    expect(preview).toMatchObject({ status: 'PENDING' })
+    await app.dispose()
+  })
+})

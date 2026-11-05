@@ -44,6 +44,17 @@ export class Unauthenticated extends HttpApiError.Problem<Unauthenticated>()(
   { code: Schema.tag('UNAUTHENTICATED') },
 ) {}
 
+/**
+ * 토큰은 유효하지만 이 경로가 받는 범위가 아닙니다. 회사 범위 토큰으로 `/agency/*`를 부르거나, 대리인 범위 토큰으로 회사 리소스를 불렀습니다.
+ *
+ * 다시 로그인할 일이 아니므로 401이 아니라 403입니다(RFC 6750 `insufficient_scope`). `requiredScope`의 토큰으로 전환해서 부릅니다.
+ */
+export class TokenScopeMismatch extends HttpApiError.Problem<TokenScopeMismatch>()(
+  'TokenScopeMismatch',
+  { type: problemType('TOKEN_SCOPE_MISMATCH'), status: 403, title: 'Access token has the wrong scope' },
+  { code: Schema.tag('TOKEN_SCOPE_MISMATCH'), requiredScope: Schema.Literals(['COMPANY', 'AGENCY']) },
+) {}
+
 /** 행위자에게 이 동작의 권한이 없습니다. */
 export class PermissionDenied extends HttpApiError.Problem<PermissionDenied>()(
   'PermissionDenied',
