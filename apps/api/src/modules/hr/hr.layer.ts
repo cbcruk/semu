@@ -32,7 +32,12 @@ export const HrHttpLive = Layer.mergeAll(
   OrganizationHttpLive,
 ).pipe(Layer.provide(Layer.mergeAll(Employees.layer, Leaves.layer, WorkContracts.layer, Organization.layer)))
 
-const HrMemoryRepositories = Layer.mergeAll(
+/**
+ * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격 컨텍스트의 저장소와 개인정보 포트를 메모리 구현과 결정적인 가짜로 채웁니다.
+ *
+ * 공개 조회(`HrDirectoryLive`)는 넣지 않습니다. `app.ts`가 같은 저장소 위에 만들어 Payroll 어댑터와 Documents에 넘깁니다.
+ */
+export const HrMemoryStoreLive = Layer.mergeAll(
   EmployeeRepository.layerMemory(DEMO_EMPLOYEES),
   LeaveRepository.layerMemory(),
   WorkContractRepository.layerMemory(DEMO_WORK_CONTRACTS),
@@ -47,4 +52,4 @@ const HrMemoryRepositories = Layer.mergeAll(
  *
  * 다른 컨텍스트가 쓰는 `HrDirectory`도 같은 메모리 저장소 위에 만들어 내보냅니다. 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
  */
-export const HrMemoryLive = HrDirectoryLive.pipe(Layer.provideMerge(HrMemoryRepositories))
+export const HrMemoryLive = HrDirectoryLive.pipe(Layer.provideMerge(HrMemoryStoreLive))

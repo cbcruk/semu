@@ -1,4 +1,5 @@
 import type { Id } from '../../shared/ids/ids.types.ts'
+import { KOREAN_PUBLIC_HOLIDAYS } from '../../shared/time/public-holidays.ts'
 import { TEST_COMPANY_ID } from '../identity-access/testing.ts'
 import type { TaxProfile } from './calendar/tax-profiles.ts'
 import type { FilingRecord } from './filings/filing.types.ts'
@@ -89,31 +90,8 @@ export const DEMO_FILINGS: ReadonlyArray<FilingRecord> = [
   }),
 ]
 
-/** 2026–2027년 기한을 미루는 쉬는 날입니다. 대체공휴일과 근로자의 날을 넣었습니다. */
-export const DEMO_HOLIDAYS: ReadonlyArray<string> = [
-  '2026-01-01',
-  '2026-02-16',
-  '2026-02-17',
-  '2026-02-18',
-  '2026-03-01',
-  '2026-03-02',
-  '2026-05-01',
-  '2026-05-05',
-  '2026-05-24',
-  '2026-05-25',
-  '2026-06-03',
-  '2026-06-06',
-  '2026-08-15',
-  '2026-08-17',
-  '2026-09-24',
-  '2026-09-25',
-  '2026-09-26',
-  '2026-10-03',
-  '2026-10-05',
-  '2026-10-09',
-  '2026-12-25',
-  '2027-01-01',
-]
+/** 2026–2027년 기한을 미루는 쉬는 날입니다. 공유 참조데이터(`shared/time/public-holidays.ts`)의 표입니다. */
+export const DEMO_HOLIDAYS: ReadonlyArray<string> = KOREAN_PUBLIC_HOLIDAYS
 
 /** 데모 증빙입니다. 4분기 카드 매출 한 건과 공제 매입 한 건입니다. */
 export const DEMO_VAT_EVIDENCE: { sales: ReadonlyArray<SalesEvidence>; purchases: ReadonlyArray<PurchaseEvidence> } = {

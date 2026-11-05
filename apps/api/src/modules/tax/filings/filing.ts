@@ -2,7 +2,6 @@ import { Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 
 /** 신고 건 ID입니다. 예: `fil_01J...` */
 export const FilingId = IdSchema('filing')

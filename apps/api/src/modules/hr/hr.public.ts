@@ -9,9 +9,11 @@ import { deriveEmployeeStatus, lastLeaveDay, wasEmployedBetween } from './employ
 import type { EmployeeStatus } from './employees/employee-status.types.ts'
 import type { EmployeeRecord } from './employees/employee.ts'
 import { LeaveRepository, type LeaveRecord } from './leaves/leave.ts'
+import { OrganizationRepository } from './organization/organization.ts'
 import type { LeaveReason } from './leaves/leave-rules.types.ts'
 import { PersonalDataAccessLog } from './shared/personal-data-access-log.ts'
 import { PersonalDataCipher } from './shared/personal-data-cipher.ts'
+import { DEFAULT_ENROLLMENT, determineEligibility } from './social-insurance/insurance-eligibility.ts'
 
 /** 다른 컨텍스트에 보이는 직원입니다. 주민번호 원문은 담지 않습니다. */
 export interface DirectoryEmployee {
@@ -28,6 +30,8 @@ export interface DirectoryEmployee {
   nationalityCode?: string
   visaCode?: string
   departmentId?: Id<'department'>
+  /** 소속 부서 이름입니다. 부서가 없으면 없습니다. */
+  departmentName?: string
   positionId?: Id<'position'>
   registrationNumberMasked?: string
 }
@@ -38,6 +42,17 @@ export interface DirectoryWorkContract {
   startDate: string
   endDate?: string
   weeklyWorkHours?: number
+}
+
+/**
+ * 기준일의 4대보험 권장 가입 여부입니다. 산재보험은 사업장 단위라 담지 않습니다.
+ *
+ * HR의 자격 판정 규칙(나이·주 소정근로시간)을 모두 가입한 설정에 적용한 값입니다. 대표자·임원·친족 여부는 아직 저장하지 않아 판정에 넣지 않습니다.
+ */
+export interface DirectorySocialInsurance {
+  nationalPension: boolean
+  healthInsurance: boolean
+  employmentInsurance: boolean
 }
 
 /** 다른 컨텍스트에 보이는 휴직입니다. */
@@ -86,6 +101,12 @@ export class HrDirectory extends Context.Service<
       from: string,
       to: string,
     ): Effect.Effect<ReadonlyArray<DirectoryLeave>>
+    /** 기준일의 4대보험 권장 가입 여부입니다. 직원이 없으면 `None`입니다. */
+    recommendSocialInsurance(
+      companyId: Id<'company'>,
+      employeeId: Id<'employee'>,
+      asOf: string,
+    ): Effect.Effect<Option.Option<DirectorySocialInsurance>>
     revealRegistrationNumber(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
@@ -101,13 +122,24 @@ export const HrDirectoryLive = Layer.effect(
     const employees = yield* EmployeeRepository
     const leaves = yield* LeaveRepository
     const contracts = yield* WorkContractRepository
+    const organization = yield* OrganizationRepository
     const cipher = yield* PersonalDataCipher
     const accessLog = yield* PersonalDataAccessLog
 
     const leavesOf = (all: ReadonlyArray<LeaveRecord>, employeeId: Id<'employee'>) =>
       all.filter((leave) => leave.employeeId === employeeId)
 
-    const toDirectory = (record: EmployeeRecord, asOf: string, all: ReadonlyArray<LeaveRecord>): DirectoryEmployee => {
+    const departmentNames = (companyId: Id<'company'>) =>
+      organization
+        .list(companyId)
+        .pipe(Effect.map((units) => new Map<string, string>(units.map((unit) => [unit.id, unit.name]))))
+
+    const toDirectory = (
+      record: EmployeeRecord,
+      asOf: string,
+      all: ReadonlyArray<LeaveRecord>,
+      departments: ReadonlyMap<string, string>,
+    ): DirectoryEmployee => {
       const leaveDate = record.resignation?.leaveDate
       const view: DirectoryEmployee = {
         id: record.id,
@@ -125,6 +157,7 @@ export const HrDirectoryLive = Layer.effect(
         nationalityCode: record.nationalityCode,
         visaCode: record.visaCode,
         departmentId: record.departmentId,
+        departmentName: record.departmentId === undefined ? undefined : departments.get(record.departmentId),
         positionId: record.positionId,
         registrationNumberMasked: record.registrationNumberMasked,
       }
@@ -134,14 +167,18 @@ export const HrDirectoryLive = Layer.effect(
     }
 
     const listAll = (companyId: Id<'company'>, asOf: string) =>
-      Effect.all([employees.list(companyId), leaves.list(companyId)]).pipe(
-        Effect.map(([records, all]) => records.map((record) => toDirectory(record, asOf, all))),
+      Effect.all([employees.list(companyId), leaves.list(companyId), departmentNames(companyId)]).pipe(
+        Effect.map(([records, all, departments]) =>
+          records.map((record) => toDirectory(record, asOf, all, departments)),
+        ),
       )
 
     return HrDirectory.of({
       findEmployee: (companyId, employeeId, asOf) =>
-        Effect.all([employees.find(companyId, employeeId), leaves.list(companyId)]).pipe(
-          Effect.map(([record, all]) => Option.map(record, (found) => toDirectory(found, asOf, all))),
+        Effect.all([employees.find(companyId, employeeId), leaves.list(companyId), departmentNames(companyId)]).pipe(
+          Effect.map(([record, all, departments]) =>
+            Option.map(record, (found) => toDirectory(found, asOf, all, departments)),
+          ),
         ),
       listEmployees: (companyId, filter) =>
         listAll(companyId, filter.asOf).pipe(
@@ -196,6 +233,36 @@ export const HrDirectoryLive = Layer.effect(
                 lastDay: lastLeaveDay(leave),
                 includeInServiceYears: leave.includeInServiceYears,
               })),
+          ),
+        ),
+      recommendSocialInsurance: (companyId, employeeId, asOf) =>
+        Effect.all([employees.find(companyId, employeeId), contracts.list(companyId)]).pipe(
+          Effect.map(([record, all]) =>
+            Option.map(record, (employee) => {
+              const contract = contractInForce(
+                all.filter((candidate) => candidate.employeeId === employeeId),
+                asOf,
+              )
+              const { recommended } = determineEligibility(
+                {
+                  birthDate: employee.birthDate,
+                  joinDate: employee.joinDate,
+                  isForeigner: employee.isForeigner,
+                  visaCode: employee.visaCode,
+                  nationalityCode: employee.nationalityCode,
+                  weeklyWorkHours: contract?.weeklyWorkHours,
+                  isRepresentativeOrExecutive: false,
+                  isRepresentativeRelative: false,
+                },
+                DEFAULT_ENROLLMENT,
+                asOf,
+              )
+              return {
+                nationalPension: recommended.nps.enrolled,
+                healthInsurance: recommended.nhis.enrolled,
+                employmentInsurance: recommended.ei.enrolled,
+              }
+            }),
           ),
         ),
       revealRegistrationNumber: Effect.fn('HrDirectory.revealRegistrationNumber')(

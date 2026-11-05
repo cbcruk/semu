@@ -1,6 +1,7 @@
 import { Layer } from 'effect'
 import { AuditLogsHttpLive } from './audit/audit-logs.http.ts'
 import { Companies } from './companies/companies.ts'
+import { CompanyDirectory } from './companies/company-directory.ts'
 import { CompanyRegistrationsHttpLive, CurrentCompanyHttpLive } from './companies/companies.http.ts'
 import { InvitationRepository } from './invitations/invitation-repository.ts'
 import { InvitationLinksHttpLive, InvitationsHttpLive } from './invitations/invitations.http.ts'
@@ -60,12 +61,7 @@ export const IdentityAccessHttpLive = Layer.mergeAll(
   AuditLogsHttpLive,
 ).pipe(Layer.provide(ServicesLive))
 
-/**
- * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
- *
- * `CompanyPlans`는 넣지 않습니다. 구독의 원본인 Billing의 메모리 Layer가 넣습니다.
- */
-export const IdentityAccessMemoryLive = Layer.mergeAll(
+const IdentityAccessMemoryRepositories = Layer.mergeAll(
   UserRepository.layerMemory(demoUsers()),
   CompanyRepository.layerMemory(demoCompanies()),
   MembershipRepository.layerMemory(demoMemberships()),
@@ -76,4 +72,14 @@ export const IdentityAccessMemoryLive = Layer.mergeAll(
   SessionRepository.layerMemory(),
   AuditLog.layerMemory,
   Mailer.layerMemory,
+)
+
+/**
+ * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ *
+ * 다른 컨텍스트가 쓰는 `CompanyDirectory`도 같은 회사 저장소 위에 만들어 내보냅니다.
+ * `CompanyPlans`는 넣지 않습니다. 구독의 원본인 Billing의 메모리 Layer가 넣습니다.
+ */
+export const IdentityAccessMemoryLive = CompanyDirectory.layer.pipe(
+  Layer.provideMerge(IdentityAccessMemoryRepositories),
 )

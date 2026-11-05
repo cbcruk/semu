@@ -8,6 +8,8 @@ export class CompanyRepository extends Context.Service<
   {
     findById(id: Id<'company'>): Effect.Effect<Option.Option<Company>>
     findByBusinessNumber(businessNumber: string): Effect.Effect<Option.Option<Company>>
+    /** 모든 회사입니다. ID 순입니다. */
+    list(): Effect.Effect<ReadonlyArray<Company>>
     save(company: Company): Effect.Effect<void>
   }
 >()('semu/identity-access/CompanyRepository') {
@@ -26,6 +28,10 @@ export class CompanyRepository extends Context.Service<
                   [...companies.values()].find((company) => company.businessNumber === businessNumber),
                 ),
               ),
+            ),
+          list: () =>
+            Ref.get(store).pipe(
+              Effect.map((companies) => [...companies.values()].toSorted((a, b) => a.id.localeCompare(b.id))),
             ),
           save: (company) => Ref.update(store, (companies) => new Map(companies).set(company.id, company)),
         })

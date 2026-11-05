@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Option, Schema } from 'effect'
-import type { Actor } from '../../identity-access/actor.types.ts'
+import type { Id } from '../../../shared/ids/ids.types.ts'
+import type { Actor, BusinessType } from '../../identity-access/actor.types.ts'
 import { FilingRepository } from '../filings/filing-repository.ts'
 import { TaxProfiles } from '../calendar/tax-profiles.ts'
 import { currentInstant } from '../tax-time.ts'
@@ -65,31 +66,11 @@ export class VatEstimates extends Context.Service<
       const profiles = yield* TaxProfiles
       const repository = yield* FilingRepository
 
-      const ratioOf = (actor: Actor) =>
-        profiles
-          .get(actor.companyId)
-          .pipe(
-            Effect.map(
-              Option.match({ onNone: () => FULL_RATIO_PPM, onSome: (profile) => profile.taxableCardRatioPpm }),
-            ),
-          )
+      const estimator = makeVatEstimator(evidence, profiles)
 
       const current = Effect.fn('VatEstimates.current')(function* (actor: Actor, on?: string) {
         const { today } = yield* currentInstant
-        const asOf = on ?? today
-        const period = vatEstimatePeriod(actor.businessType, asOf)
-        const [sales, purchases, ratio] = yield* Effect.all([
-          evidence.sales(actor.companyId, period.start, asOf),
-          evidence.purchases(actor.companyId, period.start, asOf),
-          ratioOf(actor),
-        ])
-        const estimate: VatEstimate = estimateVat({
-          period: { ...period, end: asOf },
-          sales,
-          purchases,
-          taxableCardRatioPpm: ratio,
-        })
-        return { ...estimate, period, asOf }
+        return yield* estimator.estimate(actor.companyId, actor.businessType, on ?? today)
       })
 
       const trend = Effect.fn('VatEstimates.trend')(function* (actor: Actor, years: number) {
@@ -98,7 +79,7 @@ export class VatEstimates extends Context.Service<
         const [sales, purchases, ratio, filings] = yield* Effect.all([
           evidence.sales(actor.companyId, from, today),
           evidence.purchases(actor.companyId, from, today),
-          ratioOf(actor),
+          estimator.ratioOf(actor.companyId),
           repository.list(actor.companyId, { taxTypes: ['VAT'] }),
         ])
         const items = vatTrend({
@@ -114,4 +95,43 @@ export class VatEstimates extends Context.Service<
       return VatEstimates.of({ current, trend })
     }),
   )
+}
+
+/** {@link makeVatEstimator}가 만드는 계산기입니다. */
+export interface VatEstimator {
+  /** 회사의 카드 매출 과세 비율입니다. 세무 프로필이 없으면 100%입니다. */
+  ratioOf(companyId: Id<'company'>): Effect.Effect<number>
+  /** `asOf`가 속한 기간의 예상 부가세입니다. 기간 시작부터 `asOf`까지의 증빙으로 계산합니다. */
+  estimate(companyId: Id<'company'>, businessType: BusinessType, asOf: string): Effect.Effect<VatEstimateResponse>
+}
+
+/** 증빙·세무 프로필 포트로 예상 부가세 계산기를 만듭니다. 화면 응답과 공개 조회(`VatEstimateQuery`)가 함께 씁니다. */
+export function makeVatEstimator(evidence: VatEvidence['Service'], profiles: TaxProfiles['Service']): VatEstimator {
+  const ratioOf = (companyId: Id<'company'>): Effect.Effect<number> =>
+    profiles
+      .get(companyId)
+      .pipe(
+        Effect.map(Option.match({ onNone: () => FULL_RATIO_PPM, onSome: (profile) => profile.taxableCardRatioPpm })),
+      )
+  const estimate = (
+    companyId: Id<'company'>,
+    businessType: BusinessType,
+    asOf: string,
+  ): Effect.Effect<VatEstimateResponse> =>
+    Effect.gen(function* () {
+      const period = vatEstimatePeriod(businessType, asOf)
+      const [sales, purchases, ratio] = yield* Effect.all([
+        evidence.sales(companyId, period.start, asOf),
+        evidence.purchases(companyId, period.start, asOf),
+        ratioOf(companyId),
+      ])
+      const result: VatEstimate = estimateVat({
+        period: { ...period, end: asOf },
+        sales,
+        purchases,
+        taxableCardRatioPpm: ratio,
+      })
+      return { ...result, period, asOf }
+    })
+  return { ratioOf, estimate }
 }

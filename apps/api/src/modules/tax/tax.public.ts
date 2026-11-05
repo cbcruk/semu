@@ -1,9 +1,22 @@
 import { Context, Effect, Layer } from 'effect'
 import type { Id } from '../../shared/ids/ids.types.ts'
+import type { BusinessType } from '../identity-access/actor.types.ts'
 import type { FilingKind, FilingStatus, TaxType } from './tax.types.ts'
 
+export { PayrollLedgers } from './filings/payroll-ledgers.ts'
+export type { PayrollLedgerSummary } from './filings/filing-requirements.types.ts'
+export { PublicHolidays } from './calendar/public-holidays.ts'
+export { TaxProfiles, type TaxProfile } from './calendar/tax-profiles.ts'
+export { VatEvidence } from './vat-estimates/vat-evidence.ts'
+export type {
+  PurchaseEvidence,
+  PurchaseSource,
+  SalesEvidence,
+  SalesSource,
+} from './vat-estimates/vat-estimate.types.ts'
+
 /**
- * Tax가 내보내는 도메인 이벤트입니다. 다른 컨텍스트는 이 타입과 {@link WithholdingFilingLock}만 봅니다.
+ * Tax가 내보내는 도메인 이벤트입니다.
  *
  * - `filing.status_changed`: 신고 건 상태가 바뀌었습니다. Payroll은 원천세가 `FILED`가 되면 그 지급월 급여대장을 잠급니다
  */
@@ -28,7 +41,8 @@ export type TaxEvent = FilingStatusChanged
 /**
  * Tax가 받는 Payroll의 사실입니다. 급여대장이 마감되거나 마감이 풀리면 그 지급월을 알려 줍니다.
  *
- * `app.ts`가 Payroll의 `payroll_ledger.closed`·`payroll_ledger.reopened` 이벤트를 이 형태로 바꿔 `Filings.syncPayrollLedger`에 넘깁니다.
+ * `app.ts`의 어댑터가 Payroll의 `payroll.pay-month.closed`·`payroll.pay-month.reopened` 이벤트를 이 형태로 바꿔
+ * {@link PayrollLedgerSync}에 넘깁니다.
  */
 export interface PayrollLedgerChanged {
   companyId: Id<'company'>
@@ -69,3 +83,39 @@ export class WithholdingFilingLock extends Context.Service<
     isFiled(companyId: Id<'company'>, paymentMonth: string): Effect.Effect<boolean>
   }
 >()('semu/tax/WithholdingFilingLock') {}
+
+/**
+ * 급여대장 마감 변화를 원천세 신고 건에 반영하는 공개 커맨드입니다. Payroll 이벤트의 구독자가 부릅니다.
+ *
+ * 그 지급월을 덮는 원천세 신고 건의 "급여대장 마감" 항목을 Payroll의 현재 마감 현황으로 다시 맞춥니다. 같은 변화를 두 번 받아도 결과가 같습니다.
+ */
+export class PayrollLedgerSync extends Context.Service<
+  PayrollLedgerSync,
+  {
+    apply(change: PayrollLedgerChanged): Effect.Effect<void>
+  }
+>()('semu/tax/PayrollLedgerSync') {}
+
+/** 다른 컨텍스트에 보이는 예상 부가세입니다. */
+export interface CompanyVatEstimate {
+  /** 날짜가 속한 예상 부가세 기간입니다. 법인은 분기, 개인은 반기입니다. */
+  period: { start: string; end: string; unit: 'QUARTER' | 'HALF' }
+  /** 계산에 쓴 증빙의 마지막 날입니다. */
+  asOf: string
+  /** 예상 세액입니다. 음수면 환급 예상입니다. */
+  estimatedTax: number
+  /** 그 기간 신고의 납부 기한입니다. 기간 다음 달 25일을 주말·공휴일만큼 미룬 날입니다. */
+  dueDate: string
+}
+
+/**
+ * 예상 부가세 공개 조회입니다. Bookkeeping의 홈 경영 현황 카드가 씁니다.
+ *
+ * 화면의 `GET /vat-estimates/current`와 같은 계산이고, 행위자 대신 회사와 사업자 형태를 받습니다.
+ */
+export class VatEstimateQuery extends Context.Service<
+  VatEstimateQuery,
+  {
+    current(companyId: Id<'company'>, businessType: BusinessType, asOf: string): Effect.Effect<CompanyVatEstimate>
+  }
+>()('semu/tax/VatEstimateQuery') {}

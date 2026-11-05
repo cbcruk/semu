@@ -1,8 +1,10 @@
 import { Effect, Layer } from 'effect'
+import { addDays, addMonths } from '../../shared/time/calendar.ts'
 import { ActionCardRepository } from './action-cards/action-card-repository.ts'
 import type { ActionCardRecord } from './action-cards/action-card.ts'
 import { ActionCards } from './action-cards/action-cards.ts'
 import { ActionCardsHttpLive } from './action-cards/action-cards.http.ts'
+import { rollForwardDeadline } from './calendar/filing-deadline.ts'
 import { FilingScheduler } from './calendar/filing-scheduler.ts'
 import { PublicHolidays } from './calendar/public-holidays.ts'
 import { TaxCalendar } from './calendar/tax-calendar.ts'
@@ -16,11 +18,11 @@ import { Filings } from './filings/filings.ts'
 import { FilingsHttpLive } from './filings/filings.http.ts'
 import { PayrollLedgers } from './filings/payroll-ledgers.ts'
 import { DEMO_FILINGS, DEMO_HOLIDAYS, DEMO_TAX_PROFILE, DEMO_VAT_EVIDENCE } from './tax-demo.ts'
-import { TaxEvents, WithholdingFilingLock } from './tax.public.ts'
+import { PayrollLedgerSync, TaxEvents, VatEstimateQuery, WithholdingFilingLock } from './tax.public.ts'
 import type { TaxEvent } from './tax.public.ts'
 import type { PurchaseEvidence, SalesEvidence } from './vat-estimates/vat-estimate.types.ts'
 import { VatEvidence } from './vat-estimates/vat-evidence.ts'
-import { VatEstimates } from './vat-estimates/vat-estimates.ts'
+import { makeVatEstimator, VatEstimates } from './vat-estimates/vat-estimates.ts'
 import { VatEstimatesHttpLive } from './vat-estimates/vat-estimates.http.ts'
 
 const ActionCardsLive = ActionCards.layer
@@ -62,6 +64,50 @@ export const WithholdingFilingLockLive = Layer.effect(
   }),
 )
 
+/** 원천세 신고 건의 "급여대장 마감" 항목을 Payroll 이벤트로 다시 맞춥니다. 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다. */
+export const PayrollLedgerSyncLive = Layer.effect(
+  PayrollLedgerSync,
+  Effect.gen(function* () {
+    const filings = yield* Filings
+    return PayrollLedgerSync.of({
+      apply: (change) => filings.syncPayrollLedger(change.companyId, change.paymentMonth),
+    })
+  }),
+).pipe(Layer.provide(FilingsLive))
+
+/** 예상 부가세 공개 조회입니다. `VatEvidence`·`TaxProfiles`·`PublicHolidays` 포트가 필요합니다. */
+export const VatEstimateQueryLive = Layer.effect(
+  VatEstimateQuery,
+  Effect.gen(function* () {
+    const estimator = makeVatEstimator(yield* VatEvidence, yield* TaxProfiles)
+    const holidays = yield* PublicHolidays
+    return VatEstimateQuery.of({
+      current: (companyId, businessType, asOf) =>
+        Effect.gen(function* () {
+          const estimate = yield* estimator.estimate(companyId, businessType, asOf)
+          const statutoryDue = `${addMonths(estimate.period.end.slice(0, 7), 1)}-25`
+          const closed = yield* holidays.between(statutoryDue, addDays(statutoryDue, 31))
+          return {
+            period: estimate.period,
+            asOf: estimate.asOf,
+            estimatedTax: estimate.estimatedTax,
+            dueDate: rollForwardDeadline(statutoryDue, closed),
+          }
+        }),
+    })
+  }),
+)
+
+/**
+ * 다른 컨텍스트에 여는 서비스(`tax.public.ts`)입니다. 원천세 신고 여부, 급여대장 마감 반영, 예상 부가세입니다.
+ *
+ * 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다. 핸들러가 쓰는 내부 서비스 Layer를 함께 쓰므로 `Layer.fresh`로 따로 만듭니다.
+ * 그래야 테스트가 핸들러 쪽 저장소만 바꿔 끼워도 이 서비스가 먼저 만든 인스턴스를 핸들러가 물려받지 않습니다.
+ */
+export const TaxPublicLive = Layer.fresh(
+  Layer.mergeAll(WithholdingFilingLockLive, PayrollLedgerSyncLive, VatEstimateQueryLive),
+)
+
 /** {@link taxMemoryLayer}의 시작 데이터입니다. 주지 않은 값은 비어 있습니다. */
 export interface TaxMemorySeed {
   filings?: ReadonlyArray<FilingRecord>
@@ -87,7 +133,18 @@ export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
   )
 }
 
-/** 세무 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 데모 회사에 신고 건 두 건이 있습니다. */
+/**
+ * 세무 컨텍스트가 소유한 저장소와 이벤트 포트만 메모리 구현으로 채웁니다. 데모 회사에 신고 건 두 건이 있습니다.
+ *
+ * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
+ */
+export const TaxMemoryStoreLive = Layer.mergeAll(
+  FilingRepository.layerMemory(DEMO_FILINGS),
+  ActionCardRepository.layerMemory(),
+  TaxEvents.layerMemory(),
+)
+
+/** 세무 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 데모 회사에 신고 건 두 건이 있습니다. Tax만 시험할 때 씁니다. */
 export const TaxMemoryLive = taxMemoryLayer({
   filings: DEMO_FILINGS,
   profiles: [DEMO_TAX_PROFILE],

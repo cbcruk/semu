@@ -34,20 +34,25 @@ export const BillingHttpLive = Layer.mergeAll(
 ).pipe(Layer.provide(ServicesLive))
 
 /**
- * 구독·결제·기장 서비스 계약·상담 리드·파트너 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ * Billing이 소유한 저장소와 CMS 출금 어댑터를 메모리 구현과 결정적인 가짜로 채웁니다.
  *
  * Identity & Access의 `CompanyPlans` 포트도 여기서 구독 저장소로 구현해 넣습니다(`SubscriptionCompanyPlansLive`).
+ * 공휴일(`PublicHolidays`)은 넣지 않습니다. `app.ts`가 공유 참조데이터의 어댑터로 채웁니다.
  */
-export const BillingMemoryLive = SubscriptionCompanyPlansLive.pipe(
+export const BillingMemoryStoreLive = SubscriptionCompanyPlansLive.pipe(
   Layer.provideMerge(
     Layer.mergeAll(
       PaymentRepository.layerMemory(demoPayments()),
       BillingMandateRepository.layerMemory(demoMandates()),
       ConsultationRepository.layerMemory(),
       ServiceContractRepository.layerMemory(demoServiceContracts()),
-      PublicHolidays.layerMemory(),
       CmsGateway.layerFake,
       SubscriptionRepository.layerMemory(demoSubscriptions()),
     ),
   ),
 )
+
+/**
+ * 구독·결제·기장 서비스 계약·상담 리드·파트너 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. Billing만 시험할 때 씁니다.
+ */
+export const BillingMemoryLive = Layer.mergeAll(BillingMemoryStoreLive, PublicHolidays.layerMemory())

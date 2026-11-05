@@ -59,9 +59,12 @@ export const BookkeepingPublicLive = Layer.mergeAll(ScrapedRecordIngestion.layer
   Layer.provide(Classifier.layer),
 )
 
-const MemoryAdapters = Layer.mergeAll(
-  BookkeepingRepositoriesMemory,
-  AccountNumberCipher.layerFake,
+/**
+ * Integrations·Tax·Payroll이 구현하는 포트의 결정적인 가짜입니다. Bookkeeping만 시험할 때 씁니다.
+ *
+ * 예상 부가세는 150만 원, 2026년 10월 인건비는 근로소득 두 명 800만 원으로 고정합니다.
+ */
+export const BookkeepingPortFakesLive = Layer.mergeAll(
   BusinessStatusLookup.layerFake,
   HometaxInvoiceIssuer.layerFake,
   GiroPaymentGateway.layerFake,
@@ -81,10 +84,17 @@ const MemoryAdapters = Layer.mergeAll(
 const DemoSeedLive = Layer.effectDiscard(seedDemo).pipe(Layer.provide(BookkeepingPublicLive))
 
 /**
- * 증빙·계정과목·자동분류·입출금·거래처·세금계산서·지로·결산 보고서 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 로컬 개발과 테스트에 씁니다.
+ * Bookkeeping이 소유한 저장소와 계좌번호 암호화를 메모리 구현과 결정적인 가짜로 채웁니다.
  *
- * 공개 서비스(`BookkeepingPublicLive`)도 함께 내보내고, 데모 회사에 현행 데모 숫자를 넣어 둡니다.
+ * 공개 서비스(`BookkeepingPublicLive`)도 같은 저장소 위에 만들어 내보내고, 데모 회사에 현행 데모 숫자를 넣어 둡니다.
+ * 다른 컨텍스트가 구현하는 포트는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
-export const BookkeepingMemoryLive = Layer.mergeAll(BookkeepingPublicLive, DemoSeedLive).pipe(
-  Layer.provideMerge(MemoryAdapters),
+export const BookkeepingMemoryStoreLive = Layer.mergeAll(BookkeepingPublicLive, DemoSeedLive).pipe(
+  Layer.provideMerge(Layer.mergeAll(BookkeepingRepositoriesMemory, AccountNumberCipher.layerFake)),
 )
+
+/**
+ * 증빙·계정과목·자동분류·입출금·거래처·세금계산서·지로·결산 보고서 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다.
+ * Bookkeeping만 시험할 때 씁니다.
+ */
+export const BookkeepingMemoryLive = Layer.mergeAll(BookkeepingMemoryStoreLive, BookkeepingPortFakesLive)

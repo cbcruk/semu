@@ -4,6 +4,7 @@ import { AppLive, MemoryLive } from '../../../app.ts'
 import { AccessTokens } from '../../identity-access/access-tokens.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { testActor } from '../../identity-access/testing.ts'
+import { BookkeepingPortFakesLive } from '../bookkeeping.layer.ts'
 
 /** 테스트 앱에 보내는 요청 옵션입니다. */
 export interface SendOptions {
@@ -20,7 +21,7 @@ export interface TestApp {
 }
 
 /**
- * 데모 데이터가 든 메모리 앱을 만듭니다. `admin` 토큰은 모든 권한의 데모 회사 행위자이고, `tokens`로 다른 행위자를 더합니다.
+ * 데모 데이터가 든 메모리 앱을 만듭니다. 다른 컨텍스트 포트는 Bookkeeping의 가짜(`BookkeepingPortFakesLive`)로 바꿉니다. `admin` 토큰은 모든 권한의 데모 회사 행위자이고, `tokens`로 다른 행위자를 더합니다.
  *
  * @example 권한이 좁은 행위자
  * ```ts
@@ -33,6 +34,7 @@ export function testApp(tokens: Record<string, Actor> = {}): TestApp {
     AppLive.pipe(
       Layer.provide([
         MemoryLive,
+        BookkeepingPortFakesLive,
         AccessTokens.layerMemory(Object.entries({ admin: testActor(), ...tokens })),
         HttpServer.layerServices,
       ]),
