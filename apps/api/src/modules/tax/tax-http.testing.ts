@@ -1,6 +1,6 @@
 import { Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, MemoryLive } from '../../app.ts'
+import { AppLive, TestStoreLive } from '../../app.ts'
 import { AccessTokens } from '../identity-access/access-tokens.ts'
 import { testActor } from '../identity-access/testing.ts'
 import { taxMemoryLayer } from './tax.layer.ts'
@@ -34,12 +34,12 @@ export interface TaxTestApp {
   dispose(): Promise<void>
 }
 
-/** 세무 저장소를 `seed`로 채운 앱 전체를 띄웁니다. 다른 컨텍스트는 `MemoryLive`를 씁니다. */
+/** 세무 저장소를 `seed`로 채운 앱 전체를 띄웁니다. 다른 컨텍스트는 `TestStoreLive`를 씁니다. */
 export function taxTestApp(seed: TaxMemorySeed = {}): TaxTestApp {
   const app = HttpRouter.toWebHandler(
     AppLive.pipe(
       Layer.provide([
-        MemoryLive,
+        TestStoreLive,
         taxMemoryLayer(seed),
         AccessTokens.layerMemory(Object.entries(TEST_TOKENS)),
         HttpServer.layerServices,

@@ -1,4 +1,5 @@
 import { Effect, Layer } from 'effect'
+import { Outbox } from '../shared/persistence/outbox.ts'
 import { PayrollEventPublisher, WithholdingFilingLock } from '../modules/payroll/payroll.public.ts'
 import type { PayrollEvent } from '../modules/payroll/payroll.public.ts'
 import { PayrollLedgerSync, WithholdingFilingLock as TaxWithholdingFilingLock } from '../modules/tax/tax.public.ts'
@@ -25,11 +26,14 @@ export const PayrollWithholdingFilingLockFromTax: Layer.Layer<WithholdingFilingL
  * 다시 맞춥니다(`PayrollLedgerSync`). Tax에는 회사와 지급월만 넘기고, 원천세 집계 같은 급여 금액은 넘기지 않습니다.
  * 대장 커맨드와 같은 요청 안에서 동기로 돌기 때문에 Tax 쪽 반영이 끝나야 커맨드 응답이 나갑니다.
  */
-export const PayrollEventsToTax: Layer.Layer<PayrollEventPublisher, never, PayrollLedgerSync> = Layer.effect(
+export const PayrollEventsToTax: Layer.Layer<PayrollEventPublisher, never, PayrollLedgerSync | Outbox> = Layer.effect(
   PayrollEventPublisher,
   Effect.gen(function* () {
     const sync = yield* PayrollLedgerSync
-    return PayrollEventPublisher.of({ publish: (event) => sync.apply(payrollLedgerChangeOf(event)) })
+    const publish = yield* (yield* Outbox).channel<PayrollEvent>('payroll_pay_month->tax', (event) =>
+      sync.apply(payrollLedgerChangeOf(event)),
+    )
+    return PayrollEventPublisher.of({ publish })
   }),
 )
 

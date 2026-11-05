@@ -1,6 +1,6 @@
 import { Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, MemoryLive } from '../../../app.ts'
+import { AppLive, TestStoreLive } from '../../../app.ts'
 import { AccessTokens } from '../../identity-access/access-tokens.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { testActor } from '../../identity-access/testing.ts'
@@ -33,7 +33,7 @@ export function testApp(tokens: Record<string, Actor> = {}): TestApp {
   const app = HttpRouter.toWebHandler(
     AppLive.pipe(
       Layer.provide([
-        MemoryLive,
+        TestStoreLive,
         BookkeepingPortFakesLive,
         AccessTokens.layerMemory(Object.entries({ admin: testActor(), ...tokens })),
         HttpServer.layerServices,

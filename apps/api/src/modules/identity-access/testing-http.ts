@@ -1,6 +1,6 @@
 import { Effect, Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, MemoryLive } from '../../app.ts'
+import { AppLive, TestStoreLive } from '../../app.ts'
 import { AccessTokens } from './access-tokens.ts'
 import { DEMO_PASSWORD } from './demo-seed.ts'
 import { Mailer } from './notifications/mailer.ts'
@@ -60,7 +60,7 @@ export function makeTestApp(): TestApp {
   )
   const app = HttpRouter.toWebHandler(
     AppLive.pipe(
-      Layer.provide([Layer.merge(MemoryLive, mailer), AccessTokens.layerMemory(), HttpServer.layerServices]),
+      Layer.provide([Layer.merge(TestStoreLive, mailer), AccessTokens.layerMemory(), HttpServer.layerServices]),
     ),
     { disableLogger: true },
   )

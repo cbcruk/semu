@@ -1,13 +1,13 @@
 import { Effect, Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
 import { afterAll, describe, expect, it } from 'vitest'
-import { AppLive, MemoryLive } from './app.ts'
+import { AppLive, TestStoreLive } from './app.ts'
 import { AccessTokens } from './modules/identity-access/access-tokens.ts'
 
 const Defect = HttpRouter.add('GET', '/v1/defect', Effect.die(new Error('boom')))
 
 const app = HttpRouter.toWebHandler(
-  Layer.merge(AppLive, Defect).pipe(Layer.provide([MemoryLive, AccessTokens.layerMemory(), HttpServer.layerServices])),
+  Layer.merge(AppLive, Defect).pipe(Layer.provide([TestStoreLive, AccessTokens.layerMemory(), HttpServer.layerServices])),
   { disableLogger: true },
 )
 

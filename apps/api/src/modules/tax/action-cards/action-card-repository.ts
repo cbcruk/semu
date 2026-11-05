@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { ActionCardRecord } from './action-card.ts'
 
@@ -12,31 +13,33 @@ export class ActionCardRepository extends Context.Service<
     save(card: ActionCardRecord): Effect.Effect<void>
   }
 >()('semu/tax/ActionCardRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 카드를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<ActionCardRecord> = []) =>
+  /** `tax_action_cards` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<ActionCardRecord> = []) =>
     Layer.effect(
       ActionCardRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((card) => [card.id, card])))
-        const all = Ref.get(store).pipe(Effect.map((cards) => [...cards.values()]))
+        const table = yield* (yield* TableFactory).make<ActionCardRecord>('tax_action_cards', {
+          seed,
+          companyOf: (card) => card.companyId,
+        })
 
         return ActionCardRepository.of({
           findById: (companyId, id) =>
-            Ref.get(store).pipe(
-              Effect.map((cards) =>
-                Option.fromNullishOr(cards.get(id)).pipe(Option.filter((card) => card.companyId === companyId)),
-              ),
+            Effect.map(
+              table.get(id),
+              Option.filter((card) => card.companyId === companyId),
             ),
-          listByCompany: (companyId) =>
-            all.pipe(Effect.map((cards) => cards.filter((card) => card.companyId === companyId))),
+          listByCompany: (companyId) => table.byCompany(companyId),
           listByFiling: (companyId, filingId) =>
-            all.pipe(
-              Effect.map((cards) =>
-                cards.filter((card) => card.companyId === companyId && card.subject.filingId === filingId),
-              ),
+            Effect.map(table.byCompany(companyId), (cards) =>
+              cards.filter((card) => card.subject.filingId === filingId),
             ),
-          save: (card) => Ref.update(store, (cards) => new Map(cards).set(card.id, card)),
+          save: (card) => table.put(card),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 카드를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<ActionCardRecord> = []) =>
+    ActionCardRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

@@ -1,6 +1,6 @@
 import { Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, MemoryLive } from '../../../app.ts'
+import { AppLive, TestStoreLive } from '../../../app.ts'
 import { AccessTokens } from '../../identity-access/access-tokens.ts'
 import { testActor } from '../../identity-access/testing.ts'
 
@@ -30,7 +30,7 @@ export function startTestApp(): TestApp {
     ['viewer', testActor({ permissions: new Set(['employee:read', 'organization:read', 'esign-request:read']) })],
     ['no-plan', testActor({ plans: new Set() })],
   ])
-  const app = HttpRouter.toWebHandler(AppLive.pipe(Layer.provide([MemoryLive, tokens, HttpServer.layerServices])), {
+  const app = HttpRouter.toWebHandler(AppLive.pipe(Layer.provide([TestStoreLive, tokens, HttpServer.layerServices])), {
     disableLogger: true,
   })
 

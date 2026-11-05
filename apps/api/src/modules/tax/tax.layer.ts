@@ -1,4 +1,5 @@
 import { Effect, Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { addDays, addMonths } from '../../shared/time/calendar.ts'
 import { ActionCardRepository } from './action-cards/action-card-repository.ts'
 import type { ActionCardRecord } from './action-cards/action-card.ts'
@@ -134,15 +135,18 @@ export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
 }
 
 /**
- * 세무 컨텍스트가 소유한 저장소와 이벤트 포트만 메모리 구현으로 채웁니다. 데모 회사에 신고 건 두 건이 있습니다.
+ * 세무 컨텍스트가 소유한 저장소와 이벤트 포트입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다. 데모 회사에 신고 건 두 건이 있습니다.
  *
  * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
-export const TaxMemoryStoreLive = Layer.mergeAll(
-  FilingRepository.layerMemory(DEMO_FILINGS),
-  ActionCardRepository.layerMemory(),
+export const TaxStoreLive = Layer.mergeAll(
+  FilingRepository.layer(DEMO_FILINGS),
+  ActionCardRepository.layer(),
   TaxEvents.layerMemory(),
 )
+
+/** {@link TaxStoreLive}를 메모리 표로 채웁니다. */
+export const TaxMemoryStoreLive = TaxStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
 
 /** 세무 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다. 데모 회사에 신고 건 두 건이 있습니다. Tax만 시험할 때 씁니다. */
 export const TaxMemoryLive = taxMemoryLayer({

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { FilingStatus, TaxType } from '../tax.types.ts'
 import type { FilingRecord } from './filing.types.ts'
@@ -22,28 +23,34 @@ export class FilingRepository extends Context.Service<
     save(filing: FilingRecord): Effect.Effect<void>
   }
 >()('semu/tax/FilingRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 신고 건을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<FilingRecord> = []) =>
+  /** `tax_filings` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<FilingRecord> = []) =>
     Layer.effect(
       FilingRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((filing) => [filing.id, filing])))
+        const table = yield* (yield* TableFactory).make<FilingRecord>('tax_filings', {
+          seed,
+          companyOf: (filing) => filing.companyId,
+        })
 
         return FilingRepository.of({
           findById: (companyId, id) =>
-            Ref.get(store).pipe(
-              Effect.map((filings) =>
-                Option.fromNullishOr(filings.get(id)).pipe(Option.filter((filing) => filing.companyId === companyId)),
-              ),
+            Effect.map(
+              table.get(id),
+              Option.filter((filing) => filing.companyId === companyId),
             ),
           list: (companyId, filter = {}) =>
-            Ref.get(store).pipe(
-              Effect.map((filings) => [...filings.values()].filter((filing) => matches(filing, companyId, filter))),
+            Effect.map(table.byCompany(companyId), (filings) =>
+              filings.filter((filing) => matches(filing, companyId, filter)),
             ),
-          save: (filing) => Ref.update(store, (filings) => new Map(filings).set(filing.id, filing)),
+          save: (filing) => table.put(filing),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 신고 건을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<FilingRecord> = []) =>
+    FilingRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 function matches(filing: FilingRecord, companyId: Id<'company'>, filter: FilingFilter): boolean {

@@ -1,6 +1,6 @@
 import { Layer } from 'effect'
 import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, MemoryLive } from '../../app.ts'
+import { AppLive, TestStoreLive } from '../../app.ts'
 import { AccessTokens } from '../identity-access/access-tokens.ts'
 import type { Actor } from '../identity-access/actor.types.ts'
 import { testActor } from '../identity-access/testing.ts'
@@ -43,7 +43,7 @@ export function payrollTestApp(
     AppLive.pipe(
       Layer.provide(
         Layer.mergeAll(
-          MemoryLive,
+          TestStoreLive,
           PayrollPortFakesLive,
           ...layers,
           AccessTokens.layerMemory([
