@@ -124,6 +124,7 @@ POST /v1/esign-requests/esr_01J...:send
 - 수정 가능한 리소스는 `version` 정수를 가집니다. 응답의 `ETag: "7"`을 다음 요청의 `If-Match: "7"`로 보내고, 어긋나면 412 `VERSION_MISMATCH`(`currentVersion`)를 돌려줍니다
 - 상태 커맨드는 `If-Match`를 받습니다. 헤더가 없으면 버전을 검사하지 않습니다
 - 사업자번호·이메일처럼 유일해야 하는 값은 저장소의 유일 제약으로 보장합니다. "검증 → 저장" 사이 경쟁 조건을 없앱니다
+  - **지금 구현:** 표가 `(id, company_id, data)`뿐이라 유일 제약이 없습니다. SQLite 연결 하나에서 요청 트랜잭션을 한 번에 하나씩 열기 때문에 "검증 → 저장"이 겹치지 않을 뿐입니다. 이메일 조회도 표 전체를 훑습니다. 인스턴스를 늘리거나 동시 쓰기를 열 때 그 값들을 열로 빼고 유일 색인을 둡니다
 - 구현은 `apps/api/src/shared/http/versioning.ts`(`expectedVersion`, `checkVersion`, `withEtag`)를 씁니다
 
 ## 비동기 작업

@@ -283,7 +283,7 @@ flowchart LR
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 내보냄(이벤트) | `filing.status_changed` | `{ companyId, filingId, taxType, kind, periodStart, periodEnd, fromStatus, toStatus, payableAmount, occurredAt }` |
-| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 같은 요청 안에서 부름 |
+| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 부름. outbox로 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서 반영하고, 실패하면 릴레이가 다시 넘김 |
 | 공개 조회 | `VatEstimateQuery.current(companyId, businessType, asOf)` | `{ period, asOf, estimatedTax, dueDate }`. Bookkeeping 홈 카드가 씀 |
 | 공개 조회 | `AgencyWorkloadQuery.of(companies)` | 회사(`companyId`, `plans`)마다 `{ openFilingCount, overdueFilingCount, openActionCardCount, nearestDueDate }`. Identity & Access의 `AgencyWorkload` 포트가 씀([identity-access-tax.ts](../../apps/api/src/wiring/identity-access-tax.ts)) |
 | 받음(인가) | Identity & Access `CurrentAgent`, `authorizeAgency` | 대리인 큐가 담당 회사(플랜 포함)를 받음. Tax는 배정을 읽지 않음 |
