@@ -1,0 +1,139 @@
+{
+  "rule": "esign-identity-verification",
+  "description": "Signer identity check: five failures lock the link, a mismatch reports remaining attempts, success resets failures; closed links refuse verification.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign-signer.service.ts",
+      "lines": "63-111, 246"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/e-sign/e-sign.utils.ts",
+      "lines": "6-46"
+    }
+  ],
+  "inputSchema": {
+    "check": "attempt | match.",
+    "failures": "Failures so far.",
+    "matches": "Whether name and birth date matched."
+  },
+  "cases": [
+    {
+      "name": "first success",
+      "input": {
+        "check": "attempt",
+        "failures": 0,
+        "matches": true
+      },
+      "expected": {
+        "outcome": "VERIFIED",
+        "failures": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "success after failures resets",
+      "input": {
+        "check": "attempt",
+        "failures": 3,
+        "matches": true
+      },
+      "expected": {
+        "outcome": "VERIFIED",
+        "failures": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "first failure",
+      "input": {
+        "check": "attempt",
+        "failures": 0,
+        "matches": false
+      },
+      "expected": {
+        "outcome": "FAILED",
+        "failures": 1,
+        "remainingAttempts": 4
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "fifth failure",
+      "input": {
+        "check": "attempt",
+        "failures": 4,
+        "matches": false
+      },
+      "expected": {
+        "outcome": "FAILED",
+        "failures": 5,
+        "remainingAttempts": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "locked after five even if right",
+      "input": {
+        "check": "attempt",
+        "failures": 5,
+        "matches": true
+      },
+      "expected": {
+        "outcome": "LOCKED",
+        "failures": 5
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "name with spaces matches",
+      "input": {
+        "check": "match",
+        "expected": {
+          "name": "홍길동",
+          "birthDate": "1990-01-01"
+        },
+        "claim": {
+          "name": "홍 길동",
+          "birthDate": "1990-01-01"
+        }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "birth date mismatch",
+      "input": {
+        "check": "match",
+        "expected": {
+          "name": "홍길동",
+          "birthDate": "1990-01-01"
+        },
+        "claim": {
+          "name": "홍길동",
+          "birthDate": "1990-01-02"
+        }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "unknown birth date compares name only",
+      "input": {
+        "check": "match",
+        "expected": {
+          "name": "홍길동"
+        },
+        "claim": {
+          "name": "홍길동",
+          "birthDate": "2000-01-01"
+        }
+      },
+      "expected": true,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "잠긴 링크를 관리자가 풀 방법이 없습니다(재발송만 가능). 잠금 해제 커맨드를 둘까요",
+    "생년월일을 모르는 수신자(직원이 아님)는 이름만 확인합니다. 본인확인을 휴대폰 인증으로 바꿀까요"
+  ]
+}

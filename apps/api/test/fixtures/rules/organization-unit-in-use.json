@@ -1,0 +1,112 @@
+{
+  "rule": "organization-unit-in-use",
+  "description": "A department or position that was ever assigned cannot be deleted; names are unique per company after trimming.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/organization/organization.repository.ts",
+      "lines": "18-74"
+    },
+    {
+      "file": "alfred-manual/04-인사/02-구성원-정보.md",
+      "lines": "30"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "638"
+    }
+  ],
+  "inputSchema": {
+    "check": "inUse | nameTaken.",
+    "unit": "everAssigned and current assignment count.",
+    "name": "Candidate name.",
+    "existing": "Other units."
+  },
+  "cases": [
+    {
+      "name": "never assigned",
+      "input": {
+        "check": "inUse",
+        "unit": {
+          "everAssigned": false,
+          "assignedEmployeeCount": 0
+        }
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "currently assigned",
+      "input": {
+        "check": "inUse",
+        "unit": {
+          "everAssigned": true,
+          "assignedEmployeeCount": 2
+        }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "assigned in the past only",
+      "input": {
+        "check": "inUse",
+        "unit": {
+          "everAssigned": true,
+          "assignedEmployeeCount": 0
+        }
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "same name taken",
+      "input": {
+        "check": "nameTaken",
+        "name": "개발팀",
+        "existing": [
+          {
+            "id": "dpt_a",
+            "name": "개발팀"
+          }
+        ]
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "same name after trim",
+      "input": {
+        "check": "nameTaken",
+        "name": " 개발팀 ",
+        "existing": [
+          {
+            "id": "dpt_a",
+            "name": "개발팀"
+          }
+        ]
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "renaming self",
+      "input": {
+        "check": "nameTaken",
+        "name": "개발팀",
+        "existing": [
+          {
+            "id": "dpt_a",
+            "name": "개발팀"
+          }
+        ],
+        "selfId": "dpt_a"
+      },
+      "expected": false,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "\"한 번이라도 쓰인\" 판정을 과거 발령 이력까지 보는데, 이력만 있는 부서를 숨기기(비활성)로 대신할까요",
+    "이름 중복을 대소문자·공백 차이로도 막을까요(현행은 앞뒤 공백만 무시)"
+  ]
+}

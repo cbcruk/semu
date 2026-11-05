@@ -1,0 +1,548 @@
+{
+  "rule": "social-insurance-eligibility",
+  "description": "Recommends 4대보험 enrollment from age, work hours, executive status and foreign visa, with determination codes and messages.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/social-insurance/social-insurance.utils.ts",
+      "lines": "6-37, 80-142"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "646-648"
+    }
+  ],
+  "inputSchema": {
+    "facts": "birthDate, joinDate, isForeigner, visaCode, nationalityCode, weeklyWorkHours, executive flags.",
+    "current": "Current enrollment per insurance.",
+    "asOf": "Company-local date."
+  },
+  "cases": [
+    {
+      "name": "ordinary employee keeps all",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "birthDate": "1990-01-01",
+          "joinDate": "2026-01-02",
+          "weeklyWorkHours": 40
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hired at 60",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "birthDate": "1966-01-01",
+          "joinDate": "2026-01-02"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [
+          "NPS_OVER_60_NEW_HIRE"
+        ],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": false,
+            "exclusionReason": "AGE_60_OR_OVER"
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "turns 60 while employed",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "birthDate": "1966-05-01",
+          "joinDate": "2020-01-02"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [
+          "NPS_OVER_60_INCUMBENT"
+        ],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": false,
+            "exclusionReason": "AGE_60_OR_OVER"
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "hired at 65",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "birthDate": "1960-01-01",
+          "joinDate": "2026-01-02"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [
+          "NPS_OVER_60_NEW_HIRE",
+          "EI_OVER_65_NEW_HIRE"
+        ],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": false,
+            "exclusionReason": "AGE_60_OR_OVER"
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": false,
+            "exclusionReason": "HIRED_AT_65_OR_OVER"
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "representative or executive",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": true,
+          "isRepresentativeRelative": false
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": false,
+            "exclusionReason": "REPRESENTATIVE_OR_EXECUTIVE"
+          },
+          "iais": {
+            "enrolled": false,
+            "exclusionReason": "REPRESENTATIVE_OR_EXECUTIVE"
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "representative relative",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": true
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": false,
+            "exclusionReason": "REPRESENTATIVE_RELATIVE"
+          },
+          "iais": {
+            "enrolled": false,
+            "exclusionReason": "REPRESENTATIVE_RELATIVE"
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "14 weekly hours",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "weeklyWorkHours": 14
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": false,
+            "exclusionReason": "SHORT_PART_TIME"
+          },
+          "nhis": {
+            "enrolled": false,
+            "exclusionReason": "SHORT_PART_TIME"
+          },
+          "ei": {
+            "enrolled": false,
+            "exclusionReason": "SHORT_PART_TIME"
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "15 weekly hours keeps all",
+      "input": {
+        "facts": {
+          "isForeigner": false,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "weeklyWorkHours": 15
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "E-9 foreigner is mandatory",
+      "input": {
+        "facts": {
+          "isForeigner": true,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "visaCode": "E-9"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "E-7 foreigner without agreement",
+      "input": {
+        "facts": {
+          "isForeigner": true,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "visaCode": "E-7",
+          "nationalityCode": "US"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [
+          "EI_FOREIGNER_RECIPROCITY_NON_AGREEMENT"
+        ],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": false,
+            "exclusionReason": "EXEMPT_FOREIGNER"
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "D-2 foreigner is optional",
+      "input": {
+        "facts": {
+          "isForeigner": true,
+          "isRepresentativeOrExecutive": false,
+          "isRepresentativeRelative": false,
+          "visaCode": "D-2"
+        },
+        "current": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "determinations": [],
+        "messages": [
+          "EI_FOREIGNER_OPTIONAL"
+        ],
+        "recommended": {
+          "nps": {
+            "enrolled": true
+          },
+          "nhis": {
+            "enrolled": true
+          },
+          "ei": {
+            "enrolled": true
+          },
+          "iais": {
+            "enrolled": true
+          }
+        }
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "상호주의 국가 목록(EI_RECIPROCITY_COUNTRIES)이 비어 있어 E-1~E-7 등은 모두 \"협정 없음\"으로 제외 권장됩니다. 국가 목록을 참조데이터로 받을까요",
+    "월 60시간 미만이면 국민연금만 제외하는 분기는 주 15시간 미만 검사 뒤에 있어 실행되지 않습니다(주 15시간 × 4.345 ≈ 65시간). 지울까요, 월 소정근로시간으로 다시 판정할까요",
+    "60세 판정은 입사일 기준 신규/재직자 구분만 하고, 60세 이후 임의계속가입 신청은 다루지 않습니다. 다룰까요"
+  ]
+}

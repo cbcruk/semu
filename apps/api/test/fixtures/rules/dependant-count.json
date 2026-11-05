@@ -1,0 +1,172 @@
+{
+  "rule": "dependant-count",
+  "description": "Counts dependants for the simplified tax table (self plus year-end targets born by the date) and children aged 8 to 20 by year of birth.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/family/family.repository.ts",
+      "lines": "99-116"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/family/family.service.ts",
+      "lines": "23, 113-131"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "655"
+    }
+  ],
+  "inputSchema": {
+    "check": "count | taxFree.",
+    "members": "relation, birthDate, yearEndTarget.",
+    "asOf": "Company-local date."
+  },
+  "cases": [
+    {
+      "name": "self only",
+      "input": {
+        "check": "count",
+        "members": [],
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "dependantsCount": 1,
+        "childrenAged8To20Count": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "spouse and two children",
+      "input": {
+        "check": "count",
+        "asOf": "2026-06-01",
+        "members": [
+          {
+            "relation": "SPOUSE",
+            "birthDate": "1990-01-01",
+            "yearEndTarget": true
+          },
+          {
+            "relation": "CHILD",
+            "birthDate": "2018-12-31",
+            "yearEndTarget": true
+          },
+          {
+            "relation": "CHILD",
+            "birthDate": "2019-01-01",
+            "yearEndTarget": true
+          }
+        ]
+      },
+      "expected": {
+        "dependantsCount": 4,
+        "childrenAged8To20Count": 1
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "child aged 20 by year counts, 21 does not",
+      "input": {
+        "check": "count",
+        "asOf": "2026-06-01",
+        "members": [
+          {
+            "relation": "CHILD",
+            "birthDate": "2006-12-31",
+            "yearEndTarget": true
+          },
+          {
+            "relation": "CHILD",
+            "birthDate": "2005-01-01",
+            "yearEndTarget": true
+          }
+        ]
+      },
+      "expected": {
+        "dependantsCount": 3,
+        "childrenAged8To20Count": 1
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "non-target is ignored",
+      "input": {
+        "check": "count",
+        "asOf": "2026-06-01",
+        "members": [
+          {
+            "relation": "PARENT",
+            "birthDate": "1950-01-01",
+            "yearEndTarget": false
+          }
+        ]
+      },
+      "expected": {
+        "dependantsCount": 1,
+        "childrenAged8To20Count": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "unborn child is ignored",
+      "input": {
+        "check": "count",
+        "asOf": "2026-06-01",
+        "members": [
+          {
+            "relation": "CHILD",
+            "birthDate": "2026-07-01",
+            "yearEndTarget": true
+          }
+        ]
+      },
+      "expected": {
+        "dependantsCount": 1,
+        "childrenAged8To20Count": 0
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "child aged 6 can be tax-free target",
+      "input": {
+        "check": "taxFree",
+        "member": {
+          "relation": "CHILD",
+          "birthDate": "2020-06-01"
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "child aged 7 cannot",
+      "input": {
+        "check": "taxFree",
+        "member": {
+          "relation": "CHILD",
+          "birthDate": "2019-06-01"
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "spouse cannot",
+      "input": {
+        "check": "taxFree",
+        "member": {
+          "relation": "SPOUSE",
+          "birthDate": "2020-06-01"
+        },
+        "asOf": "2026-06-01"
+      },
+      "expected": false,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "8~20세 자녀를 연 나이(올해 − 출생연도)로 셉니다. 간이세액표 기준과 같은지 확인할까요",
+    "비과세 보육수당 대상을 만 6세 이하로 봅니다(2024년 개정 전 기준). 개정 후 만 8세 미만 기준으로 바꿀까요"
+  ]
+}

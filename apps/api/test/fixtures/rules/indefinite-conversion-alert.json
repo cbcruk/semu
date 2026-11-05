@@ -1,0 +1,192 @@
+{
+  "rule": "indefinite-conversion-alert",
+  "description": "Chains consecutive fixed-term contracts and flags employees whose chain reaches two years or will within 90 days, exempting those 55 or older at the chain start.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/contracts/contracts.utils.ts",
+      "lines": "10-18, 110-155"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "640"
+    }
+  ],
+  "inputSchema": {
+    "contracts": "Work contracts {contractType, startDate, endDate}.",
+    "birthDate": "Employee birth date.",
+    "asOf": "Company-local date."
+  },
+  "cases": [
+    {
+      "name": "no fixed-term contract",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "PERMANENT",
+            "startDate": "2024-01-01"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": false,
+        "status": "NONE",
+        "isExempt": false,
+        "conversionDate": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "single one-year contract",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2026-01-01",
+            "endDate": "2026-12-31"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": false,
+        "status": "NONE",
+        "isExempt": false,
+        "conversionDate": "2028-01-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "renewed chain reaches two years",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2024-07-01",
+            "endDate": "2025-06-30"
+          },
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2025-07-01",
+            "endDate": "2026-07-01"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": true,
+        "status": "EXCEEDED",
+        "isExempt": false,
+        "conversionDate": "2026-07-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "chain ends the day before two years but conversion is within 90 days",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2024-07-01",
+            "endDate": "2025-06-30"
+          },
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2025-07-01",
+            "endDate": "2026-06-30"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": true,
+        "status": "APPROACHING",
+        "isExempt": false,
+        "conversionDate": "2026-07-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "gap breaks the chain",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2024-07-01",
+            "endDate": "2025-06-29"
+          },
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2025-07-01",
+            "endDate": "2026-07-31"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": false,
+        "status": "NONE",
+        "isExempt": false,
+        "conversionDate": "2027-07-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "aged 55 at chain start is exempt",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2024-07-01",
+            "endDate": "2025-06-30"
+          },
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2025-07-01",
+            "endDate": "2026-07-01"
+          }
+        ],
+        "birthDate": "1969-07-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": false,
+        "status": "EXCEEDED",
+        "isExempt": true,
+        "conversionDate": "2026-07-01"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "chain already ended before today and short of two years",
+      "input": {
+        "contracts": [
+          {
+            "contractType": "FIXED_TERM",
+            "startDate": "2024-09-01",
+            "endDate": "2026-05-31"
+          }
+        ],
+        "birthDate": "1990-01-01",
+        "asOf": "2026-06-01"
+      },
+      "expected": {
+        "isTarget": false,
+        "status": "NONE",
+        "isExempt": false,
+        "conversionDate": "2026-09-01"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "\"2년 초과\"를 체인 종료일 ≥ 시작일 + 24개월로 봅니다. 2년째 되는 날 하루만 넘어도 전환되는지(기간제법 제4조) 확인할까요",
+    "55세 외 예외(전문자격, 휴직 대체, 정부 일자리 등)는 입력이 없어 판정하지 않습니다. 예외 사유를 계약에 받을까요",
+    "알림 시작을 전환일 90일 전으로 두었습니다. 회사 설정으로 둘까요"
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "rule": "deduction-validation",
+  "description": "Validates withholding settings: manual tax amount, adjustment rate 80/100/120%, income tax reduction reason, period and rate, student loan.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/deduction/deduction.utils.ts",
+      "lines": "13-45"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/hr/deduction/deduction.schema.ts",
+      "lines": "8, 14"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "653-654"
+    }
+  ],
+  "inputSchema": {
+    "terms": "calcMethod, manualIncomeTax, adjustmentRatePpm, reduction {type, reasonCode, application, startDate, endDate, ratePpm}, studentLoan."
+  },
+  "cases": [
+    {
+      "name": "tax table at 100%",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "reduction": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual without amount",
+      "input": {
+        "terms": {
+          "calcMethod": "MANUAL",
+          "adjustmentRatePpm": 1000000
+        }
+      },
+      "expected": {
+        "firstViolation": "REQUIRED",
+        "reduction": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "adjustment rate 90%",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 900000
+        }
+      },
+      "expected": {
+        "firstViolation": "ADJUSTMENT_RATE_NOT_ALLOWED",
+        "reduction": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "youth reduction 5 years",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "reduction": {
+            "type": "SMALL_BUSINESS",
+            "reasonCode": "YOUTH",
+            "application": "PAYROLL",
+            "startDate": "2026-01-02",
+            "endDate": "2031-01-01"
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "reduction": {
+          "reasonCode": "YOUTH",
+          "ratePpm": 900000
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "youth reduction one day too long",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "reduction": {
+            "type": "SMALL_BUSINESS",
+            "reasonCode": "YOUTH",
+            "application": "PAYROLL",
+            "startDate": "2026-01-02",
+            "endDate": "2031-01-02"
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "REDUCTION_PERIOD_TOO_LONG",
+        "reduction": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "small business without reason",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "reduction": {
+            "type": "SMALL_BUSINESS",
+            "application": "PAYROLL",
+            "startDate": "2026-01-02",
+            "endDate": "2027-01-01"
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "REDUCTION_REASON_REQUIRED",
+        "reduction": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "single-reason type fills the reason",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "reduction": {
+            "type": "RETURNING_KOREAN_TALENT",
+            "application": "YEAR_END",
+            "startDate": "2026-01-02",
+            "endDate": "2027-01-01"
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "reduction": {
+          "reasonCode": "RETURNING_TALENT",
+          "ratePpm": 500000
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "rate of another reason in the type is allowed",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "reduction": {
+            "type": "SMALL_BUSINESS",
+            "reasonCode": "YOUTH",
+            "application": "PAYROLL",
+            "startDate": "2026-01-02",
+            "endDate": "2027-01-01",
+            "ratePpm": 700000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": null,
+        "reduction": {
+          "reasonCode": "YOUTH",
+          "ratePpm": 700000
+        }
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "student loan without start date",
+      "input": {
+        "terms": {
+          "calcMethod": "TAX_TABLE",
+          "adjustmentRatePpm": 1000000,
+          "studentLoan": {
+            "monthlyAmount": 100000
+          }
+        }
+      },
+      "expected": {
+        "firstViolation": "STUDENT_LOAN_INCOMPLETE",
+        "reduction": null
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "감면율을 같은 유형의 다른 사유 비율(청년 사유에 70%)로도 받습니다. 사유별 비율만 받을까요",
+    "연 200만원 감면 한도는 저장만 하고 급여 계산이 적용합니다. 급여 컨텍스트가 이 값을 읽어 가면 될까요",
+    "외국인 기술자 특화선도(3년 70% + 7년 50%)는 기간에 따라 비율이 바뀌는데 한 비율만 저장합니다. 구간을 둘까요"
+  ]
+}

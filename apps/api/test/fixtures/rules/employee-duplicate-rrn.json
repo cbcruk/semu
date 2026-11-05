@@ -1,0 +1,138 @@
+{
+  "rule": "employee-duplicate-rrn",
+  "description": "Blocks a second employee of the same kind with the same registration number unless the match has resigned and the new one is a rejoin.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/hr/employees/employees.service.ts",
+      "lines": "165-205"
+    },
+    {
+      "file": "docs/reference/spec/hr.md",
+      "lines": "636",
+      "origin": "B:73510"
+    }
+  ],
+  "inputSchema": {
+    "candidates": "Employees of the same company and kind whose registration number hash matches, with their derived status.",
+    "selfId": "The employee being edited, if any.",
+    "isRejoin": "Whether the new or edited employee is flagged as a rejoin."
+  },
+  "cases": [
+    {
+      "name": "no match",
+      "input": {
+        "candidates": [],
+        "isRejoin": false
+      },
+      "expected": {
+        "blockingEmployeeId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "active match blocks a new hire",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "JOINED"
+          }
+        ],
+        "isRejoin": false
+      },
+      "expected": {
+        "blockingEmployeeId": "emp_a"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "resigned match blocks a non-rejoin",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "RESIGNED"
+          }
+        ],
+        "isRejoin": false
+      },
+      "expected": {
+        "blockingEmployeeId": "emp_a"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "resigned match allows a rejoin",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "RESIGNED"
+          }
+        ],
+        "isRejoin": true
+      },
+      "expected": {
+        "blockingEmployeeId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "active match blocks even a rejoin",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "LEAVE"
+          }
+        ],
+        "isRejoin": true
+      },
+      "expected": {
+        "blockingEmployeeId": "emp_a"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "editing self is not a duplicate",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "JOINED"
+          }
+        ],
+        "selfId": "emp_a",
+        "isRejoin": false
+      },
+      "expected": {
+        "blockingEmployeeId": null
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "second match blocks when the first is a resigned rejoin source",
+      "input": {
+        "candidates": [
+          {
+            "id": "emp_a",
+            "status": "RESIGNED"
+          },
+          {
+            "id": "emp_b",
+            "status": "PRE_JOINED"
+          }
+        ],
+        "isRejoin": true
+      },
+      "expected": {
+        "blockingEmployeeId": "emp_b"
+      },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "같은 주민번호라도 직원 종류(근로·일용·사업소득·기타)가 다르면 중복으로 보지 않는데, 한 사람이 근로자이면서 사업소득자인 경우를 계속 허용할까요",
+    "재입사 표시 없이 퇴사자와 같은 번호로 등록하면 막는데, 서버가 재입사를 자동으로 추정해 주는 편이 나을까요"
+  ]
+}
