@@ -1,5 +1,6 @@
-import { Context, Effect, Layer, Ref } from 'effect'
+import { Context, Effect, Layer } from 'effect'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { InsuranceFiling, InsuranceFilingKind, InsuranceFilingSource } from './insurance-filing.types.ts'
 
 /** 4대보험 신고 저장소입니다. */
@@ -17,35 +18,38 @@ export class InsuranceFilingRepository extends Context.Service<
     ): Effect.Effect<void>
   }
 >()('semu/hr/InsuranceFilingRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<InsuranceFiling> = []) =>
+  /** `hr_insurance_filings` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<InsuranceFiling> = []) =>
     Layer.effect(
       InsuranceFilingRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((filing) => [filing.id, filing])))
+        const table = yield* (yield* TableFactory).make<InsuranceFiling>('hr_insurance_filings', {
+          seed,
+          companyOf: (filing) => filing.companyId,
+        })
         return InsuranceFilingRepository.of({
           listByEmployee: (companyId, employeeId) =>
-            Ref.get(store).pipe(
-              Effect.map((filings) =>
-                [...filings.values()].filter((f) => f.companyId === companyId && f.employeeId === employeeId),
+            Effect.map(table.byCompany(companyId), (filings) => filings.filter((f) => f.employeeId === employeeId)),
+          save: (filing) => table.put(filing),
+          withdraw: (companyId, source, kind, at) =>
+            Effect.flatMap(table.byCompany(companyId), (filings) =>
+              Effect.forEach(
+                filings.filter(
+                  (filing) =>
+                    filing.kind === kind &&
+                    filing.status === 'PENDING' &&
+                    filing.source.type === source.type &&
+                    filing.source.id === source.id,
+                ),
+                (filing) => table.put({ ...filing, status: 'WITHDRAWN', processedAt: at }),
+                { discard: true },
               ),
             ),
-          save: (filing) => Ref.update(store, (filings) => new Map(filings).set(filing.id, filing)),
-          withdraw: (companyId, source, kind, at) =>
-            Ref.update(store, (filings) => {
-              const next = new Map(filings)
-              for (const filing of filings.values()) {
-                const matches =
-                  filing.companyId === companyId &&
-                  filing.kind === kind &&
-                  filing.status === 'PENDING' &&
-                  filing.source.type === source.type &&
-                  filing.source.id === source.id
-                if (matches) next.set(filing.id, { ...filing, status: 'WITHDRAWN', processedAt: at })
-              }
-              return next
-            }),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<InsuranceFiling> = []) =>
+    InsuranceFilingRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

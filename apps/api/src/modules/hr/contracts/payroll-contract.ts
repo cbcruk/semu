@@ -5,7 +5,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { EmployeeId, PayrollContractId, Violations } from '../shared/hr-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { PayrollContractDerived } from './payroll-contract-evaluation.types.ts'
 
 const Won = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -131,9 +131,13 @@ export class PayrollContractRepository extends Context.Service<
   PayrollContractRepository,
   TenantTable<PayrollContractRecord>
 >()('semu/hr/PayrollContractRepository') {
+  /** `hr_payroll_contracts` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<PayrollContractRecord> = []) =>
+    Layer.effect(PayrollContractRepository, makeTenantTable<PayrollContractRecord>('hr_payroll_contracts', seed))
+
   /** `seed`로 시작해 프로세스 메모리에 급여계약을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<PayrollContractRecord> = []) =>
-    Layer.effect(PayrollContractRepository, makeMemoryTable(seed))
+    PayrollContractRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 급여계약이 없거나 다른 회사의 계약입니다. */

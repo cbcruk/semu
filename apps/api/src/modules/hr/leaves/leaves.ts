@@ -9,7 +9,7 @@ import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
 import { InsuranceFilingRepository } from '../insurance-filings/insurance-filing-repository.ts'
 import type { InsuranceFilingKind } from '../insurance-filings/insurance-filing.types.ts'
-import { stripUndefined } from '../shared/tenant-table.ts'
+import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { summarizeLeaves, validateLeave } from './leave-rules.ts'
 import type { LeaveSummary, LeaveTerms, LeaveValidation } from './leave-rules.types.ts'
 import {

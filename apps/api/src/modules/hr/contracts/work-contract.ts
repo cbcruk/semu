@@ -4,7 +4,7 @@ import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { ContractType } from './work-contract-period.types.ts'
 
 /** 수습 조건입니다. 지급률은 ppm(`1_000_000` = 100%)입니다. */
@@ -65,9 +65,13 @@ export interface WorkContractRecord {
 export class WorkContractRepository extends Context.Service<WorkContractRepository, TenantTable<WorkContractRecord>>()(
   'semu/hr/WorkContractRepository',
 ) {
+  /** `hr_work_contracts` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<WorkContractRecord> = []) =>
+    Layer.effect(WorkContractRepository, makeTenantTable<WorkContractRecord>('hr_work_contracts', seed))
+
   /** `seed`로 시작해 프로세스 메모리에 근로계약을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<WorkContractRecord> = []) =>
-    Layer.effect(WorkContractRepository, makeMemoryTable(seed))
+    WorkContractRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 근로계약 입력이 업무 규칙을 어겼습니다. */

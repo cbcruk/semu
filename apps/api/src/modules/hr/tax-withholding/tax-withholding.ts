@@ -4,7 +4,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { EmployeeId, Violations } from '../shared/hr-schemas.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Won = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -93,9 +93,13 @@ export class TaxWithholdingRepository extends Context.Service<
   TaxWithholdingRepository,
   TenantTable<TaxWithholdingRecord>
 >()('semu/hr/TaxWithholdingRepository') {
+  /** `hr_tax_withholdings` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<TaxWithholdingRecord> = []) =>
+    Layer.effect(TaxWithholdingRepository, makeTenantTable<TaxWithholdingRecord>('hr_tax_withholdings', seed))
+
   /** `seed`로 시작해 프로세스 메모리에 공제 설정을 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<TaxWithholdingRecord> = []) =>
-    Layer.effect(TaxWithholdingRepository, makeMemoryTable(seed))
+    TaxWithholdingRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 기준일에 적용되는 소득세 공제 설정이 없습니다. */

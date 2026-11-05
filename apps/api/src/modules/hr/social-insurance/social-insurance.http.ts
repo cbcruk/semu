@@ -6,7 +6,7 @@ import { authorize } from '../../identity-access/authorization.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeNotFound } from '../employees/employee.ts'
 import { hrAccess } from '../shared/hr-access.ts'
-import { stripUndefined } from '../shared/tenant-table.ts'
+import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { DEFAULT_ENROLLMENT, determineEligibility } from './insurance-eligibility.ts'
 
 /** 4대보험 자격 판정 핸들러입니다. */

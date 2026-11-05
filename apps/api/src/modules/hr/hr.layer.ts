@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { PayrollContractRepository } from './contracts/payroll-contract.ts'
 import { PayrollContracts } from './contracts/payroll-contracts.ts'
 import { PayrollContractsHttpLive } from './contracts/payroll-contracts.http.ts'
@@ -58,21 +59,26 @@ export const HrHttpLive = Layer.mergeAll(
 )
 
 /**
- * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 저장소와 개인정보 포트를 메모리 구현과 결정적인 가짜로 채웁니다.
+ * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 저장소와 개인정보 포트입니다.
+ * 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다. 데모 회사(`DEMO_COMPANY_ID`) 데이터가 들어 있습니다.
  *
+ * 개인정보 암호화(`PersonalDataCipher`)는 아직 KMS 구현이 없어 결정적인 가짜입니다.
  * 공개 조회(`HrDirectoryLive`)는 넣지 않습니다. `app.ts`가 같은 저장소 위에 만들어 Payroll 어댑터와 Documents에 넘깁니다.
  */
-export const HrMemoryStoreLive = Layer.mergeAll(
-  EmployeeRepository.layerMemory(DEMO_EMPLOYEES),
-  LeaveRepository.layerMemory(),
-  WorkContractRepository.layerMemory(DEMO_WORK_CONTRACTS),
-  PayrollContractRepository.layerMemory(DEMO_PAYROLL_CONTRACTS),
-  TaxWithholdingRepository.layerMemory(DEMO_TAX_WITHHOLDING),
-  OrganizationRepository.layerMemory(DEMO_ORGANIZATION),
-  InsuranceFilingRepository.layerMemory(),
+export const HrStoreLive = Layer.mergeAll(
+  EmployeeRepository.layer(DEMO_EMPLOYEES),
+  LeaveRepository.layer(),
+  WorkContractRepository.layer(DEMO_WORK_CONTRACTS),
+  PayrollContractRepository.layer(DEMO_PAYROLL_CONTRACTS),
+  TaxWithholdingRepository.layer(DEMO_TAX_WITHHOLDING),
+  OrganizationRepository.layer(DEMO_ORGANIZATION),
+  InsuranceFilingRepository.layer(),
   PersonalDataCipher.layerFake,
-  PersonalDataAccessLog.layerMemory,
+  PersonalDataAccessLog.layer,
 )
+
+/** {@link HrStoreLive}를 메모리 표로 채웁니다. */
+export const HrMemoryStoreLive = HrStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
 
 /**
  * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 저장소·외부 연동을 메모리 구현과 결정적인 가짜로 채웁니다.

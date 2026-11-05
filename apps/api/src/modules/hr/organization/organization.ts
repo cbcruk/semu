@@ -2,7 +2,7 @@ import { Context, Layer, Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import { makeMemoryTable, type TenantTable } from '../shared/tenant-table.ts'
+import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 
 /** 조직 단위 종류입니다. */
 export type OrganizationUnitKind = 'DEPARTMENT' | 'POSITION'
@@ -40,9 +40,13 @@ export class OrganizationRepository extends Context.Service<
   OrganizationRepository,
   TenantTable<OrganizationUnitRecord>
 >()('semu/hr/OrganizationRepository') {
+  /** `hr_organization_units` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<OrganizationUnitRecord> = []) =>
+    Layer.effect(OrganizationRepository, makeTenantTable<OrganizationUnitRecord>('hr_organization_units', seed))
+
   /** `seed`로 시작해 프로세스 메모리에 부서·직위를 보관합니다. */
   static readonly layerMemory = (seed: ReadonlyArray<OrganizationUnitRecord> = []) =>
-    Layer.effect(OrganizationRepository, makeMemoryTable(seed))
+    OrganizationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
 /** 부서·직위가 없습니다. */

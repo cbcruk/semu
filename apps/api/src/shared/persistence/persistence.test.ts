@@ -5,7 +5,7 @@ import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { Outbox } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
 import { TableFactory, makeTenantTable } from './record-table.ts'
-import { SqliteDatabase, UnitOfWork } from './unit-of-work.ts'
+import { SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
 
 interface Row {
   id: string
@@ -79,6 +79,34 @@ describe('sqlite unit of work', () => {
         yield* unitOfWork.run(table.put({ id: 'kept' }))
 
         expect((yield* table.all()).map((row) => row.id)).toEqual(['kept'])
+      }),
+    ))
+
+  it('commits a failing request after keepChanges, but still rolls back defects', () =>
+    run(
+      layer,
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const table = yield* (yield* TableFactory).make<{ id: string }>('test_keep')
+
+        yield* Effect.exit(
+          unitOfWork.run(
+            Effect.gen(function* () {
+              yield* table.put({ id: 'counter' })
+              yield* keepChanges
+              return yield* Effect.fail('denied')
+            }),
+          ),
+        )
+        yield* unitOfWork.run(
+          Effect.as(Effect.andThen(table.put({ id: 'rejected' }), keepChanges), 422),
+          (status) => status < 400,
+        )
+        yield* Effect.exit(
+          unitOfWork.run(Effect.andThen(Effect.andThen(table.put({ id: 'defect' }), keepChanges), Effect.die('bug'))),
+        )
+
+        expect((yield* table.all()).map((row) => row.id)).toEqual(['counter', 'rejected'])
       }),
     ))
 

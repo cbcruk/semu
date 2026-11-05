@@ -3,7 +3,7 @@ import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from '../../../api.ts'
 import { authorize } from '../../identity-access/authorization.ts'
 import { documentsAccess } from '../shared/documents-schemas.ts'
-import { stripUndefined } from '../shared/tenant-table.ts'
+import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import {
   EsignTemplateNotFound,
   EsignTemplateRepository,
