@@ -18,6 +18,9 @@ describe('rate tables', () => {
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-03').effectiveFrom).toBe('2026-03')
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-06').effectiveFrom).toBe('2026-03')
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07').effectiveFrom).toBe('2026-07')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10').effectiveFrom).toBe('2026-07')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11').effectiveFrom).toBe('2026-11')
+    expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2027-01').effectiveFrom).toBe('2026-11')
     expect(() => resolveRateTable(BUILT_IN_RATE_TABLES, '2025-12')).toThrow(RangeError)
   })
 
@@ -53,6 +56,17 @@ describe('rate tables', () => {
     expect(march.wageIncomeTax.childCreditMonthly).toEqual({ one: 20_830, two: 45_830, perAdditional: 33_330 })
     expect(july.wageIncomeTax.childCreditMonthly).toEqual(march.wageIncomeTax.childCreditMonthly)
     expect(BUILT_IN_RATE_TABLES.every((table) => unverifiedRatePaths(table).length > 0)).toBe(true)
+  })
+
+  it('confirms the long-term care ratio only from November 2026 (법률 제21690호 부칙 제3조)', () => {
+    const october = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10')
+    const november = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11')
+
+    expect(november.longTermCare.ratioOfHealthPpm).toBe(131_400)
+    expect(unverifiedRatePaths(october)).toContain('longTermCare.ratioOfHealthPpm')
+    expect(unverifiedRatePaths(november)).not.toContain('longTermCare.ratioOfHealthPpm')
+    expect(november.verification['longTermCare.ratioOfHealthPpm']?.source).toContain('부칙 제3조')
+    expect(november.nationalPension).toEqual(october.nationalPension)
   })
 })
 
