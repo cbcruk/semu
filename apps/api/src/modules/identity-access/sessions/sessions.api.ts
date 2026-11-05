@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api'
 import { AccountLocked, InvalidCredentials } from '../accounts/user.ts'
 import { CompanyNotFound } from '../companies/company.ts'
-import { SessionGrant, SessionInvalid, SignInRequest, SwitchCompanyRequest } from './session.ts'
+import { AgencyScopeNotAllowed, SessionGrant, SessionInvalid, SignInRequest, SwitchCompanyRequest } from './session.ts'
 
 /** refresh 쿠키를 읽는 요청 헤더입니다. */
 const cookieHeaders = { cookie: Schema.optionalKey(Schema.String) }
@@ -34,6 +34,12 @@ export class SessionsApi extends HttpApiGroup.make('authSessions')
       payload: SwitchCompanyRequest,
       success: granted,
       error: [SessionInvalid, CompanyNotFound],
+    }),
+    /** 대리인 범위 토큰으로 바꿉니다. 이 토큰은 `/agency/*`만 받습니다. 회사로 돌아가려면 `:switch-company`입니다. */
+    HttpApiEndpoint.post('switchAgency', '/sessions::switch-agency', {
+      headers: cookieHeaders,
+      success: granted,
+      error: [SessionInvalid, AgencyScopeNotAllowed],
     }),
     HttpApiEndpoint.delete('signOut', '/sessions/current', {
       headers: cookieHeaders,

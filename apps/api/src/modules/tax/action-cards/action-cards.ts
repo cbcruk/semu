@@ -172,7 +172,8 @@ function newFilingCard(filing: FilingRecord, kind: ActionCardKind, now: string):
   }
 }
 
-function toActionCard(card: ActionCardRecord): ActionCard {
+/** 저장한 카드를 응답 형태로 바꿉니다. 회사와 보는 요건은 내보내지 않습니다. */
+export function toActionCard(card: ActionCardRecord): ActionCard {
   const { companyId: _, requires: __, ...rest } = card
   return rest
 }

@@ -77,6 +77,7 @@ flowchart LR
 | [billing.md](billing.md) | 구독·결제·서비스 계약 |
 | [integrations.md](integrations.md) | 기관 연동, 수집 작업, 자격 증명 보관 |
 | [tax.md](tax.md) | 신고 건 상태 머신, 세무 일정, 할 일 카드 |
+| [agency-queue.md](agency-queue.md) | 세무 대리인 범위 토큰과 담당 회사를 가로지르는 작업 큐(`/agency/*`) |
 | [hr.md](hr.md) | 직원 애그리거트, 상태 파생, 유효일 데이터 |
 | [documents.md](documents.md) | 전자서명·제증명 |
 | [payroll.md](payroll.md) | 계산 엔진, 급여대장 상태 머신, 퇴직금 |

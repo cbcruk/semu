@@ -5,6 +5,8 @@ import { ActionCardRepository } from './action-cards/action-card-repository.ts'
 import type { ActionCardRecord } from './action-cards/action-card.ts'
 import { ActionCards } from './action-cards/action-cards.ts'
 import { ActionCardsHttpLive } from './action-cards/action-cards.http.ts'
+import { AgencyQueue } from './agency/agency-queue.ts'
+import { AgencyQueueHttpLive } from './agency/agency-queue.http.ts'
 import { rollForwardDeadline } from './calendar/filing-deadline.ts'
 import { FilingScheduler } from './calendar/filing-scheduler.ts'
 import { PublicHolidays } from './calendar/public-holidays.ts'
@@ -19,7 +21,13 @@ import { Filings } from './filings/filings.ts'
 import { FilingsHttpLive } from './filings/filings.http.ts'
 import { PayrollLedgers } from './filings/payroll-ledgers.ts'
 import { DEMO_FILINGS, DEMO_HOLIDAYS, DEMO_TAX_PROFILE, DEMO_VAT_EVIDENCE } from './tax-demo.ts'
-import { PayrollLedgerSync, TaxEvents, VatEstimateQuery, WithholdingFilingLock } from './tax.public.ts'
+import {
+  AgencyWorkloadQuery,
+  PayrollLedgerSync,
+  TaxEvents,
+  VatEstimateQuery,
+  WithholdingFilingLock,
+} from './tax.public.ts'
 import type { TaxEvent } from './tax.public.ts'
 import type { PurchaseEvidence, SalesEvidence } from './vat-estimates/vat-estimate.types.ts'
 import { VatEvidence } from './vat-estimates/vat-evidence.ts'
@@ -41,6 +49,7 @@ export const TaxHttpLive = Layer.mergeAll(
   ActionCardsHttpLive.pipe(Layer.provide(ActionCardsLive)),
   TaxCalendarHttpLive.pipe(Layer.provide(TaxCalendar.layer)),
   VatEstimatesHttpLive.pipe(Layer.provide(VatEstimates.layer)),
+  AgencyQueueHttpLive.pipe(Layer.provide(AgencyQueue.layer)),
 )
 
 /** 일정 배치입니다. 매일 배치와 공휴일표·세무 설정 변경 뒤에 `run`을 부릅니다. 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다. */
@@ -99,14 +108,23 @@ export const VatEstimateQueryLive = Layer.effect(
   }),
 )
 
+/** 대리인 담당 회사의 세무 일감 개수입니다. 작업 큐(`GET /agency/filings`)와 같은 서비스로 셉니다. */
+export const AgencyWorkloadQueryLive = Layer.effect(
+  AgencyWorkloadQuery,
+  Effect.gen(function* () {
+    const queue = yield* AgencyQueue
+    return AgencyWorkloadQuery.of({ of: (companies) => queue.workload(companies) })
+  }),
+).pipe(Layer.provide(AgencyQueue.layer))
+
 /**
- * 다른 컨텍스트에 여는 서비스(`tax.public.ts`)입니다. 원천세 신고 여부, 급여대장 마감 반영, 예상 부가세입니다.
+ * 다른 컨텍스트에 여는 서비스(`tax.public.ts`)입니다. 원천세 신고 여부, 급여대장 마감 반영, 예상 부가세, 대리인 일감 개수입니다.
  *
  * 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다. 핸들러가 쓰는 내부 서비스 Layer를 함께 쓰므로 `Layer.fresh`로 따로 만듭니다.
  * 그래야 테스트가 핸들러 쪽 저장소만 바꿔 끼워도 이 서비스가 먼저 만든 인스턴스를 핸들러가 물려받지 않습니다.
  */
 export const TaxPublicLive = Layer.fresh(
-  Layer.mergeAll(WithholdingFilingLockLive, PayrollLedgerSyncLive, VatEstimateQueryLive),
+  Layer.mergeAll(WithholdingFilingLockLive, PayrollLedgerSyncLive, VatEstimateQueryLive, AgencyWorkloadQueryLive),
 )
 
 /** {@link taxMemoryLayer}의 시작 데이터입니다. 주지 않은 값은 비어 있습니다. */

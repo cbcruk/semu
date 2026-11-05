@@ -72,7 +72,7 @@ GET    /filings/{filingId}/documents/{documentId}          고객의 첫 열람�
 ```
 
 - **고객과 대리인이 같은 경로를 씁니다.** 행위자는 토큰의 `actor.kind`이고, 커맨드마다 할 수 있는 행위자가 전이표에 있습니다. 세목은 경로가 아니라 필드입니다
-- **회사 하나의 신고 건만 봅니다.** 대리인도 회사 토큰으로 들어옵니다. 담당 회사 여러 곳을 가로지르는 업무 큐는 [열린 질문](#열린-질문)에 있습니다
+- **회사 하나의 신고 건만 봅니다.** 대리인도 회사 토큰으로 들어와 처리합니다. 담당 회사 여러 곳을 가로지르는 조회는 대리인 범위 토큰의 `GET /agency/filings`·`GET /agency/action-cards`입니다([대리인 작업 큐](agency-queue.md))
 - **파일 본문은 파일 저장소가 갖습니다.** 신고 건은 `fileId`(`fle_`)만 들고, 업로드는 파일 저장소의 업로드 흐름으로 먼저 끝냅니다
 - 수정신고는 `revision`을 올린 새 신고 건입니다. 지금은 만드는 경로가 없습니다
 
@@ -241,6 +241,8 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 | `:pay` | `filing:pay` | `TAXATION` | 필요 |
 | 대리인 커맨드, 문서 붙이기 | `filing:process` | `TAXATION` | 필요(대리인은 건너뜀) |
 | 할 일 카드 조회 / 완료 | `action-card:read` / `action-card:complete` | 카드마다 | |
+| 대리인 큐 `GET /agency/filings` | `filing:read`(대리인 범위) | `TAXATION`인 담당 회사만 남김 | 건너뜀 |
+| 대리인 큐 `GET /agency/action-cards` | `action-card:read`(대리인 범위) | 카드마다 | 건너뜀 |
 | 예상 부가세 | `estimated-vat:read` | | |
 
 - 권한을 통과해도 행위자가 틀리면 403 `FILING_ACTOR_NOT_ALLOWED`(`action`, `requiredActorKind`)입니다. 권한은 "이 사용자가 할 수 있는가", 행위자는 "이 신고 건에서 누구 차례인가"입니다
@@ -283,6 +285,8 @@ flowchart LR
 | 내보냄(이벤트) | `filing.status_changed` | `{ companyId, filingId, taxType, kind, periodStart, periodEnd, fromStatus, toStatus, payableAmount, occurredAt }` |
 | 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 같은 요청 안에서 부름 |
 | 공개 조회 | `VatEstimateQuery.current(companyId, businessType, asOf)` | `{ period, asOf, estimatedTax, dueDate }`. Bookkeeping 홈 카드가 씀 |
+| 공개 조회 | `AgencyWorkloadQuery.of(companies)` | 회사(`companyId`, `plans`)마다 `{ openFilingCount, overdueFilingCount, openActionCardCount, nearestDueDate }`. Identity & Access의 `AgencyWorkload` 포트가 씀([identity-access-tax.ts](../../apps/api/src/wiring/identity-access-tax.ts)) |
+| 받음(인가) | Identity & Access `CurrentAgent`, `authorizeAgency` | 대리인 큐가 담당 회사(플랜 포함)를 받음. Tax는 배정을 읽지 않음 |
 | 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장 잠금에 씀 |
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
@@ -320,7 +324,7 @@ flowchart LR
 | `POST /home/action-cards/:cardId/complete` `{ completion_reason }` | `POST /action-cards/{cardId}:complete { completion }` |
 | `GET /home/tracker` | `GET /filings?open=true` (항목의 `progress`) |
 | `GET /menu/menu-tree/:version/` | Identity & Access (세무 밖) |
-| `GET /desk/filings/?status=&due_before=&cursor=` | 담당 회사를 가로지르는 업무 큐. 설계만 ([열린 질문](#열린-질문)) |
+| `GET /desk/filings/?status=&due_before=&cursor=` | `GET /agency/filings?status=&dueTo=&cursor=` (대리인 범위 토큰, [agency-queue.md](agency-queue.md)) |
 | `GET /desk/filings/:filingId/` | `GET /filings/{filingId}` (대리인 토큰) |
 | `GET /desk/filings/:filingId/files/:fileId/` | 파일 저장소 다운로드 |
 | `GET /desk/filings/:filingId/documents/:docId/` | `GET /filings/{filingId}/documents/{documentId}` |
@@ -350,13 +354,14 @@ flowchart LR
 | 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
 | 포트 연결(`PayrollLedgers`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
-| 대리인 업무 큐, 수정신고, 감사 로그 | 없음 |
+| 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
+| 수정신고, 감사 로그 | 없음 |
 
 규칙 픽스처는 모두 `*.fixtures.test.ts`로 옮겼고, 옮기지 않은 케이스와 이유는 각 테스트 파일의 `NOT_PORTED`에 있습니다. 결정은 [rule-decisions/tax.md](rule-decisions/tax.md)에 있습니다.
 
 ## 열린 질문
 
-1. **대리인 업무 큐.** 담당 회사 전체를 가로지르는 `GET /desk/filings`는 회사 토큰 하나로 풀 수 없습니다. 대리인 전용 토큰(회사 없음) + `GET /agency/filings?companyId=&status=&dueBefore=`로 둘지, Identity & Access의 대리인 배정 모델과 함께 정해야 합니다
+1. ~~대리인 업무 큐~~: D3으로 정했습니다. 대리인 범위 토큰 + `GET /agency/filings`·`GET /agency/action-cards`이고 처리는 회사 토큰으로 합니다([agency-queue.md](agency-queue.md))
 2. **파일 저장소의 소유.** `fileId`(`fle_`)를 누가 발급하고 다운로드 권한을 어떻게 신고 건 상태(문서 노출)와 맞출지 정해야 합니다. 지금은 신고 건이 `fileId`만 들고 노출 판정은 Tax가 합니다
 3. **문서 열람 기록의 경로.** `GET /filings/{filingId}/documents/{documentId}`가 첫 열람을 기록합니다(GET에 부수효과). 다운로드 URL 발급을 `POST .../documents/{documentId}:open`으로 바꿀지 파일 저장소 설계와 함께 정합니다
 4. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다

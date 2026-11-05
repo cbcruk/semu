@@ -79,7 +79,7 @@ export type RequirementWriteError =
   | RequirementFileNotFound
 
 /** 끝난 상태입니다. 목록의 `open` 조건이 씁니다. */
-const CLOSED_STATUSES: ReadonlyArray<FilingStatus> = ['SETTLED', 'CANCELED']
+export const CLOSED_STATUSES: ReadonlyArray<FilingStatus> = ['SETTLED', 'CANCELED']
 
 /** 신고서·납부서를 붙이거나 바꿀 수 있는 상태입니다. */
 const DOCUMENT_STATUSES: ReadonlyArray<FilingStatus> = ['PREPARING', 'FILED']

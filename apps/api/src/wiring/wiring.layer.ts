@@ -6,6 +6,7 @@ import { BillingPublicHolidaysFromCalendar } from './billing-public-holidays.ts'
 import { BookkeepingIntegrationsLive } from './bookkeeping-integrations.ts'
 import { BookkeepingLaborCostFromPayroll } from './bookkeeping-payroll.ts'
 import { BookkeepingVatEstimateFromTax } from './bookkeeping-tax.ts'
+import { IdentityAccessAgencyWorkloadFromTax } from './identity-access-tax.ts'
 import { IntegrationsRecordSinkFromBookkeeping } from './integrations-bookkeeping.ts'
 import { IntegrationsCompanyProfilesFromIdentityAccess } from './integrations-identity-access.ts'
 import { PayrollEmployeeDirectoryFromHr } from './payroll-hr.ts'
@@ -35,6 +36,7 @@ const TaxBackedAdapters = Layer.mergeAll(
   PayrollWithholdingFilingLockFromTax,
   PayrollEventsToTax,
   BookkeepingVatEstimateFromTax,
+  IdentityAccessAgencyWorkloadFromTax,
 )
 
 /**
@@ -53,12 +55,13 @@ const TaxBackedAdapters = Layer.mergeAll(
  * | Bookkeeping `BusinessStatusLookup`, `HometaxInvoiceIssuer`, `GiroPaymentGateway` | Integrations `BusinessStatusClient`, `HometaxInvoiceClient`, `GiroPaymentClient` | `bookkeeping-integrations.ts` |
  * | Integrations `ScrapedRecordSink` | Bookkeeping `ScrapedRecordIngestion` | `integrations-bookkeeping.ts` |
  * | Integrations `CompanyProfiles` | Identity & Access `CompanyDirectory` | `integrations-identity-access.ts` |
+ * | Identity & Access `AgencyWorkload` | Tax `AgencyWorkloadQuery` | `identity-access-tax.ts` |
  * | Documents `HrDirectory` | HR `HrDirectoryLive` | 어댑터 없이 HR 공개 조회를 그대로 씁니다 |
  *
  * 만드는 순서는 저장소 → HR 공개 조회 → 저장소 어댑터 → Payroll 공개 서비스 → Payroll 어댑터 → Tax 공개 서비스 → Tax 어댑터입니다.
  * 모든 어댑터와 공개 서비스가 호출하는 쪽이 넣은 저장소 인스턴스 하나를 함께 쓰므로, 한 컨텍스트에 쓴 값이 다른 컨텍스트에 바로 보입니다.
  * 만든 공개 서비스(`HrDirectory`, `PayrollLedgerSummary`, `PayrollLaborCost`, `WithholdingFilingLock`, `PayrollLedgerSync`,
- * `VatEstimateQuery`)도 함께 내보냅니다.
+ * `VatEstimateQuery`, `AgencyWorkloadQuery`)도 함께 내보냅니다.
  */
 export const WiringLive = TaxBackedAdapters.pipe(
   Layer.provideMerge(TaxPublicLive),

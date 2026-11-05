@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from 'effect'
 import type { Id } from '../../shared/ids/ids.types.ts'
-import type { BusinessType } from '../identity-access/actor.types.ts'
+import type { BusinessType, Plan } from '../identity-access/actor.types.ts'
 import type { FilingKind, FilingStatus, TaxType } from './tax.types.ts'
 
 export { PayrollLedgers } from './filings/payroll-ledgers.ts'
@@ -119,3 +119,31 @@ export class VatEstimateQuery extends Context.Service<
     current(companyId: Id<'company'>, businessType: BusinessType, asOf: string): Effect.Effect<CompanyVatEstimate>
   }
 >()('semu/tax/VatEstimateQuery') {}
+
+/** 대리인 담당 회사 하나의 세무 일감 개수입니다. */
+export interface CompanyTaxWorkload {
+  companyId: Id<'company'>
+  /** 끝나지 않은 신고 건 수입니다. `TAXATION` 회사만 셉니다. */
+  openFilingCount: number
+  /** 그중 기한(신고 기한, 없으면 납부 기한)이 회사 시간대 오늘보다 앞이고 아직 신고하지 않은 건 수입니다. */
+  overdueFilingCount: number
+  /** 회사 플랜으로 볼 수 있는 진행중 할 일 카드 수입니다. */
+  openActionCardCount: number
+  /** 끝나지 않은 신고 건의 가장 가까운 기한입니다. */
+  nearestDueDate: string | null
+}
+
+/**
+ * 여러 회사의 세무 일감 개수 공개 조회입니다. Identity & Access의 대리인 담당 회사 목록(`GET /agency/companies`)이 씁니다.
+ *
+ * 배정은 Identity & Access가 정하고, 여기서는 넘어온 회사만 셉니다. 회사마다 플랜을 받아 회사 범위 목록과 같은 요건으로 거릅니다.
+ */
+export class AgencyWorkloadQuery extends Context.Service<
+  AgencyWorkloadQuery,
+  {
+    /** 넘긴 회사마다 하나씩, 같은 순서로 돌려줍니다. */
+    of(
+      companies: ReadonlyArray<{ companyId: Id<'company'>; plans: ReadonlySet<Plan> }>,
+    ): Effect.Effect<ReadonlyArray<CompanyTaxWorkload>>
+  }
+>()('semu/tax/AgencyWorkloadQuery') {}
