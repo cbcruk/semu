@@ -89,14 +89,3 @@ export class PartnersApi extends HttpApiGroup.make('partners')
     }),
   )
   .middleware(Authentication) {}
-
-/** 사업자 휴·폐업 상태조회입니다. 같은 날 조회한 결과는 캐시에서 줍니다. */
-export class BusinessStatusesApi extends HttpApiGroup.make('businessStatuses')
-  .add(
-    HttpApiEndpoint.get('get', '/business-statuses/:businessNumber', {
-      params: { businessNumber: BusinessNumber },
-      success: BusinessStatusResult,
-      error: PermissionDenied,
-    }),
-  )
-  .middleware(Authentication) {}

@@ -1,10 +1,9 @@
-import { Effect, Layer } from 'effect'
+import { Effect } from 'effect'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from '../../../api.ts'
 import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import { requirePermission } from '../common/wire.ts'
-import { normalizeBusinessNumber } from './business-status-cache.ts'
-import { BusinessStatusService, PartnerService } from './partner-service.ts'
+import { PartnerService } from './partner-service.ts'
 
 const PartnerGroupHttpLive = HttpApiBuilder.group(
   Api,
@@ -40,20 +39,5 @@ const PartnerGroupHttpLive = HttpApiBuilder.group(
   }),
 )
 
-const BusinessStatusesHttpLive = HttpApiBuilder.group(
-  Api,
-  'businessStatuses',
-  Effect.fn(function* (handlers) {
-    const statuses = yield* BusinessStatusService
-
-    return handlers.handleAll({
-      get: ({ params }) =>
-        Effect.flatMap(requirePermission('business-status:read'), () =>
-          statuses.check(normalizeBusinessNumber(params.businessNumber) ?? params.businessNumber),
-        ),
-    })
-  }),
-)
-
-/** 거래처·사업자 상태조회 핸들러입니다. */
-export const PartnersHttpLive = Layer.mergeAll(PartnerGroupHttpLive, BusinessStatusesHttpLive)
+/** 거래처 핸들러입니다. 사업자 상태조회 경로는 Integrations가 소유합니다. */
+export const PartnersHttpLive = PartnerGroupHttpLive

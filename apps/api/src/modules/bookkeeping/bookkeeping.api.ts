@@ -1,7 +1,7 @@
 import { HttpApi } from 'effect/http-api'
 import { AccountTitlesApi } from './account-titles/account-titles.api.ts'
 import { BankAccountsApi, BankTransactionsApi } from './bank/bank.api.ts'
-import { BusinessStatusesApi, PartnersApi } from './partners/partners.api.ts'
+import { PartnersApi } from './partners/partners.api.ts'
 import { GirosApi } from './giros/giros.api.ts'
 import { ReportsApi } from './reports/reports.api.ts'
 import { SalesTransactionsApi, TaxInvoicesApi } from './sales-transactions/sales-transactions.api.ts'
@@ -20,7 +20,6 @@ export const BookkeepingApi = HttpApi.make('bookkeeping')
   .add(BankAccountsApi)
   .add(BankTransactionsApi)
   .add(PartnersApi)
-  .add(BusinessStatusesApi)
   .add(SalesTransactionsApi)
   .add(TaxInvoicesApi)
   .add(GirosApi)

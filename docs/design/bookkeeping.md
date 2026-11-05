@@ -126,7 +126,6 @@ stateDiagram-v2
 | GET | `/v1/partners/{partnerId}` | `partner:read` | 계좌·담당자·미정산 |
 | PATCH | `/v1/partners/{partnerId}` | `partner:update` | `If-Match` |
 | DELETE | `/v1/partners/{partnerId}` | `partner:delete` | 소프트 삭제. `If-Match` |
-| GET | `/v1/business-statuses/{businessNumber}` | `business-status:read` | 국세청 휴·폐업 조회(하루 캐시) |
 
 - 사업자번호는 회사 안에서 유일합니다(409 `PARTNER_BUSINESS_NUMBER_DUPLICATE`, 기존 `partnerId` 포함)
 - 거래처 계좌번호는 `AccountNumberCipher`로 암호화해 저장하고 마스킹해 돌려줍니다
@@ -353,7 +352,7 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `DELETE /partners/:id` | `DELETE /v1/partners/{id}` | |
 | `GET /partners/:id/adjustment-history/:side` | 없음 | 미구현. `GET /v1/evidence?partnerId=&side=`(연결 금액 포함)로 대체 예정 |
 | `GET /partners/:id/bank-transactions` | 없음 | 미구현. `GET /v1/bank-transactions`에 `partnerId` 필터를 붙여 대체 예정 |
-| `GET /partner/scrap/business-status` | `GET /v1/business-statuses/{businessNumber}` | |
+| `GET /partner/scrap/business-status` | `GET /v1/business-statuses/{businessNumber}` | Integrations가 소유합니다. 경리는 `BusinessStatusLookup` 포트로 같은 조회를 쓰고 거래처별 하루 캐시만 둡니다 |
 | `GET /home/summary-cards` | `GET /v1/reports/home-summary` | |
 | `GET /reports/profit-loss/status` | `GET /v1/reports/realtime-pl` | |
 | `GET /reports/cash/daily` | `GET /v1/reports/cash-status` | |

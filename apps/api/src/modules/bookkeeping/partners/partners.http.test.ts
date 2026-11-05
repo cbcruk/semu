@@ -72,20 +72,3 @@ describe('/v1/partners', () => {
     expect(((await listed.json()) as { items: unknown[] }).items).toEqual([])
   })
 })
-
-describe('GET /v1/business-statuses/{businessNumber}', () => {
-  it('answers from the lookup and then from the same-day cache', async () => {
-    const first = await app.send('GET', '/v1/business-statuses/220-81-00028')
-    const second = await app.send('GET', '/v1/business-statuses/2208100028')
-    const a = await first.json()
-
-    expect(a).toMatchObject({ businessNumber: '2208100028', status: 'SUSPENDED' })
-    expect(await second.json()).toEqual(a)
-  })
-
-  it('rejects a malformed number', async () => {
-    const response = await app.send('GET', '/v1/business-statuses/12345')
-
-    expect(response.status).toBe(400)
-  })
-})
