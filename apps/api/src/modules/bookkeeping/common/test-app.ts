@@ -1,22 +1,15 @@
-import { Layer } from 'effect'
-import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, TestStoreLive } from '../../../app.ts'
-import { AccessTokens } from '../../identity-access/access-tokens.ts'
+import { httpTestApp } from '../../../shared/testing/http-test-app.ts'
+import type { HttpTestRequest, HttpTestResponse } from '../../../shared/testing/http-test-app.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { testActor } from '../../identity-access/testing.ts'
 import { BookkeepingPortFakesLive } from '../bookkeeping.layer.ts'
 
-/** 테스트 앱에 보내는 요청 옵션입니다. */
-export interface SendOptions {
-  body?: unknown
-  headers?: Record<string, string>
-  /** 기본 토큰(`admin`) 대신 쓸 토큰입니다. */
-  token?: string
-}
+/** 테스트 앱에 보내는 요청 옵션입니다. 토큰 기본값은 `admin`입니다. */
+export type SendOptions = HttpTestRequest
 
-/** 테스트용 앱입니다. 요청마다 같은 메모리 저장소를 씁니다. */
+/** 테스트용 앱입니다. 요청마다 같은 메모리 저장소를 쓰고, 경로는 `/v1`까지 씁니다. */
 export interface TestApp {
-  send(method: string, path: string, options?: SendOptions): Promise<Response>
+  send(method: string, path: string, options?: SendOptions): Promise<HttpTestResponse>
   dispose(): Promise<void>
 }
 
@@ -30,30 +23,10 @@ export interface TestApp {
  * ```
  */
 export function testApp(tokens: Record<string, Actor> = {}): TestApp {
-  const app = HttpRouter.toWebHandler(
-    AppLive.pipe(
-      Layer.provide([
-        TestStoreLive,
-        BookkeepingPortFakesLive,
-        AccessTokens.layerMemory(Object.entries({ admin: testActor(), ...tokens })),
-        HttpServer.layerServices,
-      ]),
-    ),
-    { disableLogger: true },
-  )
-  return {
-    send: (method, path, options = {}) => {
-      const headers: Record<string, string> = {
-        authorization: `Bearer ${options.token ?? 'admin'}`,
-        ...options.headers,
-      }
-      const init: RequestInit = { method, headers }
-      if (options.body !== undefined) {
-        headers['content-type'] = 'application/json'
-        init.body = JSON.stringify(options.body)
-      }
-      return app.handler(new Request(`http://localhost${path}`, init))
-    },
-    dispose: () => app.dispose(),
-  }
+  const app = httpTestApp({
+    tokens: Object.entries({ admin: testActor(), ...tokens }),
+    layers: [BookkeepingPortFakesLive],
+    defaultToken: 'admin',
+  })
+  return { send: app.request, dispose: app.dispose }
 }
