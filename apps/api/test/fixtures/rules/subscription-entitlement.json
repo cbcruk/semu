@@ -1,0 +1,175 @@
+{
+  "rule": "subscription-entitlement",
+  "description": "Plan flags derived from the subscription list on the client (hasTaxPlan, hasPayrollPlan, isFree) and the legacy server's isSubscribedOn date window that feeds them and the taxPlan cache.",
+  "sources": [
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "79-83, 217-224",
+      "origin": "index.pretty.js B:72522-72545"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/billing/billing.utils.ts",
+      "lines": "12-15, 24-38"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/billing/billing.service.ts",
+      "lines": "30-40, 87-110"
+    }
+  ],
+  "inputSchema": {
+    "check": "clientFlags | isSubscribedOn | taxPlanCache | dailyRefresh.",
+    "subscriptions": "GET /api/company/:cid/perm/subscription/ items [{code, isSubscribed}].",
+    "row": "company_subscriptions row {code, status: pending|active|cancelled|ended, startedOn, endedOn}.",
+    "today": "Company date (Asia/Seoul)."
+  },
+  "cases": [
+    {
+      "name": "empty list is free",
+      "input": { "check": "clientFlags", "subscriptions": [] },
+      "expected": { "hasTaxPlan": false, "hasPayrollPlan": false, "isFree": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "tax subscription",
+      "input": {
+        "check": "clientFlags",
+        "subscriptions": [{ "code": "tax", "isSubscribed": true }, { "code": "payroll", "isSubscribed": false }]
+      },
+      "expected": { "hasTaxPlan": true, "hasPayrollPlan": false, "isFree": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "payroll subscription",
+      "input": {
+        "check": "clientFlags",
+        "subscriptions": [{ "code": "tax", "isSubscribed": false }, { "code": "payroll", "isSubscribed": true }]
+      },
+      "expected": { "hasTaxPlan": false, "hasPayrollPlan": true, "isFree": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "both subscriptions",
+      "input": {
+        "check": "clientFlags",
+        "subscriptions": [{ "code": "tax", "isSubscribed": true }, { "code": "payroll", "isSubscribed": true }]
+      },
+      "expected": { "hasTaxPlan": true, "hasPayrollPlan": true, "isFree": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "listed but not subscribed is free",
+      "input": {
+        "check": "clientFlags",
+        "subscriptions": [{ "code": "tax", "isSubscribed": false }, { "code": "payroll", "isSubscribed": false }]
+      },
+      "expected": { "hasTaxPlan": false, "hasPayrollPlan": false, "isFree": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "unknown subscribed code is neither free nor a plan",
+      "input": { "check": "clientFlags", "subscriptions": [{ "code": "free", "isSubscribed": true }] },
+      "expected": { "hasTaxPlan": false, "hasPayrollPlan": false, "isFree": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "active within the window",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "tax", "status": "active", "startedOn": "2026-01-01", "endedOn": null },
+        "today": "2026-11-05"
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "active starting tomorrow",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "tax", "status": "active", "startedOn": "2026-11-06", "endedOn": null },
+        "today": "2026-11-05"
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "pending even after the start date",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "payroll", "status": "pending", "startedOn": "2026-11-01", "endedOn": null },
+        "today": "2026-11-05"
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "cancelled keeps the plan until the end date inclusive",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "payroll", "status": "cancelled", "startedOn": "2026-01-01", "endedOn": "2026-11-05" },
+        "today": "2026-11-05"
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "cancelled after the end date",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "payroll", "status": "cancelled", "startedOn": "2026-01-01", "endedOn": "2026-11-04" },
+        "today": "2026-11-05"
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "ended inside its window",
+      "input": {
+        "check": "isSubscribedOn",
+        "row": { "code": "tax", "status": "ended", "startedOn": "2026-01-01", "endedOn": "2026-12-31" },
+        "today": "2026-11-05"
+      },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "tax plan cache from subscriptions",
+      "input": {
+        "check": "taxPlanCache",
+        "rows": [
+          { "code": "tax", "status": "active", "startedOn": "2026-01-01", "endedOn": null },
+          { "code": "payroll", "status": "ended", "startedOn": "2025-01-01", "endedOn": "2025-12-31" }
+        ],
+        "today": "2026-11-05"
+      },
+      "expected": { "taxPlan": "taxation", "hasPayrollPlan": false },
+      "derivation": "traced"
+    },
+    {
+      "name": "daily refresh starts a pending subscription",
+      "input": {
+        "check": "dailyRefresh",
+        "row": { "code": "payroll", "status": "pending", "startedOn": "2026-11-05", "endedOn": null },
+        "today": "2026-11-05"
+      },
+      "expected": { "status": "active", "hasPayrollPlan": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "daily refresh ends a cancelled subscription the day after its end",
+      "input": {
+        "check": "dailyRefresh",
+        "row": { "code": "tax", "status": "cancelled", "startedOn": "2026-01-01", "endedOn": "2026-11-04" },
+        "today": "2026-11-05"
+      },
+      "expected": { "status": "ended", "taxPlan": null },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The real subscription item fields beyond code and isSubscribed, and whether a free code exists, are not visible.",
+    "Whether me.companies[].taxPlan can take values other than 'taxation' and whether it always agrees with the tax subscription is not visible.",
+    "isFree is true for an empty list and false for any unknown subscribed code, so a new product code would hide every promotion; the intended meaning of free is unclear.",
+    "Whether a cancelled subscription keeps the plan until ended_on (legacy) or loses it at cancellation is a proposal.",
+    "Who changes subscriptions (agency desk, contract signing, billing) and whether the change is immediate or effective next day is not visible."
+  ]
+}

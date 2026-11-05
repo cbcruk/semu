@@ -1,0 +1,302 @@
+{
+  "rule": "internal-invitation",
+  "description": "Company user invitations: admin-only, 30-day validity derived from time, one pending invitation per company and email, members cannot be invited, only pending invitations can be canceled, re-invite after expiry or cancel, display status with remaining days, and acceptance rules for existing and new users.",
+  "sources": [
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "65-73, 181-202, 340-349"
+    },
+    {
+      "file": "alfred-manual/08-설정/02-사용자-관리.md",
+      "lines": "18-112"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/invitations/invitations.service.ts",
+      "lines": "24-197"
+    },
+    {
+      "file": "apps/api/legacy/src/modules/platform/invitations/invitations.repository.ts",
+      "lines": "1-81"
+    }
+  ],
+  "inputSchema": {
+    "check": "create | cancel | display | accept | list.",
+    "inviter": "{isAdmin} of the inviting membership.",
+    "existing": "State before the action: members[], invitations[{email, status, createdAt, expiresAt}].",
+    "now": "Current instant (Asia/Seoul).",
+    "signedIn": "Email of the signed-in user when accepting, or null."
+  },
+  "cases": [
+    {
+      "name": "admin invites a new email",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "Kim@Example.com",
+        "isAdmin": false,
+        "roleIds": ["r1", "r1", "r2"],
+        "now": "2026-11-01T09:00:00+09:00",
+        "existing": { "members": [], "invitations": [] }
+      },
+      "expected": {
+        "status": "pending",
+        "email": "kim@example.com",
+        "roleIds": ["r1", "r2"],
+        "expiresAt": "2026-12-01T09:00:00+09:00",
+        "mail": "internal_invitation"
+      },
+      "derivation": "traced"
+    },
+    {
+      "name": "admin invitation drops role groups",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "lee@example.com",
+        "isAdmin": true,
+        "roleIds": ["r1"],
+        "now": "2026-11-01T09:00:00+09:00",
+        "existing": { "members": [], "invitations": [] }
+      },
+      "expected": { "status": "pending", "isAdmin": true, "roleIds": [] },
+      "derivation": "traced"
+    },
+    {
+      "name": "non-admin cannot invite",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": false, "roleMenuCodes": ["user_management"] },
+        "email": "park@example.com",
+        "isAdmin": false,
+        "roleIds": [],
+        "now": "2026-11-01T09:00:00+09:00",
+        "existing": { "members": [], "invitations": [] }
+      },
+      "expected": { "status": 403, "code": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "second pending invitation for the same email ignoring case",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "KIM@example.com",
+        "isAdmin": false,
+        "roleIds": [],
+        "now": "2026-11-10T09:00:00+09:00",
+        "existing": {
+          "members": [],
+          "invitations": [{ "email": "kim@example.com", "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" }]
+        }
+      },
+      "expected": { "status": 409, "code": "CONFLICT" },
+      "derivation": "traced"
+    },
+    {
+      "name": "inviting an existing member",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "choi@example.com",
+        "isAdmin": false,
+        "roleIds": [],
+        "now": "2026-11-10T09:00:00+09:00",
+        "existing": { "members": ["choi@example.com"], "invitations": [] }
+      },
+      "expected": { "status": 409, "code": "CONFLICT" },
+      "derivation": "traced"
+    },
+    {
+      "name": "re-invite after expiry creates a new pending invitation",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "kim@example.com",
+        "isAdmin": false,
+        "roleIds": [],
+        "now": "2026-12-02T09:00:00+09:00",
+        "existing": {
+          "members": [],
+          "invitations": [{ "email": "kim@example.com", "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" }]
+        }
+      },
+      "expected": { "previous": "expired", "status": "pending", "expiresAt": "2027-01-01T09:00:00+09:00" },
+      "derivation": "traced"
+    },
+    {
+      "name": "re-invite after cancel",
+      "input": {
+        "check": "create",
+        "inviter": { "isAdmin": true },
+        "email": "kim@example.com",
+        "isAdmin": false,
+        "roleIds": [],
+        "now": "2026-11-05T09:00:00+09:00",
+        "existing": {
+          "members": [],
+          "invitations": [{ "email": "kim@example.com", "status": "cancelled", "expiresAt": "2026-12-01T09:00:00+09:00" }]
+        }
+      },
+      "expected": { "status": "pending" },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel a pending invitation",
+      "input": {
+        "check": "cancel",
+        "invitation": { "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00"
+      },
+      "expected": { "status": "cancelled" },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel an invitation that expired by time",
+      "input": {
+        "check": "cancel",
+        "invitation": { "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-12-01T09:00:00+09:00"
+      },
+      "expected": { "status": 409, "code": "INVALID_TRANSITION" },
+      "derivation": "traced"
+    },
+    {
+      "name": "cancel an accepted invitation",
+      "input": {
+        "check": "cancel",
+        "invitation": { "status": "accepted", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00"
+      },
+      "expected": { "status": 409, "code": "INVALID_TRANSITION" },
+      "derivation": "traced"
+    },
+    {
+      "name": "display on the invitation day",
+      "input": {
+        "check": "display",
+        "invitation": { "status": "pending", "createdAt": "2026-11-01T09:00:00+09:00", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-01T09:00:00+09:00"
+      },
+      "expected": { "status": "pending", "remainingDays": 30, "label": "초대 완료 — 유효기간 30일 남음" },
+      "derivation": "traced"
+    },
+    {
+      "name": "display rounds a partial last day up",
+      "input": {
+        "check": "display",
+        "invitation": { "status": "pending", "createdAt": "2026-11-01T09:00:00+09:00", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-30T10:00:00+09:00"
+      },
+      "expected": { "status": "pending", "remainingDays": 1, "label": "초대 완료 — 유효기간 1일 남음" },
+      "derivation": "traced"
+    },
+    {
+      "name": "display at the expiry instant",
+      "input": {
+        "check": "display",
+        "invitation": { "status": "pending", "createdAt": "2026-11-01T09:00:00+09:00", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-12-01T09:00:00+09:00"
+      },
+      "expected": { "status": "expired", "remainingDays": null, "label": "초대 만료", "actions": ["다시 초대하기"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "display of an accepted invitation",
+      "input": {
+        "check": "display",
+        "invitation": { "status": "accepted", "createdAt": "2026-11-01T09:00:00+09:00", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-03T09:00:00+09:00"
+      },
+      "expected": { "status": "accepted", "label": "가입완료" },
+      "derivation": "traced"
+    },
+    {
+      "name": "invitation list leaves out cancelled and accepted rows",
+      "input": {
+        "check": "list",
+        "invitations": [
+          { "id": "i1", "status": "pending" },
+          { "id": "i2", "status": "expired" },
+          { "id": "i3", "status": "cancelled" },
+          { "id": "i4", "status": "accepted" }
+        ]
+      },
+      "expected": ["i1", "i2"],
+      "derivation": "traced"
+    },
+    {
+      "name": "accept a cancelled invitation",
+      "input": {
+        "check": "accept",
+        "invitation": { "status": "cancelled", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00",
+        "userExists": false,
+        "signedIn": null
+      },
+      "expected": { "status": 410, "code": "GONE" },
+      "derivation": "traced"
+    },
+    {
+      "name": "existing user accepts without signing in",
+      "input": {
+        "check": "accept",
+        "invitation": { "email": "kim@example.com", "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00",
+        "userExists": true,
+        "signedIn": null
+      },
+      "expected": { "status": 401, "code": "UNAUTHENTICATED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "existing user signed in as someone else",
+      "input": {
+        "check": "accept",
+        "invitation": { "email": "kim@example.com", "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00",
+        "userExists": true,
+        "signedIn": "lee@example.com"
+      },
+      "expected": { "status": 403, "code": "PERMISSION_DENIED" },
+      "derivation": "traced"
+    },
+    {
+      "name": "new user without the required signup terms",
+      "input": {
+        "check": "accept",
+        "invitation": { "email": "new@example.com", "status": "pending", "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00",
+        "userExists": false,
+        "signedIn": null,
+        "password": "abcd1234",
+        "confirmPassword": "abcd1234",
+        "agreements": []
+      },
+      "expected": { "status": 400, "code": "VALIDATION_FAILED", "field": "agreements" },
+      "derivation": "traced"
+    },
+    {
+      "name": "new user accepts with password and terms",
+      "input": {
+        "check": "accept",
+        "invitation": { "email": "new@example.com", "status": "pending", "isAdmin": false, "roleIds": ["r1"], "expiresAt": "2026-12-01T09:00:00+09:00" },
+        "now": "2026-11-05T09:00:00+09:00",
+        "userExists": false,
+        "signedIn": null,
+        "password": "abcd1234",
+        "confirmPassword": "abcd1234",
+        "agreements": [{ "code": "service", "is_agreed": true }, { "code": "privacy", "is_agreed": true }]
+      },
+      "expected": { "invitation": "accepted", "membership": { "role": "member", "roleIds": ["r1"], "isSystemAdmin": false }, "session": "issued" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "Whether the real server stores expired as a status (batch) or derives it on read, and whether a re-invite reuses the row, is not visible.",
+    "The manual shows a pending invitation as `가입 대기중` while the spec notes `초대 완료 — 유효기간 N일 남음`; the current label is unclear.",
+    "Remaining days are rounded up from the exact expiry instant in the legacy server; the client's rounding is not visible.",
+    "Whether an invitation for an email that already has an account but no membership requires that user to sign in first (legacy) or can be accepted from the email link alone is not visible.",
+    "Whether a non-admin with the user_management menu may cancel invitations or only view them is not stated.",
+    "Whether role groups deleted after the invitation was sent are silently dropped on acceptance (legacy behaviour) or should fail is not specified."
+  ]
+}

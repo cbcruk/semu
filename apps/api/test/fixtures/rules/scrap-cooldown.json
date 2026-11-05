@@ -1,0 +1,180 @@
+{
+  "rule": "scrap-cooldown",
+  "description": "Manual collection cooldown and progress: canScrapping/remainSeconds of the last scrap request (600s after a user request, blocked while a request runs until its 600s timeout), 429 on early requests, request-all skipping, and PROGRESS/SUCCESS/FAIL polling.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "285-291, 359-365", "origin": "index.pretty.js B:89228, B:91137-91170" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/scrap.service.ts", "lines": "36-101, 216-238" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.utils.ts", "lines": "8-16, 56-82" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "34-35" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/06-배달-매출-연동하기.md", "lines": "25-26, 48" },
+    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/02-올라-쇼핑몰-매출-연동하기.md", "lines": "48-52" },
+    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/02-연동-은행계좌-연동하기.md", "lines": "60" }
+  ],
+  "inputSchema": {
+    "check": "lastStatus (GET last-scrap-request-status) | request (POST request-scrapping/:service) | requestAll (POST request-all-scrapping) | polling (GET scraping-status?id=).",
+    "now": "Request time, RFC 3339 KST.",
+    "latest": "Latest scrap request of the service: {requester: 'user'|'system', status: 'request'|'done'|'timeout', requestedAt, nextAvailableAt (requestedAt + 600s for user requests, null for system), timeoutAt (requestedAt + 600s)} or null.",
+    "services": "requestAll only: per service {connected: boolean, latest}.",
+    "requests": "polling only: request statuses in the group; results: scrap result statuses of those requests."
+  },
+  "cases": [
+    {
+      "name": "no previous request: can collect, isInitial true",
+      "input": { "check": "lastStatus", "now": "2026-11-01T09:00:00+09:00", "latest": null },
+      "expected": { "status": null, "requester": null, "isInitial": true, "canScrapping": true, "remainSeconds": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "user request finished 1 minute ago: 540 seconds left",
+      "input": {
+        "check": "lastStatus",
+        "now": "2026-11-01T09:01:00+09:00",
+        "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" }
+      },
+      "expected": { "status": "done", "canScrapping": false, "remainSeconds": 540 },
+      "derivation": "traced"
+    },
+    {
+      "name": "user request exactly 600 seconds ago: cooldown over",
+      "input": {
+        "check": "lastStatus",
+        "now": "2026-11-01T09:10:00+09:00",
+        "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" }
+      },
+      "expected": { "status": "done", "canScrapping": true, "remainSeconds": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "remainSeconds rounds a partial second up",
+      "input": {
+        "check": "lastStatus",
+        "now": "2026-11-01T09:09:59.500+09:00",
+        "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" }
+      },
+      "expected": { "canScrapping": false, "remainSeconds": 1 },
+      "derivation": "traced"
+    },
+    {
+      "name": "system (scheduled) request does not start a cooldown",
+      "input": {
+        "check": "lastStatus",
+        "now": "2026-11-01T04:01:00+09:00",
+        "latest": { "requester": "system", "status": "done", "requestedAt": "2026-11-01T04:00:00+09:00", "nextAvailableAt": null, "timeoutAt": "2026-11-01T04:10:00+09:00" }
+      },
+      "expected": { "requester": "system", "canScrapping": true, "remainSeconds": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "system request still running blocks the button but reports 0 seconds",
+      "input": {
+        "check": "lastStatus",
+        "now": "2026-11-01T04:01:00+09:00",
+        "latest": { "requester": "system", "status": "request", "requestedAt": "2026-11-01T04:00:00+09:00", "nextAvailableAt": null, "timeoutAt": "2026-11-01T04:10:00+09:00" }
+      },
+      "expected": { "status": "request", "canScrapping": false, "remainSeconds": 0 },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual request during cooldown is refused with 429",
+      "input": {
+        "check": "request",
+        "now": "2026-11-01T09:05:00+09:00",
+        "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" }
+      },
+      "expected": { "status": 429, "code": "RATE_LIMITED", "remain_seconds": 300 },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual request while a system request runs is refused with remain at least 1",
+      "input": {
+        "check": "request",
+        "now": "2026-11-01T04:01:00+09:00",
+        "latest": { "requester": "system", "status": "request", "requestedAt": "2026-11-01T04:00:00+09:00", "nextAvailableAt": null, "timeoutAt": "2026-11-01T04:10:00+09:00" }
+      },
+      "expected": { "status": 429, "code": "RATE_LIMITED", "remain_seconds": 1 },
+      "derivation": "traced"
+    },
+    {
+      "name": "unfinished request past its 600s timeout no longer blocks",
+      "input": {
+        "check": "request",
+        "now": "2026-11-01T04:10:00+09:00",
+        "latest": { "requester": "system", "status": "request", "requestedAt": "2026-11-01T04:00:00+09:00", "nextAvailableAt": null, "timeoutAt": "2026-11-01T04:10:00+09:00" }
+      },
+      "expected": { "accepted": true, "status": "request", "requester": "user", "canScrapping": false, "remainSeconds": 600 },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual request after cooldown is queued and starts a new 600s cooldown",
+      "input": {
+        "check": "request",
+        "now": "2026-11-01T09:20:00+09:00",
+        "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" },
+        "hasPreviousResults": true
+      },
+      "expected": { "accepted": true, "status": "request", "isInitial": false, "nextAvailableAt": "2026-11-01T09:30:00+09:00", "timeoutAt": "2026-11-01T09:30:00+09:00" },
+      "derivation": "traced"
+    },
+    {
+      "name": "manual request without any connected integration is a validation error",
+      "input": { "check": "request", "now": "2026-11-01T09:00:00+09:00", "latest": null, "connected": false },
+      "expected": { "status": 400, "code": "VALIDATION_FAILED", "field": "service" },
+      "derivation": "traced"
+    },
+    {
+      "name": "request-all skips services cooling down or not connected",
+      "input": {
+        "check": "requestAll",
+        "now": "2026-11-01T09:05:00+09:00",
+        "services": {
+          "hometax": { "connected": true, "latest": null },
+          "bank": {
+            "connected": true,
+            "latest": { "requester": "user", "status": "done", "requestedAt": "2026-11-01T09:00:00+09:00", "nextAvailableAt": "2026-11-01T09:10:00+09:00", "timeoutAt": "2026-11-01T09:10:00+09:00" }
+          },
+          "pg": { "connected": false, "latest": null }
+        }
+      },
+      "expected": { "queued": ["hometax"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "polling: any running request is PROGRESS",
+      "input": { "check": "polling", "requests": ["done", "request"], "results": ["success"] },
+      "expected": "PROGRESS",
+      "derivation": "traced"
+    },
+    {
+      "name": "polling: all done without failures is SUCCESS",
+      "input": { "check": "polling", "requests": ["done", "done"], "results": ["success", "success"] },
+      "expected": "SUCCESS",
+      "derivation": "traced"
+    },
+    {
+      "name": "polling: one failed item makes the whole group FAIL",
+      "input": { "check": "polling", "requests": ["done", "done"], "results": ["success", "fail"] },
+      "expected": "FAIL",
+      "derivation": "traced"
+    },
+    {
+      "name": "polling: a timed out request is FAIL",
+      "input": { "check": "polling", "requests": ["done", "timeout"], "results": ["success"] },
+      "expected": "FAIL",
+      "derivation": "traced"
+    },
+    {
+      "name": "polling: unknown id is 404",
+      "input": { "check": "polling", "requests": [], "results": [] },
+      "expected": { "status": 404, "code": "NOT_FOUND" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The 600-second cooldown and timeout are legacy-server choices; the bundle only shows canScrapping and remainSeconds, not the real interval.",
+    "Whether the cooldown is per service, per integration or per item (request-scrapping accepts an item key) is not visible; legacy keyed it by service only.",
+    "A running system request blocks manual collection but reports remainSeconds 0, so the client shows a disabled button without a countdown.",
+    "A partly failed request finishes as done with code PARTIAL, yet polling reports FAIL for the whole group, hiding the items that succeeded.",
+    "The manual collection schedules (bank after 1 day, PG 10:00/22:00, delivery 10:00 for the last 5 days, allra from 06:00 next day, grants 04:00) are not modelled anywhere in the legacy server.",
+    "Whether corporationNumberUnused changes the request or only the hometax query is unknown."
+  ]
+}

@@ -1,0 +1,122 @@
+{
+  "rule": "business-number-checksum",
+  "description": "Check digits of the 10-digit business registration number (weights 1,3,7,1,3,7,1,3,5 plus floor(9th*5/10)) and the 13-digit corporate registration number (weights 1,2 alternating), after stripping hyphens.",
+  "sources": [
+    {
+      "file": "apps/api/legacy/src/modules/platform/platform.utils.ts",
+      "lines": "63-102"
+    },
+    {
+      "file": "docs/reference/spec/platform.md",
+      "lines": "48, 161, 427"
+    }
+  ],
+  "inputSchema": {
+    "kind": "business (사업자등록번호) | corporate (법인등록번호).",
+    "value": "Raw input as typed, hyphens allowed."
+  },
+  "cases": [
+    {
+      "name": "valid business number",
+      "input": { "kind": "business", "value": "1238145600" },
+      "expected": { "valid": true, "normalized": "1238145600" },
+      "derivation": "traced"
+    },
+    {
+      "name": "valid business number with hyphens",
+      "input": { "kind": "business", "value": "123-81-45600" },
+      "expected": { "valid": true, "normalized": "1238145600" },
+      "derivation": "traced"
+    },
+    {
+      "name": "another valid business number",
+      "input": { "kind": "business", "value": "220-81-62517" },
+      "expected": { "valid": true, "normalized": "2208162517" },
+      "derivation": "traced"
+    },
+    {
+      "name": "wrong check digit",
+      "input": { "kind": "business", "value": "1238145601" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "wrong check digit on another number",
+      "input": { "kind": "business", "value": "2208162518" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "nine digits",
+      "input": { "kind": "business", "value": "123814560" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "eleven digits",
+      "input": { "kind": "business", "value": "12381456000" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "letter in the number",
+      "input": { "kind": "business", "value": "123-81-4560a" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "surrounding whitespace is not trimmed",
+      "input": { "kind": "business", "value": " 1238145600" },
+      "expected": { "valid": false, "message": "bizNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "all zeros passes the checksum",
+      "input": { "kind": "business", "value": "0000000000" },
+      "expected": { "valid": true, "normalized": "0000000000" },
+      "derivation": "traced"
+    },
+    {
+      "name": "valid corporate number",
+      "input": { "kind": "corporate", "value": "1101110000002" },
+      "expected": { "valid": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "valid corporate number with a hyphen",
+      "input": { "kind": "corporate", "value": "110111-0000002" },
+      "expected": { "valid": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "another valid corporate number",
+      "input": { "kind": "corporate", "value": "134511-0123452" },
+      "expected": { "valid": true },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate number with a wrong check digit",
+      "input": { "kind": "corporate", "value": "110111-0000004" },
+      "expected": { "valid": false, "message": "corpNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate number with twelve digits",
+      "input": { "kind": "corporate", "value": "110111000000" },
+      "expected": { "valid": false, "message": "corpNumber" },
+      "derivation": "traced"
+    },
+    {
+      "name": "corporate number with fourteen digits",
+      "input": { "kind": "corporate", "value": "13451101234500" },
+      "expected": { "valid": false, "message": "corpNumber" },
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The client validators (bizNumber, corpNumber messages) are in lazy chunks; the algorithm here is the legacy server's, assumed to match the client.",
+    "All-zero and other degenerate numbers pass the checksum; whether the real server rejects them or relies on the NTS status lookup is unknown.",
+    "Whether the business number check on signup also calls the NTS status API (closed or suspended businesses) is not visible.",
+    "The corporate number check digit formula (weights 1,2 and 10 - sum mod 10) is the legacy server's; the official 법인등록번호 rule should be confirmed."
+  ]
+}

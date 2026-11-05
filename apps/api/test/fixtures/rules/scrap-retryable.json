@@ -1,0 +1,156 @@
+{
+  "rule": "scrap-retryable",
+  "description": "Whether the integration status screen offers 'retry' per integration type (hometax ID vs certificate, certificate-gated giro/bank, default-true cardsales/delivery, as-is pg/allra), and the legacy server's single-formula simplification.",
+  "sources": [
+    { "file": "docs/reference/spec/platform.md", "lines": "255-260, 366-367", "origin": "index.pretty.js B:91790-91900" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.utils.ts", "lines": "127-137" },
+    { "file": "apps/api/legacy/src/modules/platform/integrations/certificates.utils.ts", "lines": "45-51" }
+  ],
+  "inputSchema": {
+    "side": "client (B:91826-91900 as summarised in the spec) | server (legacy isRetryable).",
+    "type": "IntegrationType: hometax | giro | cardsales | creditcard | bank | allra | speedbank | pg | delivery.",
+    "entries": "client: integrationStatus[type] entries, e.g. hometax [{authType: 'ID'|'CERTIFICATE', certificate: CertificateStatus|null, lastScrapping: {isRetryable}|null}], bank {isActive, certificate, accounts:[{id, isActive, lastScrapping}]}.",
+    "integration": "server: {authType: 'id'|'certificate'|'speedbank'|'api_key'}, certificate: CertificateStatus|null, lastStatus: {isRetryable}|null."
+  },
+  "cases": [
+    {
+      "name": "client hometax: ID only, no lastScrapping -> true",
+      "input": { "side": "client", "type": "hometax", "entries": [{ "authType": "ID", "certificate": null, "lastScrapping": null }] },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "client hometax: ID only, last result not retryable -> false",
+      "input": { "side": "client", "type": "hometax", "entries": [{ "authType": "ID", "certificate": null, "lastScrapping": { "isRetryable": false } }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client hometax: certificate only, EXPIRED -> false",
+      "input": { "side": "client", "type": "hometax", "entries": [{ "authType": "CERTIFICATE", "certificate": "EXPIRED", "lastScrapping": { "isRetryable": true } }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client hometax: certificate only, INACTIVE -> false",
+      "input": { "side": "client", "type": "hometax", "entries": [{ "authType": "CERTIFICATE", "certificate": "INACTIVE", "lastScrapping": null }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client hometax: certificate only, UNREGISTERED is not checked -> lastScrapping decides",
+      "input": { "side": "client", "type": "hometax", "entries": [{ "authType": "CERTIFICATE", "certificate": "UNREGISTERED", "lastScrapping": null }] },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "client hometax: ID and certificate both, ID side decides even when the certificate expired",
+      "input": {
+        "side": "client",
+        "type": "hometax",
+        "entries": [
+          { "authType": "ID", "certificate": null, "lastScrapping": { "isRetryable": true } },
+          { "authType": "CERTIFICATE", "certificate": "EXPIRED", "lastScrapping": { "isRetryable": false } }
+        ]
+      },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "client giro: certificate EXPIRED -> false",
+      "input": { "side": "client", "type": "giro", "entries": [{ "certificate": "EXPIRED", "lastScrapping": { "isRetryable": true } }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client giro: certificate ACTIVE, no lastScrapping -> true",
+      "input": { "side": "client", "type": "giro", "entries": [{ "certificate": "ACTIVE", "lastScrapping": null }] },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "client bank: inactive accounts are excluded from retry",
+      "input": {
+        "side": "client",
+        "type": "bank",
+        "entries": [
+          {
+            "isActive": true,
+            "certificate": "ACTIVE",
+            "accounts": [
+              { "id": "a1", "isActive": true, "lastScrapping": { "isRetryable": true } },
+              { "id": "a2", "isActive": false, "lastScrapping": { "isRetryable": true } }
+            ]
+          }
+        ]
+      },
+      "expected": { "retryableAccounts": ["a1"] },
+      "derivation": "traced"
+    },
+    {
+      "name": "client bank: certificate INACTIVE -> no account retryable",
+      "input": {
+        "side": "client",
+        "type": "bank",
+        "entries": [{ "isActive": true, "certificate": "INACTIVE", "accounts": [{ "id": "a1", "isActive": true, "lastScrapping": { "isRetryable": true } }] }]
+      },
+      "expected": { "retryableAccounts": [] },
+      "derivation": "traced"
+    },
+    {
+      "name": "client cardsales: no lastScrapping -> true",
+      "input": { "side": "client", "type": "cardsales", "entries": [{ "lastScrapping": null }] },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "client delivery: last result not retryable -> false",
+      "input": { "side": "client", "type": "delivery", "entries": [{ "lastScrapping": { "isRetryable": false } }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client pg: value as-is, missing lastScrapping is falsy",
+      "input": { "side": "client", "type": "pg", "entries": [{ "lastScrapping": null }] },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "client allra: value as-is per scm",
+      "input": { "side": "client", "type": "allra", "entries": [{ "scm": [{ "lastScrapping": { "isRetryable": true } }, { "lastScrapping": { "isRetryable": false } }] }] },
+      "expected": [true, false],
+      "derivation": "traced"
+    },
+    {
+      "name": "server: certificate link with UNREGISTERED certificate -> false",
+      "input": { "side": "server", "integration": { "authType": "certificate" }, "certificate": "UNREGISTERED", "lastStatus": null },
+      "expected": false,
+      "derivation": "traced"
+    },
+    {
+      "name": "server: ID link ignores certificate state, no result -> true",
+      "input": { "side": "server", "integration": { "authType": "id" }, "certificate": "EXPIRED", "lastStatus": null },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "server: pg link without a result -> true (differs from client)",
+      "input": { "side": "server", "integration": { "authType": "api_key" }, "certificate": null, "lastStatus": null },
+      "expected": true,
+      "derivation": "traced"
+    },
+    {
+      "name": "server: last result marked not retryable -> false",
+      "input": { "side": "server", "integration": { "authType": "id" }, "certificate": null, "lastStatus": { "isRetryable": false } },
+      "expected": false,
+      "derivation": "traced"
+    }
+  ],
+  "openQuestions": [
+    "The client does not treat an UNREGISTERED certificate as blocking while the legacy server does; which one is intended is unknown.",
+    "For pg and allra the client passes isRetryable through, so a link that never ran shows no retry, unlike cardsales and delivery which default to true.",
+    "creditcard and speedbank rules are not in the bundle summary; whether they follow bank (certificate-gated, per item) is unknown.",
+    "Which scrape failure codes make isRetryable false (wrong password, locked account, unregistered business) is decided by the scraping vendor and not visible.",
+    "When hometax has both ID and certificate links, a broken certificate link still shows retry because only the ID side is consulted."
+  ]
+}
