@@ -1,10 +1,11 @@
 import type { Id } from '../../shared/ids/ids.types.ts'
+import { TEST_COMPANY_ID } from '../identity-access/testing.ts'
 import type { WorkContractRecord } from './contracts/work-contract.ts'
 import type { EmployeeRecord } from './employees/employee.ts'
 import type { OrganizationUnitRecord } from './organization/organization.ts'
 
-/** 데모 데이터의 회사입니다. 테스트 회사와 겹치지 않습니다. */
-export const DEMO_COMPANY_ID = 'cmp_01JBQ00000000000000000D3M0' as Id<'company'>
+/** 데모 데이터의 회사입니다. Identity & Access의 데모 법인(`DEMO_COMPANY_IDS.corporation`)과 같아서 급여·문서가 같은 직원을 봅니다. */
+export const DEMO_COMPANY_ID: Id<'company'> = TEST_COMPANY_ID
 
 const createdAt = '2026-01-02T00:00:00.000Z'
 

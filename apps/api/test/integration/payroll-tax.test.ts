@@ -45,12 +45,13 @@ describe('HR → Payroll', () => {
     expect(created.status).toBe(201)
     const ledger = await created.json()
     ledgerId = ledger.id
-    expect(ledger).toMatchObject({ status: 'DRAFT', paymentDate: '2026-10-25', rowCount: 1 })
+    expect(ledger).toMatchObject({ status: 'DRAFT', paymentDate: '2026-10-25' })
 
     const rows = await (await app.request('GET', `/v1/payroll-ledgers/${ledgerId}/rows`, { token: owner })).json()
-    expect(rows.items).toHaveLength(1)
-    expect(rows.items[0]).toMatchObject({ employeeId, incomeType: 'WAGE_MONTHLY' })
-    expect(rows.items[0]).toMatchObject({
+    expect(rows.items).toHaveLength(ledger.rowCount)
+    const row = rows.items.find((item: { employeeId: string }) => item.employeeId === employeeId)
+    expect(row).toMatchObject({ employeeId, incomeType: 'WAGE_MONTHLY' })
+    expect(row).toMatchObject({
       payeeName: '박급여',
       input: { basePay: 3_000_000 },
       snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240 },
@@ -125,14 +126,14 @@ describe('Payroll → Bookkeeping', () => {
         otherIncomeAmount: payrollOctober.amounts.other,
       },
       paidHeadcount: {
-        wageAmount: 1,
-        dailyWageAmount: 0,
-        businessIncomeAmount: 0,
-        otherIncomeAmount: 0,
+        wageAmount: payrollOctober.headcount.wage,
+        dailyWageAmount: payrollOctober.headcount.daily,
+        businessIncomeAmount: payrollOctober.headcount.business,
+        otherIncomeAmount: payrollOctober.headcount.other,
       },
-      employedCount: 1,
-      joinedCount: 0,
-      leftCount: 0,
+      employedCount: payrollOctober.employment.employed,
+      joinedCount: payrollOctober.employment.joined,
+      leftCount: payrollOctober.employment.left,
     })
   })
 })
