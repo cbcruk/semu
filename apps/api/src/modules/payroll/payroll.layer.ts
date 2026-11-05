@@ -1,4 +1,5 @@
 import { Layer } from 'effect'
+import { TableFactory } from '../../shared/persistence/record-table.ts'
 import { LaborCostReportsHttpLive } from './labor-cost/labor-cost-reports.http.ts'
 import { PayrollLaborCost } from './labor-cost/payroll-labor-cost.ts'
 import { PayrollLedgerRepository } from './ledgers/payroll-ledger-repository.ts'
@@ -43,19 +44,23 @@ export const PayrollHttpLive = Layer.mergeAll(
 export const PayrollPublicLive = Layer.fresh(Layer.mergeAll(PayrollLedgerSummary.layer, PayrollLaborCost.layer))
 
 /**
- * 급여 컨텍스트가 소유한 저장소를 메모리 구현으로 채웁니다.
+ * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산은
+ * `TableFactory`(메모리 또는 SQLite)의 `payroll_*` 표에 둡니다.
  *
- * 명세서 메일(`PayslipMailer`)은 Integrations에 메일 연동이 아직 없어 가짜를 함께 넣습니다. HR·Tax 포트는 넣지 않습니다.
- * `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
+ * 기준표는 코드에 컴파일된 참조 데이터라 표에 두지 않습니다. 명세서 메일(`PayslipMailer`)은 Integrations에 메일 연동이
+ * 아직 없어 가짜를 함께 넣습니다. HR·Tax 포트는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
-export const PayrollMemoryStoreLive = Layer.mergeAll(
+export const PayrollStoreLive = Layer.mergeAll(
   RateTableRepository.layerMemory(),
-  PayrollSettingRepository.layerMemory(),
-  PayrollLedgerRepository.layerMemory(),
-  PayslipRepository.layerMemory,
-  SeveranceSettlementRepository.layerMemory,
+  PayrollSettingRepository.layer(),
+  PayrollLedgerRepository.layer(),
+  PayslipRepository.layer(),
+  SeveranceSettlementRepository.layer(),
   PayslipMailer.layerFake,
 )
+
+/** {@link PayrollStoreLive}를 메모리 표로 채웁니다. */
+export const PayrollMemoryStoreLive = PayrollStoreLive.pipe(Layer.provide(TableFactory.layerMemory))
 
 /**
  * HR·Tax 포트의 결정적인 가짜입니다. Payroll만 시험할 때 {@link PayrollMemoryStoreLive}와 함께 씁니다.

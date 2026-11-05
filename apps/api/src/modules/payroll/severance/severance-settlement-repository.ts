@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { SeveranceSettlementRecord } from './severance-settlement.types.ts'
 
@@ -14,28 +15,30 @@ export class SeveranceSettlementRepository extends Context.Service<
     save(record: SeveranceSettlementRecord): Effect.Effect<void>
   }
 >()('semu/payroll/SeveranceSettlementRepository') {
+  /** `payroll_severance_settlements` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<SeveranceSettlementRecord> = []) =>
+    Layer.effect(
+      SeveranceSettlementRepository,
+      Effect.gen(function* () {
+        const table = yield* (yield* TableFactory).make<SeveranceSettlementRecord>('payroll_severance_settlements', {
+          seed,
+          companyOf: (record) => record.companyId,
+        })
+        return SeveranceSettlementRepository.of({
+          list: (companyId) =>
+            Effect.map(table.byCompany(companyId), (records) =>
+              records.toSorted((a, b) => a.lastWorkDate.localeCompare(b.lastWorkDate) || a.id.localeCompare(b.id)),
+            ),
+          find: (companyId, id) =>
+            Effect.map(
+              table.get(id),
+              Option.filter((record) => record.companyId === companyId),
+            ),
+          save: (record) => table.put(record),
+        })
+      }),
+    )
+
   /** 프로세스 메모리에 둡니다. */
-  static readonly layerMemory = Layer.effect(
-    SeveranceSettlementRepository,
-    Effect.gen(function* () {
-      const store = yield* Ref.make(new Map<string, SeveranceSettlementRecord>())
-      return SeveranceSettlementRepository.of({
-        list: (companyId) =>
-          Ref.get(store).pipe(
-            Effect.map((map) =>
-              [...map.values()]
-                .filter((record) => record.companyId === companyId)
-                .sort((a, b) => a.lastWorkDate.localeCompare(b.lastWorkDate) || a.id.localeCompare(b.id)),
-            ),
-          ),
-        find: (companyId, id) =>
-          Ref.get(store).pipe(
-            Effect.map((map) =>
-              Option.fromNullishOr(map.get(id)).pipe(Option.filter((record) => record.companyId === companyId)),
-            ),
-          ),
-        save: (record) => Ref.update(store, (map) => new Map(map).set(record.id, record)),
-      })
-    }),
-  )
+  static readonly layerMemory = SeveranceSettlementRepository.layer().pipe(Layer.provide(TableFactory.layerMemory))
 }

@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
@@ -13,35 +14,40 @@ export class PayrollLedgerRepository extends Context.Service<
     remove(companyId: Id<'company'>, id: Id<'payrollLedger'>): Effect.Effect<void>
   }
 >()('semu/payroll/PayrollLedgerRepository') {
-  /** 프로세스 메모리에 둡니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<PayrollLedgerRecord> = []) =>
+  /**
+   * `payroll_ledgers` 표에 둡니다. 행은 대장 레코드 안에 함께 저장합니다. 표가 비어 있으면 `seed`로 시작합니다.
+   * 저장 방식은 {@link TableFactory}가 정합니다.
+   */
+  static readonly layer = (seed: ReadonlyArray<PayrollLedgerRecord> = []) =>
     Layer.effect(
       PayrollLedgerRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((ledger) => [ledger.id, ledger])))
+        const table = yield* (yield* TableFactory).make<PayrollLedgerRecord>('payroll_ledgers', {
+          seed,
+          companyOf: (ledger) => ledger.companyId,
+        })
         return PayrollLedgerRepository.of({
           list: (companyId) =>
-            Ref.get(store).pipe(
-              Effect.map((map) =>
-                [...map.values()]
-                  .filter((ledger) => ledger.companyId === companyId)
-                  .sort((a, b) => a.attributionMonth.localeCompare(b.attributionMonth) || a.id.localeCompare(b.id)),
+            Effect.map(table.byCompany(companyId), (ledgers) =>
+              ledgers.toSorted(
+                (a, b) => a.attributionMonth.localeCompare(b.attributionMonth) || a.id.localeCompare(b.id),
               ),
             ),
           find: (companyId, id) =>
-            Ref.get(store).pipe(
-              Effect.map((map) =>
-                Option.fromNullishOr(map.get(id)).pipe(Option.filter((l) => l.companyId === companyId)),
-              ),
+            Effect.map(
+              table.get(id),
+              Option.filter((ledger) => ledger.companyId === companyId),
             ),
-          save: (ledger) => Ref.update(store, (map) => new Map(map).set(ledger.id, ledger)),
+          save: (ledger) => table.put(ledger),
           remove: (companyId, id) =>
-            Ref.update(store, (map) => {
-              const next = new Map(map)
-              if (next.get(id)?.companyId === companyId) next.delete(id)
-              return next
-            }),
+            Effect.flatMap(table.get(id), (found) =>
+              Option.isSome(found) && found.value.companyId === companyId ? table.remove(id) : Effect.void,
+            ),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 둡니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<PayrollLedgerRecord> = []) =>
+    PayrollLedgerRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
