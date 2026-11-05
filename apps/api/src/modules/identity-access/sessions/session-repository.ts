@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { SessionRecord } from './session.ts'
 
@@ -13,27 +14,28 @@ export class SessionRepository extends Context.Service<
     save(session: SessionRecord): Effect.Effect<void>
   }
 >()('semu/identity-access/SessionRepository') {
-  /** 프로세스 메모리에 세션을 둡니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<SessionRecord> = []) =>
+  /** `iam_sessions` 표에 둡니다. refresh token 계열이 재시작 뒤에도 남습니다. */
+  static readonly layer = (seed: ReadonlyArray<SessionRecord> = []) =>
     Layer.effect(
       SessionRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((session) => [session.id, session])))
-        const all = Ref.get(store).pipe(Effect.map((sessions) => [...sessions.values()]))
+        const table = yield* (yield* TableFactory).make<SessionRecord>('iam_sessions', { seed })
         return SessionRepository.of({
-          findById: (id) => Ref.get(store).pipe(Effect.map((sessions) => Option.fromNullishOr(sessions.get(id)))),
+          findById: (id) => table.get(id),
           findByOnboardingToken: (token) =>
-            all.pipe(
-              Effect.map((sessions) =>
-                Option.fromNullishOr(sessions.find((s) => s.onboardingToken === token && s.revokedAt === undefined)),
-              ),
+            Effect.map(table.all(), (sessions) =>
+              Option.fromNullishOr(sessions.find((s) => s.onboardingToken === token && s.revokedAt === undefined)),
             ),
           listActiveByUser: (userId) =>
-            all.pipe(
-              Effect.map((sessions) => sessions.filter((s) => s.userId === userId && s.revokedAt === undefined)),
+            Effect.map(table.all(), (sessions) =>
+              sessions.filter((s) => s.userId === userId && s.revokedAt === undefined),
             ),
-          save: (session) => Ref.update(store, (sessions) => new Map(sessions).set(session.id, session)),
+          save: (session) => table.put(session),
         })
       }),
     )
+
+  /** 프로세스 메모리에 세션을 둡니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<SessionRecord> = []) =>
+    SessionRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

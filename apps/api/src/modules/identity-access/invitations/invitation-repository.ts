@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { InvitationRecord } from './invitation.ts'
 
@@ -12,34 +13,35 @@ export class InvitationRepository extends Context.Service<
     save(invitation: InvitationRecord): Effect.Effect<void>
   }
 >()('semu/identity-access/InvitationRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 초대를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<InvitationRecord> = []) =>
+  /** `iam_invitations` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<InvitationRecord> = []) =>
     Layer.effect(
       InvitationRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((invitation) => [invitation.id, invitation])))
-        const all = Ref.get(store).pipe(Effect.map((invitations) => [...invitations.values()]))
+        const table = yield* (yield* TableFactory).make<InvitationRecord>('iam_invitations', {
+          seed,
+          companyOf: (invitation) => invitation.companyId,
+        })
         return InvitationRepository.of({
           find: (companyId, id) =>
-            Ref.get(store).pipe(
-              Effect.map((invitations) =>
-                Option.filter(Option.fromNullishOr(invitations.get(id)), (i) => i.companyId === companyId),
-              ),
+            Effect.map(
+              table.get(id),
+              Option.filter((invitation) => invitation.companyId === companyId),
             ),
           findByTokenHash: (tokenHash) =>
-            all.pipe(
-              Effect.map((invitations) => Option.fromNullishOr(invitations.find((i) => i.tokenHash === tokenHash))),
+            Effect.map(table.all(), (invitations) =>
+              Option.fromNullishOr(invitations.find((invitation) => invitation.tokenHash === tokenHash)),
             ),
           listByCompany: (companyId) =>
-            all.pipe(
-              Effect.map((invitations) =>
-                invitations
-                  .filter((invitation) => invitation.companyId === companyId)
-                  .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
-              ),
+            Effect.map(table.byCompany(companyId), (invitations) =>
+              invitations.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)),
             ),
-          save: (invitation) => Ref.update(store, (invitations) => new Map(invitations).set(invitation.id, invitation)),
+          save: (invitation) => table.put(invitation),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 초대를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<InvitationRecord> = []) =>
+    InvitationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

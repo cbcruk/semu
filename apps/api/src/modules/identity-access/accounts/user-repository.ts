@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { UserRecord } from './user.ts'
 
@@ -13,20 +14,24 @@ export class UserRepository extends Context.Service<
     save(user: UserRecord): Effect.Effect<void>
   }
 >()('semu/identity-access/UserRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 사용자를 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<UserRecord> = []) =>
+  /** `iam_users` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  static readonly layer = (seed: ReadonlyArray<UserRecord> = []) =>
     Layer.effect(
       UserRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((user) => [user.id, user])))
-        const all = Ref.get(store).pipe(Effect.map((users) => [...users.values()]))
+        const table = yield* (yield* TableFactory).make<UserRecord>('iam_users', { seed })
         return UserRepository.of({
-          findById: (id) => Ref.get(store).pipe(Effect.map((users) => Option.fromNullishOr(users.get(id)))),
+          findById: (id) => table.get(id),
           findByEmail: (email) =>
-            all.pipe(Effect.map((users) => Option.fromNullishOr(users.find((user) => user.email === email)))),
-          listByManager: (managerId) => all.pipe(Effect.map((users) => users.filter((u) => u.managerId === managerId))),
-          save: (user) => Ref.update(store, (users) => new Map(users).set(user.id, user)),
+            Effect.map(table.all(), (users) => Option.fromNullishOr(users.find((user) => user.email === email))),
+          listByManager: (managerId) =>
+            Effect.map(table.all(), (users) => users.filter((user) => user.managerId === managerId)),
+          save: (user) => table.put(user),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 사용자를 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<UserRecord> = []) =>
+    UserRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

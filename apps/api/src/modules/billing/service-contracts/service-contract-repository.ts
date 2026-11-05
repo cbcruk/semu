@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Ref } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { ServiceContract, ServiceContractId, ServiceContractRecord } from './service-contract.ts'
 
@@ -17,28 +18,30 @@ export class ServiceContractRepository extends Context.Service<
     listByCompany(companyId: Id<'company'>): Effect.Effect<ServiceContractRecord[]>
   }
 >()('semu/billing/ServiceContractRepository') {
-  /** `seed`로 시작해 프로세스 메모리에 서비스 계약을 보관합니다. */
-  static readonly layerMemory = (seed: ReadonlyArray<ServiceContractRecord> = []) =>
+  /** `billing_service_contracts` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
+  static readonly layer = (seed: ReadonlyArray<ServiceContractRecord> = []) =>
     Layer.effect(
       ServiceContractRepository,
       Effect.gen(function* () {
-        const store = yield* Ref.make(new Map(seed.map((row) => [row.id, row])))
+        const table = yield* (yield* TableFactory).make<ServiceContractRecord>('billing_service_contracts', {
+          seed,
+          companyOf: (row) => row.companyId,
+        })
         return ServiceContractRepository.of({
           find: (companyId, contractId) =>
-            Ref.get(store).pipe(
-              Effect.map((rows) =>
-                Option.filter(Option.fromNullishOr(rows.get(contractId)), (row) => row.companyId === companyId),
-              ),
+            Effect.map(
+              table.get(contractId),
+              Option.filter((row) => row.companyId === companyId),
             ),
           listByCompany: (companyId) =>
-            Ref.get(store).pipe(
-              Effect.map((rows) =>
-                [...rows.values()]
-                  .filter((row) => row.companyId === companyId)
-                  .sort((a, b) => b.startsOn.localeCompare(a.startsOn) || a.id.localeCompare(b.id)),
-              ),
+            Effect.map(table.byCompany(companyId), (rows) =>
+              rows.toSorted((a, b) => b.startsOn.localeCompare(a.startsOn) || a.id.localeCompare(b.id)),
             ),
         })
       }),
     )
+
+  /** `seed`로 시작해 프로세스 메모리에 서비스 계약을 보관합니다. */
+  static readonly layerMemory = (seed: ReadonlyArray<ServiceContractRecord> = []) =>
+    ServiceContractRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }

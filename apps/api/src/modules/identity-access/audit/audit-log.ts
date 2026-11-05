@@ -1,5 +1,7 @@
-import { Clock, Context, Effect, Layer, Ref, Schema } from 'effect'
-import { newId } from '../../../shared/ids/ids.ts'
+import { Clock, Context, Effect, Layer, Schema } from 'effect'
+import { monotonicFactory } from 'ulid'
+import { ID_PREFIXES } from '../../../shared/ids/ids.ts'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 
 /** 보안 감사 로그에 남기는 동작입니다. */
@@ -61,17 +63,22 @@ export class AuditLog extends Context.Service<
     listByCompany(companyId: Id<'company'>): Effect.Effect<AuditEntry[]>
   }
 >()('semu/identity-access/AuditLog') {
-  /** 프로세스 메모리에 쌓습니다. */
-  static readonly layerMemory = Layer.effect(
+  /**
+   * `iam_audit_log` 표에 쌓습니다. ID는 단조 증가하는 ULID라 같은 밀리초에 남긴 줄도 ID 순이 곧 남긴 순입니다.
+   */
+  static readonly layer: Layer.Layer<AuditLog, never, TableFactory> = Layer.effect(
     AuditLog,
     Effect.gen(function* () {
-      const entries = yield* Ref.make<ReadonlyArray<AuditEntry>>([])
+      const table = yield* (yield* TableFactory).make<AuditEntry>('iam_audit_log', {
+        companyOf: (entry) => entry.companyId ?? null,
+      })
+      const nextUlid = monotonicFactory()
       return AuditLog.of({
         record: (input) =>
           Effect.gen(function* () {
             const now = yield* Clock.currentTimeMillis
             const entry: AuditEntry = {
-              id: newId('event', now),
+              id: `${ID_PREFIXES.event}_${nextUlid(now)}`,
               occurredAt: new Date(now).toISOString(),
               action: input.action,
               ...(input.companyId === undefined ? {} : { companyId: input.companyId }),
@@ -80,13 +87,13 @@ export class AuditLog extends Context.Service<
               ...(input.targetId === undefined ? {} : { targetId: input.targetId }),
               ...(input.detail === undefined ? {} : { detail: input.detail }),
             }
-            yield* Ref.update(entries, (current) => [...current, entry])
+            yield* table.put(entry)
           }),
-        listByCompany: (companyId) =>
-          Ref.get(entries).pipe(
-            Effect.map((current) => current.filter((entry) => entry.companyId === companyId).reverse()),
-          ),
+        listByCompany: (companyId) => Effect.map(table.byCompany(companyId), (entries) => entries.toReversed()),
       })
     }),
   )
+
+  /** 프로세스 메모리에 쌓습니다. */
+  static readonly layerMemory = AuditLog.layer.pipe(Layer.provide(TableFactory.layerMemory))
 }
