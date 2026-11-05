@@ -4,6 +4,7 @@ import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
 import { accessErrors } from '../billing-problems.ts'
+import { ServiceContractNotFound } from '../service-contracts/service-contract.ts'
 import {
   Subscription,
   SubscriptionAlreadyExists,
@@ -44,7 +45,7 @@ export class SubscriptionsApi extends HttpApiGroup.make('subscriptions')
     HttpApiEndpoint.post('start', '/subscriptions', {
       payload: SubscriptionStart,
       success: HttpApiSchema.status(201)(Subscription),
-      error: [...accessErrors, SubscriptionAlreadyExists],
+      error: [...accessErrors, SubscriptionAlreadyExists, ServiceContractNotFound],
     }),
     HttpApiEndpoint.post('cancel', '/subscriptions/:subscriptionId::cancel', {
       params,

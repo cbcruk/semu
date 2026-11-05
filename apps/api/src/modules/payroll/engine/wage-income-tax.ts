@@ -37,7 +37,7 @@ export interface WageIncomeTaxResult {
  * 월 급여 하나로 간이세액표의 연 산식을 계산합니다.
  *
  * 단계: 연 환산(× 12) → 근로소득공제(한도) → 인적공제(1인 150만원) → 연금보험료공제(상하한을 적용한 월급 ×
- * 근로자 요율 × 12) → 가족 수별 특별소득공제 추정 → 기본세율 → 근로소득세액공제와 한도. 단계마다 원 미만 절사입니다.
+ * 근로자 요율 × 12) → 가족 수별 특별소득공제(소득세법 시행령 별표 2 제1호 계산식) → 기본세율 → 근로소득세액공제와 한도. 단계마다 원 미만 절사입니다.
  */
 export function annualSimpleTaxSteps(
   monthlyPay: number,
@@ -104,8 +104,8 @@ export const EXACT_FORMULA: SimpleTaxStrategy = {
 /**
  * 급여가 속한 간이세액표 행의 중간값으로 산식을 계산한 간이세액입니다. 기본 전략입니다.
  *
- * 공식 표를 만드는 방식과 같습니다. 남는 차이는 특별소득공제 추정 계수(미확인)에서 오므로,
- * {@link lookupSimpleTaxTable}로 공식 표를 넣기 전까지 결과는 추정치입니다.
+ * 공식 표를 만드는 방식과 같습니다. 계수는 별표 2 원문으로 확인했지만 표 금액과는 차이가 남으므로(review.md D4),
+ * {@link lookupSimpleTaxTable}로 공식 표를 넣기 전까지 결과는 추정치이고 `wageIncomeTax.simpleTaxStrategy`가 미확인입니다.
  */
 export const MIDPOINT_FORMULA: SimpleTaxStrategy = {
   name: 'formula-midpoint',

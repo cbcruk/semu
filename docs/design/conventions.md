@@ -8,6 +8,7 @@
   - 현행 화면 이름이 드러난 경로(`/home/summary-cards`, `/employment/wage-employees/count-by-status`)는 리소스와 쿼리로 바꿉니다
 - **버전은 경로 맨 앞 하나만 둡니다.** `/v1/...`. 리소스 중간의 `v2`(`/integrations/v2/`, `/api/v2/company/:id/giros/:id/payment`)는 두지 않습니다
 - **회사 ID는 경로에 넣지 않습니다.** 액세스 토큰 하나가 회사 하나에 묶이고, 서버가 토큰에서 회사를 정합니다. 현행 `/api/company/:companyId/...` 접두와 nexus·sf 회사 ID 두 개를 없앱니다. 회사를 바꾸려면 `POST /auth/sessions:switch-company`로 토큰을 새로 받습니다 ([identity-access.md](identity-access.md#인증))
+  - 예외는 세무 대리인의 `/agency/*` 하나입니다. 회사에 묶이지 않은 대리인 범위 토큰으로만 부르고, 담당 회사를 가로지르는 읽기만 합니다. 회사를 고를 때는 `?companyId=` 쿼리로 거릅니다 ([agency-queue.md](agency-queue.md))
 - **중첩은 소유 관계일 때 한 단계만 둡니다.** `/employees/{employeeId}/leaves`는 목록·생성만 받고, 개별 휴직은 `/leaves/{leaveId}`로 다룹니다
 - **경로 변수 이름은 리소스 이름 + `Id`입니다.** `{employeeId}`, `{ledgerId}`. `:id`, `:cid`가 섞이지 않게 합니다
 - **끝 슬래시를 붙이지 않습니다.** 현행 Django식 `/foo/`는 받지 않습니다
@@ -89,7 +90,7 @@ envelope 없이 리소스 자체를 돌려줍니다. 현행 DRF 봉투 `{count, 
   - `field`는 JSON 경로(`rows[1].basePay`)입니다. 값 전체가 잘못됐으면 요청 부분 이름(`path`, `query`, `headers`, `body`)을 씁니다
   - `code`는 `REQUIRED`(빠짐), `INVALID_TYPE`(타입이 다름), `INVALID_VALUE`(형식·범위·허용값이 아님), `UNKNOWN_FIELD`(정의되지 않은 필드) 중 하나입니다. 지금은 정의되지 않은 필드를 무시하므로 `UNKNOWN_FIELD`는 나오지 않습니다
   - 형식은 맞지만 업무 규칙에 어긋나는 요청은 409/422와 도메인 `code`로 구분합니다. 409는 현재 상태와 충돌(`*_TRANSITION_INVALID`, 중복), 422는 입력 값 자체가 규칙에 어긋남(기간 겹침, 한도 초과)입니다
-- **인증·인가 오류**: 401 `UNAUTHENTICATED`, 403 `PERMISSION_DENIED`(`permission`), 403 `ENTITLEMENT_REQUIRED`(`requiredPlans`), 403 `TERMS_REAGREEMENT_REQUIRED`(`termCodes`)
+- **인증·인가 오류**: 401 `UNAUTHENTICATED`, 403 `TOKEN_SCOPE_MISMATCH`(`requiredScope`), 403 `PERMISSION_DENIED`(`permission`), 403 `ENTITLEMENT_REQUIRED`(`requiredPlans`), 403 `TERMS_REAGREEMENT_REQUIRED`(`termCodes`)
 - **검증 전용 엔드포인트를 두지 않습니다.** 현행 `/pre-signup/check-email-duplicate`, `/pre-signup/check/business_number`는 생성 요청의 409/422로 대체합니다
   - 입력 중 즉시 피드백이 필요한 곳(이메일 중복)은 `?dryRun=true`로 같은 생성 엔드포인트를 부릅니다. 검증 로직이 한 곳에만 있게 됩니다
 
@@ -174,8 +175,10 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
   - 요청 하나가 트랜잭션 하나입니다(`UnitOfWorkMiddleware`). 응답이 4xx·5xx이면 되돌립니다. 저장소와 유스케이스는 트랜잭션을 직접 열지 않습니다
   - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
   - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다
-  - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file)`(서버 기본 `data/semu.sqlite`, `SEMU_DATABASE`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
+  - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file, key)`(서버 기본 `data/semu.sqlite`·`data/semu.key`, `SEMU_DATABASE`·`SEMU_DATA_KEY`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
+- HTTP 테스트는 `src/shared/testing/http-test-app.ts`의 `httpTestApp({ tokens, layers, basePath, defaultToken })`으로 앱 전체를 `TestStoreLive` 위에 띄웁니다. 요청 옵션은 `body`, `token`, `cookie`, `ifMatch`, `idempotencyKey`, `headers`이고, `json()`은 상태·헤더·본문을 함께 돌려줍니다. 컨텍스트 도우미는 이것 위에 토큰 표와 포트 가짜 레이어만 얹습니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
+  - `/agency/*` 그룹은 `.middleware(AgencyAuthentication)`을 붙이고 `authorizeAgency({ permission, plans })`가 돌려준 담당 회사만 읽습니다
 
 ## 예시 규칙
 

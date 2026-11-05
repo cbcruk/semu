@@ -20,6 +20,8 @@ export class AgencyAssignmentRepository extends Context.Service<
   {
     /** 주어진 담당자들에게 배정된 회사입니다. 팀장은 자기와 팀원의 ID를 함께 넘깁니다. */
     companiesOf(userIds: ReadonlyArray<Id<'user'>>): Effect.Effect<Id<'company'>[]>
+    /** 주어진 담당자들의 배정입니다. 대리인 범위 요청이 회사별 담당자를 함께 보여 줄 때 씁니다. */
+    listByUsers(userIds: ReadonlyArray<Id<'user'>>): Effect.Effect<AgencyAssignment[]>
   }
 >()('semu/identity-access/AgencyAssignmentRepository') {
   /** `iam_agency_assignments` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. */
@@ -36,6 +38,12 @@ export class AgencyAssignmentRepository extends Context.Service<
             Effect.map(table.all(), (assignments) => [
               ...new Set(assignments.filter((a) => userIds.includes(a.userId)).map((a) => a.companyId)),
             ]),
+          listByUsers: (userIds) =>
+            Effect.map(table.all(), (assignments) =>
+              assignments
+                .filter((a) => userIds.includes(a.userId))
+                .map(({ companyId, userId, assignedAt }) => ({ companyId, userId, assignedAt })),
+            ),
         })
       }),
     )

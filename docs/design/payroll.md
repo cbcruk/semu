@@ -65,18 +65,18 @@
 
 | 규칙 | 상태 | 근거 |
 |---|---|---|
-| [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율 확인, 장기요양 비율·2026-07 상하한 미확인 | 스펙 4.1 |
-| [simple-income-tax](../reference/rules/simple-income-tax.md) | 산식 단계값 확인, 공식 표와 차이 미해결 | 스펙 4.2, 재설계 전 구현 |
+| [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율·상하한(2026-07 포함)·연금·건강 절사 확인, 장기요양 비율 반올림·고용·산재 절사 미확인 | 스펙 4.1, 법령·고시 원문 |
+| [simple-income-tax](../reference/rules/simple-income-tax.md) | 산식 계수·자녀 공제액(2026-03 개정) 확인, 공식 표와 차이는 D4로 유지 | 스펙 4.2, 소득세법·별표 2 |
 | [daily-worker-withholding](../reference/rules/daily-worker-withholding.md) | 확인 | 스펙 4.3 |
-| [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3% 확인, 역산·예술인·업종코드 미확인 | 스펙 4.4 |
+| [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8% 확인, 역산·예술인 필요경비·업종코드 미확인 | 스펙 4.4, 보험료징수법 시행령 |
 | [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·과세최저한 확인, 지급사유 코드 미확인 | 스펙 4.5 |
-| [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 월 20만원 4종 확인, 나머지 미확인 | 스펙 4.6 |
+| [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 10종 한도 확인, 보육수당 자녀 1명당 한도는 미반영 | 스펙 4.6, 소득세법·시행령 |
 | [overtime-multipliers](../reference/rules/overtime-multipliers.md) | 확인 (배수는 회사 설정) | 스펙 4.8, 매뉴얼 |
 | [wage-proration](../reference/rules/wage-proration.md) | 식 확인, 역일·소정근로일 선택 미확인 | 스펙 4.10 |
-| [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인, 경고만 하는 것은 추정 | 스펙 4.7 |
-| [severance-pay](../reference/rules/severance-pay.md) | 식 확인, 퇴직소득 공제표 미확인 | 스펙 4.11 |
+| [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인(고용노동부고시 제2025-47호), 경고만 하는 것은 추정 | 스펙 4.7 |
+| [severance-pay](../reference/rules/severance-pay.md) | 식·퇴직소득 공제표 확인 | 스펙 4.11, 소득세법 제48조 |
 
-미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
+기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 남은 미확인 경로는 2026. 1~10월의 `longTermCare.ratioOfHealthPpm`(2026-11부터 확인), `employmentInsurance.premiumRoundingUnit`, `industrialAccident.*`, `wageIncomeTax.simpleTaxStrategy`(D4)입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
 
 ### 계산 결과
 
@@ -113,7 +113,7 @@ GET  /payroll-reference-codes            사업소득 업종, 기타소득 지�
 POST /payroll-calculator:simulate        저장하지 않는 행 계산(실수령액 계산기)
 ```
 
-- 기준표는 버전이 있는 참조 데이터입니다. 고시가 바뀌면 새 `effectiveFrom`을 더하고 지난 표는 고치지 않습니다. 지금은 2026-01, 2026-07 두 버전을 코드에 두고 메모리 저장소에 올립니다
+- 기준표는 버전이 있는 참조 데이터입니다. 고시가 바뀌면 새 `effectiveFrom`을 더하고 지난 표는 고치지 않습니다. 지금은 2026-01, 2026-03(간이세액표 자녀 공제액 개정), 2026-07(국민연금 상하한), 2026-11(장기요양 비율 반올림 법정화) 네 버전을 코드에 두고 메모리 저장소에 올립니다
 - **4대보험·최저임금은 귀속월, 원천세는 지급월 기준표를 씁니다.** 두 표가 다르면 소득세·지방소득세만 지급월 표로 다시 계산해 바꿉니다
 - 그 달에 적용할 표가 없으면 422 `RATE_TABLE_NOT_FOUND`(`month`)입니다
 
@@ -177,7 +177,7 @@ POST   /payroll-ledgers/{ledgerId}:approve | :reject { reason }                 
 - **귀속월의 첫 대장이 정기 대장, 그다음이 추가 대장입니다.** 정기 대장을 만들 때 HR의 근로소득자(임금산정 기간 중 하루라도 재직)로 근로 행을 채우고, 중도 입·퇴사자는 역일 일할 입력을 넣습니다
 - 지급일을 주지 않으면 설정의 지급월·지급일로 정하고, 추가 대장은 정기 대장의 지급일을 씁니다
 - **행은 대장을 통해서만 바뀝니다.** 행을 저장하면 같은 요청에서 계산하고 대장 `version`을 올립니다. 행의 `If-Match`는 대장 버전입니다
-- 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 이름 중 하나가 필수입니다. 행의 소득 종류는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`)
+- 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 이름 중 하나가 필수입니다. 이름과 함께 `employeeId`를 주어도 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`)
 - `:recalculate`는 HR 정보를 다시 받아 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
 - 정기 대장은 추가 대장이 있으면 지울 수 없습니다(409 `PAYROLL_LEDGER_HAS_ADDITIONAL`). 대장 삭제는 입력 상태에서만 됩니다
 
@@ -533,3 +533,4 @@ flowchart LR
    - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다
    - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
+9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))

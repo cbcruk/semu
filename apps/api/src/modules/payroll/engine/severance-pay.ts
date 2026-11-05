@@ -32,8 +32,8 @@ export function averageWagePeriodDays(lastWorkDate: string): number {
  * 퇴직금에 대한 퇴직소득세를 계산합니다.
  *
  * 단계: 근속연수(1년 미만 끝수는 올림) → 근속연수공제 → 환산급여 `(퇴직소득 − 근속연수공제) × 12 ÷ 근속연수` →
- * 환산급여공제 → 기본세율 → `× 근속연수 ÷ 12`를 10원 미만 절사. 지방소득세는 10%입니다. 공제표는 미확인이고
- * IRP 과세이연은 범위 밖입니다.
+ * 환산급여공제 → 기본세율 → `× 근속연수 ÷ 12`를 10원 미만 절사. 지방소득세는 10%입니다. 공제표는 소득세법 제48조제1항
+ * 원문으로 확인했습니다. IRP 과세이연은 범위 밖입니다.
  */
 export function retirementIncomeTax(
   severancePay: number,

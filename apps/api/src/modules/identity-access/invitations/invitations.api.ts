@@ -4,6 +4,7 @@ import {
   EntitlementRequired,
   PermissionDenied,
   TermsReagreementRequired,
+  TokenScopeMismatch,
   ValidationFailed,
 } from '../../../shared/problem/problem.ts'
 import { InvalidCredentials, PasswordPolicyViolated } from '../accounts/user.ts'
@@ -71,6 +72,7 @@ export class InvitationLinksApi extends HttpApiGroup.make('invitationLinks').add
       ValidationFailed,
       RequiredTermsMissing,
       TermVersionOutdated,
+      TokenScopeMismatch,
     ],
   }),
 ) {}

@@ -9,6 +9,7 @@ import type { Violation } from '../../../shared/problem/problem.types.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import { HrDirectory } from '../../hr/hr.public.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
+import { CompanySealRepository } from '../seals/company-seal.ts'
 import { DocumentEvents, DocumentNotifier } from '../shared/documents-ports.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { EsignTemplateRepository, type EsignTemplateRecord } from '../templates/esign-template.ts'
@@ -84,6 +85,7 @@ export class EsignRequests extends Context.Service<
     Effect.gen(function* () {
       const requests = yield* EsignRequestRepository
       const templates = yield* EsignTemplateRepository
+      const seals = yield* CompanySealRepository
       const directory = yield* HrDirectory
       const notifier = yield* DocumentNotifier
       const events = yield* DocumentEvents
@@ -130,6 +132,10 @@ export class EsignRequests extends Context.Service<
       const loadTemplates = (ids: ReadonlyArray<string>) =>
         Effect.forEach(ids, (id) => templates.find(id)).pipe(Effect.map((found) => found.map(Option.getOrUndefined)))
 
+      /** 도장이 행위자 회사의 지우지 않은 도장인지 봅니다. 다른 회사 도장 ID는 없는 것과 같습니다. */
+      const isOwnSeal = (actor: Actor, companySealId: string) =>
+        Effect.map(seals.findActive(actor.companyId, companySealId), Option.isSome)
+
       /** 초안 내용을 검사하고 수신자의 빈 값을 인사 정보로 채웁니다. */
       const prepareDraft = Effect.fn('EsignRequests.prepareDraft')(function* (
         actor: Actor,
@@ -150,6 +156,9 @@ export class EsignRequests extends Context.Service<
             : Option.getOrUndefined(yield* directory.findEmployee(actor.companyId, employeeId, today))
         if (employeeId !== undefined && employee === undefined) {
           violations.push({ field: 'recipient.employeeId', code: 'NOT_FOUND' })
+        }
+        if (draft.companySealId !== undefined && !(yield* isOwnSeal(actor, draft.companySealId))) {
+          violations.push({ field: 'companySealId', code: 'NOT_FOUND' })
         }
         const name = draft.recipient.name ?? employee?.name
         if (name === undefined || name.trim() === '') violations.push({ field: 'recipient.name', code: 'REQUIRED' })
@@ -201,6 +210,10 @@ export class EsignRequests extends Context.Service<
           sourceValues,
           companySealId: record.companySealId,
         })
+        // 템플릿 기본 도장이나 그새 지운 도장도 보낼 때 다시 확인합니다.
+        if (check.companySealId !== undefined && !(yield* isOwnSeal(actor, check.companySealId))) {
+          check.violations.push({ field: 'companySealId', code: 'NOT_FOUND' })
+        }
         if (check.violations.length > 0) return yield* new EsignRequestInvalid({ violations: check.violations })
         const token = randomBytes(24).toString('base64url')
         const signingUrl = `${SIGNING_URL_BASE}${token}`

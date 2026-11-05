@@ -12,4 +12,6 @@ export interface WorkContractTerms {
   startDate: string
   endDate?: string | undefined
   probation?: ProbationTerms | undefined
+  /** 한국표준직업분류 코드입니다. 없으면 단순노무 여부를 검사하지 않습니다. */
+  standardOccupationCode?: string | undefined
 }

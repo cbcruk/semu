@@ -384,7 +384,7 @@ export const HrDirectoryLive = Layer.effect(
         function* (companyId, employeeId, access) {
           const record = yield* employees.find(companyId, employeeId)
           if (Option.isNone(record) || record.value.registrationNumberEncrypted === undefined) return Option.none()
-          const plain = yield* cipher.decrypt(record.value.registrationNumberEncrypted)
+          const plain = yield* cipher.decrypt('registrationNumber', record.value.registrationNumberEncrypted)
           yield* accessLog.record({
             companyId,
             userId: access.userId,

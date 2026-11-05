@@ -11,6 +11,8 @@ import {
   subscriptionTransition,
 } from './subscription-entitlement.ts'
 import type { SubscriptionCommand } from './subscription-entitlement.types.ts'
+import { ServiceContractRepository } from '../service-contracts/service-contract-repository.ts'
+import { ServiceContractNotFound } from '../service-contracts/service-contract.ts'
 import { SubscriptionRepository } from './subscription-repository.ts'
 import {
   SubscriptionAlreadyExists,
@@ -52,7 +54,7 @@ export class Subscriptions extends Context.Service<
         monthlyFee: number
         serviceContractId?: SubscriptionRecord['serviceContractId']
       },
-    ): Effect.Effect<Subscription, SubscriptionAlreadyExists>
+    ): Effect.Effect<Subscription, SubscriptionAlreadyExists | ServiceContractNotFound>
     change(
       actor: Actor,
       subscriptionId: SubscriptionId,
@@ -68,6 +70,7 @@ export class Subscriptions extends Context.Service<
     Subscriptions,
     Effect.gen(function* () {
       const repository = yield* SubscriptionRepository
+      const contracts = yield* ServiceContractRepository
 
       const load = (actor: Actor, subscriptionId: SubscriptionId) =>
         repository.find(actor.companyId, subscriptionId).pipe(
@@ -90,6 +93,11 @@ export class Subscriptions extends Context.Service<
           const rows = yield* repository.listByCompany(actor.companyId)
           const open = rows.find((row) => row.plan === input.plan && refreshedStatus(row, date) !== 'ENDED')
           if (open !== undefined) return yield* new SubscriptionAlreadyExists({ subscriptionId: open.id })
+          // 다른 회사의 계약을 잇지 못하게 담당 회사 안에서만 찾습니다.
+          if (input.serviceContractId !== undefined) {
+            const contract = yield* contracts.find(actor.companyId, input.serviceContractId)
+            if (contract._tag === 'None') return yield* new ServiceContractNotFound({})
+          }
           const record: SubscriptionRecord = {
             id: newId('subscription', yield* Clock.currentTimeMillis),
             companyId: actor.companyId,

@@ -78,6 +78,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Documents (직접) | HR `HrDirectory` | 서명 요청 수신자, 증명서 대상 직원 |
 | Tax `VatEvidence` | Bookkeeping `VatEvidenceQuery` | 과세기간의 매출·매입 증빙 |
 | Bookkeeping `VatEstimateSource` | Tax 예상 부가세 | 홈 요약의 예상 납부세액과 기한 |
+| Identity & Access `AgencyWorkload` | Tax `AgencyWorkloadQuery` | 대리인 담당 회사별 미결 신고 건·기한 경과·진행중 카드 수 ([agency-queue.md](agency-queue.md)) |
 | Bookkeeping `LaborCostSource` | Payroll `PayrollLaborCost` | 월별 인건비와 인원 |
 | Bookkeeping `BusinessStatusLookup`, `HometaxInvoiceIssuer`, `GiroPaymentGateway` | Integrations | 국세청 상태조회, 세금계산서 발행, 지로 납부 |
 | Integrations `ScrapedRecordSink` | Bookkeeping `ScrapedRecordIngestion` | 수집 레코드 저장. `externalKey`로 멱등 |

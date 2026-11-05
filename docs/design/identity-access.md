@@ -24,7 +24,9 @@
 | 소속 | `Membership` | 고객사 사용자와 회사의 관계. `access`는 `ADMIN`(현행 `is_admin`) 또는 `MEMBER` |
 | 소유자 | `isOwner` | 회사를 등록한 사용자. 현행 `isSystemAdmin`. 강등·내보내기 불가 |
 | 배정 | `AgencyAssignment` | 세무 대리인 담당자와 회사의 관계. 팀장은 팀원의 배정도 봅니다 |
-| 행위자 | `Actor` | 토큰 하나가 나타내는 "회사 X에서의 사용자 Y". `kind`는 `CLIENT`·`AGENCY` |
+| 행위자 | `Actor` | 회사 범위 토큰 하나가 나타내는 "회사 X에서의 사용자 Y". `kind`는 `CLIENT`·`AGENCY` |
+| 토큰 범위 | `TokenScope` | `COMPANY`(회사 하나) 또는 `AGENCY`(대리인의 담당 회사 전체, `/agency/*`만) |
+| 대리인 | `Agent` | 대리인 범위 토큰의 행위자. 담당 회사(`companies`)는 요청마다 배정에서 계산 |
 | 권한 | `Permission` | `resource:action`. `resource:*`와 `*` 와일드카드 |
 | 기본 권한 | `BASE_PERMISSIONS` | 모든 구성원이 갖는 권한(홈·AI 비서·지원사업·서식·급여 계산기 등 현행 "모두에게 열린 메뉴") |
 | 권한 그룹 | `Role` | 회사별 권한 프리셋. 구성원에게 여럿 줄 수 있고 합집합입니다 |
@@ -116,6 +118,7 @@
 | 권한 그룹 | `/roles`, `/role-templates`, `/permissions` | `/permissions`는 그룹에 넣을 수 있는 권한만 |
 | 초대 | `/invitations`, `/invitations:preview`, `/invitations:accept` | 링크 토큰은 본문으로 받습니다 |
 | 감사 로그 | `/audit-logs` | 관리자 전용 |
+| 대리인 담당 회사 | `/agency/companies` | 대리인 범위 토큰 전용. [대리인 작업 큐](agency-queue.md) |
 
 ## 세션과 토큰
 
@@ -129,6 +132,8 @@ sequenceDiagram
   S-->>C: 새 accessToken + 새 refresh 쿠키 (회전)
   C->>S: POST /auth/sessions:switch-company {companyId} (쿠키)
   S-->>C: 그 회사에 묶인 accessToken
+  C->>S: POST /auth/sessions:switch-agency (쿠키, 대리인만)
+  S-->>C: 대리인 범위 accessToken (회사 없음)
   C->>S: DELETE /auth/sessions/current (쿠키)
   S-->>C: 204 + 쿠키 삭제
 ```
@@ -136,14 +141,34 @@ sequenceDiagram
 - refresh token은 `<sessionId>.<secret>`이고 저장소에는 secret의 SHA-256만 둡니다. 쿠키 수명은 1일, `staySignedIn`이면 14일
 - **회전과 재사용 탐지:** refresh마다 secret을 바꾸고 이전 해시를 기억합니다. 이전 secret이 다시 오면 탈취로 보고 세션을 폐기합니다(401 `SESSION_INVALID`, 감사 `SESSION_REUSE_DETECTED`)
 - refresh·전환·로그아웃은 그 세션의 이전 access token을 즉시 폐기합니다
+- 세션에는 access token과 `onboardingToken`의 SHA-256(`accessTokenHash`, `onboardingTokenHash`)만 둡니다. 폐기와 조회도 해시로 합니다. 원문은 응답으로만 나갑니다
+- `onboardingToken`은 1시간(세션이 먼저 끝나면 그때) 뒤 만료됩니다. 로그인·refresh마다 새로 발급하고 이전 것은 무효입니다
 - 회사 선택: 요청한 `companyId`(접근 불가면 404) → 마지막으로 쓴 회사 → 가장 먼저 소속된 회사. 회사가 없으면 access token 대신 `onboardingToken`을 줍니다
 - 로그인 실패: 모르는 이메일과 틀린 비밀번호는 같은 401 `INVALID_CREDENTIALS`. 연속 5회 틀리면 423 `ACCOUNT_LOCKED`(해제는 비밀번호 재설정, 미구현)
 - 비밀번호는 scrypt(N=16384, r=8, p=1)로 저장합니다. 정책은 8–20자, 영문·숫자 포함, 공백 불가([password-policy](../reference/rules/password-policy.md))
 - 비밀번호 변경(`POST /me/password:change`)은 그 사용자의 모든 세션을 폐기합니다
 
+### 토큰 범위
+
+결정 D3([review.md](review.md#결정))입니다. **토큰 하나 = 회사 하나** 규칙은 `/agency/*` 밖에서 그대로입니다. 세무 대리인이 담당 회사 여럿을 한 화면에서 볼 때만 회사에 묶이지 않은 두 번째 범위를 씁니다.
+
+| 범위 | 발급 | 받는 경로 | 토큰에 담는 것 | 미들웨어 |
+|---|---|---|---|---|
+| `COMPANY` | 로그인, `:refresh`, `:switch-company`, 초대 수락 | `/agency/*`를 뺀 인증 경로 전부 | 계산한 `Actor`(회사·권한·플랜·약관) | `Authentication` → `CurrentActor` |
+| `AGENCY` | `:switch-agency`, 그 뒤의 `:refresh` | `/agency/*`만 | 사용자 ID와 종류(`AGENCY_STAFF`·`AGENCY_MANAGER`)만 | `AgencyAuthentication` → `CurrentAgent` |
+
+- **받는 법:** 로그인은 언제나 회사 범위(또는 `onboardingToken`)로 엽니다. 대리인은 같은 세션의 refresh 쿠키로 `POST /auth/sessions:switch-agency`를 불러 대리인 범위 토큰을 받습니다. refresh를 회전하고 이전 access token을 폐기하는 것은 `:switch-company`와 같습니다. 응답은 `SessionGrant`에 `scope: AGENCY`가 붙고 `company`가 없습니다
+- **누가:** 사용자 종류가 `AGENCY_STAFF`·`AGENCY_MANAGER`인 활성 사용자만입니다. 고객 사용자(데모 포함)는 403 `AGENCY_SCOPE_NOT_ALLOWED`이고 세션은 바뀌지 않습니다. 배정이 하나도 없는 대리인도 받을 수 있고, 큐가 비어 있을 뿐입니다
+- **수명:** 회사 범위와 같은 10분 access token이고 같은 세션(refresh 쿠키 1일·14일)에 속합니다. 세션은 지금 범위를 기억해서(`SessionRecord.scope`) `:refresh`는 같은 범위로 다시 발급합니다. `:switch-company {companyId}`를 부르면 회사 범위로 돌아갑니다. 세션 하나에는 access token이 하나뿐이라 범위를 바꾸면 이전 범위의 토큰은 바로 401입니다. 대리인 화면이 큐와 회사 화면을 오갈 때마다 전환합니다
+- **범위가 틀리면 403입니다.** 대리인 범위 토큰으로 회사 경로를 부르거나 회사 범위 토큰(대리인이 회사에 들어간 토큰 포함)으로 `/agency/*`를 부르면 403 `TOKEN_SCOPE_MISMATCH`(`requiredScope`)입니다. 토큰은 유효하므로 401(다시 로그인)이 아닙니다(RFC 6750 `insufficient_scope`)
+- **담당 회사는 토큰에 넣지 않습니다.** `AgencyAuthentication`이 요청마다 `AgentDirectory.resolve(userId)`로 본인 배정과(팀장이면) 팀원 배정, 회사 이름·사업자 형태, Billing 플랜을 읽어 `Agent.companies`를 만듭니다. 배정을 풀거나 구독이 바뀌면 토큰을 폐기하지 않아도 다음 요청부터 반영됩니다. 사용자가 비활성이면 401입니다
+- **권한:** `authorizeAgency({ permission, plans? })`가 `authorize`의 대리인 판입니다. 권한은 `Agent.permissions`(지금은 회사 범위와 같은 `*`, D5에서 좁힘)로 보고, `plans`는 거절 대신 **그 플랜을 구독하는 담당 회사만 남깁니다.** 회사 여럿을 가로지르는 목록이라 한 회사의 구독 때문에 전체를 403으로 막지 않습니다. 약관 게이트는 회사 범위의 대리인처럼 건너뜁니다
+- **쓰기는 회사 범위에서만 합니다.** `/agency/*`는 모두 읽기입니다. 신고 건 처리처럼 회사 데이터를 바꾸는 일은 `:switch-company`로 그 회사 토큰을 받아 기존 경로로 합니다. 그래서 회사 리소스의 인가·감사·버전 검사가 한 길로만 지나갑니다
+- 범위 전환은 감사 로그에 `AGENCY_SCOPE_ENTERED`로 남깁니다. 회사로 돌아가는 것은 기존 `COMPANY_SWITCHED`입니다
+
 ### 토큰 무효화
 
-행위자 계산의 근거가 바뀌면 `Sessions.invalidateAccess(userId, companyId?)`로 그 사용자의 access token만 폐기합니다. 세션은 남으므로 클라이언트는 401을 받고 refresh로 새 권한을 받습니다.
+행위자 계산의 근거가 바뀌면 `Sessions.invalidateAccess(userId, companyId?)`로 그 사용자의 access token만 폐기합니다. 세션은 남으므로 클라이언트는 401을 받고 refresh로 새 권한을 받습니다. 대리인 범위 토큰은 회사를 담지 않으므로 회사를 지정한 폐기에서 빠지고, 배정 변경도 폐기 없이 다음 요청에 반영됩니다.
 
 | 원인 | 대상 |
 |---|---|
@@ -235,6 +260,8 @@ stateDiagram-v2
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 제공 | `CurrentActor`, `authorize`, `decideAccess`, `Authentication` | 모든 그룹이 씁니다 |
+| 제공 | `CurrentAgent`, `authorizeAgency`, `AgencyAuthentication` | `/agency/*` 그룹이 씁니다(Identity & Access 담당 회사, Tax 작업 큐) |
+| 포트(Tax 구현) | `AgencyWorkload` | `of(companies: AgentCompany[]): Effect<CompanyWorkload[]>`. 회사별 미결 신고 건·기한 경과·진행중 카드 수와 가장 가까운 기한 |
 | 포트(Billing 구현) | `CompanyPlans` | `plansOf(companyId): Effect<ReadonlySet<Plan>>` |
 | 포트(알림 구현) | `Mailer` | `send({to, template: INVITATION\|PASSWORD_RESET\|EMAIL_VERIFICATION, token, data})` |
 | 받을 이벤트(예정) | `SubscriptionStarted`/`SubscriptionEnded` | 그 회사 사용자들의 access token 폐기 |
@@ -247,6 +274,8 @@ stateDiagram-v2
 | `ACCOUNT_LOCKED` | 423 | 연속 5회 실패로 잠김 |
 | `SESSION_INVALID` | 401 | refresh 쿠키가 없거나 만료·폐기·재사용 |
 | `UNAUTHENTICATED` | 401 | access token이 없거나 만료·폐기 |
+| `TOKEN_SCOPE_MISMATCH` | 403 | 경로가 받지 않는 범위의 토큰(`requiredScope`: `COMPANY`\|`AGENCY`) |
+| `AGENCY_SCOPE_NOT_ALLOWED` | 403 | 세무 대리인이 아닌 사용자의 `:switch-agency` |
 | `PASSWORD_POLICY_VIOLATED` | 422 | `violations[].code`: `PASSWORD_LENGTH`, `PASSWORD_LETTER_REQUIRED`, `PASSWORD_DIGIT_REQUIRED`, `PASSWORD_WHITESPACE` |
 | `DEMO_READ_ONLY` | 403 | 데모 계정의 변경 시도 |
 | `COMPANY_NOT_FOUND` | 404 | 없거나 접근할 수 없는 회사(구분하지 않음) |
@@ -336,8 +365,10 @@ stateDiagram-v2
 | 권한 그룹 CRUD, 템플릿, 권한 목록 | 구현 |
 | 초대 생성·목록·취소·미리보기·수락(가입 포함) | 구현 |
 | 감사 로그 조회 | 구현 |
+| 토큰 범위(`COMPANY`·`AGENCY`), `:switch-agency`, `AgencyAuthentication`·`authorizeAgency`, `GET /agency/companies` | 구현 (`access/agent-directory.ts`, `agency/`). 큐 자체는 Tax ([agency-queue.md](agency-queue.md)) |
 | 행위자 계산(소속·배정·팀장·플랜·약관·프로모션) | 구현 (`access/actor-directory.ts`) |
-| access token 만료 | `AccessTokens.layerExpiring` 구현. 서버 진입점 교체는 공유 변경 필요 |
+| access token 만료 | `AccessTokens.layerExpiring` 구현 |
+| 토큰 저장 | access token·onboarding token은 해시만 저장. onboarding token 만료(1시간) 구현 |
 | 비밀번호 재설정, 이메일 가입, 소셜·제휴 로그인, 파트너 연결, 즐겨찾기, 회사 없는 사용자의 초대 목록 | 미구현 |
 | 구독 변경 이벤트로 토큰 폐기 | 미구현 (Billing 이벤트 대기) |
 | 저장소 | 메모리 구현만 |
@@ -350,3 +381,5 @@ stateDiagram-v2
 4. 플랜 변경을 토큰에 즉시 반영하려면 Billing의 구독 이벤트를 받아야 합니다. 이벤트 이름과 시점을 [events.md](events.md)에서 합의해야 합니다
 5. 세무 대리인 약관 목록과 코드는 매뉴얼에만 있어 실제 약관 카탈로그를 받아야 합니다
 6. 그룹별 구성원 조회를 `/users?roleId=` 필터로 둘지 정해야 합니다
+7. 대리인이 큐 화면에서 시작하는 경우가 대부분이면 로그인에서 바로 대리인 범위를 받게(`POST /auth/sessions {scope: AGENCY}`) 할지 정해야 합니다. 지금은 로그인 뒤 `:switch-agency`를 한 번 더 부릅니다
+8. 큐와 회사 화면을 탭 두 개로 동시에 띄우려면 세션 하나에 범위별 access token을 하나씩 두어야 합니다. 지금은 세션당 하나라 전환하면 다른 범위의 토큰이 폐기됩니다

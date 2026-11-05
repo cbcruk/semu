@@ -1,25 +1,16 @@
-import { Layer } from 'effect'
-import { HttpRouter, HttpServer } from 'effect/http'
-import { AppLive, TestStoreLive } from '../../app.ts'
-import { AccessTokens } from '../identity-access/access-tokens.ts'
+import type { Layer } from 'effect'
+import { httpTestApp } from '../../shared/testing/http-test-app.ts'
+import type { HttpTestJson, HttpTestRequest } from '../../shared/testing/http-test-app.ts'
 import type { Actor } from '../identity-access/actor.types.ts'
 import { testActor } from '../identity-access/testing.ts'
 import { PayrollPortFakesLive } from './payroll.layer.ts'
 
-/** HTTP 테스트에서 쓰는 응답입니다. */
-export interface TestResponse {
-  status: number
-  headers: Headers
-  body: any
-}
+/** HTTP 테스트에서 쓰는 응답입니다. 본문까지 읽은 것입니다. */
+export type TestResponse = HttpTestJson
 
-/** HTTP 테스트용 앱입니다. */
+/** HTTP 테스트용 앱입니다. 경로는 `/v1` 뒤부터 씁니다. */
 export interface PayrollTestApp {
-  request(
-    method: string,
-    path: string,
-    options?: { token?: string; body?: unknown; headers?: Record<string, string> },
-  ): Promise<TestResponse>
+  request(method: string, path: string, options?: HttpTestRequest): Promise<TestResponse>
   dispose(): Promise<void>
 }
 
@@ -39,39 +30,11 @@ export function payrollTestApp(
   layers: ReadonlyArray<Layer.Layer<any, never, never>> = [],
   tokens: ReadonlyArray<readonly [string, Actor]> = [],
 ): PayrollTestApp {
-  const app = HttpRouter.toWebHandler(
-    AppLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          TestStoreLive,
-          PayrollPortFakesLive,
-          ...layers,
-          AccessTokens.layerMemory([
-            [CLIENT_TOKEN, testActor()],
-            [AGENCY_TOKEN, testActor({ kind: 'AGENCY' })],
-            ...tokens,
-          ]),
-          HttpServer.layerServices,
-        ),
-      ),
-    ),
-    { disableLogger: true },
-  )
-  return {
-    async request(method, path, options = {}) {
-      const headers: Record<string, string> = { ...options.headers }
-      headers.authorization = `Bearer ${options.token ?? CLIENT_TOKEN}`
-      if (options.body !== undefined) headers['content-type'] = 'application/json'
-      const response = await app.handler(
-        new Request(`http://localhost/v1${path}`, {
-          method,
-          headers,
-          ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-        }),
-      )
-      const text = await response.text()
-      return { status: response.status, headers: response.headers, body: text === '' ? undefined : JSON.parse(text) }
-    },
-    dispose: () => app.dispose(),
-  }
+  const app = httpTestApp({
+    tokens: [[CLIENT_TOKEN, testActor()], [AGENCY_TOKEN, testActor({ kind: 'AGENCY' })], ...tokens],
+    layers: [PayrollPortFakesLive, ...layers],
+    basePath: '/v1',
+    defaultToken: CLIENT_TOKEN,
+  })
+  return { request: app.json, dispose: app.dispose }
 }

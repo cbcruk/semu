@@ -91,12 +91,15 @@ const demoPayrollTerms = {
 } as const
 const demoPayrollEvaluation = evaluatePayrollContract(demoPayrollTerms, { minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026 })
 
+/** 데모 급여계약의 계좌번호 원문입니다. */
+export const DEMO_PAYROLL_ACCOUNT_NUMBER = '110123456789'
+
 /**
  * 데모 급여계약입니다. 월급 340만 원이라 데모 급여대장의 기본급이 HR이 없을 때의 기본값(300만 원)과 다르게 보입니다.
  *
- * 계좌번호 암호문은 결정적인 가짜 암호화(`PersonalDataCipher.layerFake`)로 `110123456789`를 감싼 값입니다.
+ * 계좌번호 암호문은 저장소를 만들 때 그 환경의 `PersonalDataCipher`로 {@link DEMO_PAYROLL_ACCOUNT_NUMBER}를 암호화해 넣습니다.
  */
-export const DEMO_PAYROLL_CONTRACTS: ReadonlyArray<PayrollContractRecord> = [
+export const demoPayrollContracts = (accountNumberEncrypted: string): ReadonlyArray<PayrollContractRecord> => [
   {
     id: 'pct_01JBQ00000000000000000D3M1' as Id<'payrollContract'>,
     companyId: DEMO_COMPANY_ID,
@@ -104,7 +107,7 @@ export const DEMO_PAYROLL_CONTRACTS: ReadonlyArray<PayrollContractRecord> = [
     ...demoPayrollTerms,
     account: {
       bankCode: '004',
-      accountNumberEncrypted: 'enc:MTEwMTIzNDU2Nzg5',
+      accountNumberEncrypted,
       accountNumberMasked: '********6789',
       accountHolder: '김세무',
     },

@@ -6,7 +6,7 @@ import { problemType } from '../../../shared/problem/problem.ts'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { EmployeeId, PayrollContractId, Violations } from '../shared/hr-schemas.ts'
 import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
-import type { PayrollContractDerived } from './payroll-contract-evaluation.types.ts'
+import type { PayrollContractDerived, PayrollContractWarning } from './payroll-contract-evaluation.types.ts'
 
 const Won = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Hours = Schema.Number.check(Schema.isGreaterThan(0))
@@ -102,7 +102,7 @@ export const PayrollContract = Schema.Struct({
     Schema.Struct({ bankCode: Schema.String, accountNumberMasked: Schema.String, accountHolder: Schema.String }),
   ),
   derived: PayrollContractDerivedSchema,
-  warnings: Schema.Array(Schema.Literal('BELOW_MINIMUM_WAGE')),
+  warnings: Schema.Array(Schema.Literals(['BELOW_MINIMUM_WAGE', 'PROBATION_BELOW_MINIMUM_WAGE'])),
   /** 기준일(오늘)의 계약 상태입니다. */
   status: Schema.Literals(['SCHEDULED', 'ACTIVE', 'EXPIRED']),
   version: Schema.Int,
@@ -120,7 +120,7 @@ export interface PayrollContractRecord extends Omit<PayrollContractInput, 'accou
   employeeId: Id<'employee'>
   account?: { bankCode: string; accountNumberEncrypted: string; accountNumberMasked: string; accountHolder: string }
   derived: PayrollContractDerived
-  warnings: ReadonlyArray<'BELOW_MINIMUM_WAGE'>
+  warnings: ReadonlyArray<PayrollContractWarning>
   version: number
   createdAt: string
   updatedAt: string
