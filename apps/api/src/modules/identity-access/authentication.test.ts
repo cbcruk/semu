@@ -21,7 +21,7 @@ class ProbeApi extends HttpApi.make('probe').add(ProbeGroup) {}
 
 const ProbeLive = HttpApiBuilder.group(ProbeApi, 'probe', (handlers) =>
   handlers.handle('read', () =>
-    authorize({ permission: 'probe:read' }).pipe(
+    authorize({ permission: 'company:update' }).pipe(
       Effect.map((actor) => ({ companyId: actor.companyId })),
       Effect.catchTag(['EntitlementRequired', 'TermsReagreementRequired'], Effect.die),
     ),
@@ -69,6 +69,6 @@ describe('Authentication', () => {
     const response = await get('viewer')
 
     expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'probe:read' })
+    expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'company:update' })
   })
 })

@@ -1,4 +1,4 @@
-import type { Permission, Plan } from '../../identity-access/actor.types.ts'
+import type { GrantedPermission, Permission, Plan } from '../../identity-access/actor.types.ts'
 
 /**
  * AI 비서가 쓸 수 있는 도구입니다. 현행 `knowledge_qa`, `finance_summary`, `issue_tax_invoice`, `request_certificate`, `lookup_payroll`입니다.
@@ -31,7 +31,7 @@ export interface ToolRequirement {
 
 /** 도구 허용 판정의 입력입니다. `Actor`에서 필요한 부분만 받습니다. */
 export interface ToolAccessInput {
-  permissions: ReadonlySet<Permission>
+  permissions: ReadonlySet<GrantedPermission>
   plans: ReadonlySet<Plan>
 }
 

@@ -1,11 +1,11 @@
 import { Effect, Layer, Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { CurrentAgent, hasPermission } from '../actor.ts'
-import type { Permission } from '../actor.types.ts'
+import type { GrantedPermission, Permission } from '../actor.types.ts'
 import { authorizeAgency, decideAccess } from '../authorization.ts'
 import { DEMO_COMPANY_IDS, DEMO_USER_IDS } from '../demo-seed.ts'
 import { IdentityAccessMemoryLive } from '../identity-access.layer.ts'
-import { AGENT_PERMISSIONS, isAgentOnly, isGrantable } from '../permissions/permission-catalog.ts'
+import { AGENT_PERMISSIONS, isAgentOnly, isGrantable, permissionResource } from '../permissions/permission-catalog.ts'
 import { testActor } from '../testing.ts'
 import { ActorDirectory } from './actor-directory.ts'
 import { actorPermissions } from './actor-permissions.ts'
@@ -124,18 +124,18 @@ describe('agent permission set (D5)', () => {
 
 describe('agent-only permissions', () => {
   it.each(AGENT_ONLY)('marks %s agent-only so no wildcard covers it', (permission) => {
-    const resource = permission.split(':')[0]
+    const resource = permissionResource(permission)
 
     expect(isAgentOnly(permission)).toBe(true)
     expect(hasPermission(admin, permission)).toBe(false)
-    expect(hasPermission({ permissions: new Set<Permission>([`${resource}:*`]) }, permission)).toBe(false)
+    expect(hasPermission({ permissions: new Set<GrantedPermission>([`${resource}:*`]) }, permission)).toBe(false)
     expect(isGrantable(permission)).toBe(false)
   })
 
   it('still lets a role grant the rest of a resource that has an agent-only action', () => {
     expect(isGrantable('filing:read')).toBe(true)
     expect(isGrantable('subscription:*')).toBe(true)
-    expect(hasPermission({ permissions: new Set<Permission>(['filing:*']) }, 'filing:submit')).toBe(true)
+    expect(hasPermission({ permissions: new Set<GrantedPermission>(['filing:*']) }, 'filing:submit')).toBe(true)
   })
 })
 

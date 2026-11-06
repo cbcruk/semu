@@ -1,4 +1,5 @@
 import type { Plan } from '../actor.types.ts'
+import type { GrantedPermission } from './permission-catalog.ts'
 
 /** 권한 카탈로그를 화면 묶음으로 나누는 영역입니다. 현행 메뉴 2뎁스 그룹에 대응합니다. */
 export type PermissionArea =
@@ -24,13 +25,13 @@ export interface ResourcePermissions {
 export interface RoleTemplate {
   code: 'BOOKKEEPING' | 'HR' | 'PAYROLL' | 'TAX' | 'SETTINGS'
   name: string
-  permissions: ReadonlyArray<string>
+  permissions: ReadonlyArray<GrantedPermission>
 }
 
 /** 현행 메뉴 코드 하나가 재설계에서 대응하는 권한과 플랜입니다. */
 export interface LegacyMenuMapping {
   /** 이 메뉴를 권한 그룹에 넣었을 때 주는 권한입니다. 비어 있으면 모든 구성원의 기본 권한으로 덮입니다. */
-  permissions: ReadonlyArray<string>
+  permissions: ReadonlyArray<GrantedPermission>
   plans: ReadonlyArray<Plan>
   /** 현행 `requiresPermission: false`처럼 권한 그룹 없이 모두에게 열린 메뉴인지입니다. */
   openToEveryone: boolean

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { Permission, Plan } from '../../identity-access/actor.types.ts'
+import type { GrantedPermission, Permission, Plan } from '../../identity-access/actor.types.ts'
 import { decideAccess } from '../../identity-access/authorization.ts'
 import { testActor } from '../../identity-access/testing.ts'
 import type { AssistantTool } from './assistant-tool.types.ts'
@@ -82,7 +82,7 @@ function actorOf(input: FixtureInput) {
   const kind = input.actor?.kind === 'agency' ? 'AGENCY' : 'CLIENT'
   if (kind === 'AGENCY') return testActor({ kind, plans })
   const admin = input.actor?.isAdmin !== false
-  return testActor({ kind, plans, permissions: new Set<Permission>(admin ? ['*'] : MEMBER_BASE) })
+  return testActor({ kind, plans, permissions: new Set<GrantedPermission>(admin ? ['*'] : MEMBER_BASE) })
 }
 
 function run(testCase: FixtureCase): unknown {

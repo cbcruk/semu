@@ -180,6 +180,7 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 - HTTP 테스트는 `src/shared/testing/http-test-app.ts`의 `httpTestApp({ tokens, layers, basePath, defaultToken })`으로 앱 전체를 `TestStoreLive` 위에 띄웁니다. 요청 옵션은 `body`, `token`, `cookie`, `ifMatch`, `idempotencyKey`, `headers`이고, `json()`은 상태·헤더·본문을 함께 돌려줍니다. 컨텍스트 도우미는 이것 위에 토큰 표와 포트 가짜 레이어만 얹습니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
   - `/agency/*` 그룹은 `.middleware(AgencyAuthentication)`을 붙이고 `authorizeAgency({ permission, plans })`가 돌려준 담당 회사만 읽습니다
+  - 권한 타입은 카탈로그(`identity-access/permissions/permission-catalog.ts`)에서 만듭니다. 요구 권한은 `Permission`(카탈로그의 `resource:action` 리터럴 유니온)이라 오타는 `tsc`가 잡고, 행위자가 가진 권한은 와일드카드(`resource:*`, `*`)를 더한 `GrantedPermission`입니다. 저장소·요청에서 온 문자열은 캐스트하지 않고 `isGrantedPermission`·`isGrantable`로 거릅니다
 
 ## 예시 규칙
 
