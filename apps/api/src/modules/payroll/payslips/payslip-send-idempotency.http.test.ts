@@ -12,10 +12,14 @@ const OTHER_TOKEN = 'other-client-token'
 const OTHER_USER_ID = 'usr_01JBQ000000000000000000002' as Id<'user'>
 const DAY_MS = 24 * 60 * 60 * 1000
 
-/** 보낸 메일을 세는 가짜 메일러입니다. `delayMs`만큼 늦게 끝나고, `dieOnCall`번째 호출은 결함으로 죽습니다. */
+/**
+ * 보낸 메일을 세는 가짜 메일러입니다. `delayMs`만큼 기다린 뒤 보내고, 보낸 뒤 `ackDelayMs`만큼 늦게 응답합니다.
+ * `dieOnCall`번째 호출은 결함으로 죽습니다.
+ */
 interface MailerControl {
   sent: string[]
   delayMs: number
+  ackDelayMs: number
   dieOnCall: number | null
 }
 
@@ -32,9 +36,33 @@ function controlledMailer(control: MailerControl) {
             return yield* Effect.die(new Error('mail server went away'))
           }
           control.sent.push(message.payslipId)
+          if (control.ackDelayMs > 0) yield* Effect.sleep(control.ackDelayMs)
           return message.to === null ? { ok: false, reason: 'NO_EMAIL' } : { ok: true }
         }),
     }),
+  )
+}
+
+/** HR 조회 가짜입니다. `dieOnFind`가 참이면 다음 `find` 한 번이 결함으로 죽습니다. */
+function controlledDirectory(control: { dieOnFind: boolean }) {
+  return Layer.effect(
+    PayrollEmployeeDirectory,
+    Effect.map(
+      Effect.gen(function* () {
+        return yield* PayrollEmployeeDirectory
+      }),
+      (inner) =>
+        PayrollEmployeeDirectory.of({
+          ...inner,
+          find: (companyId, employeeId, asOf) => {
+            if (!control.dieOnFind) return inner.find(companyId, employeeId, asOf)
+            control.dieOnFind = false
+            return Effect.die(new Error('HR lookup failed'))
+          },
+        }),
+    ),
+  ).pipe(
+    Layer.provide(PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }])),
   )
 }
 
@@ -58,6 +86,7 @@ function shiftableClock(offset: { ms: number }): Layer.Layer<any> {
 interface Fixture {
   app: PayrollTestApp
   mailer: MailerControl
+  directory: { dieOnFind: boolean }
   clock: { ms: number }
   /** 주소가 있는 직원의 명세서입니다. */
   withEmail: string
@@ -73,11 +102,12 @@ afterEach(async () => {
 })
 
 async function setUp(): Promise<Fixture> {
-  const mailer: MailerControl = { sent: [], delayMs: 0, dieOnCall: null }
+  const mailer: MailerControl = { sent: [], delayMs: 0, ackDelayMs: 0, dieOnCall: null }
+  const directory = { dieOnFind: false }
   const clock = { ms: 0 }
   const app = payrollTestApp(
     [
-      PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }]),
+      controlledDirectory(directory),
       PayrollSettingRepository.layerMemory([{ companyId: TEST_COMPANY_ID, setting: rateBasedSetting() }]),
       controlledMailer(mailer),
       shiftableClock(clock),
@@ -92,7 +122,7 @@ async function setUp(): Promise<Fixture> {
   await app.request('POST', `/payroll-ledgers/${ledgerId}:close`)
   const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
   const [withEmail, withoutEmail] = list.body.items.map((item: { id: string }) => item.id)
-  fixture = { app, mailer, clock, withEmail, withoutEmail }
+  fixture = { app, mailer, directory, clock, withEmail, withoutEmail }
   return fixture
 }
 
@@ -169,6 +199,46 @@ describe('POST /payslips:send idempotency', () => {
     })
     const detail = await app.request('GET', `/payslips/${withEmail}`)
     expect(detail.body.delivery).toMatchObject({ status: 'SENT', attempts: 1 })
+  })
+
+  it('does not re-send when something other than the mailer crashes after a mail went out', async () => {
+    const { app, mailer, directory, withEmail, withoutEmail } = await setUp()
+    // 사업소득자(주소 없음)는 HR을 조회하지 않고, 직원은 조회합니다. 첫 건을 보낸 뒤 HR 조회가 죽습니다.
+    directory.dieOnFind = true
+
+    const failed = await send(app, 'k-hr', [withoutEmail, withEmail])
+    const retried = await send(app, 'k-hr', [withoutEmail, withEmail])
+
+    expect(failed.status).toBe(503)
+    expect(failed.body).toMatchObject({ code: 'PAYSLIP_SEND_INTERRUPTED' })
+    expect(retried.status).toBe(202)
+    expect(mailer.sent).toEqual([withoutEmail, withEmail])
+    const detail = await app.request('GET', `/payslips/${withoutEmail}`)
+    expect(detail.body.delivery).toMatchObject({ status: 'FAILED', attempts: 1 })
+  })
+
+  it('finishes a started send even if the client disconnects, so a retry replays it', async () => {
+    const { app, mailer, withEmail, withoutEmail } = await setUp()
+    mailer.ackDelayMs = 100
+    const disconnect = new AbortController()
+
+    const disconnected = app
+      .request('POST', '/payslips:send', {
+        idempotencyKey: 'k-disconnect',
+        body: { payslipIds: [withEmail, withoutEmail] },
+        signal: disconnect.signal,
+      })
+      .catch((error: unknown) => error)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    disconnect.abort()
+    await disconnected
+    // 끊긴 요청이 끝날 때까지(두 건 × 100ms) 기다립니다.
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const retried = await send(app, 'k-disconnect', [withEmail, withoutEmail])
+
+    expect(mailer.sent).toEqual([withEmail, withoutEmail])
+    expect(retried.status).toBe(202)
+    expect(retried.body).toMatchObject({ status: 'PARTIALLY_SUCCEEDED' })
   })
 
   it('does not hold the key when the request fails before sending anything', async () => {

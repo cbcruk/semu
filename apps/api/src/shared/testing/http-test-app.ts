@@ -30,6 +30,8 @@ export interface HttpTestRequest {
   idempotencyKey?: string | undefined
   /** 그 밖의 헤더입니다. 이름의 대소문자와 상관없이 `token`이 만든 `Authorization`은 덮어쓰고, 위 옵션이 만든 헤더에는 덮어써집니다. */
   headers?: Record<string, string>
+  /** 요청을 끊을 때 씁니다. 끊으면 앱이 요청 파이버를 중단합니다. */
+  signal?: AbortSignal
 }
 
 /** 테스트 응답입니다. 본문은 단언에서 바로 꺼내 쓰도록 느슨한 타입으로 읽습니다. */
@@ -91,6 +93,7 @@ export function httpTestApp(options: HttpTestAppOptions = {}): HttpTestApp {
     if (init.idempotencyKey !== undefined) headers['idempotency-key'] = init.idempotencyKey
     if (init.cookie !== undefined) headers['cookie'] = init.cookie
     const requestInit: RequestInit = { method, headers }
+    if (init.signal !== undefined) requestInit.signal = init.signal
     if (init.body !== undefined) requestInit.body = JSON.stringify(init.body)
     return app.handler(new Request(`http://localhost${basePath}${path}`, requestInit))
   }

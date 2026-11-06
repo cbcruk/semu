@@ -90,8 +90,9 @@ export class PayslipRepository extends Context.Service<
         const sends = yield* factory.make<PayslipSendRecord>('payroll_payslip_sends', {
           companyOf: (record) => record.companyId,
         })
-        // 메모리 표에는 트랜잭션이 없어, 동시에 온 같은 키의 확인과 예약이 섞이지 않게 줄을 세웁니다.
-        // SQLite는 요청 트랜잭션이 이미 쓰기 잠금을 쥐고 있어 여기서는 기다릴 일이 없습니다.
+        // 방어용 잠금입니다. 지금 메모리 표의 get·put은 동기 `Ref` 연산이고 SQLite는 요청 트랜잭션이 쓰기 잠금을 쥐고 있어,
+        // 이 잠금이 없어도 확인과 예약 사이에 다른 요청이 끼어들지 않습니다(테스트로 재현할 수 없습니다). 런타임이 연산 사이에
+        // 파이버를 양보하거나 표가 비동기 저장소로 바뀌어도 확인과 예약이 한 번에 일어나도록 남겨 둡니다.
         const sendLock = yield* Semaphore.make(1)
         return PayslipRepository.of({
           listByLedger: (companyId, ledgerId) =>

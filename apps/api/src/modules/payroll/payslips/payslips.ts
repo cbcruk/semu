@@ -127,7 +127,8 @@ export const sendPayslips = (
       case 'Replay':
         return jobResponse(claim.record)
       case 'Start':
-        // 보내다 끊기면(연결 끊김 등) 어디까지 보냈는지 잃으므로, 시작한 발송은 끝까지 갑니다.
+        // 연결이 끊겨도 시작한 발송은 끝까지 갑니다. 중간에 멈추면 남은 명세서는 재시도 때까지 보내지 않습니다.
+        // 요청 파이버는 이 뒤에 중단되지만, 보낸 기록은 `keepChanges`로 커밋되어 재시도가 처음 작업을 돌려받습니다.
         return yield* Effect.uninterruptible(deliver(claim.record, payslipIds))
     }
   })
@@ -142,7 +143,8 @@ type Claim =
  * 예약한 발송 요청을 이어서 보냅니다. `record.items`에 결과가 있는 명세서는 건너뜁니다.
  *
  * 명세서마다 발송 기록과 요청 기록을 함께 저장합니다. 끝나면 `COMPLETED`, 실패하면 결과가 하나라도 있을 때 `INTERRUPTED`로 남기고
- * (없으면 예약을 지웁니다) 실패를 돌려줍니다. 메일 연동 결함은 503으로 바꾸고 `keepChanges`로 이미 보낸 기록을 커밋합니다.
+ * (없으면 예약을 지웁니다) 실패를 돌려줍니다. 한 건을 처리하다 난 결함(HR 조회·메일 연동·저장)은 503으로 바꿉니다.
+ * 한 건이라도 보내면 `keepChanges`를 불러, 요청이 503이나 중단으로 끝나도 보낸 기록을 커밋합니다.
  */
 function deliver(
   reserved: PayslipSendRecord,
@@ -163,32 +165,45 @@ function deliver(
       const mailer = yield* PayslipMailer
       for (const [index, { ledger, row, record }] of targets.entries()) {
         if (index < progress.items.length) continue
-        const employee =
-          row.employeeId === null
-            ? Option.none()
-            : yield* directory.find(progress.companyId, row.employeeId, ledger.wagePeriod.end)
-        const sent = yield* Effect.exit(
-          mailer.send({
-            payslipId: record.id,
-            to: Option.isSome(employee) ? employee.value.email : null,
-            subject: `${ledger.title} 명세서`,
+        // 한 건의 조회·발송·저장 전체를 감쌉니다. 앞 건을 보낸 뒤 어디서든 결함이 나면 그대로 두면 SQLite가 요청 전체를
+        // 되돌려, 같은 키의 재시도가 이미 보낸 명세서를 다시 보냅니다.
+        const item = yield* Effect.exit(
+          Effect.gen(function* () {
+            const employee =
+              row.employeeId === null
+                ? Option.none()
+                : yield* directory.find(progress.companyId, row.employeeId, ledger.wagePeriod.end)
+            const sent = yield* mailer.send({
+              payslipId: record.id,
+              to: Option.isSome(employee) ? employee.value.email : null,
+              subject: `${ledger.title} 명세서`,
+            })
+            const attemptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
+            const failureReason = sent.ok ? null : sent.reason
+            const status = sent.ok ? ('SENT' as const) : ('FAILED' as const)
+            yield* repository.save({
+              ...record,
+              deliveries: [...record.deliveries, { status, failureReason, attemptedAt }],
+            })
+            const next: PayslipSendRecord = {
+              ...progress,
+              items: [...progress.items, { payslipId: record.id, status, failureReason }],
+            }
+            yield* repository.saveSend(next)
+            return next
           }),
         )
-        if (Exit.isFailure(sent)) {
-          yield* Effect.logWarning('Payslip mailer failed', { payslipId: record.id })
-          // 이미 보낸 명세서의 기록이 되돌려지면 같은 키로 다시 보낼 때 또 보내므로, 실패 응답이어도 커밋합니다.
-          if (progress.items.length > 0) yield* keepChanges
+        if (Exit.isFailure(item)) {
+          yield* Effect.logWarning('Payslip sending failed midway', {
+            payslipId: record.id,
+            sent: progress.items.length,
+          })
           return yield* new PayslipSendInterrupted({})
         }
-        const attemptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
-        const failureReason = sent.value.ok ? null : sent.value.reason
-        const status = sent.value.ok ? 'SENT' : 'FAILED'
-        yield* repository.save({
-          ...record,
-          deliveries: [...record.deliveries, { status, failureReason, attemptedAt }],
-        })
-        progress = { ...progress, items: [...progress.items, { payslipId: record.id, status, failureReason }] }
-        yield* repository.saveSend(progress)
+        progress = item.value
+        // 한 건이라도 보냈으면 이 요청이 실패(503)나 중단(연결 끊김)으로 끝나도 커밋합니다. 기록이 되돌려지면 같은 키의
+        // 재시도가 이미 보낸 명세서를 다시 보냅니다. 결함은 위에서 503으로 바꾸므로 되돌려지지 않습니다.
+        yield* keepChanges
       }
       progress = {
         ...progress,
