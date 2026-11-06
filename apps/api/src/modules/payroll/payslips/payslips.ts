@@ -1,17 +1,23 @@
-import { Clock, Effect, Option } from 'effect'
+import { Clock, Effect, Exit, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
-import { IdempotencyKeyRequired } from '../../../shared/problem/problem.ts'
+import { idempotencyExpired, requestFingerprint } from '../../../shared/http/idempotency.ts'
+import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
+import {
+  IdempotencyKeyInProgress,
+  IdempotencyKeyRequired,
+  IdempotencyKeyReused,
+} from '../../../shared/problem/problem.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
 import { paymentMonthOf } from '../ledgers/ledger-rules.ts'
 import { PayrollLedgerRepository } from '../ledgers/payroll-ledger-repository.ts'
 import type { PayrollLedgerRecord, PayrollRowRecord } from '../ledgers/payroll-ledger.types.ts'
-import { PayslipNotFound } from '../payroll-problems.ts'
+import { PayslipNotFound, PayslipSendInterrupted } from '../payroll-problems.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayslipMailer } from '../ports/payslip-mailer.ts'
 import type { Payslip, PayslipSendJob } from './payslip.ts'
-import { PayslipRepository, type PayslipRecord } from './payslip-repository.ts'
+import { PayslipRepository, payslipSendId, type PayslipRecord, type PayslipSendRecord } from './payslip-repository.ts'
 
 /** 명세서 유스케이스가 쓰는 저장소와 포트입니다. */
 export type PayslipDeps = PayrollLedgerRepository | PayslipRepository | PayrollEmployeeDirectory | PayslipMailer
@@ -57,56 +63,154 @@ export const getPayslip = (
   })
 
 /**
- * 명세서를 메일로 보냅니다. `Idempotency-Key`가 필수이고, 같은 키로 다시 오면 처음 응답을 그대로 돌려줍니다.
- * 주소가 없는 소득자는 `NO_EMAIL`로 실패하고 나머지는 보냅니다(`PARTIALLY_SUCCEEDED`).
+ * 명세서를 메일로 보냅니다. `Idempotency-Key`가 필수이고 키는 회사·행위자마다 따로입니다. 주소가 없는 소득자는 `NO_EMAIL`로
+ * 실패하고 나머지는 보냅니다(`PARTIALLY_SUCCEEDED`).
+ *
+ * 같은 키로 24시간 안에 다시 오면:
+ * - 본문이 다르면 422 `IDEMPOTENCY_KEY_REUSED`
+ * - 앞 요청이 아직 보내는 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`
+ * - 끝났으면 처음 작업을 그대로 돌려줍니다
+ * - 메일 연동 오류로 멈췄으면(503 `PAYSLIP_SEND_INTERRUPTED`) 이미 결과가 있는 명세서는 건너뛰고 나머지를 보냅니다
+ *
+ * 키 확인과 예약은 저장소의 `claimSend` 한 번으로 합니다. SQLite에서는 요청 트랜잭션이 쓰기 잠금을 쥐고 있어 같은 키의 다음 요청이
+ * 커밋 뒤에야 확인하므로 `IN_PROGRESS`를 볼 일이 없고 처음 작업을 돌려받습니다.
  */
 export const sendPayslips = (
   payslipIds: ReadonlyArray<Id<'payslip'>>,
   idempotencyKey: string | undefined,
-): Effect.Effect<JobResponse, AccessDenied | IdempotencyKeyRequired | PayslipNotFound, CurrentActor | PayslipDeps> =>
+): Effect.Effect<
+  JobResponse,
+  | AccessDenied
+  | IdempotencyKeyRequired
+  | IdempotencyKeyReused
+  | IdempotencyKeyInProgress
+  | PayslipNotFound
+  | PayslipSendInterrupted,
+  CurrentActor | PayslipDeps
+> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payslip:send', plans: ['PAYROLL'], requiresTerms: true })
     if (idempotencyKey === undefined || idempotencyKey === '') return yield* new IdempotencyKeyRequired({})
     const repository = yield* PayslipRepository
-    const replayed = yield* repository.replay(actor.companyId, idempotencyKey)
-    if (Option.isSome(replayed)) return replayed.value as JobResponse
-    const targets = []
-    for (const id of payslipIds) targets.push(yield* findClosed(actor.companyId, id))
-    const directory = yield* PayrollEmployeeDirectory
-    const mailer = yield* PayslipMailer
-    const createdAt = new Date(yield* Clock.currentTimeMillis).toISOString()
-    const items: JobResponse['result']['items'][number][] = []
-    for (const { ledger, row, record } of targets) {
-      const employee =
-        row.employeeId === null
-          ? Option.none()
-          : yield* directory.find(actor.companyId, row.employeeId, ledger.wagePeriod.end)
-      const sent = yield* mailer.send({
-        payslipId: record.id,
-        to: Option.isSome(employee) ? employee.value.email : null,
-        subject: `${ledger.title} 명세서`,
-      })
-      const failureReason = sent.ok ? null : sent.reason
-      yield* repository.save({
-        ...record,
-        deliveries: [
-          ...record.deliveries,
-          { status: sent.ok ? 'SENT' : 'FAILED', failureReason, attemptedAt: createdAt },
-        ],
-      })
-      items.push({ payslipId: record.id, status: sent.ok ? 'SENT' : 'FAILED', failureReason })
+    const id = payslipSendId(actor.companyId, actor.userId, idempotencyKey)
+    const fingerprint = requestFingerprint({ payslipIds })
+    const now = yield* Clock.currentTimeMillis
+    const claim = yield* repository.claimSend(id, (existing): readonly [Claim, PayslipSendRecord | null] => {
+      const live = Option.filter(existing, (record) => !idempotencyExpired(record.createdAt, now))
+      if (Option.isNone(live)) {
+        const fresh: PayslipSendRecord = {
+          id,
+          companyId: actor.companyId,
+          actorUserId: actor.userId,
+          key: idempotencyKey,
+          fingerprint,
+          status: 'IN_PROGRESS',
+          jobId: newId('job'),
+          createdAt: new Date(now).toISOString(),
+          finishedAt: null,
+          items: [],
+        }
+        return [{ _tag: 'Start', record: fresh }, fresh]
+      }
+      const record = live.value
+      if (record.fingerprint !== fingerprint) return [{ _tag: 'Reused' }, null]
+      if (record.status === 'COMPLETED') return [{ _tag: 'Replay', record }, null]
+      if (record.status === 'IN_PROGRESS') return [{ _tag: 'InProgress' }, null]
+      const resumed: PayslipSendRecord = { ...record, status: 'IN_PROGRESS' }
+      return [{ _tag: 'Start', record: resumed }, resumed]
+    })
+    switch (claim._tag) {
+      case 'Reused':
+        return yield* new IdempotencyKeyReused({})
+      case 'InProgress':
+        return yield* new IdempotencyKeyInProgress({})
+      case 'Replay':
+        return jobResponse(claim.record)
+      case 'Start':
+        // 보내다 끊기면(연결 끊김 등) 어디까지 보냈는지 잃으므로, 시작한 발송은 끝까지 갑니다.
+        return yield* Effect.uninterruptible(deliver(claim.record, payslipIds))
     }
-    const failed = items.filter((item) => item.status === 'FAILED').length
-    const job: JobResponse = {
-      id: newId('job'),
-      status: failed === 0 ? 'SUCCEEDED' : failed === items.length ? 'FAILED' : 'PARTIALLY_SUCCEEDED',
-      result: { items },
-      createdAt,
-      finishedAt: createdAt,
-    }
-    yield* repository.remember(actor.companyId, idempotencyKey, job)
-    return job
   })
+
+type Claim =
+  | { _tag: 'Start'; record: PayslipSendRecord }
+  | { _tag: 'Replay'; record: PayslipSendRecord }
+  | { _tag: 'Reused' }
+  | { _tag: 'InProgress' }
+
+/**
+ * 예약한 발송 요청을 이어서 보냅니다. `record.items`에 결과가 있는 명세서는 건너뜁니다.
+ *
+ * 명세서마다 발송 기록과 요청 기록을 함께 저장합니다. 끝나면 `COMPLETED`, 실패하면 결과가 하나라도 있을 때 `INTERRUPTED`로 남기고
+ * (없으면 예약을 지웁니다) 실패를 돌려줍니다. 메일 연동 결함은 503으로 바꾸고 `keepChanges`로 이미 보낸 기록을 커밋합니다.
+ */
+function deliver(
+  reserved: PayslipSendRecord,
+  payslipIds: ReadonlyArray<Id<'payslip'>>,
+): Effect.Effect<JobResponse, PayslipNotFound | PayslipSendInterrupted, CurrentActor | PayslipDeps> {
+  return Effect.gen(function* () {
+    const repository = yield* PayslipRepository
+    let progress = reserved
+    const release = Effect.suspend(() =>
+      progress.items.length === 0
+        ? repository.removeSend(progress.id)
+        : repository.saveSend({ ...progress, status: 'INTERRUPTED' }),
+    )
+    return yield* Effect.gen(function* () {
+      const targets = []
+      for (const id of payslipIds) targets.push(yield* findClosed(progress.companyId, id))
+      const directory = yield* PayrollEmployeeDirectory
+      const mailer = yield* PayslipMailer
+      for (const [index, { ledger, row, record }] of targets.entries()) {
+        if (index < progress.items.length) continue
+        const employee =
+          row.employeeId === null
+            ? Option.none()
+            : yield* directory.find(progress.companyId, row.employeeId, ledger.wagePeriod.end)
+        const sent = yield* Effect.exit(
+          mailer.send({
+            payslipId: record.id,
+            to: Option.isSome(employee) ? employee.value.email : null,
+            subject: `${ledger.title} 명세서`,
+          }),
+        )
+        if (Exit.isFailure(sent)) {
+          yield* Effect.logWarning('Payslip mailer failed', { payslipId: record.id })
+          // 이미 보낸 명세서의 기록이 되돌려지면 같은 키로 다시 보낼 때 또 보내므로, 실패 응답이어도 커밋합니다.
+          if (progress.items.length > 0) yield* keepChanges
+          return yield* new PayslipSendInterrupted({})
+        }
+        const attemptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
+        const failureReason = sent.value.ok ? null : sent.value.reason
+        const status = sent.value.ok ? 'SENT' : 'FAILED'
+        yield* repository.save({
+          ...record,
+          deliveries: [...record.deliveries, { status, failureReason, attemptedAt }],
+        })
+        progress = { ...progress, items: [...progress.items, { payslipId: record.id, status, failureReason }] }
+        yield* repository.saveSend(progress)
+      }
+      progress = {
+        ...progress,
+        status: 'COMPLETED',
+        finishedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+      }
+      yield* repository.saveSend(progress)
+      return jobResponse(progress)
+    }).pipe(Effect.onError(() => (progress.status === 'COMPLETED' ? Effect.void : release)))
+  })
+}
+
+function jobResponse(record: PayslipSendRecord): JobResponse {
+  const failed = record.items.filter((item) => item.status === 'FAILED').length
+  return {
+    id: record.jobId,
+    status: failed === 0 ? 'SUCCEEDED' : failed === record.items.length ? 'FAILED' : 'PARTIALLY_SUCCEEDED',
+    result: { items: record.items.map((item) => ({ ...item })) },
+    createdAt: record.createdAt,
+    finishedAt: record.finishedAt ?? record.createdAt,
+  }
+}
 
 function ensureRecords(
   ledger: PayrollLedgerRecord,

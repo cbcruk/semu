@@ -156,9 +156,5 @@ export class TaxInvoiceRejected extends HttpApiError.Problem<TaxInvoiceRejected>
   },
 ) {}
 
-/** 같은 `Idempotency-Key`를 다른 거래명세서에 썼습니다. */
-export class IdempotencyKeyReused extends HttpApiError.Problem<IdempotencyKeyReused>()(
-  'IdempotencyKeyReused',
-  { type: problemType('IDEMPOTENCY_KEY_REUSED'), status: 422, title: 'Idempotency-Key was used for another request' },
-  { code: Schema.tag('IDEMPOTENCY_KEY_REUSED') },
-) {}
+/** 같은 `Idempotency-Key`를 다른 거래명세서에 썼습니다. 공통 문제 유형이라 `shared/problem`에 있습니다. */
+export { IdempotencyKeyReused } from '../../../shared/problem/problem.ts'

@@ -253,7 +253,14 @@ POST /payslips:send     { payslipIds[] }      Idempotency-Key 필수(없으면 4
 ```
 
 - 명세서는 **마감된 대장 행의 보기**입니다. 따로 저장하는 것은 발송 기록(`deliveries[] { sentAt, status: SENT|FAILED, reason }`)뿐이라 계산이 바뀌면 명세서도 바로 바뀝니다. 마감 전 대장의 행은 404 `PAYSLIP_NOT_FOUND`입니다
-- 발송은 `PayslipMailer` 포트로 하고 결과를 `Job`(`SUCCEEDED`·`PARTIALLY_SUCCEEDED`·`FAILED`)에 담습니다. 이메일이 없으면 `NO_EMAIL`로 실패합니다. 같은 키로 다시 보내면 처음 작업을 돌려줍니다
+- 발송은 `PayslipMailer` 포트로 하고 결과를 `Job`(`SUCCEEDED`·`PARTIALLY_SUCCEEDED`·`FAILED`)에 담습니다. 이메일이 없으면 `NO_EMAIL`로 실패합니다
+- 멱등성은 [공통 규칙](conventions.md#멱등성)을 따릅니다. 키는 회사·행위자마다 따로이고 24시간 동안 기억합니다
+  - 같은 키·같은 본문이면 처음 작업을 그대로 돌려줍니다. 본문이 다르면 422 `IDEMPOTENCY_KEY_REUSED`, 앞 요청이 아직 보내는 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`입니다
+  - 메일을 보내기 전에 발송 요청 기록(`payroll_payslip_sends`, ID `<회사>:<사용자>:<키>`)을 `IN_PROGRESS`로 예약합니다. 확인과 예약은 저장소의 `claimSend` 한 번으로 합니다. 명세서를 한 건 보낼 때마다 그 결과를 기록의 `items`에 더하고, 끝나면 `COMPLETED`로 바꿉니다
+  - 메일 연동이 결함으로 멈추면 503 `PAYSLIP_SEND_INTERRUPTED`입니다. 이미 보낸 명세서의 발송 기록과 요청 기록(`INTERRUPTED`)은 실패 응답이어도 커밋합니다(`keepChanges`). 같은 키·같은 본문으로 다시 보내면 결과가 있는 명세서는 건너뛰고 나머지만 보내며, 작업 ID는 처음 것입니다
+  - 아무것도 보내기 전에 실패하면(명세서 없음 등) 예약을 남기지 않아, 같은 키로 본문을 고쳐 다시 보낼 수 있습니다
+  - 시작한 발송은 연결이 끊겨도 끝까지 갑니다(중단 불가). 메일을 보낸 직후 프로세스가 죽으면 그 건의 기록이 없어 다시 보낼 수 있습니다. 메일 연동이 생기면 포트에 건별 멱등 키를 넘겨 막습니다
+  - 메일은 지금처럼 요청 안에서 보냅니다. 응답이 건별 결과를 담은 끝난 `Job`이라, 커밋 뒤(outbox)로 미루면 응답에 결과를 담을 수 없습니다. 실제 메일 연동이 느려지면 `Job`을 `RUNNING`으로 돌려주고 outbox로 옮깁니다
 - 발송은 대장 상태를 바꾸지 않습니다
 - 현행 명세서 계산식 편집(`payment-formulas`)은 엔진의 `breakdown[].formula`가 대신합니다. 회사가 문구를 고치는 기능은 [열린 질문](#열린-질문)에 있습니다
 
@@ -362,12 +369,15 @@ flowchart LR
 | 409 | `PAYROLL_LEDGER_HAS_ADDITIONAL` | 추가 대장이 있는 정기 대장 삭제 | |
 | 409 | `SEVERANCE_SETTLEMENT_EXISTS` | 같은 직원의 두 번째 정산 | `settlementId` |
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
+| 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` | 같은 키의 명세서 발송이 아직 처리 중 | |
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
 | 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음, 이름 없음, 소득 종류 변경 | `reason` |
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
 | 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | 같은 키, 다른 본문의 명세서 발송 | |
 | 428 | `IDEMPOTENCY_KEY_REQUIRED` | 키 없는 명세서 발송 | |
+| 503 | `PAYSLIP_SEND_INTERRUPTED` | 메일 연동 오류로 발송이 중간에 멈춤. 같은 키로 다시 보내면 나머지만 보냄 | |
 
 ## 현행 엔드포인트 대응
 
