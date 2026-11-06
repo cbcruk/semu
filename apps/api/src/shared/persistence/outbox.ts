@@ -1,8 +1,16 @@
+import type { DatabaseSync } from 'node:sqlite'
 import { Context, Effect, Layer, Schedule } from 'effect'
 import { newId } from '../ids/ids.ts'
 import { describeDefect } from '../problem/defect-log.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { CurrentTransaction, SqliteDatabase, UnitOfWork } from './unit-of-work.ts'
+
+/**
+ * 이벤트 하나를 소비자에게 넘겨 보는 최대 횟수입니다. 이만큼 실패하면 `dead_at`을 찍고 더는 다시 넘기지 않습니다.
+ *
+ * 릴레이가 30초마다 돌므로 일시 장애(재시작, 잠깐의 잠금)는 대개 이 안에 풀리고, 계속 죽는 소비자는 몇 분 안에 멈춥니다.
+ */
+export const OUTBOX_MAX_ATTEMPTS = 5
 
 /**
  * 컨텍스트 사이 이벤트를 소비자에게 넘기는 통로입니다 ([events.md](../../../../../docs/design/events.md)).
@@ -21,7 +29,11 @@ export class Outbox extends Context.Service<
     relay(): Effect.Effect<number>
   }
 >()('semu/persistence/Outbox') {
-  /** 저장 없이 바로 소비자를 부릅니다. 메모리 저장소와 함께 씁니다. */
+  /**
+   * 저장 없이 바로 소비자를 부릅니다. 메모리 저장소와 함께 씁니다.
+   *
+   * 저장하지 않으므로 재시도·죽은 이벤트가 없습니다. 소비자가 실패(결함)하면 이벤트를 낸 쪽으로 그대로 올라갑니다.
+   */
   static readonly layerDirect = Layer.succeed(
     Outbox,
     Outbox.of({ channel: (_name, handler) => Effect.succeed(handler), relay: () => Effect.succeed(0) }),
@@ -31,6 +43,7 @@ export class Outbox extends Context.Service<
    * 이벤트를 상태 변경과 같은 트랜잭션에서 `outbox` 표에 쓰고, 커밋된 뒤 소비자에게 넘깁니다. 되돌리면 이벤트도 사라집니다.
    *
    * 소비자 처리는 자기 트랜잭션에서 합니다. 실패(결함)하면 `attempts`·`last_error`를 남기고 다음 `relay`에서 다시 넘깁니다.
+   * {@link OUTBOX_MAX_ATTEMPTS}번 실패하면 `dead_at`을 찍고(죽은 이벤트) 한 번 로그에 남긴 뒤 더는 넘기지 않습니다.
    */
   static readonly layerSqlite: Layer.Layer<Outbox, never, SqliteDatabase | UnitOfWork> = Layer.effect(
     Outbox,
@@ -46,29 +59,69 @@ export class Outbox extends Context.Service<
           created_at TEXT NOT NULL,
           delivered_at TEXT,
           attempts INTEGER NOT NULL DEFAULT 0,
-          last_error TEXT
+          last_error TEXT,
+          dead_at TEXT
         ) STRICT;
         CREATE INDEX IF NOT EXISTS outbox_pending ON outbox (delivered_at, seq);`,
       )
+      addMissingColumns(db)
       const insert = db.prepare('INSERT INTO outbox (id, channel, data, created_at) VALUES (?, ?, ?, ?)')
       const markDelivered = db.prepare(
         'UPDATE outbox SET delivered_at = ?, attempts = attempts + 1 WHERE seq = ? AND delivered_at IS NULL',
       )
-      const markFailed = db.prepare('UPDATE outbox SET attempts = attempts + 1, last_error = ? WHERE seq = ?')
-      const isPending = db.prepare('SELECT 1 AS pending FROM outbox WHERE seq = ? AND delivered_at IS NULL')
-      const pending = db.prepare('SELECT seq, channel, data FROM outbox WHERE delivered_at IS NULL ORDER BY seq')
+      // `SET` 안의 `attempts`는 고치기 전 값이라 `attempts + 1`이 이번 시도 횟수입니다.
+      const markFailed = db.prepare(
+        `UPDATE outbox SET attempts = attempts + 1, last_error = ?,
+          dead_at = CASE WHEN attempts + 1 >= ? THEN ? ELSE NULL END
+        WHERE seq = ? AND delivered_at IS NULL AND dead_at IS NULL
+        RETURNING id, attempts, dead_at`,
+      )
+      const isPending = db.prepare(
+        'SELECT 1 AS pending FROM outbox WHERE seq = ? AND delivered_at IS NULL AND dead_at IS NULL',
+      )
+      const pending = db.prepare(
+        'SELECT seq, channel, data FROM outbox WHERE delivered_at IS NULL AND dead_at IS NULL ORDER BY seq',
+      )
       const handlers = new Map<string, (event: unknown) => Effect.Effect<void>>()
 
       /**
-       * 이벤트 하나를 넘깁니다. 아직 전달되지 않았는지 확인, 소비자 처리, 전달 표시를 한 트랜잭션에서 합니다.
+       * 실패를 남깁니다. 이번이 마지막 시도였으면 죽은 이벤트로 표시하고 그때 한 번만 로그를 남깁니다.
+       * 로그에도 `last_error`와 같은 결함 요약과 행 식별자만 남깁니다.
+       */
+      const recordFailure = (seq: number, channel: string, defect: unknown): Effect.Effect<void> => {
+        const error = describeDefect(defect)
+        return unitOfWork
+          .run(Effect.sync(() => markFailed.get(error, OUTBOX_MAX_ATTEMPTS, new Date().toISOString(), seq)))
+          .pipe(
+            Effect.flatMap((row) =>
+              row === undefined || row['dead_at'] === null
+                ? Effect.void
+                : Effect.logError('Outbox event dead', {
+                    seq,
+                    id: row['id'],
+                    channel,
+                    attempts: row['attempts'],
+                    lastError: error,
+                  }),
+            ),
+          )
+      }
+
+      /**
+       * 이벤트 하나를 넘깁니다. 아직 전달되지 않았는지(죽지 않았는지) 확인, 소비자 처리, 전달 표시를 한 트랜잭션에서 합니다.
        * 그래서 커밋 뒤 전달과 릴레이가 겹쳐도 한 번만 처리되고, 소비자가 실패(결함)하면 소비자의 쓰기와 함께 되돌린 뒤 실패를 따로 남깁니다.
+       *
+       * 트랜잭션을 열지 못하면(다른 프로세스가 쓰기 잠금을 busy timeout보다 오래 쥠) 이벤트를 다뤄 보지도 않았으므로 시도로 세지 않고,
+       * 경고만 남긴 채 다음 릴레이에 맡깁니다.
        */
       const deliver = (seq: number, channel: string, event: () => unknown): Effect.Effect<void> => {
         const handler = handlers.get(channel)
         if (handler === undefined) return Effect.void
+        let started = false
         return unitOfWork
           .run(
             Effect.gen(function* () {
+              started = true
               if (isPending.get(seq) === undefined) return
               yield* handler(event())
               markDelivered.run(new Date().toISOString(), seq)
@@ -77,7 +130,9 @@ export class Outbox extends Context.Service<
           .pipe(
             // `last_error`에는 결함 요약만 남깁니다. 메시지(디코딩 실패면 저장 값)는 남기지 않습니다.
             Effect.catchDefect((defect) =>
-              unitOfWork.run(Effect.sync(() => markFailed.run(describeDefect(defect), seq))),
+              started
+                ? recordFailure(seq, channel, defect)
+                : Effect.logWarning('Outbox delivery not started', { seq, channel, error: describeDefect(defect) }),
             ),
             Effect.asVoid,
           )
@@ -104,6 +159,7 @@ export class Outbox extends Context.Service<
             const rows = yield* unitOfWork.run(Effect.sync(() => pending.all()))
             for (const row of rows) {
               // 디코딩은 전달 안에서 합니다. 깨진 행 하나가 릴레이를 멈추지 않고 그 행의 실패로 남습니다.
+              // 실패한 행도 다음 행으로 넘어가고, 죽은 행(`dead_at`)은 읽지 않습니다.
               yield* deliver(Number(row['seq']), row['channel'] as string, () => decodeRecord(row['data'] as string))
             }
             return rows.length
@@ -111,6 +167,36 @@ export class Outbox extends Context.Service<
       })
     }),
   )
+}
+
+/** `outbox` 표가 이 열들이 생기기 전에 만들어졌으면 더합니다. 이미 있으면 아무것도 하지 않습니다. */
+const OUTBOX_ADDED_COLUMNS = [
+  ['attempts', 'INTEGER NOT NULL DEFAULT 0'],
+  ['last_error', 'TEXT'],
+  ['dead_at', 'TEXT'],
+] as const
+
+/**
+ * 이전 데이터베이스의 `outbox` 표에 없는 열을 더합니다(`data/semu.sqlite`를 그대로 씁니다).
+ * 같은 파일을 연 두 프로세스가 겹쳐도 한쪽만 더하도록 `BEGIN IMMEDIATE`로 쓰기 잠금을 먼저 잡고 열을 확인합니다.
+ */
+function addMissingColumns(db: DatabaseSync): void {
+  db.exec('BEGIN IMMEDIATE')
+  try {
+    const existing = new Set(
+      db
+        .prepare('PRAGMA table_info(outbox)')
+        .all()
+        .map((column) => String(column['name'])),
+    )
+    for (const [name, definition] of OUTBOX_ADDED_COLUMNS) {
+      if (!existing.has(name)) db.exec(`ALTER TABLE outbox ADD COLUMN ${name} ${definition}`)
+    }
+    db.exec('COMMIT')
+  } catch (error) {
+    if (db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
 }
 
 /**
