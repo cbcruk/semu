@@ -9,6 +9,7 @@
 | `src/app.ts` | `createBff`: 경로 표(`ROUTES`), 세션 쿠키·CSRF 확인, 오류 응답 |
 | `src/upstream.ts` | 새 API 호출, 토큰 갱신·회사 전환(세션별 읽기·쓰기 자물쇠) |
 | `src/legacy-error.ts`, `src/keys.ts` | 문제(RFC 9457) → 현행 오류, 키 이름 변환과 `LEGACY_RAW_KEYS` |
+| `src/legacy-body.ts` | 현행 요청 본문 읽기, 현행 서버와 같은 필드 기본값, 새 API에 자리가 없는 필드 거절 |
 | `src/<context>/` | 화면 조각별 현행 경로(`*.routes.ts`)와 응답 매퍼(`*.mapping.ts`) |
 | `test/` | 현행 브라우저를 흉내 낸 클라이언트로 새 API 앱(프로세스 안) 위에서 돌리는 HTTP 테스트 |
 

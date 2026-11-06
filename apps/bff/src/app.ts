@@ -1,5 +1,8 @@
 import { appendClearedSessionCookies, CSRF_COOKIES, CSRF_HEADERS, parseCookies, SESSION_COOKIE } from './cookies.ts'
+import { contractRoutes } from './hr/contracts.routes.ts'
 import { hrRoutes } from './hr/hr.routes.ts'
+import { leaveRoutes } from './hr/leaves.routes.ts'
+import { retirementRoutes } from './hr/retirement.routes.ts'
 import { identityRoutes } from './identity/identity.routes.ts'
 import { LegacyError, legacyErrors } from './legacy-error.ts'
 import { makeRouter } from './router.ts'
@@ -9,7 +12,13 @@ import type { SessionStore } from './sessions.ts'
 import type { BffDeps, UpstreamOptions } from './upstream.ts'
 
 /** BFF가 받는 현행 경로 전체입니다. 화면을 새 API로 옮기면 그 화면의 경로를 여기서 지웁니다. */
-export const ROUTES: readonly Route[] = [...identityRoutes, ...hrRoutes]
+export const ROUTES: readonly Route[] = [
+  ...identityRoutes,
+  ...hrRoutes,
+  ...contractRoutes,
+  ...leaveRoutes,
+  ...retirementRoutes,
+]
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
