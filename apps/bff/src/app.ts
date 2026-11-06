@@ -4,6 +4,7 @@ import { hrRoutes } from './hr/hr.routes.ts'
 import { leaveRoutes } from './hr/leaves.routes.ts'
 import { retirementRoutes } from './hr/retirement.routes.ts'
 import { identityRoutes } from './identity/identity.routes.ts'
+import { payrollLedgerRoutes } from './payroll/ledgers.routes.ts'
 import { LegacyError, legacyErrors } from './legacy-error.ts'
 import { makeRouter } from './router.ts'
 import type { Route } from './router.ts'
@@ -18,6 +19,7 @@ export const ROUTES: readonly Route[] = [
   ...contractRoutes,
   ...leaveRoutes,
   ...retirementRoutes,
+  ...payrollLedgerRoutes,
 ]
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])

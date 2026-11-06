@@ -103,6 +103,10 @@ sequenceDiagram
 | 409 `LEAVE_OVERLAP`, `RETIREMENT_COMPLETED` | 400 같은 코드(현행 HR 오류의 상태). `overlapping_leave_id`는 그대로 |
 | 422 `RESIGNATION_REJECTED` (`reason`) | 422 `VALIDATION_FAILED`: `LEAVE_DATE_BEFORE_JOIN` → `leave_date`, `LEAVING_REASON_INVALID` → `leaving_reason` (현행 문구) |
 | 412 `VERSION_MISMATCH` | 412 `VERSION_CONFLICT` |
+| 409 `PAYROLL_LEDGER_READ_ONLY` | 409 `INVALID_TRANSITION` (현행 급여카드도 입력할 수 없는 상태를 이 코드로 거절) |
+| 409 `ADDITIONAL_LEDGER_BLOCKED` (`reason`) | 409 `ADDITIONAL_CARD_NOT_ALLOWED`. 급여카드 라우트가 `reason`을 현행 값으로 바꿈(`REGULAR_LEDGER_NOT_SUBMITTED` → `parent_not_calculated` 등) |
+| 409 `WAGE_ROW_ON_ADDITIONAL_LEDGER` | 409 `WAGE_INCOME_ON_ADDITIONAL_CARD` |
+| 422 `RATE_TABLE_NOT_FOUND` (`month`) | 같은 상태·코드. `_NOT_FOUND`로 끝나지만 경로의 리소스가 없는 게 아니라 귀속월의 기준표가 없는 것이라 접미사 규칙(404)에서 뺌 |
 | 그 밖 | 상태와 코드를 그대로 둡니다(예: 423 `ACCOUNT_LOCKED`). 현행 클라이언트는 모르는 코드에 일반 오류 문구를 띄웁니다 |
 
 - `detail`은 새 `detail`, 없으면 `title`에 마침표를 붙입니다. 추가 필드는 키만 snake_case로 바꿉니다(`duplicateEmployeeId` → `duplicate_employee_id`, `requiredPlans` → `required_plans`)
@@ -206,6 +210,104 @@ D9 순서의 두 번째 조각입니다. 구성원 상세 화면의 근로 정�
 4. **휴직 수정.** 기간 연장(복직 예정일 변경)은 실무에서 흔합니다. 새 API에 휴직 수정(`PATCH /v1/leaves/{id}`, 휴직 버전)을 둘지 정합니다
 5. **급여계약 `PUT`의 계좌 유지.** 지금은 BFF가 원문을 열람해 다시 보냅니다. 새 `PUT`이 `account.accountNumber`가 없을 때 저장된 번호를 유지하게 하면 열람 없이 됩니다
 
+## 급여대장 조각
+
+D9 순서의 세 번째 조각입니다. 현행 급여카드(급여 관리, 스펙 1–30의 `cards`·`card-summary`)를 새 급여대장(`/v1/payroll-ledgers`)으로 옮깁니다. 이번에는 **읽기와 대장 자체의 생애 주기**(만들기·이름·계산 확정·확정·해제·추가 카드·삭제)만 옮기고, 행 입력 저장과 명세서·원천세는 [남은 것](#급여대장에서-남은-것)으로 둡니다. 코드는 `apps/bff/src/payroll/`입니다.
+
+| 현행 (`/api/company/:companyId/payroll/` 아래) | 새 API |
+|---|---|
+| `GET card-summary/?year=` | `GET /v1/payroll-ledgers`(끝까지) + 대장마다 `GET …/{id}/rows`. 연도는 BFF가 거름 |
+| `GET card-summary/group-by-attr-date/?fixed_cards_only=&attr_date=&status=` | 같음. 귀속월·마감 여부는 새 API 필터(`attributionMonth`, `status=CLOSED`), 현행 세 단계 상태와 묶음은 BFF |
+| `POST cards/` `{attribution_month, payment_date?, name?}` | `POST /v1/payroll-ledgers {attributionMonth, paymentDate?, title?}` (201) |
+| `GET cards/:cardId/` | `GET /v1/payroll-ledgers/{id}` + `…/rows`. 추가 대장이면 같은 귀속월 목록으로 정기 대장 ID |
+| `GET cards/:cardId/?fixed_cards_only=true` | 위 + 같은 귀속월의 `CLOSED` 대장과 그 행 |
+| `GET cards/:cardId/card-status/` | `GET /v1/payroll-ledgers/{id}`의 `status` |
+| `GET cards/:cardId/fixed-payrolls/?income_type=` | 같은 귀속월의 `CLOSED` 대장과 그 행 |
+| `PATCH cards/:cardId/update-name/` `{name}` | `PATCH /v1/payroll-ledgers/{id} {title}` |
+| `DELETE cards/:cardId/` | `DELETE /v1/payroll-ledgers/{id}` (추가 대장만) |
+| `POST cards/:cardId/calculate/` | `POST /v1/payroll-ledgers/{id}:submit` (입력을 마치며 모든 행을 다시 계산) |
+| `POST cards/:cardId/extensions/fix/` | `:close` (제출된 대장만) |
+| `POST cards/:cardId/extensions/release/` | 제출된 대장은 `:return-to-draft`, 마감된 대장은 `:reopen {reason}` + `:return-to-draft` |
+| `POST cards/:cardId/additional-card/` | `POST /v1/payroll-ledgers {attributionMonth: 경로 카드의 귀속월}` (201) |
+
+### 번역
+
+- **상태.** 새 상태 넷을 현행 `card_status`로: `DRAFT` → `inputting`, `SUBMITTED` → `calculated`, `PENDING_APPROVAL` → `approval_requested`, `CLOSED` → `approved`. 현행 세 단계(`status`, `legacy_status`)는 `input_available`·`calculating`·`done`이고 `step`은 새 값 그대로입니다. 현행 `payslips_sent`·`exported`는 새 API에서 상태가 아니라 마감 뒤 기록이라 나오지 않습니다
+- **ID.** 카드 ID는 새 대장 ID(`pyl_`), 행 ID는 새 행 ID(`pyr_`)입니다. 새 대장 ID 형식이 아닌 카드 ID(현행 정수 등)는 새 API를 부르지 않고 404 "Payroll card not found."이고, 없는 대장도 같은 404입니다
+- **종류.** `REGULAR` → `default`, `ADDITIONAL` → `addition`. 추가 대장의 `parent_card_id`는 같은 귀속월의 정기 대장입니다(새 대장에는 부모가 없어 목록에서 찾음)
+- **집계.** 현행 카드 머리는 소득 구분별 인원(`headcount`, `headcount_by_type`)·합계(`total_by_type`, `net_pay_total_by_type`)·`gross_total`·`net_total`·`uncalculated_count`를 담습니다. 새 대장 응답에는 소득 구분별 집계가 없어 **대장마다 행을 읽어** BFF가 셉니다(동시에 4개씩). 계산 결과가 없는 행은 0원으로 셉니다
+- **행.** 새 행 입력을 현행 행에 펼친 입력 필드로 옮깁니다(현행은 입력 JSON을 행에 그대로 펼쳤음). 근무 시트는 분 → 시간(`regular_minutes` 90 → `regular_hours` 1.5), 일할계산은 `proration`이 있으면 `prorate_requested: true`, 사업·기타소득 공제 방식은 소문자입니다. 계산 결과는 현행 `calculation`(보험료는 근로자·사업주 따로)과 행의 금액 열로 옮깁니다. `calculated_at`은 결과가 있을 때 행의 `updatedAt`입니다(새 API는 행을 저장하면 바로 계산함)
+- **지급항목 키.** 현행 `taxable_incomes`·`other_deductions`·`payment_items[].item_id`는 회사 지급항목의 정수 ID였습니다. 새 행 입력은 항목 코드(`MEAL`)를 가지므로 코드를 키로 씁니다. 원문 키(`LEGACY_RAW_KEYS`)라 변환하지 않습니다
+- **목록 순서.** 현행 SQL 순서(귀속월 내림차순, 같은 달은 `kind` 문자열 순이라 추가 카드가 먼저, 그다음 만든 순)를 따릅니다. 대장 전체 읽기는 인사 목록과 같은 쪽 수 상한·반복 커서 검사를 둡니다(502 `UPSTREAM_LIST_TOO_LARGE`, `UPSTREAM_CURSOR_REPEATED`)
+- **검증.** 현행 zod 스키마와 같은 범위를 BFF가 먼저 봅니다: 귀속월 `YYYY-MM`, 지급일 `YYYY-MM-DD`(실제 날짜인지는 새 API가 봄), 이름은 앞뒤 공백을 빼고 1–100자, `year`는 2000–2100 정수, `fixed_cards_only`는 `true`·`false`, `status`는 현행 세 단계, 모르는 `income_type`은 현행처럼 404 "Income type not found."입니다. 모두 새 API를 부르기 전에 422(또는 404)입니다. 현행 본문의 모르는 필드는 현행 zod처럼 무시합니다(새 API에 자리가 없는 현행 필드가 이 본문에는 없음)
+
+### 쓰기와 버전
+
+현행 카드 쓰기는 `If-Match`를 보내지 않았고 현행 서버는 지금 버전으로 전이했습니다.
+
+- 클라이언트가 `If-Match`를 보내면 형식을 **먼저** 보고(틀리면 412, 새 API를 부르지 않음) 새 API에 그대로 넘깁니다. 다르면 새 API의 412 `VERSION_MISMATCH`가 현행 412 `VERSION_CONFLICT`가 됩니다
+- 계산 확정·이름 변경·삭제는 `If-Match`가 없으면 새 API도 버전을 보지 않습니다(현행과 같음)
+- 확정·해제는 BFF가 상태를 먼저 읽고 판단하므로, `If-Match`가 없으면 **방금 읽은 버전**을 넣어 읽은 뒤의 변경을 덮어쓰지 않습니다
+- 응답 `ETag`는 새 대장 버전입니다
+
+**현행 규칙을 지키려고 BFF가 막는 것** (새 API는 받지만 현행은 막았음, 모두 쓰기 전에 409 `INVALID_TRANSITION`):
+
+- 확정(`fix`)은 제출된(계산중) 대장만. 새 `:close`는 입력 중인 대장도 마감합니다
+- 해제(`release`)는 제출됐거나 마감된 대장만. 승인 대기·입력 중이면 409입니다
+- 삭제는 추가 대장만. 새 API는 추가 대장이 없는 정기 대장도 지웁니다. 입력 중인지는 새 API가 봅니다
+
+### 확정 해제의 두 호출
+
+현행 해제는 마감된 카드를 바로 입력 상태로 돌렸습니다. 새 API는 마감 해제(`:reopen`, `CLOSED` → `SUBMITTED`, 사유 필수)와 입력으로 되돌리기(`:return-to-draft`)가 따로입니다.
+
+- 사유는 현행에 없으므로 BFF가 `현행 급여관리 확정 해제`를 넣습니다. 새 대장의 `reopenReason`에 남습니다
+- 직접 운영(`DIRECT_CLOSE`) 대장만 두 호출로 해제합니다. 되돌리기가 `:close`이고 승인 운영(`CLIENT_APPROVAL`)에는 `:close`가 없어서, 승인 운영의 마감된 대장은 쓰기 전에 409입니다
+- `:return-to-draft`를 새 API가 분명히 거절하면(4xx) `:close`(`If-Match`는 `:reopen` 뒤 버전)로 다시 마감하고, **되돌리기 응답이 성공일 때만** 처음 거절을 줍니다
+- 결과를 모르면(시간 초과 504, 연결 실패·5xx) 이미 입력 상태로 돌아갔을 수 있으므로 되돌리지 않고 `PARTIAL_WRITE`(같은 상태)로 다시 읽으라고 알립니다
+- 세션이 끝났으면(401) 되돌릴 수 없으므로 그 401(쿠키 삭제 포함)을 그대로 줍니다. 되돌리는 중에 세션이 끝나도 같습니다
+- 되돌리기가 실패하면 대장 ID와 상태만 로그에 남기고 502 `PARTIAL_WRITE`입니다
+- 다시 마감하면 새 API가 지급월 마감 이벤트(`payroll_pay_month.reopened` 뒤 `closed`)를 한 번씩 더 냅니다. 금액은 바뀌지 않습니다. 원천세가 신고된 지급월이면 `:reopen`부터 409 `WITHHOLDING_FILED`라 두 호출까지 가지 않습니다
+
+### 빈 필드
+
+응답에서 BFF가 채우지 못해 `null`·현행 기본값으로 두는 필드입니다. 쓰기 쪽에는 이번 조각에서 옮기지 못한 필드가 없습니다(행 입력 저장 자체를 옮기지 않음).
+
+| 현행 필드 | 응답 | 이유 |
+|---|---|---|
+| 카드 `approval_requested_at`, `payslips_sent_at`, `exported_at`, `export_type` | `null` | 새 대장에 승인 요청 시각이 없고, 명세서 발송·데스크 내보내기는 대장 밖 기록 |
+| 카드 `card_status`의 `payslips_sent`·`exported` | `approved` | 같음 |
+| 카드 `approved_at` | 새 `closedAt` | 직접 운영의 마감도 현행 `approved`였음 |
+| 행 `resident_number`(가림), `is_foreigner`, `residence_country`, `birth_date`, `department`, `email`, `employment_status_label` | `null` | 새 행은 소득자 정보를 사본으로 두지 않음. 근로 행은 `employee_id`로 HR을 읽어야 함 |
+| 행 `overrides`, `is_manually_overridden` | `{}`, `false` | 새 API는 계산 금액 직접 수정이 없음 |
+| 일용 행 `work_dates`, 사업 행 `detail_type`, `contract_type`, `short_term_work_dates`, `special_occ_type_code` | `[]`, `null` | 새 행 입력에 없음. 일용은 근무일 수만 둠 |
+| 지급항목 `item_id` | 새 항목 코드 | 위 [번역](#번역-1) |
+
+### 급여대장에서 남은 것
+
+이번 조각에 없는 현행 급여카드 경로는 현행 404 `NOT_FOUND`입니다(스테이징에서 경로별로 모읍니다).
+
+| 현행 | 새 API | 남긴 이유 |
+|---|---|---|
+| `POST cards/:c/data/` (임시저장) | 행마다 `POST`·`PATCH /v1/payroll-ledgers/{id}/rows[/{rowId}]` | 현행은 지급·공제 금액을 회사 지급항목 **정수 ID**로 보냄(`taxable_incomes: {"12": 200000}`). 새 행은 항목 코드·이름·비과세 구분을 행마다 가지므로 회사 지급항목(`pit_`) ↔ 행 항목 대응이 먼저 필요. 일괄 저장 하나가 행 호출 여럿이 되어 부분 실패 처리도 정해야 함 |
+| `POST cards/:c/refresh-wage-employees-list/`, `GET cards/:c/inquire-wage-employees-change/` | 없음 | 현행은 입·퇴사자로 근로 행을 더하고 뺌. 새 `:recalculate`는 사본만 갱신하고 명부는 바꾸지 않음. 명부 변동 경고(`ROSTER_CHANGED`)는 payroll.md의 열린 질문 |
+| `GET cards/:c/can-create-additional-card/` | 없음 | 새 API는 만들기 요청이 409 `ADDITIONAL_LEDGER_BLOCKED`로 답함. 미리 묻는 경로가 필요하면 새 API에 더할지 정함(아래 열린 질문) |
+| `GET`·`POST cards/:c/copy/` | 없음 | 이전 대장 입력 복사가 새 API에 없음 |
+| `GET cards/fixed-payrolls-with-keyword/`, `GET cards/employee-names/` | 없음 | payroll.md에서 없앤 경로. 지난 행 검색은 HR 직원 검색과 행 목록으로 |
+| `GET`·`POST /api/company/new-payroll/maintain-payroll/:id/` | 없음 | payroll.md에서 없앰(이관 때 한 번 정함) |
+| 명세서 `cards/:c/payslip/…` (스펙 18–22) | `GET /payslips?ledgerId=`, `POST /payslips:send` | 다음 조각(명세서 발송) |
+| `payroll/withholding-summary/:paymentMonth` | Tax | 다음 조각(원천세 신고) |
+| BPO 대장·입력·명세서(스펙 34–113), 퇴직금 정산, 인건비 보고서, 급여 설정 | `/payroll-ledgers`, `/severance-settlements`, `/payroll-settings` 등 | 승인 운영 화면과 설정 화면은 별도 조각 |
+| 급여 계산기·참조 코드(스펙 25–33) | `/payroll-calculator:simulate`, `/payroll-reference-codes` | 회사 경로 밖의 참조 데이터. 별도 조각 |
+
+### 급여대장 열린 질문
+
+1. **소득 구분별 집계.** 현행 카드 목록이 소득 구분별 인원·합계를 보여 주므로 BFF가 대장마다 행을 읽습니다(대장 N개면 N+1 호출, 행 전체를 읽음). 새 `PayrollLedger`에 `totalsByIncomeType`(인원·지급·실지급)을 더하면 목록 한 번으로 됩니다
+2. **행 입력 저장과 지급항목 ID.** 현행 임시저장을 옮기려면 회사 지급항목(`pit_`)과 행 입력 항목(`code`)의 관계를 정해야 합니다. 행 입력에 `paymentItemId`를 둘지, BFF가 지급항목 목록으로 코드를 찾을지 정합니다. 일괄 저장(`PUT …/rows` 또는 엑셀 가져오기 `Job`)을 새 API에 둘지도 같은 질문입니다
+3. **해제 한 번에.** 직접 운영의 해제를 새 API 한 커맨드로 둘지(`:reopen { toDraft: true }` 등) 정합니다. 그러면 BFF의 두 호출·되돌리기와 `PARTIAL_WRITE`가 없어지고 지급월 이벤트도 한 번만 납니다
+4. **행 소득자 정보.** 현행 행은 주민등록번호(가림)·부서·이메일을 행에 들고 있었습니다. 새 행에 소득자 사본(가린 번호, 부서)을 둘지, 화면이 HR을 따로 읽을지 정합니다. 사업·기타소득 소득자는 HR 직원이 아닐 수 있어 사본이 필요할 수 있습니다
+5. **추가 대장 가능 여부.** 현행 `can-create-additional-card`처럼 미리 물을 경로(또는 정기 대장 `allowedActions`의 `CREATE_ADDITIONAL`)를 둘지 정합니다
+6. **현행 확정의 행위자.** 현행 확정·해제는 세무 대리인만 했습니다(고객은 `PERMISSION_DENIED`). 새 직접 운영은 고객·담당자 모두 마감합니다. BFF는 새 규칙을 따릅니다. 현행처럼 막아야 하는 회사가 있으면 권한(`payroll-ledger:close`)으로 정합니다
+
 ## 화면 이전
 
 1. **BFF로 갈아타기.** 현행 클라이언트의 API 호스트를 BFF로 돌립니다. 이 전환은 클라이언트가 실제로 부르는 경로가 모두 BFF에 있을 때만 합니다. 없는 경로는 현행 404 `NOT_FOUND`이므로, 스테이징에서 404를 경로별로 모아 남은 조각을 셉니다
@@ -220,5 +322,6 @@ D9 순서의 두 번째 조각입니다. 구성원 상세 화면의 근로 정�
 - `test/legacy-client.ts`가 현행 브라우저를 흉내 냅니다: 쿠키를 저장해 보내고, 쓰기 요청에 `csrftoken` 쿠키 값을 `X-CSRFToken`으로 붙이고, snake_case로 보냅니다. 업스트림은 새 API 앱(데모 시드)의 웹 핸들러입니다
 - `pnpm test:sqlite`는 같은 테스트를 새 API의 SQLite 저장소 위에서 돌립니다
 - 인사 하위 리소스(`test/hr-subresources.http.test.ts`): 근로·급여계약·휴직·퇴직의 현행 요청이 새 API에 쓰이고 현행 형태로 돌아오는지, 직원 버전 `If-Match`(428/412), 가린 계좌번호 유지, 옮기지 못한 필드의 422, 복직 거절 시 되돌리기, 다른 직원 경로의 계약 404
+- 급여대장(`test/payroll-ledgers.http.test.ts`): 현행 카드 만들기·읽기·목록·묶음이 새 대장과 그 행에서 현행 형태로 나오는지, 계산 확정·확정·해제가 새 커맨드로 가는지, 현행이 막던 전이(입력 중 확정, 정기 카드 삭제), `If-Match` 형식 검사와 읽은 버전 넣기, 해제 두 호출의 되돌리기(거절·결과 모름·시간 초과·세션 끝남·되돌리기 실패·승인 운영), 추가 카드 거절 사유, 마감된 같은 달 카드, 대장 전체 읽기의 커서 상한
 - 오류(잘못된 비밀번호, 검증 실패, CSRF 누락, 권한·플랜 부족, 없는 직원), 회사 전환(경로로 전환, `/jwt`, 접근 불가 회사, 동시 전환), 토큰 만료 갱신, 새 API가 폐기한 세션을 덮습니다
 - 경계: `text/plain` 로그인(415), 다른 출처 로그인, 다시 로그인, 업스트림 시간 초과·응답 크기 초과·로그아웃 실패, 끝없는 커서·반복 커서, 잘못된 퍼센트 인코딩·회사 ID, 만료 세션 정리, 자물쇠 중첩·순서
