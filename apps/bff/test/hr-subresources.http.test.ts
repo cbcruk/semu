@@ -618,6 +618,33 @@ describe('leave registration with a return date across two new API calls', () =>
     }
   })
 
+  it('passes a revoked session through as 401 without trying to undo', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const deletes: string[] = []
+    let revoke = false
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) => {
+        if (request.method === 'DELETE') deletes.push(request.url)
+        // 복직 기록 호출부터는 세션이 폐기된 것처럼 access token과 갱신을 모두 거절합니다.
+        if (isReturn(request)) revoke = true
+        if (revoke) return Promise.resolve(problem(401, { code: 'SESSION_INVALID' }))
+        return next(request)
+      },
+    })
+    try {
+      const response = await signedIn.request('POST', `${PATH}/`, { body: finished, headers: { 'if-match': '"1"' } })
+
+      expect(response.status).toBe(401)
+      expect((await response.json()).code).toBe('UNAUTHENTICATED')
+      expect(response.headers.getSetCookie().join('\n')).toMatch(/Max-Age=0/i)
+      expect(deletes).toEqual([])
+      expect(errors).toHaveBeenCalledWith(expect.any(String), { leaveId: expect.any(String), status: 401 })
+    } finally {
+      errors.mockRestore()
+      await custom.dispose()
+    }
+  })
+
   it('keeps the leave when the return times out, since the outcome is unknown', async () => {
     const { harness: custom, client: signedIn } = await intercepted({
       timeoutMs: 200,
@@ -681,6 +708,19 @@ describe('payroll contract writes and the account number reveal', () => {
     }
   })
 
+  it('rejects an invalid bank code before revealing the kept account number', async () => {
+    const { harness: custom, client: signedIn, reveals } = await watching()
+    try {
+      const response = await signedIn.request('PUT', PATH, { body: { ...masked, bank_code: '4' } })
+
+      expect(response.status).toBe(422)
+      expect((await response.json()).errors).toEqual({ bank_code: ['Invalid value.'] })
+      expect(reveals).toEqual([])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
   it('reveals once to keep the account, guarding the write with the version it just read', async () => {
     const { harness: custom, client: signedIn, reveals, ifMatches } = await watching()
     try {
@@ -734,6 +774,21 @@ describe('retirement version checks', () => {
 
     expect(response.status).toBe(422)
     expect((await response.json()).errors).toEqual({ leaving_detail_reason: ['Not supported by the new API yet.'] })
+  })
+
+  it('refuses to cancel by clearing the leave date while still sending a reason', async () => {
+    await client.request('PUT', PATH, { body: resignation, headers: { 'if-match': '"1"' } })
+
+    const response = await client.request('PUT', PATH, {
+      body: { ...resignation, leave_date: null },
+      headers: { 'if-match': '"2"' },
+    })
+    const after = await client.request('GET', PATH)
+
+    expect(response.status).toBe(422)
+    expect((await response.json()).errors).toEqual({ leaving_reason: ['Not supported by the new API yet.'] })
+    expect(after.headers.get('etag')).toBe('"2"')
+    expect(await after.json()).toMatchObject({ leave_date: '2026-10-31', leaving_reason: '11' })
   })
 
   it('answers a completed severance settlement with the legacy 400', async () => {
