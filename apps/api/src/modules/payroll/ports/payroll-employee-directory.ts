@@ -41,6 +41,11 @@ export interface PayrollEmployee {
   incomeTax: {
     dependants: number
     childrenAged8To20: number
+    /**
+     * 보육수당 비과세 대상 자녀 수(과세기간 개시일 현재 6세 이하)와 그 값을 정한 설정의 적용 시작일입니다.
+     * HR에 값이 없으면 `null`입니다.
+     */
+    childcareChildren: { count: number; effectiveFrom: string } | null
     withholdingRatePpm: number
     /** 직원별로 소득세를 직접 입력하면 그 금액입니다. */
     manualAmount: number | null

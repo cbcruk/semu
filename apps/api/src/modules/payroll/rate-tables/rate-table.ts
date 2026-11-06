@@ -34,7 +34,15 @@ export const RateTable = Schema.Struct({
   businessIncome: Schema.Struct({ ratePpm: Ppm }),
   otherIncome: Schema.Struct({ ratePpm: Ppm, minimumTaxableIncome: Schema.Int }),
   smallAmountExemption: Schema.Int,
-  nonTaxable: Schema.Record(Schema.String, Schema.Struct({ monthlyLimit: NullableWon, annualLimit: NullableWon })),
+  nonTaxable: Schema.Record(
+    Schema.String,
+    Schema.Struct({
+      monthlyLimit: NullableWon,
+      annualLimit: NullableWon,
+      /** `true`면 `monthlyLimit`이 대상 자녀 1명당 한도입니다(보육수당, 2026. 1. 1. 이후 지급분). */
+      perChild: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
   /** 원문으로 확인하지 못한 값의 경로입니다. 화면은 이 값 옆에 "미확인"을 표시합니다. */
   unverifiedPaths: Schema.Array(Schema.String),
 })

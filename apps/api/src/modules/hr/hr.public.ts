@@ -72,6 +72,8 @@ export interface DirectoryTaxWithholding {
   /** 본인을 포함한 공제대상 가족 수입니다. */
   dependantsCount: number
   childrenAged8To20Count: number
+  /** 보육수당 비과세 대상 자녀 수(과세기간 개시일 현재 6세 이하)입니다. 입력하지 않았으면 없습니다. */
+  childcareChildrenCount?: number
   calcMethod: 'TAX_TABLE' | 'MANUAL'
   /** `calcMethod`가 `MANUAL`일 때의 월 소득세(원)입니다. */
   manualIncomeTax?: number

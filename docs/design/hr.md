@@ -210,6 +210,7 @@ GET  /reference/income-tax-reduction-reasons
 
 - 감면 유형·사유·기간·감면율 검증은 [deduction-validation](../reference/rules/deduction-validation.md)에 있습니다. 조정비율은 ppm(`80% = 800000`)입니다
 - `dependantsCount`, `childrenAged8To20Count`는 인적공제 대상자에서 파생하는 읽기 전용 값입니다 ([dependant-count](../reference/rules/dependant-count.md))
+- `childcareChildrenCount`(선택)는 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인 자녀입니다(소득세법 제12조제3호머목2)). 공제대상 가족과 따로 세어 배우자가 기본공제를 받는 자녀도 넣고, 손자녀는 넣지 않습니다. 0–20입니다. 나이가 과세기간 개시일 기준이라 매년 1월과 자녀가 태어났을 때 새 `effectiveFrom`으로 다시 저장합니다. 설정의 `effectiveFrom` 연도가 귀속 연도와 다르면 급여가 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡고, 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN` 경고를 붙입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md))
 
 ### 인적공제 대상자
 
@@ -224,7 +225,7 @@ DELETE /family-members/{familyMemberId}/attachments/{fileId}
 GET    /family-members/{familyMemberId}/registration-number   X-Access-Reason 필수
 ```
 
-- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(육아수당) 대상은 만 6세 이하 자녀·손자녀만 허용합니다
+- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(보육수당) 대상은 과세기간 개시일 현재 6세 이하 자녀만 허용합니다. 법이 "근로자 또는 그 배우자의 … 자녀"라 손자녀는 제외합니다(그해 − 출생 연도 ≤ 6, [결정](rule-decisions/hr.md#dependant-count))
 - `healthInsuranceDependant`를 켜면 피부양자 신고(`DEPENDANT`)를 엽니다
 
 ## 휴직
@@ -335,7 +336,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `findWorkContract(companyId, employeeId, asOf)` / `listWorkContracts` | 그날 유효한 근로계약 | 소정근로시간, 수습 |
 | `findPayrollContract(companyId, employeeId, asOf)` | 그날 유효한 급여계약(계좌는 마스킹) | 기본급·지급항목 |
 | `findSocialInsurance(companyId, employeeId, asOf)` | 그날 유효한 4대보험 설정 | 보험료 계산 |
-| `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 | 간이세액 |
+| `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 + 보육수당 대상 자녀 수 | 간이세액, 보육수당 비과세 한도 |
 | `listDependants(companyId, employeeId, asOf)` | 인적공제 대상자 | 연말정산, 비과세 수당 |
 | `listLeavesOverlapping(companyId, employeeId, from, to)` | 기간과 겹치는 휴직 | 일할 계산, 근속 |
 | `findRetirement(companyId, employeeId)` | 퇴직일·사유·퇴직금 유형·중간정산·정산 상태 | 퇴직금 정산 |
@@ -447,7 +448,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)은 미구현 |
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
 | 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
-| 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
+| 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수·보육수당 대상 자녀 수(선택)를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
 | 4대보험 판정 (`POST /employees/{id}/social-insurance:determine`) | 구현(저장 없는 권장값), HTTP 테스트. 설정 저장(`PUT`) 미구현 |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
 | `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 권장 가입 여부, 주민번호 원문(열람 기록). 4대보험 설정·인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |

@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
-import { Minutes, Won } from '../payroll-schema.ts'
+import { CHILDCARE_CHILDREN_MAX } from '../engine/non-taxable.ts'
+import { CalendarDate, Minutes, Won } from '../payroll-schema.ts'
 
 const NonTaxableCategory = Schema.Literals([
   'MEAL',
@@ -146,6 +147,18 @@ export type PayrollRowInputValue = typeof PayrollRowInputSchema.Type
 export const EmployeeSnapshotSchema = Schema.Struct({
   dependants: PositiveCount,
   childrenAged8To20: Count,
+  /**
+   * 보육수당 비과세 대상 자녀 수(과세기간 개시일 현재 6세 이하, 0–20)입니다. 보육수당 월 한도 = 20만원 × 이 값입니다.
+   * 없으면 모르는 값이라 1명으로 보고 경고합니다. 이 값을 넣기 전에 저장한 스냅숏에는 없습니다.
+   */
+  childcareChildren: Schema.optionalKey(
+    Schema.Int.pipe(
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+      Schema.check(Schema.isLessThanOrEqualTo(CHILDCARE_CHILDREN_MAX)),
+    ),
+  ),
+  /** 자녀 수를 정한 HR 설정의 적용 시작일입니다. 귀속월과 해가 다르면 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. */
+  childcareChildrenEffectiveFrom: Schema.optionalKey(CalendarDate),
   withholdingRatePpm: Schema.Literals([800_000, 1_000_000, 1_200_000]),
   manualIncomeTax: Schema.NullOr(Won),
   socialInsurance: Schema.Struct({

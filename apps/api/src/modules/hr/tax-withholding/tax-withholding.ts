@@ -8,6 +8,8 @@ import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared
 
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const Won = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+/** 보육수당 비과세 대상 자녀 수의 상한입니다. 급여 행 스냅숏과 같은 값입니다. */
+const CHILDCARE_CHILDREN_MAX = 20
 
 const ReductionType = Schema.Literals(['SMALL_BUSINESS', 'RETURNING_KOREAN_TALENT', 'FOREIGN_TECHNICIAN'])
 const ReductionApplication = Schema.Literals(['PAYROLL', 'YEAR_END'])
@@ -16,6 +18,14 @@ const terms = {
   /** 간이세액표의 공제대상 가족 수입니다. 본인을 포함합니다. */
   dependantsCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
   childrenAged8To20Count: Count,
+  /**
+   * 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인
+   * 자녀입니다(소득세법 제12조제3호머목2)). 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡습니다.
+   * 공제대상 가족과 따로 셉니다(배우자가 기본공제를 받는 자녀도 셉니다). 손자녀는 세지 않습니다. 없으면 모르는 값이라
+   * 급여가 1명으로 봅니다. 나이가 과세기간 개시일 기준이라 해마다 1월과 자녀가 태어났을 때 새 `effectiveFrom`으로
+   * 다시 저장합니다. 귀속 연도와 다른 해에 정한 값이면 급여가 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 0–20입니다.
+   */
+  childcareChildrenCount: Schema.optionalKey(Count.check(Schema.isLessThanOrEqualTo(CHILDCARE_CHILDREN_MAX))),
   /** `TAX_TABLE`은 간이세액표, `MANUAL`은 `manualIncomeTax`를 그대로 씁니다. */
   calcMethod: Schema.Literals(['TAX_TABLE', 'MANUAL']),
   manualIncomeTax: Schema.optionalKey(Won),

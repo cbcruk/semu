@@ -151,7 +151,7 @@ export const RATES_2026_01: PayrollRateTable = {
   nonTaxable: {
     MEAL: { monthlyLimit: 200_000, annualLimit: null },
     VEHICLE: { monthlyLimit: 200_000, annualLimit: null },
-    CHILDCARE: { monthlyLimit: 200_000, annualLimit: null },
+    CHILDCARE: { monthlyLimit: 200_000, annualLimit: null, perChild: true },
     RESEARCH: { monthlyLimit: 200_000, annualLimit: null },
     OVERSEAS: { monthlyLimit: 1_000_000, annualLimit: null },
     OVERSEAS_SPECIAL: { monthlyLimit: 5_000_000, annualLimit: null },
@@ -302,7 +302,7 @@ export const RATES_2026_01: PayrollRateTable = {
       `소득세법 시행령 제12조제3호: 자가운전보조금 월 20만원 이내. ${law('소득세법시행령', '제12조')}`,
     ),
     'nonTaxable.CHILDCARE': confirmed(
-      `소득세법 제12조제3호머목2): 6세 이하 자녀 보육수당 "해당 자녀 1명당" 월 20만원 이내. 엔진은 행마다 한도 하나를 씁니다. ${law('소득세법', '제12조')}`,
+      `소득세법 제12조제3호머목2)(법률 제21221호, 2025. 12. 23. 개정, 2026. 1. 1. 이후 지급분): 과세기간 개시일 현재 6세 이하 자녀 보육수당 "해당 자녀 1명당" 월 20만원 이내. monthlyLimit은 자녀 1명당 한도(perChild)이고 엔진이 대상 자녀 수를 곱합니다. ${law('소득세법', '제12조')}`,
     ),
     'nonTaxable.RESEARCH': confirmed(
       `소득세법 시행령 제12조제12호: 연구보조비·연구활동비 월 20만원 이내. ${law('소득세법시행령', '제12조')}`,

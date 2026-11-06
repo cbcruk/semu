@@ -13,7 +13,13 @@ const base = {
   monthlyStandardHours: 209,
   dailyRestMinutes: 480,
   socialInsurance: { nationalPension: true, healthInsurance: true, employmentInsurance: true },
-  incomeTax: { dependants: 1, childrenAged8To20: 0, withholdingRatePpm: 1_000_000, manualAmount: null },
+  incomeTax: {
+    dependants: 1,
+    childrenAged8To20: 0,
+    childcareChildren: null,
+    withholdingRatePpm: 1_000_000,
+    manualAmount: null,
+  },
   retirementBenefitType: 'SEVERANCE_PAY',
 } as const
 

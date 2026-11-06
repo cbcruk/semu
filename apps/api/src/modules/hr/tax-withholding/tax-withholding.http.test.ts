@@ -72,6 +72,40 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     expect((await app.json('GET', `${path}?asOf=2025-12-31`)).status).toBe(404)
   })
 
+  it('keeps the childcare child count optional and separate from dependants', async () => {
+    const employeeId = await hire()
+    const path = `/employees/${employeeId}/tax-withholding`
+    const without = await app.json('PUT', path, { body: settings })
+    expect(without.status).toBe(200)
+    expect(without.body).not.toHaveProperty('childcareChildrenCount')
+
+    // 배우자가 기본공제를 받는 자녀도 보육수당 대상이라 공제대상 가족 수보다 많아도 됩니다.
+    const saved = await app.json('PUT', path, {
+      body: {
+        ...settings,
+        effectiveFrom: '2026-03-01',
+        dependantsCount: 1,
+        childrenAged8To20Count: 0,
+        childcareChildrenCount: 2,
+      },
+      ifMatch: '"1"',
+    })
+    expect(saved.status).toBe(200)
+    expect((await app.json('GET', `${path}?asOf=2026-03-01`)).body).toMatchObject({ childcareChildrenCount: 2 })
+
+    const negative = await app.json('PUT', path, {
+      body: { ...settings, childcareChildrenCount: -1 },
+      ifMatch: '"2"',
+    })
+    expect(negative.status).toBe(400)
+
+    const tooMany = await app.json('PUT', path, {
+      body: { ...settings, childcareChildrenCount: 21 },
+      ifMatch: '"2"',
+    })
+    expect(tooMany.status).toBe(400)
+  })
+
   it('rejects a stale If-Match', async () => {
     const employeeId = await hire()
     const path = `/employees/${employeeId}/tax-withholding`
