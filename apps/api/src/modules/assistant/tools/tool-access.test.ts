@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { Permission, Plan } from '../../identity-access/actor.types.ts'
+import type { GrantedPermission, Plan } from '../../identity-access/actor.types.ts'
 import { allowedTools } from './tool-access.ts'
 
-const tools = (permissions: Permission[], plans: Plan[]): string[] =>
+const tools = (permissions: GrantedPermission[], plans: Plan[]): string[] =>
   allowedTools({ permissions: new Set(permissions), plans: new Set(plans) }).map((allowed) => allowed.tool)
 
 describe('allowedTools', () => {

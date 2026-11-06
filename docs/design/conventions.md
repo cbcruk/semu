@@ -176,10 +176,24 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
   - 요청 하나가 트랜잭션 하나입니다(`UnitOfWorkMiddleware`). 응답이 4xx·5xx이면 되돌립니다. 저장소와 유스케이스는 트랜잭션을 직접 열지 않습니다
   - 실패 응답과 함께 남아야 하는 기록(로그인 실패 횟수, 서명자 확인 실패, 거절된 출금 계좌·세금계산서·지로 납부 시도, 그 감사 기록)은 쓴 뒤 `keepChanges`를 부르고 바로 실패를 돌려줍니다. 결함(5xx)이면 그래도 되돌립니다
   - 컨텍스트 사이 이벤트는 어댑터가 `Outbox.channel(name, handler)`로 냅니다. SQLite에서는 같은 트랜잭션에 기록하고 커밋 뒤 전달하며, 실패하면 릴레이가 다시 넘깁니다. 소비자는 멱등이어야 합니다
+    - 시도할 때마다 `outbox.attempts`를 늘리고, 실패하면 `last_error`에 결함 요약(오류 이름과 코드 위치, 메시지 없음)을 남깁니다. 한 행이 실패해도 릴레이는 다음 행으로 넘어갑니다. 전달 트랜잭션을 열지 못해(다른 프로세스가 쓰기 잠금을 busy timeout보다 오래 쥠) 소비자를 부르지도 못했으면 시도로 세지 않고 `Outbox delivery not started` 경고만 남깁니다
+    - `OUTBOX_MAX_ATTEMPTS`(5)번 실패하면 `dead_at`을 찍은 죽은 이벤트가 되고, 릴레이는 더는 넘기지 않습니다. 그때 한 번 `Outbox event dead` 로그(행 `seq`·`id`·채널·시도 횟수·결함 요약)를 남깁니다. 릴레이가 30초마다 돌므로 계속 죽는 소비자는 몇 분 안에 멈춥니다
+    - 열(`attempts`·`last_error`·`dead_at`)이 없는 이전 `outbox` 표는 시작할 때 `ALTER TABLE`로 더합니다(`BEGIN IMMEDIATE` 안에서 확인하므로 여러 번 열어도 같습니다). `attempts`·`last_error`는 outbox를 처음 넣을 때(`08fa0a6`)부터 있었으므로 실제 업그레이드에서 더해지는 열은 `dead_at`뿐입니다. 이미 `attempts`가 한도 이상인 행은 업그레이드 뒤 한 번 더 넘겨 보고, 또 실패하면 바로 죽은 이벤트가 됩니다
+    - 운영자는 죽은 이벤트를 찾아 원인(소비자 결함)을 고친 뒤 표시를 지워 다시 넘깁니다. 다음 릴레이(시작 때와 30초마다)가 넘깁니다. 아래처럼 `attempts`·`last_error`도 지우면 처음 시도처럼 다시 5번까지 넘겨 봅니다. 실패 이력을 남겨 두려면 `dead_at`만 지우되, 그러면 한 번만 더 실패해도 다시 죽습니다
+
+      ```sql
+      -- 죽은 이벤트 찾기
+      SELECT seq, id, channel, attempts, last_error, created_at, dead_at FROM outbox WHERE dead_at IS NOT NULL ORDER BY seq;
+      -- 고친 뒤 다시 넘기기: 123을 위에서 찾은 seq로 바꿉니다(바뀐 행이 1이어야 합니다)
+      UPDATE outbox SET dead_at = NULL, attempts = 0, last_error = NULL WHERE seq = 123 AND dead_at IS NOT NULL;
+      ```
+
+    - 메모리 저장소(`Outbox.layerDirect`)는 저장하지 않고 바로 소비자를 부르므로 재시도·죽은 이벤트가 없습니다. 소비자 결함은 이벤트를 낸 쪽으로 그대로 올라갑니다
   - `app.ts`의 `MemoryLive`(테스트·로컬)와 `SqliteLive(file, key)`(서버 기본 `data/semu.sqlite`·`data/semu.key`, `SEMU_DATABASE`·`SEMU_DATA_KEY`)가 같은 저장소 조합을 씁니다. `pnpm test:sqlite`는 모든 테스트를 SQLite로 돌립니다
 - HTTP 테스트는 `src/shared/testing/http-test-app.ts`의 `httpTestApp({ tokens, layers, basePath, defaultToken })`으로 앱 전체를 `TestStoreLive` 위에 띄웁니다. 요청 옵션은 `body`, `token`, `cookie`, `ifMatch`, `idempotencyKey`, `headers`이고, `json()`은 상태·헤더·본문을 함께 돌려줍니다. 컨텍스트 도우미는 이것 위에 토큰 표와 포트 가짜 레이어만 얹습니다
 - 인증이 필요한 그룹은 `.middleware(Authentication)`을 붙이고, 핸들러 맨 앞에서 `authorize({ permission, plans, requiresTerms })`를 부릅니다
   - `/agency/*` 그룹은 `.middleware(AgencyAuthentication)`을 붙이고 `authorizeAgency({ permission, plans })`가 돌려준 담당 회사만 읽습니다
+  - 권한 타입은 카탈로그(`identity-access/permissions/permission-catalog.ts`)에서 만듭니다. 요구 권한은 `Permission`(카탈로그의 `resource:action` 리터럴 유니온)이라 오타는 `tsc`가 잡고, 행위자가 가진 권한은 와일드카드(`resource:*`, `*`)를 더한 `GrantedPermission`입니다. 저장소·요청에서 온 문자열은 캐스트하지 않고 `isGrantedPermission`·`isGrantable`로 거릅니다
 
 ## 예시 규칙
 

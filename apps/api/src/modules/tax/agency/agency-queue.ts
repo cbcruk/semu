@@ -3,7 +3,7 @@ import { paginate } from '../../../shared/http/pagination.ts'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { hasPermission } from '../../identity-access/actor.ts'
-import type { Permission, Plan } from '../../identity-access/actor.types.ts'
+import type { GrantedPermission, Plan } from '../../identity-access/actor.types.ts'
 import { compareClosedCards, compareOpenCards } from '../action-cards/action-card-rules.ts'
 import type { ActionCardKind } from '../action-cards/action-card-rules.types.ts'
 import type { ActionCardRecord } from '../action-cards/action-card.ts'
@@ -77,7 +77,7 @@ export class AgencyQueue extends Context.Service<
     /** 담당 회사들의 할 일 카드 한 탭입니다. 정렬은 회사 범위 목록과 같습니다. */
     actionCards(
       companies: ReadonlyArray<QueueCompany>,
-      permissions: ReadonlySet<Permission>,
+      permissions: ReadonlySet<GrantedPermission>,
       tab: ActionCardTab,
       query: AgencyActionCardQuery,
     ): Effect.Effect<PageOf<AgencyActionCard>>
@@ -127,7 +127,7 @@ export class AgencyQueue extends Context.Service<
 
       const visibleCards = (
         company: Pick<QueueCompany, 'companyId' | 'plans'>,
-        permissions?: ReadonlySet<Permission>,
+        permissions?: ReadonlySet<GrantedPermission>,
       ) =>
         cardRepository
           .listByCompany(company.companyId)
@@ -135,7 +135,7 @@ export class AgencyQueue extends Context.Service<
 
       const actionCards = Effect.fn('AgencyQueue.actionCards')(function* (
         companies: ReadonlyArray<QueueCompany>,
-        permissions: ReadonlySet<Permission>,
+        permissions: ReadonlySet<GrantedPermission>,
         tab: ActionCardTab,
         query: AgencyActionCardQuery,
       ) {
@@ -223,7 +223,7 @@ function matchesFilingQuery(filing: FilingRecord, query: AgencyFilingQuery, toda
 function canSee(
   card: ActionCardRecord,
   plans: ReadonlySet<Plan>,
-  permissions: ReadonlySet<Permission> | undefined,
+  permissions: ReadonlySet<GrantedPermission> | undefined,
 ): boolean {
   const required = card.requires.plans
   if (required.length > 0 && !required.some((plan) => plans.has(plan))) return false

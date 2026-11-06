@@ -149,8 +149,6 @@ export function parseEmployeeQuery(params: URLSearchParams): LegacyEmployeeQuery
   const contractFilter = oneOf(params, 'contract_filter', ['expiring_soon', 'expired'] as const)
   const startDate = date(params, 'start_date')
   const endDate = date(params, 'end_date')
-  const limit = Number.parseInt(params.get('limit') ?? '', 10)
-  const offset = Number.parseInt(params.get('offset') ?? '', 10)
   return {
     statuses,
     search: params.get('search')?.trim() || undefined,
@@ -159,6 +157,15 @@ export function parseEmployeeQuery(params: URLSearchParams): LegacyEmployeeQuery
     startDate,
     endDate,
     contractFilter,
+    ...pageOf(params),
+  }
+}
+
+/** 현행 DRF 목록의 `limit/offset`입니다. 현행처럼 기본 20, 최대 100입니다. */
+export function pageOf(params: URLSearchParams): { limit: number; offset: number } {
+  const limit = Number.parseInt(params.get('limit') ?? '', 10)
+  const offset = Number.parseInt(params.get('offset') ?? '', 10)
+  return {
     limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, MAX_LIMIT) : DEFAULT_LIMIT,
     offset: Number.isFinite(offset) && offset > 0 ? offset : 0,
   }

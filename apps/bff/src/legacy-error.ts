@@ -56,6 +56,16 @@ export const legacyErrors = {
       errors: { [field]: [message] },
     }),
   internal: () => new LegacyError(500, { detail: 'Internal server error.', code: 'INTERNAL_ERROR' }),
+  preconditionRequired: (resource: string) =>
+    new LegacyError(428, {
+      detail: `Send If-Match with the ${resource} version to change its status.`,
+      code: 'PRECONDITION_REQUIRED',
+    }),
+  staleVersion: (resource: string) =>
+    new LegacyError(412, {
+      detail: `The ${resource} was changed by someone else. Reload and try again.`,
+      code: 'VERSION_CONFLICT',
+    }),
 }
 
 /** 새 API 문제 코드 → 현행 코드·상태입니다. 여기 없는 코드는 아래 접미사 규칙과 기본값을 따릅니다. */
@@ -70,6 +80,13 @@ const CODE_MAP: Record<string, { code: string; status: number }> = {
   VALIDATION_FAILED: { code: 'VALIDATION_FAILED', status: 422 },
   VERSION_MISMATCH: { code: 'VERSION_CONFLICT', status: 412 },
   IDEMPOTENCY_KEY_REQUIRED: { code: 'PRECONDITION_REQUIRED', status: 428 },
+  // 업무 규칙 위반도 현행은 필드 오류(422 `VALIDATION_FAILED` + `errors`)였습니다.
+  LEAVE_INVALID: { code: 'VALIDATION_FAILED', status: 422 },
+  WORK_CONTRACT_INVALID: { code: 'VALIDATION_FAILED', status: 422 },
+  PAYROLL_CONTRACT_INVALID: { code: 'VALIDATION_FAILED', status: 422 },
+  // 현행 HR 오류 코드는 같고 상태만 400이었습니다.
+  LEAVE_OVERLAP: { code: 'LEAVE_OVERLAP', status: 400 },
+  RETIREMENT_COMPLETED: { code: 'RETIREMENT_COMPLETED', status: 400 },
   INTERNAL: { code: 'INTERNAL_ERROR', status: 500 },
 }
 
@@ -138,4 +155,18 @@ function toFieldErrors(violations: unknown): Record<string, string[]> | undefine
     ;(errors[name] ??= []).push(message)
   }
   return errors
+}
+
+/**
+ * 필드 오류의 이름을 현행 이름으로 바꿉니다. 새 API는 중첩 필드(`paid.allowance`)를 쓰고 현행은 평평한 필드(`paid_allowance`)를 썼습니다.
+ * 필드 오류가 없거나 표에 없는 이름이면 그대로 둡니다.
+ *
+ * @param rename snake_case로 바꾼 새 API 필드 경로 → 현행 필드 이름
+ */
+export function renameFieldErrors(error: LegacyError, rename: (field: string) => string): LegacyError {
+  const errors = error.body.errors
+  if (errors === undefined) return error
+  const renamed: Record<string, string[]> = {}
+  for (const [field, messages] of Object.entries(errors)) (renamed[rename(field)] ??= []).push(...messages)
+  return new LegacyError(error.status, { ...error.body, errors: renamed }, { endsSession: error.endsSession })
 }

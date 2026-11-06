@@ -3,7 +3,7 @@ import { normalizeEmail } from '../accounts/user.ts'
 import { decideAccess } from '../authorization.ts'
 import { BASE_PERMISSIONS, permissionsForLegacyMenus } from '../permissions/permission-catalog.ts'
 import { testActor } from '../testing.ts'
-import type { Permission } from '../actor.types.ts'
+import type { GrantedPermission } from '../actor.types.ts'
 import { loadRuleCases } from '../rule-fixtures.ts'
 import {
   allowedInvitationActions,
@@ -60,7 +60,7 @@ function run(input: Record<string, unknown>): unknown {
   switch (input['check']) {
     case 'create': {
       const inviter = input['inviter'] as { isAdmin: boolean; roleMenuCodes?: string[] }
-      const permissions = new Set<Permission>(
+      const permissions = new Set<GrantedPermission>(
         inviter.isAdmin ? ['*'] : [...BASE_PERMISSIONS, ...permissionsForLegacyMenus(inviter.roleMenuCodes ?? [])],
       )
       if (decideAccess(testActor({ permissions }), { permission: 'invitation:create' }) !== undefined) {

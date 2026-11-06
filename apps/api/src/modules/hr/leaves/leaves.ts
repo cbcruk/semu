@@ -156,7 +156,10 @@ export class Leaves extends Context.Service<
         remove: Effect.fn('Leaves.remove')(function* (actor, leaveId) {
           const leave = yield* findLeave(actor, leaveId)
           yield* leaves.remove(actor.companyId, leave.id)
-          yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'LEAVE', yield* nowIso)
+          // 휴직 신고와 복직 신고를 함께 닫습니다. 없는 휴직의 복직 신고가 남지 않게 합니다(현행 `removeLeave`와 같음).
+          const at = yield* nowIso
+          yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'LEAVE', at)
+          yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'RETURN', at)
         }),
       })
     }),

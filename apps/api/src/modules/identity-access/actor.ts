@@ -1,6 +1,6 @@
 import { Context } from 'effect'
 import type { Actor, Agent, Permission } from './actor.types.ts'
-import { isAgentOnly } from './permissions/permission-catalog.ts'
+import { isAgentOnly, permissionResource } from './permissions/permission-catalog.ts'
 
 /** 지금 요청의 행위자입니다. {@link Authentication} 미들웨어가 넣습니다. */
 export class CurrentActor extends Context.Service<CurrentActor, Actor>()('semu/identity-access/CurrentActor') {}
@@ -24,6 +24,5 @@ export function hasPermission(actor: Pick<Actor, 'permissions'>, permission: Per
   if (actor.permissions.has(permission)) return true
   if (isAgentOnly(permission)) return false
   if (actor.permissions.has('*')) return true
-  const resource = permission.split(':')[0]
-  return actor.permissions.has(`${resource}:*`)
+  return actor.permissions.has(`${permissionResource(permission)}:*`)
 }
