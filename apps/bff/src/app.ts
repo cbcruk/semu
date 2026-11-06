@@ -4,7 +4,9 @@ import { hrRoutes } from './hr/hr.routes.ts'
 import { leaveRoutes } from './hr/leaves.routes.ts'
 import { retirementRoutes } from './hr/retirement.routes.ts'
 import { identityRoutes } from './identity/identity.routes.ts'
+import { IdempotencyKeys } from './idempotency.ts'
 import { payrollLedgerRoutes } from './payroll/ledgers.routes.ts'
+import { payslipRoutes } from './payroll/payslips.routes.ts'
 import { LegacyError, legacyErrors } from './legacy-error.ts'
 import { makeRouter } from './router.ts'
 import type { Route } from './router.ts'
@@ -20,6 +22,7 @@ export const ROUTES: readonly Route[] = [
   ...leaveRoutes,
   ...retirementRoutes,
   ...payrollLedgerRoutes,
+  ...payslipRoutes,
 ]
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
@@ -36,6 +39,12 @@ const DEFAULT_MAX_UPSTREAM_PAGES = 50
  */
 export const DEFAULT_MAX_LEDGER_ROW_READS = 200
 
+/**
+ * 현행 명세서 발송이 같은 대상을 다시 보내면 처음 결과를 돌려주는 기본 시간(ms)입니다. 앞 발송이 끝난 때부터 셉니다.
+ * 두 번 누르기와 업스트림 제한 시간(기본 10초) 뒤의 재시도를 덮고, 일부러 다시 보내는 사용자는 1분 뒤에 보낼 수 있습니다.
+ */
+export const DEFAULT_PAYSLIP_SEND_REPLAY_MS = 60_000
+
 /** BFF 설정입니다. */
 export interface BffOptions {
   upstream: UpstreamOptions
@@ -51,6 +60,8 @@ export interface BffOptions {
   maxUpstreamPages?: number
   /** 현행 급여카드 목록이 행을 읽는 최대 대장 수입니다. 기본 {@link DEFAULT_MAX_LEDGER_ROW_READS}입니다. */
   maxLedgerRowReads?: number
+  /** 현행 명세서 발송의 재응답 시간(ms)입니다. 기본 {@link DEFAULT_PAYSLIP_SEND_REPLAY_MS}입니다. */
+  payslipSendReplayMs?: number
 }
 
 /** 현행 와이어를 받는 BFF입니다. 웹 표준 `Request` → `Response` 핸들러 하나입니다. */
@@ -74,11 +85,12 @@ export interface Bff {
  * ```
  */
 export function createBff(options: BffOptions): Bff {
+  const now = options.now ?? Date.now
   const deps: BffDeps = {
     upstream: options.upstream,
     store: options.store ?? memorySessionStore(),
     locks: new SessionLocks(),
-    now: options.now ?? Date.now,
+    now,
     publicBaseUrl: options.publicBaseUrl.replace(/\/$/, ''),
     allowedOrigins: new Set(
       options.allowedOrigins === undefined || options.allowedOrigins.length === 0
@@ -87,6 +99,7 @@ export function createBff(options: BffOptions): Bff {
     ),
     maxUpstreamPages: options.maxUpstreamPages ?? DEFAULT_MAX_UPSTREAM_PAGES,
     maxLedgerRowReads: options.maxLedgerRowReads ?? DEFAULT_MAX_LEDGER_ROW_READS,
+    idempotencyKeys: new IdempotencyKeys(options.payslipSendReplayMs ?? DEFAULT_PAYSLIP_SEND_REPLAY_MS, now),
   }
   const route = makeRouter(ROUTES)
   let lastSweep = deps.now()

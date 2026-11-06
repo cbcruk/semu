@@ -357,3 +357,43 @@ export interface PayrollRow {
   result: PayrollRowResult | null
   updatedAt: string
 }
+
+/** 명세서 발송 결과 상태입니다. 보낸 적 없으면 `NOT_SENT`입니다. */
+export type PayslipDeliveryStatus = 'NOT_SENT' | 'SENT' | 'FAILED'
+
+/** 명세서 발송 실패 사유입니다. */
+export type PayslipFailureReason = 'NO_EMAIL' | 'REJECTED'
+
+/** `GET /v1/payslips`의 명세서입니다. 마감된 대장의 행 하나이고, 발송 기록은 마지막 한 번만 보입니다. */
+export interface Payslip {
+  id: string
+  ledgerId: string
+  rowId: string
+  employeeId: string | null
+  payeeName: string
+  incomeType: string
+  attributionMonth: string
+  paymentDate: string
+  payments: Array<{ code: string; name: string; amount: number }>
+  deductions: Array<{ code: string; name: string; amount: number }>
+  grossPay: number
+  deductionTotal: number
+  netPay: number
+  delivery: {
+    status: PayslipDeliveryStatus
+    failureReason: PayslipFailureReason | null
+    attemptedAt: string | null
+    attempts: number
+  }
+}
+
+/** `POST /v1/payslips:send`의 작업입니다(202). 메일 연동이 동기라 응답할 때 이미 끝나 있습니다. */
+export interface PayslipSendJob {
+  id: string
+  status: 'SUCCEEDED' | 'PARTIALLY_SUCCEEDED' | 'FAILED'
+  result: {
+    items: Array<{ payslipId: string; status: 'SENT' | 'FAILED'; failureReason: PayslipFailureReason | null }>
+  }
+  createdAt: string
+  finishedAt: string
+}
