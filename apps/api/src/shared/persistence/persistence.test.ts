@@ -410,8 +410,9 @@ describe('sqlite unit of work', () => {
         ).run(encodeRecord({ name: 'busy' }), new Date().toISOString())
 
         // 대기 목록을 읽는 트랜잭션은 그대로 열고, 전달 트랜잭션은 다른 프로세스가 잠금을 쥔 것처럼 열지 못하게 합니다.
+        // 메시지에 개인정보가 섞인 결함을 흉내 내어, 경고에 메시지 원문이 실리지 않는지 함께 확인합니다.
         hooks.push(undefined, () => {
-          throw new Error('database is locked')
+          throw new Error('database is locked: leaked@example.com')
         })
         const logs: string[] = []
         const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
@@ -427,6 +428,7 @@ describe('sqlite unit of work', () => {
           dead_at: null,
         })
         expect(logs.join('\n')).toContain('Outbox delivery not started')
+        expect(logs.join('\n')).not.toContain('leaked@example.com')
 
         expect(yield* outbox.relay()).toBe(1)
         expect(calls).toBe(1)
