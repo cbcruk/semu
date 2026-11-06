@@ -1,9 +1,13 @@
 import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
-import { IdempotencyKeyRequired } from '../../../shared/problem/problem.ts'
+import {
+  IdempotencyKeyInProgress,
+  IdempotencyKeyRequired,
+  IdempotencyKeyReused,
+} from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
-import { ACCESS_ERRORS, PayslipNotFound } from '../payroll-problems.ts'
+import { ACCESS_ERRORS, PayslipNotFound, PayslipSendInterrupted } from '../payroll-problems.ts'
 import { YearMonthString } from '../payroll-schema.ts'
 import { Payslip, PayslipSendJob, SendPayslips } from './payslip.ts'
 
@@ -31,7 +35,14 @@ export class PayslipsGroup extends HttpApiGroup.make('payslips')
       headers: { 'idempotency-key': Schema.optionalKey(Schema.String) },
       payload: SendPayslips,
       success: PayslipSendJob.pipe(HttpApiSchema.status(202)),
-      error: [...ACCESS_ERRORS, PayslipNotFound, IdempotencyKeyRequired],
+      error: [
+        ...ACCESS_ERRORS,
+        PayslipNotFound,
+        IdempotencyKeyRequired,
+        IdempotencyKeyReused,
+        IdempotencyKeyInProgress,
+        PayslipSendInterrupted,
+      ],
     }),
   )
   .middleware(Authentication) {}

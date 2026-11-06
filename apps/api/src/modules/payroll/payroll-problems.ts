@@ -128,6 +128,16 @@ export class PayslipNotFound extends HttpApiError.Problem<PayslipNotFound>()(
   { code: Schema.tag('PAYSLIP_NOT_FOUND') },
 ) {}
 
+/**
+ * 명세서 발송이 중간에 멈췄습니다(메일 연동·HR 조회·저장 결함). 이미 보낸 명세서의 기록은 남습니다.
+ * 같은 `Idempotency-Key`·같은 본문으로 다시 보내면 보낸 명세서는 건너뛰고 나머지를 보냅니다.
+ */
+export class PayslipSendInterrupted extends HttpApiError.Problem<PayslipSendInterrupted>()(
+  'PayslipSendInterrupted',
+  { type: problemType('PAYSLIP_SEND_INTERRUPTED'), status: 503, title: 'Payslip sending stopped midway' },
+  { code: Schema.tag('PAYSLIP_SEND_INTERRUPTED') },
+) {}
+
 /** 퇴직금 정산이 없습니다. */
 export class SeveranceSettlementNotFound extends HttpApiError.Problem<SeveranceSettlementNotFound>()(
   'SeveranceSettlementNotFound',
