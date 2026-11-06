@@ -83,7 +83,8 @@ function emailOf(row: PayrollRow, emails: ReadonlyMap<string, string> | undefine
  *
  * - 시간 초과·연결 실패·5xx(예: 503 `PAYSLIP_SEND_INTERRUPTED`)는 일부가 나갔을 수 있습니다
  * - 409 `IDEMPOTENCY_KEY_IN_PROGRESS`는 같은 키의 앞 발송(보통 BFF가 시간 초과로 끝낸 것)이 새 API에서 아직 보내는 중이라는 뜻입니다.
- *   창(60초)만 기억하면 그 뒤 재시도가 새 키로 가서 이미 받은 사람에게 다시 보냅니다
+ *   창(60초)만 기억하면 그 뒤 재시도가 새 키로 가서 이미 받은 사람에게 다시 보냅니다. 지금 SQLite 배포의 새 API는 잠금 때문에 이
+ *   409를 주지 않지만(메모리 저장소만), 발송을 작업자로 옮기면 주므로 미리 막아 둡니다
  * - 그 밖의 4xx(마감이 풀려 404 → 409 등)는 아무것도 나가지 않았습니다
  */
 export function isUncertainSendFailure(error: unknown): boolean {
@@ -96,8 +97,8 @@ export function isUncertainSendFailure(error: unknown): boolean {
  * 키가 사용자 단위라 세션이 다른 같은 사용자끼리는 섞이므로, 어떤 키든 세션·대상에 묶어 넘깁니다.
  *
  * - 현행 클라이언트처럼 키가 없으면 세션·명세서 집합의 지문으로 BFF가 키를 정하고 창 안에서 다시 씁니다({@link IdempotencyKeys}).
- *   작업 전체가 실패했으면(나간 메일 없음) 키를 기억하지 않아 다시 누르면 실제로 다시 보냅니다. 결과를 모르는 실패(시간 초과·5xx)는
- *   24시간 동안 같은 키를 써서 새 API가 재응답하거나 이어 보내게 합니다({@link isUncertainSendFailure})
+ *   작업 전체가 실패했으면(나간 메일 없음) 키를 기억하지 않아 다시 누르면 실제로 다시 보냅니다. 결과를 모르는 실패(시간 초과·5xx·처리
+ *   중 409)는 24시간 동안 같은 키를 써서 새 API가 재응답하거나 이어 보내게 합니다({@link isUncertainSendFailure})
  * - 클라이언트가 `Idempotency-Key`를 보내면 `bff-client:<SHA-256(세션·키·명세서)>`로 바꿔 넘깁니다. 같은 세션이 같은 키로 같은
  *   대상을 다시 보낼 때만 재응답이고, 다른 세션이나 다른 명세서에 같은 키를 써도 남의 작업을 받거나 422를 보지 않습니다
  * - 같은 지문의 요청은 한 번에 하나씩 갑니다. 제한 시간은 발송용(`sendTimeoutMs`, 기본 2분)입니다
