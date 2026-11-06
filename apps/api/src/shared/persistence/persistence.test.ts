@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { Effect, Fiber, Layer, Option } from 'effect'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { Outbox, relayLoggingDefects } from './outbox.ts'
@@ -263,6 +263,9 @@ describe('sqlite unit of work', () => {
     ))
 })
 
+/** {@link startChild}로 띄워 아직 끝나지 않은 자식입니다. 테스트가 중간에 실패해도 남지 않게 각 테스트 뒤에 끝냅니다. */
+const running = new Set<ChildProcess>()
+
 /**
  * 같은 파일을 여는 다른 프로세스를 띄웁니다. `body`에서는 `openSqlite`, `makeSqliteRecordTable`, `ensureMetaTable`과,
  * 부모가 {@link send}로 보낸 숫자를 한 줄씩 받는 `stdinLine()`을 씁니다. 모듈을 다 읽으면 `ready`를 알립니다.
@@ -279,14 +282,21 @@ function startChild(body: string) {
     body +
     `;process.stdin.destroy()`
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['pipe', 'pipe', 'pipe'] })
+  running.add(child)
   let stdout = ''
   let stderr = ''
   child.stdout.on('data', (chunk) => (stdout += chunk))
   child.stderr.on('data', (chunk) => (stderr += chunk))
   const exit = new Promise<void>((resolve, reject) => {
     child.on('error', reject)
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(stderr || `exit ${code}`))))
+    child.on('close', (code) => {
+      running.delete(child)
+      if (code === 0) resolve()
+      else reject(new Error(stderr || `exit ${code}`))
+    })
   })
+  // 테스트가 먼저 실패해 기다리지 않은 자식이 정리되며 끝나도, 처리되지 않은 거부로 따로 보고되지 않게 합니다.
+  exit.catch(() => {})
   // 알림 전에 자식이 죽으면 기다리지 않고 그 오류로 실패합니다.
   const reached = (line: string) =>
     Promise.race([
@@ -301,6 +311,10 @@ function startChild(body: string) {
 }
 
 describe('sqlite seeds', () => {
+  afterEach(() => {
+    for (const child of running) child.kill()
+  })
+
   const ids = (db: DatabaseSync, table = 'test_seeded') =>
     db
       .prepare(`SELECT id FROM ${table} ORDER BY id`)
