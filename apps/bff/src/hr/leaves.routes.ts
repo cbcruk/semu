@@ -69,6 +69,9 @@ async function recordReturn(context: SignedInContext, leave: Leave, actualReturn
  * - 결과를 모르면(시간 초과·연결 실패·5xx) 복직이 이미 기록됐을 수 있으므로 지우지 않습니다. 지우면 복직 신고만 남을 수
  *   있습니다. 클라이언트에는 다시 읽으라는 오류를 줍니다
  * - 되돌리기가 실패하면 로그를 남기고(휴직 ID와 상태만) 다시 읽으라는 오류를 줍니다
+ * - 401(그 사이 세션이 폐기됨)이면 되돌리지 않고 원래 401을 그대로 던집니다. 같은 세션으로는 지우기도 401이라
+ *   되돌릴 수 없고, `PARTIAL_WRITE`로 바꾸면 세션 쿠키를 지우는 응답(`endsSession`)이 사라집니다. 휴직은 복직일 없이
+ *   남으므로 로그(휴직 ID와 상태만)를 남깁니다
  *
  * @returns 던질 오류
  */
@@ -81,6 +84,13 @@ async function undoLeave(context: SignedInContext, leave: Leave, error: unknown)
     })
   if (!(error instanceof LegacyError) || error.status >= 500)
     return reload(error instanceof LegacyError ? error.status : 502)
+  if (error.status === 401) {
+    console.error('BFF: a leave was registered without its return date because the session ended', {
+      leaveId: leave.id,
+      status: error.status,
+    })
+    return error
+  }
   const undone = await upstream(context, 'DELETE', `/v1/leaves/${encodeURIComponent(leave.id)}`).catch(
     (failure: unknown) => failure,
   )
