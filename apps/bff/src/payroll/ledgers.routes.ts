@@ -47,7 +47,7 @@ const LEGACY_STATUSES: readonly LegacyStatus[] = ['input_available', 'calculatin
  * 성공 본문을 읽고, 실패면 현행 오류로 바꿔 던집니다. 대장이 없으면 현행 404 "Payroll card not found."이고,
  * 추가 카드 거절 사유는 현행 값으로 바꿉니다.
  */
-async function read<A>(response: Response): Promise<A> {
+export async function read<A>(response: Response): Promise<A> {
   if (response.status === 404) throw legacyErrors.notFound('Payroll card')
   try {
     return await readJson<A>(response)
@@ -64,7 +64,7 @@ function ledgerPath(context: SignedInContext): string {
   return `/v1/payroll-ledgers/${id}`
 }
 
-interface Versioned {
+export interface Versioned {
   ledger: PayrollLedger
   etag: string
 }
@@ -75,12 +75,12 @@ async function versioned(response: Response): Promise<Versioned> {
 }
 
 /** 경로의 대장을 읽습니다. */
-async function ledgerOf(context: SignedInContext): Promise<Versioned> {
+export async function ledgerOf(context: SignedInContext): Promise<Versioned> {
   return versioned(await upstream(context, 'GET', ledgerPath(context)))
 }
 
 /** 대장의 행 전체입니다. */
-async function rowsOf(context: SignedInContext, ledger: PayrollLedger): Promise<PayrollRow[]> {
+export async function rowsOf(context: SignedInContext, ledger: PayrollLedger): Promise<PayrollRow[]> {
   const response = await upstream(context, 'GET', `/v1/payroll-ledgers/${encodeURIComponent(ledger.id)}/rows`)
   return (await read<{ items: PayrollRow[] }>(response)).items
 }
@@ -151,7 +151,7 @@ async function withRows(context: SignedInContext, ledgers: readonly PayrollLedge
 }
 
 /** 추가 대장의 현행 `parent_card_id`(같은 귀속월의 정기 대장)입니다. 정기 대장이면 부르지 않습니다. */
-async function parentOf(context: SignedInContext, ledger: PayrollLedger): Promise<string | null> {
+export async function parentOf(context: SignedInContext, ledger: PayrollLedger): Promise<string | null> {
   if (ledger.kind === 'REGULAR') return null
   return parentCardIdOf(ledger, await allLedgers(context, { attributionMonth: ledger.attributionMonth }))
 }

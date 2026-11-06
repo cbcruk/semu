@@ -1,4 +1,5 @@
 import { cookiePair } from './cookies.ts'
+import type { IdempotencyKeys } from './idempotency.ts'
 import { fromProblem, LegacyError, legacyErrors } from './legacy-error.ts'
 import { randomToken, SessionLocks, sessionKey, sessionLifetimeMs } from './sessions.ts'
 import type { BffSession, SessionStore } from './sessions.ts'
@@ -51,6 +52,8 @@ export interface BffDeps {
   maxLedgerRowReads: number
   /** 로그인을 받는 브라우저 출처입니다. */
   allowedOrigins: ReadonlySet<string>
+  /** 현행 명세서 발송에 붙이는 `Idempotency-Key`입니다. 두 번 누르기·재시도가 두 번 보내지 않게 합니다. */
+  idempotencyKeys: IdempotencyKeys
 }
 
 /** access token 만료 몇 초 전에 미리 갱신할지입니다. 요청이 오가는 사이에 만료되지 않게 합니다. */

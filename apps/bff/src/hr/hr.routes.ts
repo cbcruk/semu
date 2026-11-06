@@ -25,7 +25,7 @@ const UPSTREAM_PAGE_SIZE = 200
  *
  * 끝없이 돌지 않게 `maxUpstreamPages`쪽에서 멈추고, 같은 커서가 다시 오면 바로 멈춥니다. 둘 다 502입니다.
  */
-async function allWageEmployees({ deps, sessionId, params }: SignedInContext): Promise<Employee[]> {
+export async function allWageEmployees({ deps, sessionId, params }: SignedInContext): Promise<Employee[]> {
   const employees: Employee[] = []
   const seen = new Set<string>()
   let cursor: string | undefined

@@ -306,7 +306,7 @@ D9 순서의 세 번째 조각입니다. 현행 급여카드(급여 관리, 스�
 | `GET`·`POST cards/:c/copy/` | 없음 | 이전 대장 입력 복사가 새 API에 없음 |
 | `GET cards/fixed-payrolls-with-keyword/`, `GET cards/employee-names/` | 없음 | payroll.md에서 없앤 경로. 지난 행 검색은 HR 직원 검색과 행 목록으로 |
 | `GET`·`POST /api/company/new-payroll/maintain-payroll/:id/` | 없음 | payroll.md에서 없앰(이관 때 한 번 정함) |
-| 명세서 `cards/:c/payslip/…` (스펙 18–22) | `GET /payslips?ledgerId=`, `POST /payslips:send` | 다음 조각(명세서 발송) |
+| 명세서 `cards/:c/payslip/…` (스펙 18–22) | `GET /payslips?ledgerId=`, `POST /payslips:send` | [명세서 조각](#명세서-조각)에서 옮김 |
 | `payroll/withholding-summary/:paymentMonth` | Tax | 다음 조각(원천세 신고) |
 | BPO 대장·입력·명세서(스펙 34–113), 퇴직금 정산, 인건비 보고서, 급여 설정 | `/payroll-ledgers`, `/severance-settlements`, `/payroll-settings` 등 | 승인 운영 화면과 설정 화면은 별도 조각 |
 | 급여 계산기·참조 코드(스펙 25–33) | `/payroll-calculator:simulate`, `/payroll-reference-codes` | 회사 경로 밖의 참조 데이터. 별도 조각 |
@@ -320,6 +320,78 @@ D9 순서의 세 번째 조각입니다. 현행 급여카드(급여 관리, 스�
 5. **추가 대장 가능 여부.** 현행 `can-create-additional-card`처럼 미리 물을 경로(또는 정기 대장 `allowedActions`의 `CREATE_ADDITIONAL`)를 둘지 정합니다
 6. **현행 확정의 행위자.** 현행 확정·해제는 세무 대리인만 했습니다(고객은 `PERMISSION_DENIED`). 새 직접 운영은 고객·담당자 모두 마감합니다. 마감 해제는 지급월 마감·원천세와 이어지므로, 정할 때까지 BFF가 고객 사용자의 확정·해제를 현행처럼 403으로 막습니다. 고객에게 열기로 하면 BFF의 막음을 지우고, 막기로 하면 새 API 권한(`payroll-ledger:close`)이나 전이표의 행위자로 옮깁니다
 7. **급여대장의 플랜 (갈아타기를 막음).** 현행 급여 관리는 기장(`TAXATION`) 메뉴였고 새 급여대장은 `PAYROLL`만 받습니다. 새 API가 급여대장을 `TAXATION`에도 열지(인건비 보고서처럼 `PAYROLL` 또는 `TAXATION`), 기장 고객을 `PAYROLL`로 옮길지 정해야 이 조각을 현행 클라이언트에 열 수 있습니다. 새 API의 `LEGACY_MENU_PERMISSIONS.payroll_management`(`TAXATION`)와 대장 플랜(`PAYROLL`)도 지금 서로 맞지 않습니다
+
+## 명세서 조각
+
+D9 순서의 네 번째 조각입니다. 현행 급여카드의 급여명세서(스펙 18–22, `cards/:c/payslip/…`)를 새 명세서(`/v1/payslips`)로 옮깁니다. 코드는 `apps/bff/src/payroll/payslips.*`와 발송 키 `apps/bff/src/idempotency.ts`입니다. 화면 읽기와 발송 흐름을 옮기고, BPO 명세서·PDF는 [남은 것](#명세서에서-남은-것)입니다.
+
+> **급여대장 조각의 플랜 결정이 그대로 걸립니다.** 새 명세서도 `PAYROLL` 플랜(+ 약관)만 받으므로 기장만 쓰는 회사는 이 조각의 경로도 403 `ENTITLEMENT_REQUIRED`입니다([급여대장 열린 질문 7](#급여대장-열린-질문)). 테스트가 지금 동작을 고정해 둡니다
+
+| 현행 (`/api/company/:companyId/payroll/cards/:cardId/` 아래) | 새 API |
+|---|---|
+| `GET payslip/` | `GET /v1/payroll-ledgers/{id}` + `…/rows`(카드 머리·행), 마감된 대장이면 `GET /v1/payslips?ledgerId=`, 근로 행이 있으면 `GET /v1/employees?kind=WAGE`(끝까지, 이메일) |
+| `POST payslip/` `{wage_salary: [{id, email?, payment_formulas?}]}` | 없음. 바뀌지 않는 값만 받고(`{saved}`) 아무것도 쓰지 않음. 새 API에 둘 자리가 없는 값은 422 |
+| `GET payslip/wage-salary/notifications/` | `GET /v1/payroll-ledgers/{id}/rows` + `GET /v1/payslips?ledgerId=`의 `delivery` |
+| `POST payslip/wage-salary/notifications/` `{row_ids}` | `GET /v1/payslips?ledgerId=`로 행 → 명세서 ID, `POST /v1/payslips:send {payslipIds}` + `Idempotency-Key` |
+| `POST payslip/wage-salary/copy-payment-formulas/` | 없음. 카드만 확인하고 언제나 `{results: {}}` |
+
+### 번역
+
+- **마감 전.** 새 명세서는 마감된 대장 행의 보기라 마감 전에는 없습니다. 마감 전 카드는 `/v1/payslips`를 부르지 않고 모두 미발송(`null`)으로 줍니다. 발송은 새 API를 부르기 전에 현행과 같은 409 `INVALID_TRANSITION`("Payslips are available once the payroll card is approved.")입니다. 목록을 읽은 뒤 발송 사이에 마감이 풀려 새 API가 404 `PAYSLIP_NOT_FOUND`를 주면 같은 409입니다
+- **발송 상태.** 새 `delivery.status` `NOT_SENT` → `null`, `SENT` → `success`, `FAILED` → `fail`입니다. 현행 `in_flight`는 새 발송이 동기라 나오지 않습니다. `fail_reason`은 `NO_EMAIL` → `no_email`(현행과 같음), `REJECTED` → `rejected`(현행은 메일 연동의 문구). `sent_at`은 마지막 시도가 성공일 때만 그 시각입니다
+- **이메일.** 현행 `payslip_email`(과 행 `email`)은 명세서별 덮어쓰기 ?? 행 사본이었습니다. 새 API는 HR 직원 이메일로만 보내므로 BFF가 그 주소를 채웁니다. 화면이 보여 주는 주소가 실제로 받는 주소입니다. 직원을 읽을 권한(`employee:read`)이 없으면(403 `PERMISSION_DENIED`) 주소를 `null`로 두고 화면은 막지 않습니다. 새 권한 모델에서 그 사용자에게 직원 이메일을 보이지 않으려는 것입니다. 플랜 부족 등 다른 실패는 그대로 줍니다. 근로 행이 없으면(빈 추가 카드) 직원을 읽지 않습니다. 직원 전체 읽기는 인사 목록과 같은 쪽 수 상한·반복 커서 검사를 둡니다(502)
+- **행 범위.** 현행처럼 명세서 화면과 발송 현황은 근로소득 행(`wage_salary`)만입니다. 발송은 현행처럼 카드의 어느 행이든 받고(사업소득 행 등), 결과는 카드의 행 순서이며 같은 행 ID는 한 번으로 셉니다. 사업·기타소득자는 HR 직원이 아니라 주소가 없어 언제나 `no_email`입니다
+- **행위자.** 현행 발송은 고객·세무 대리인 모두 했으므로(`sendPayslips`의 `actors: ['client', 'agency']`) 확정·해제와 달리 BFF가 막지 않습니다. 새 API의 `payslip:send` 권한이 봅니다
+- **검증.** `row_ids`는 현행처럼 1–500개의 문자열이고, 새 행 ID 형식(`pyr_`)이 아니면 이 카드의 행일 수 없으므로 새 API를 부르기 전에 422 `row_ids`("Some rows are not on this payroll card.")입니다. 형식은 맞지만 카드에 없는 행은 명세서 목록을 읽은 뒤 같은 422이고 아무것도 보내지 않습니다. `POST payslip/` 본문도 카드·직원을 읽기 전에 모양(500개 이하, `id` 문자열, `email` 문자열·`null`, `payment_formulas` 객체)과 비지 않은 계산식(422)을 봅니다. 근로 행이 아닌 ID는 현행처럼 404 "Wage row … is not on this payroll card."입니다
+- **카드 상태.** 현행 첫 발송은 카드를 `payslips_sent`로 옮겼지만 새 발송은 대장 상태를 바꾸지 않습니다. 카드는 `approved`로 남고 `payslips_sent_at`은 `null`입니다([급여대장 빈 필드](#빈-필드))
+- **개인정보.** 주민등록번호는 현행이 가려서(`900101-1******`) 줬고 BFF는 주지 않습니다(`null`, 급여대장 조각과 같음). 이메일은 현행처럼 가리지 않고 화면에 줍니다. BFF는 이메일·금액·명세서 내용을 로그에 남기지 않고(테스트가 `console`을 지켜봄), 발송 키의 지문도 SHA-256만 메모리에 둡니다. 테스트의 메일은 새 API의 가짜 `PayslipMailer.layerFake`라 실제로 나가지 않습니다
+
+### 두 번 보내지 않기
+
+새 `:send`는 `Idempotency-Key`가 필수이고(없으면 428), 같은 회사·키로 다시 오면 처음 작업을 그대로 돌려줍니다. 현행 클라이언트는 키를 보내지 않으므로 BFF가 붙입니다.
+
+- 클라이언트가 `Idempotency-Key`를 보내면 그대로 넘깁니다(새 API로 옮겨 가는 화면용)
+- 없으면 **세션·대장·명세서 ID(카드의 행 순서)** 의 지문으로 키(`bff-payslip-send:<UUID>`)를 정합니다. 같은 지문의 앞 발송이 **끝난 뒤 60초**(`payslipSendReplayMs`, 기본 `DEFAULT_PAYSLIP_SEND_REPLAY_MS`) 안에 다시 오면 같은 키를 다시 써서 새 API가 처음 작업을 재응답하고 메일은 다시 나가지 않습니다. `row_ids` 순서가 달라도 같은 선택이면 같은 키입니다
+- 같은 지문의 요청은 한 번에 하나씩 갑니다. 새 API는 키를 처리 **뒤에** 기억하므로 같은 키로 동시에 두 요청이 가면 둘 다 보낼 수 있어서입니다. 뒤 요청은 앞 요청이 끝난 뒤 같은 키로 가 재응답을 받습니다
+- 덮는 경우: 두 번 누르기(동시·연속), 업스트림 시간 초과(504) 뒤 재시도(새 API가 첫 발송을 끝냈으면 재응답), 새 API가 access token을 401로 거절해 BFF가 갱신 뒤 다시 보내는 경우(같은 요청이라 같은 키)
+- **대가:** 같은 대상을 60초 안에 일부러 다시 보내면 처음 결과가 그대로 돌아오고 메일은 나가지 않습니다. 1분 뒤에는 새 키라 다시 보냅니다. 주소를 HR에서 고친 뒤 다시 보내는 흐름은 보통 1분을 넘습니다
+- **남는 창:**
+  - 504 뒤 재시도가 왔을 때 새 API가 첫 발송을 아직 처리 중이면, 키가 아직 기억되지 않아 두 번 보낼 수 있습니다. BFF 쪽 직렬화는 BFF가 시간 초과로 끝낸 순간 풀립니다
+  - 세션이 다르면(다시 로그인, 다른 사용자) 각자 보냅니다. 현행도 막지 않았습니다
+  - 키 기억은 프로세스 메모리라 BFF 인스턴스가 하나일 때만 맞고 재시작하면 잃습니다(세션 저장소와 같은 한계)
+  - 셋 다 새 API가 키를 처리 **전에** 예약하면 없어집니다([명세서 열린 질문 1](#명세서-열린-질문))
+
+### 명세서에서 옮기지 못한 것
+
+| 현행 | 쓰기 | 응답 | 이유 |
+|---|---|---|---|
+| 명세서 이메일 덮어쓰기(`POST payslip/`의 `email`) | 지금 HR 주소와 같거나 `null`이면 받고(저장할 것 없음), 다르면 422 `wage_salary.N.email` | HR 직원 이메일 | 새 API는 HR 직원 이메일로만 보냄(payroll.md "이메일은 HR 직원 정보"). 현행 화면이 받은 주소를 그대로 돌려보내도 막히지 않게 같은 값은 받음. 직원을 읽을 수 없으면 화면도 `null`을 받았으므로 어떤 주소든 422 |
+| 계산식 문구 `payment_formulas` | 비지 않으면 422 | `{}` | 새 API는 엔진의 계산식(`calculation.payments[].formula`)만 있음 |
+| `copy-payment-formulas` | | `{results: {}}` | 계산식 문구가 없음. 이관할 현행 문구도 옮길 자리가 없음 |
+| 발송 상태 `in_flight` | | 나오지 않음 | 새 발송은 동기 |
+| `fail_reason`의 메일 연동 문구 | | `rejected` | 새 API는 사유 코드만 |
+| 성공 뒤 실패한 명세서의 `sent_at` | | `null` | 새 `delivery`는 마지막 시도 하나뿐 |
+| 카드 `card_status: payslips_sent`, `payslips_sent_at` | | `approved`, `null` | 새 발송은 대장 상태를 바꾸지 않음 |
+| 행 `resident_number`(가림) 등 소득자 사본 | | `null` | 급여대장 조각과 같음 |
+
+### 명세서에서 남은 것
+
+이번 조각에 없는 현행 명세서 경로는 현행 404 `NOT_FOUND`입니다.
+
+| 현행 | 새 API | 남긴 이유 |
+|---|---|---|
+| BPO 명세서 목록·상세 `card/:c/:group/payslip[/:rowId]` (스펙 99–106) | `GET /payslips?ledgerId=`, `GET /payslips/{id}` | BPO(승인 운영) 화면 조각과 함께. 소득 구분 묶음(`wage`·`business`·`daily`·`other`)과 미리보기 근무 정보 번역이 필요 |
+| BPO 발송 `card/:c/payslip/send` (스펙 108) | `POST /payslips:send` | 같은 BPO 조각. 이 조각의 `IdempotencyKeys`를 그대로 씀 |
+| PDF 다운로드 `card/:c/payslip/download` (스펙 107), 메일의 PDF 첨부 | 없음 | 새 API에 명세서 PDF가 없음(payroll.md 열린 질문 6) |
+| 문자·메신저 발송 | 없음 | 현행 명세서도 메일만 보냈고 새 `PayslipMailer`도 메일만 |
+
+### 명세서 열린 질문
+
+1. **멱등 키 예약과 본문 비교.** 새 `:send`는 키를 처리 뒤에 기억하므로 같은 키의 동시 요청·처리 중 재시도가 두 번 보낼 수 있습니다. 처리 전에 키를 예약하고(진행 중이면 409 또는 기다림), 같은 키에 다른 본문이면 거절(`IDEMPOTENCY_KEY_REUSED` 등)하는지 정합니다. 지금은 본문을 비교하지 않아 다른 명세서에 같은 키를 쓰면 처음 작업을 돌려줍니다. 키는 만료하지 않아 conventions.md의 24시간과도 다릅니다
+2. **수신 주소.** 사업·기타소득자는 HR 직원이 아니라 언제나 `NO_EMAIL`입니다. 명세서별 수신 주소(현행 덮어쓰기)를 둘지, `Payslip`에 수신 주소(가린 값)를 넣을지 정합니다. 넣으면 BFF가 직원 목록을 읽지 않아도 됩니다
+3. **발송 기록.** `delivery`는 마지막 시도 하나라 마지막 성공 시각이 사라집니다. `lastSentAt`이나 `deliveries[]`를 응답에 둘지 정합니다
+4. **발송 여부 요약.** 현행 카드 목록은 `payslips_sent`로 발송 여부를 보였습니다. 대장에 `payslipsSentAt` 같은 요약을 둘지 정합니다
+5. **계산식 문구.** 회사가 명세서 계산식을 고치던 기능을 둘지는 payroll.md 열린 질문 6(문구와 PDF)과 같은 질문입니다
 
 ## 화면 이전
 
@@ -336,5 +408,6 @@ D9 순서의 세 번째 조각입니다. 현행 급여카드(급여 관리, 스�
 - `pnpm test:sqlite`는 같은 테스트를 새 API의 SQLite 저장소 위에서 돌립니다
 - 인사 하위 리소스(`test/hr-subresources.http.test.ts`): 근로·급여계약·휴직·퇴직의 현행 요청이 새 API에 쓰이고 현행 형태로 돌아오는지, 직원 버전 `If-Match`(428/412), 가린 계좌번호 유지, 옮기지 못한 필드의 422, 복직 거절 시 되돌리기, 다른 직원 경로의 계약 404
 - 급여대장(`test/payroll-ledgers.http.test.ts`): 현행 카드 만들기·읽기·목록·묶음이 새 대장과 그 행에서 현행 형태로 나오는지, 계산 확정·확정·해제가 새 커맨드로 가는지, 현행이 막던 전이(입력 중 확정, 정기 카드 삭제)와 고객의 확정·해제(403), `If-Match` 형식 검사와 읽은 버전 넣기, 해제 두 호출의 되돌리기(거절·결과 모름·시간 초과·세션 끝남·되돌리기 실패·승인 운영), 되돌리기 `:close`의 `If-Match`, 추가 카드 거절 사유, 마감된 같은 달 카드, 대장 전체 읽기의 커서 상한과 행 읽기 상한, 기장만 쓰는 회사의 403(지금 동작 고정)
+- 명세서(`test/payroll-payslips.http.test.ts`): 마감된 카드의 명세서 화면·발송 현황이 새 명세서와 HR 이메일에서 현행 형태로 나오는지, 마감 전 카드는 `/v1/payslips`를 부르지 않고 발송은 409인지, 발송 결과·실패 사유·`sent_at`, 카드의 어느 행이든 발송하고 화면은 근로 행만, 고객도 발송, 본문 검증이 새 API 전, 카드에 없는 행은 보내기 전에 422, 발송 중 마감 풀림(409), 직원 읽기 권한이 없을 때와 다른 실패, 빈 추가 카드의 부모와 직원 읽기 생략, 두 번 누르기(동시·연속)·다른 행 집합·다른 세션·시간 초과 뒤 재시도·토큰 갱신 뒤 재전송의 키와 실제 발송 횟수, 재응답 시간이 지난 뒤 다시 보내기, 클라이언트 키 그대로 넘기기, 로그에 이메일·금액이 없는지, 이메일·계산식 저장의 받음과 422, 기장만 쓰는 회사의 403(지금 동작 고정). `src/idempotency.test.ts`는 같은 지문의 직렬화(앞 요청 실패 뒤에도)와 재응답 시간 경계를 봅니다
 - 오류(잘못된 비밀번호, 검증 실패, CSRF 누락, 권한·플랜 부족, 없는 직원), 회사 전환(경로로 전환, `/jwt`, 접근 불가 회사, 동시 전환), 토큰 만료 갱신, 새 API가 폐기한 세션을 덮습니다
 - 경계: `text/plain` 로그인(415), 다른 출처 로그인, 다시 로그인, 업스트림 시간 초과·응답 크기 초과·로그아웃 실패, 끝없는 커서·반복 커서, 잘못된 퍼센트 인코딩·회사 ID, 만료 세션 정리, 자물쇠 중첩·순서
