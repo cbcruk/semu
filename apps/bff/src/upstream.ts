@@ -300,11 +300,31 @@ function usable(session: BffSession, companyId: string | undefined, now: number)
 const MAX_ATTEMPTS = 3
 
 /**
+ * 호출을 보내기 직전에, 그 호출에 쓸 access token을 받은 세션으로 확인합니다. 거절이면 던질 오류를 돌려줍니다.
+ *
+ * 세션의 `actorKind`처럼 grant에서 온 값은 그 토큰과 함께 바뀌므로, 호출과 같은 자물쇠 안에서 보면 늘 실제로 보내는 토큰의 값입니다.
+ */
+export type SessionGuard = (session: BffSession) => LegacyError | undefined
+
+/** {@link callApi}의 옵션입니다. */
+export type CallOptions = Omit<UpstreamRequest, 'token' | 'cookie'> & {
+  /**
+   * 보내기 전에 부르는 확인입니다. 401로 갱신해 다시 보낼 때도 다시 부릅니다.
+   *
+   * 세션은 새 API가 토큰을 폐기한 것을 401을 받기 전까지 모르므로, 저장된 값이 오래됐을 수 있습니다. 그래서 이 호출에서
+   * 아직 갱신·전환하지 않았는데 거절이면 한 번 갱신해 새 grant로 다시 확인하고, 그래도 거절이면 그 오류를 던집니다.
+   * 거절된 요청은 새 API에 닿지 않습니다.
+   */
+  guard?: SessionGuard
+}
+
+/**
  * 세션의 권한으로 새 API를 부릅니다. 경로의 회사로 먼저 전환하고, access token이 거절되면 갱신해 다시 보냅니다.
  *
  * 호출은 세션의 공유 자물쇠 안에서 보내므로, 같은 세션의 다른 요청이 호출 도중 회사를 바꾸지 못합니다.
  *
  * @param companyId 현행 경로의 회사 ID입니다. 회사와 상관없는 호출은 비웁니다.
+ * @throws {LegacyError} `guard`가 갱신 뒤에도 거절하면 그 오류
  */
 export async function callApi(
   deps: BffDeps,
@@ -312,19 +332,27 @@ export async function callApi(
   companyId: string | undefined,
   method: string,
   path: string,
-  options: Omit<UpstreamRequest, 'token' | 'cookie'> = {},
+  options: CallOptions = {},
 ): Promise<Response> {
+  const { guard, ...request } = options
+  let renewed = false
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const outcome = await deps.locks.shared(sessionId, async () => {
       const session = await deps.store.get(sessionId)
       if (session === undefined) throw legacyErrors.unauthenticated({ endsSession: true })
       if (!usable(session, companyId, deps.now())) return { renew: true, stale: undefined } as const
-      const response = await send(deps, method, path, { ...options, token: session.accessToken })
+      const refused = guard?.(session)
+      if (refused !== undefined) {
+        if (renewed) throw refused
+        return { renew: true, stale: session.accessToken } as const
+      }
+      const response = await send(deps, method, path, { ...request, token: session.accessToken })
       if (response.status !== 401) return { renew: false, response } as const
       return { renew: true, stale: session.accessToken } as const
     })
     if (!outcome.renew) return outcome.response
     await ensureAccess(deps, sessionId, companyId, outcome.stale)
+    renewed = true
   }
   throw legacyErrors.unauthenticated()
 }

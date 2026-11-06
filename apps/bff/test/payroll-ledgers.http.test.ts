@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RELEASE_REASON } from '../src/payroll/ledgers.routes.ts'
-import { DEMO_COMPANY_IDS, DEMO_PASSWORD, makeHarness } from './legacy-client.ts'
+import { DEMO_COMPANY_IDS, DEMO_PASSWORD, DEMO_USER_IDS, makeHarness } from './legacy-client.ts'
 import type { Harness, HarnessOptions, LegacyClient } from './legacy-client.ts'
 
 const PAYROLL = `/api/company/${DEMO_COMPANY_IDS.corporation}/payroll`
@@ -765,8 +765,9 @@ describe('legacy authorization and plans', () => {
   })
 
   /**
-   * 담당자를 법인 회사의 관리자로 초대해 받게 합니다. 데모 시드에는 대리인 계정이면서 회사 멤버인 계정이 없습니다.
-   * 멤버십이 배정보다 먼저라 담당자는 법인 회사에서 고객으로 행동하고, 개인 회사에서는 여전히 대리인입니다.
+   * 담당자를 법인 회사의 관리자로 초대해 받게 하고, 법인 회사의 약관에 동의시킵니다(다른 창이라고 봅니다). 데모 시드에는
+   * 대리인 계정이면서 회사 멤버인 계정이 없습니다. 멤버십이 배정보다 먼저라 담당자는 법인 회사에서 고객으로 행동하고,
+   * 개인 회사에서는 여전히 대리인입니다. 약관까지 동의해야 BFF가 막지 않을 때 새 API가 `:close`를 실제로 받습니다.
    */
   async function agentJoinsCorporation(target: Harness): Promise<void> {
     const owner = await target.api.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.corporation })
@@ -779,56 +780,148 @@ describe('legacy authorization and plans', () => {
       body: { token: await target.api.lastMailToken(), password: DEMO_PASSWORD },
     })
     expect(accepted.status).toBe(200)
+    const member = await target.api.signIn(AGENT, { companyId: DEMO_COMPANY_IDS.corporation })
+    const { items } = await (await target.api.request('GET', '/v1/me/term-agreements', { token: member.token })).json()
+    const decisions = (items as any[])
+      .filter((agreement) => agreement.status === 'REQUIRED')
+      .map((agreement) => ({ termId: agreement.term.id, agreed: true }))
+    const agreed = await target.api.request('POST', '/v1/me/term-agreements', {
+      token: member.token,
+      body: { decisions },
+    })
+    expect(agreed.status).toBe(200)
   }
 
-  it.each([
-    ['signed in to the company', undefined],
-    ['signed in to a company it serves as agency', DEMO_COMPANY_IDS.individual],
-  ])(
-    'refuses fix and release for an agency account that is a member of the company (%s)',
-    async (_, startingCompany) => {
-      const writes: string[] = []
-      const custom = makeHarness({
-        intercept: (request, next) => {
-          if (isCommand(request, 'close') || isCommand(request, 'reopen') || isCommand(request, 'return-to-draft')) {
-            writes.push(new URL(request.url).pathname)
-          }
-          return next(request)
-        },
-      })
-      try {
-        const agent = custom.client()
-        await agent.login(AGENT)
-        const card = await createCard(agent, '2026-09')
-        expect((await post(agent, `${card.id}/calculate/`)).status).toBe(200)
-        await agentJoinsCorporation(custom)
-
-        const member = custom.client()
-        await member.login(AGENT)
-        if (startingCompany !== undefined) {
-          // 세션을 대리인으로 행동하는 회사에 먼저 묶어, 지금 세션의 행위자 종류가 아니라 경로 회사의 것을 보는지 확인합니다.
-          expect((await member.request('GET', `/api/company/${startingCompany}/`)).status).toBe(200)
+  /** 대장 커맨드를 기록하는 하네스와, 담당자가 만들고 계산한 법인 카드입니다. */
+  async function recordedCard(
+    options: HarnessOptions = {},
+  ): Promise<{ custom: Harness; agent: LegacyClient; cardId: string; writes: string[] }> {
+    const writes: string[] = []
+    const custom = makeHarness({
+      ...options,
+      intercept: (request, next) => {
+        if (isCommand(request, 'close') || isCommand(request, 'reopen') || isCommand(request, 'return-to-draft')) {
+          writes.push(new URL(request.url).pathname)
         }
-        const fix = await post(member, `${card.id}/extensions/fix/`)
-        const release = await post(member, `${card.id}/extensions/release/`)
+        return options.intercept === undefined ? next(request) : options.intercept(request, next)
+      },
+    })
+    const agent = custom.client()
+    await agent.login(AGENT)
+    const card = await createCard(agent, '2026-09')
+    expect((await post(agent, `${card.id}/calculate/`)).status).toBe(200)
+    return { custom, agent, cardId: card.id, writes }
+  }
 
-        expect(fix.status).toBe(403)
-        expect(await fix.json()).toEqual({
-          detail: 'Only agency staff may fix a payroll card.',
-          code: 'PERMISSION_DENIED',
-        })
-        expect(release.status).toBe(403)
-        expect(await release.json()).toEqual({
-          detail: 'Only agency staff may release a payroll card.',
-          code: 'PERMISSION_DENIED',
-        })
-        expect(writes).toEqual([])
-        expect(await upstreamLedger(custom, card.id)).toMatchObject({ status: 'SUBMITTED' })
-      } finally {
-        await custom.dispose()
-      }
-    },
-  )
+  async function expectRefused(signedIn: LegacyClient, cardId: string): Promise<void> {
+    const fix = await post(signedIn, `${cardId}/extensions/fix/`)
+    const release = await post(signedIn, `${cardId}/extensions/release/`)
+    expect(fix.status).toBe(403)
+    expect(await fix.json()).toEqual({ detail: 'Only agency staff may fix a payroll card.', code: 'PERMISSION_DENIED' })
+    expect(release.status).toBe(403)
+    expect(await release.json()).toEqual({
+      detail: 'Only agency staff may release a payroll card.',
+      code: 'PERMISSION_DENIED',
+    })
+  }
+
+  it('refuses fix and release for an agency account that signs in as a member of the company', async () => {
+    const { custom, cardId, writes } = await recordedCard()
+    try {
+      await agentJoinsCorporation(custom)
+      const member = custom.client()
+      await member.login(AGENT)
+
+      await expectRefused(member, cardId)
+      expect(writes).toEqual([])
+      expect(await upstreamLedger(custom, cardId)).toMatchObject({ status: 'SUBMITTED' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('refuses after the session that started as agency becomes a member, though the cached grant still says agency', async () => {
+    // 같은 BFF 세션이 법인 회사에 대리인으로 묶인 채, 담당자가 다른 창에서 멤버가 됩니다. 초대 수락은 access token을 폐기하므로
+    // 다음 호출이 401로 갱신하고, 확인은 그 새 grant(고객)로 다시 합니다. 커맨드는 새 API에 가지 않습니다.
+    const { custom, agent, cardId, writes } = await recordedCard()
+    try {
+      await agentJoinsCorporation(custom)
+
+      await expectRefused(agent, cardId)
+      expect(writes).toEqual([])
+      expect(await upstreamLedger(custom, cardId)).toMatchObject({ status: 'SUBMITTED' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('refuses when switching from a company it serves as agency to one where it is a member', async () => {
+    const { custom, agent, cardId, writes } = await recordedCard()
+    try {
+      // 멤버가 되기 전에 개인 회사(대리인)로 옮겨 두어, 법인 경로가 대리인 grant에서 고객 grant로 전환하게 합니다.
+      expect((await agent.request('GET', `/api/company/${DEMO_COMPANY_IDS.individual}/`)).status).toBe(200)
+      await agentJoinsCorporation(custom)
+
+      await expectRefused(agent, cardId)
+      expect(writes).toEqual([])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('lets an agency session bound to another company fix and release after switching to the card company', async () => {
+    const { custom, agent, cardId } = await recordedCard()
+    try {
+      expect((await agent.request('GET', `/api/company/${DEMO_COMPANY_IDS.individual}/`)).status).toBe(200)
+      expect((await post(agent, `${cardId}/extensions/fix/`)).status).toBe(200)
+
+      expect((await agent.request('GET', `/api/company/${DEMO_COMPANY_IDS.individual}/`)).status).toBe(200)
+      expect((await post(agent, `${cardId}/extensions/release/`)).status).toBe(200)
+      expect(await upstreamLedger(custom, cardId)).toMatchObject({ status: 'DRAFT' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('lets the agency account fix once its membership is removed, refreshing a grant that still says client', async () => {
+    const { custom, cardId } = await recordedCard()
+    try {
+      await agentJoinsCorporation(custom)
+      const member = custom.client()
+      await member.login(AGENT)
+      expect((await post(member, `${cardId}/extensions/fix/`)).status).toBe(403)
+
+      const owner = await custom.api.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.corporation })
+      const removed = await custom.api.request('DELETE', `/v1/users/${DEMO_USER_IDS.agent}`, { token: owner.token })
+      expect(removed.status).toBe(204)
+
+      // 세션의 grant는 아직 고객입니다. 거절하기 전에 한 번 갱신해 새 grant(대리인)로 다시 확인합니다.
+      expect((await post(member, `${cardId}/extensions/fix/`)).status).toBe(200)
+      expect(await upstreamLedger(custom, cardId)).toMatchObject({ status: 'CLOSED' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('refuses a session whose grant carries no actor kind', async () => {
+    const stripped = async (request: Request, next: (request: Request) => Promise<Response>) => {
+      const response = await next(request)
+      if (!new URL(request.url).pathname.startsWith('/v1/auth/sessions') || !response.ok) return response
+      const body = (await response.json()) as any
+      if (body.company !== undefined) delete body.company.actorKind
+      return new Response(JSON.stringify(body), { status: response.status, headers: response.headers })
+    }
+    const { custom, cardId, writes } = await recordedCard({ intercept: stripped })
+    try {
+      const agent = custom.client()
+      await agent.login(AGENT)
+
+      await expectRefused(agent, cardId)
+      expect(writes).toEqual([])
+    } finally {
+      await custom.dispose()
+    }
+  })
 
   it('pins the current gap: a taxation-only company cannot open the cards because the new ledgers need PAYROLL', async () => {
     // 현행 급여 관리는 기장(TAXATION) 메뉴였습니다. 새 대장은 PAYROLL만 받으므로 이 조각으로 갈아타기 전에 정해야 합니다.
