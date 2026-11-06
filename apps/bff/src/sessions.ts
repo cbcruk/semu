@@ -19,6 +19,11 @@ export interface BffSession {
   /** 이 시각(ms)이 지나면 새 API를 부르기 전에 갱신합니다. */
   accessExpiresAt?: number
   companyId?: string
+  /**
+   * `companyId` 회사에서 사용자가 행동하는 방식입니다(새 API 세션 응답의 `company.actorKind`). 사용자 종류와 다릅니다.
+   * 세무 대리인 계정도 그 회사의 멤버면 `CLIENT`입니다(현행·새 API 모두 멤버십을 배정보다 먼저 봄).
+   */
+  actorKind?: 'CLIENT' | 'AGENCY'
   /** 지금 회사의 플랜입니다. 현행 `tax_plan`, `has_payroll_plan`을 채웁니다. */
   plans: Plan[]
   user: UserProfile

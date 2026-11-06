@@ -5,7 +5,7 @@ import type { Bff } from '../src/app.ts'
 
 import { DEMO_PASSWORD } from '../../api/src/modules/identity-access/demo-seed.ts'
 
-export { DEMO_COMPANY_IDS, DEMO_PASSWORD } from '../../api/src/modules/identity-access/demo-seed.ts'
+export { DEMO_COMPANY_IDS, DEMO_PASSWORD, DEMO_USER_IDS } from '../../api/src/modules/identity-access/demo-seed.ts'
 
 /** 테스트 응답입니다. 본문은 단언에서 바로 꺼내 쓰도록 느슨한 타입으로 읽습니다. */
 export interface LegacyResponse extends Response {
