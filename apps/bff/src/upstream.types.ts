@@ -234,3 +234,126 @@ export interface LeaveSummary {
   parentalLeaveDays: number
   parentalLeaveRemainingDays: number
 }
+
+/** 급여대장 행의 소득 구분입니다. */
+export type PayrollIncomeType = 'WAGE_MONTHLY' | 'WAGE_HOURLY' | 'WAGE_DAILY' | 'DAILY' | 'BUSINESS' | 'OTHER'
+
+/** 급여대장 상태입니다. */
+export type PayrollLedgerStatus = 'DRAFT' | 'SUBMITTED' | 'PENDING_APPROVAL' | 'CLOSED'
+
+/** `GET /v1/payroll-ledgers/{id}` 응답입니다. 행은 따로 읽습니다. */
+export interface PayrollLedger {
+  id: string
+  kind: 'REGULAR' | 'ADDITIONAL'
+  workflow: 'CLIENT_APPROVAL' | 'DIRECT_CLOSE'
+  status: PayrollLedgerStatus
+  step: 1 | 2 | 3
+  title: string
+  attributionMonth: string
+  paymentDate: string
+  paymentMonth: string
+  wagePeriod: { start: string; end: string }
+  rowCount: number
+  totals: {
+    grossPay: number
+    deductionTotal: number
+    netPay: number
+    incomeTax: number
+    localIncomeTax: number
+    employerInsurance: number
+  }
+  rejection: { reason: string; rejectedAt: string } | null
+  reopenReason: string | null
+  withholdingFiled: boolean
+  allowedActions: string[]
+  warnings: Array<{ code: string; message: string; rowId?: string }>
+  calculatedAt: string | null
+  closedAt: string | null
+  version: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 급여대장 행 입력입니다. `incomeType`마다 쓰는 필드가 다릅니다. 금액은 원, 시간은 분입니다. */
+export interface PayrollRowInput {
+  incomeType: PayrollIncomeType
+  basePay?: number
+  hourlyWage?: number
+  dailyWage?: number
+  workedDays?: number
+  weeklyHolidayWeeks?: number
+  proration?: { method: 'CALENDAR_DAYS' | 'SCHEDULED_DAYS'; payableDays: number; totalDays: number }
+  paymentItems?: Array<{ code: string; name: string; amount: number }>
+  otherDeductions?: Array<{ code: string; name: string; amount: number }>
+  work?: {
+    regularMinutes?: number
+    overtimeMinutes?: number
+    nightMinutes?: number
+    holidayMinutes?: number
+    holidayOvertimeMinutes?: number
+    absenceMinutes?: number
+    weeklyHolidayDeductionDays?: number
+  }
+  insuranceNotice?: {
+    nationalPension?: number
+    healthInsurance?: number
+    longTermCare?: number
+    employmentInsurance?: number
+  }
+  payAmount?: number
+  workDays?: number
+  averageDailyMinutes?: number
+  employmentInsuranceExempt?: boolean
+  businessIncomeCode?: string
+  employmentInsuranceApplicable?: boolean
+  otherIncomeCode?: string
+  necessaryExpenseAmount?: number
+  taxDeductionMode?: 'BEFORE_TAX' | 'AFTER_TAX'
+}
+
+interface Premiums {
+  nationalPension: number
+  healthInsurance: number
+  longTermCare: number
+  employmentInsurance: number
+  industrialAccident: number
+  total: number
+}
+
+/** 급여대장 행 계산 결과입니다. */
+export interface PayrollRowResult {
+  rateTable: string
+  withholdingRateTable: string
+  payments: Array<{
+    code: string
+    name: string
+    amount: number
+    taxableAmount: number
+    nonTaxableAmount: number
+    formula: string
+  }>
+  grossPay: number
+  taxablePay: number
+  nonTaxablePay: number
+  employeeInsurance: Premiums
+  employerInsurance: Premiums
+  incomeTax: number
+  localIncomeTax: number
+  deductions: Array<{ code: string; name: string; amount: number; formula: string }>
+  deductionTotal: number
+  netPay: number
+  breakdown: Array<{ code: string; label: string; amount: number; formula: string }>
+  warnings: Array<{ code: string; message: string }>
+}
+
+/** `GET /v1/payroll-ledgers/{id}/rows`의 행입니다. */
+export interface PayrollRow {
+  id: string
+  ledgerId: string
+  employeeId: string | null
+  payeeName: string
+  incomeType: PayrollIncomeType
+  input: PayrollRowInput
+  result: PayrollRowResult | null
+  updatedAt: string
+}

@@ -54,6 +54,7 @@ export interface HarnessOptions {
   authTimeoutMs?: number
   maxResponseBytes?: number
   maxUpstreamPages?: number
+  maxLedgerRowReads?: number
 }
 
 /**
@@ -77,6 +78,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
     allowedOrigins: [CLIENT_ORIGIN],
     now: () => Date.now() + offset,
     ...(options.maxUpstreamPages === undefined ? {} : { maxUpstreamPages: options.maxUpstreamPages }),
+    ...(options.maxLedgerRowReads === undefined ? {} : { maxLedgerRowReads: options.maxLedgerRowReads }),
   })
   const client = (): LegacyClient => {
     const jar = new Map<string, string>()

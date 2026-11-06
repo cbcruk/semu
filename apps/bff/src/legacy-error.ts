@@ -87,6 +87,12 @@ const CODE_MAP: Record<string, { code: string; status: number }> = {
   // 현행 HR 오류 코드는 같고 상태만 400이었습니다.
   LEAVE_OVERLAP: { code: 'LEAVE_OVERLAP', status: 400 },
   RETIREMENT_COMPLETED: { code: 'RETIREMENT_COMPLETED', status: 400 },
+  // 현행 급여카드 오류입니다. 입력을 고칠 수 없는 상태는 현행도 409 `INVALID_TRANSITION`이었습니다.
+  PAYROLL_LEDGER_READ_ONLY: { code: 'INVALID_TRANSITION', status: 409 },
+  ADDITIONAL_LEDGER_BLOCKED: { code: 'ADDITIONAL_CARD_NOT_ALLOWED', status: 409 },
+  WAGE_ROW_ON_ADDITIONAL_LEDGER: { code: 'WAGE_INCOME_ON_ADDITIONAL_CARD', status: 409 },
+  // 이름은 `_NOT_FOUND`로 끝나지만 경로의 리소스가 없는 게 아니라 귀속월의 기준표가 없는 422입니다.
+  RATE_TABLE_NOT_FOUND: { code: 'RATE_TABLE_NOT_FOUND', status: 422 },
   INTERNAL: { code: 'INTERNAL_ERROR', status: 500 },
 }
 
