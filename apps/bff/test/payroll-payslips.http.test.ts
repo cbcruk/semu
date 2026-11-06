@@ -725,6 +725,35 @@ describe('sending payslips only once', () => {
     }
   })
 
+  it('keeps the key for a day when the new API is still sending the earlier request', async () => {
+    let inProgress = false
+    const keys: Array<string | null> = []
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) => {
+        if (!isSend(request)) return next(request)
+        keys.push(request.headers.get('idempotency-key'))
+        if (inProgress) return Promise.resolve(problem(409, { code: 'IDEMPOTENCY_KEY_IN_PROGRESS' }))
+        return next(request)
+      },
+    })
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+
+      // BFF가 시간 초과로 끝낸 발송을 새 API가 아직 보내는 중입니다. 재시도는 409를 받고 결과를 모릅니다.
+      inProgress = true
+      const refused = await sendRows(signedIn, cardId, [wageRowId])
+      custom.advance(5 * 60_000)
+      inProgress = false
+      expect((await sendRows(signedIn, cardId, [wageRowId])).status).toBe(200)
+
+      expect(refused.status).toBe(409)
+      expect((await refused.json()).code).toBe('IDEMPOTENCY_KEY_IN_PROGRESS')
+      expect(keys[1]).toBe(keys[0])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
   it('refuses a replayed job for other payslips instead of reporting it as sent', async () => {
     const { harness: custom, client: signedIn } = await intercepted({
       intercept: async (request, next) => {
