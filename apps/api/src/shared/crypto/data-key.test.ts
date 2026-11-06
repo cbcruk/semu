@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
 import { DatabaseSync } from 'node:sqlite'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -220,4 +221,73 @@ describe('database key fingerprint', () => {
 
     expect(databaseHasTables(filename)).toBe(true)
   })
+
+  it('waits for another server writing at startup instead of failing to read the database', async () => {
+    const filename = join(tempDir(), 'semu.sqlite')
+    verifyDataKeyFingerprint(filename, key)
+    // 다른 서버가 배타 잠금을 쥐고 쓰는 중입니다. 읽기 전용 연결도 잠금이 풀릴 때까지 기다려야 합니다.
+    const holder = await holdWriteLock(filename, 'EXCLUSIVE', [`INSERT INTO semu_meta (name, value) VALUES ('x', 'y')`])
+
+    const started = Date.now()
+    holder.release()
+    expect(() => refuseUnkeyedDatabase(filename)).not.toThrow()
+    expect(Date.now() - started).toBeGreaterThanOrEqual(HOLD_MS / 2)
+    await holder.done
+    expect(databaseHasTables(filename)).toBe(true)
+  })
+
+  it('waits for another server recording its fingerprint and compares against it', async () => {
+    const filename = join(tempDir(), 'semu.sqlite')
+    const db = new DatabaseSync(filename)
+    db.exec(`CREATE TABLE semu_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT`)
+    db.close()
+    // 함께 시작한 다른 서버가 같은 키의 지문을 남기는 중이고 아직 커밋하지 않았습니다. 지문이 없다고 읽은 뒤 따로 기록하면
+    // 그 서버가 커밋한 지문과 겹쳐 실패합니다.
+    const holder = await holdWriteLock(filename, 'IMMEDIATE', [
+      `INSERT INTO semu_meta (name, value) VALUES ('data_key_fingerprint', '${dataKeyFingerprint(key)}')`,
+    ])
+
+    const started = Date.now()
+    holder.release()
+    expect(verifyDataKeyFingerprint(filename, key)).toBe('MATCHED')
+    expect(Date.now() - started).toBeGreaterThanOrEqual(HOLD_MS / 2)
+    await holder.done
+  })
 })
+
+/** {@link holdWriteLock}이 잠금을 쥐고 있는 시간입니다. */
+const HOLD_MS = 200
+
+/**
+ * 다른 스레드가 `filename`에 `BEGIN <mode>`로 트랜잭션을 열고 `statements`를 실행한 채 잠금을 쥡니다.
+ * `release()`를 부르면 {@link HOLD_MS} 뒤에 커밋합니다. 확인하는 함수가 동기라 기다리는 동안 이 스레드가 멈추므로,
+ * 바로 앞에서 신호만 보내고 커밋은 그쪽 스레드가 합니다.
+ */
+async function holdWriteLock(filename: string, mode: 'EXCLUSIVE' | 'IMMEDIATE', statements: ReadonlyArray<string>) {
+  const signal = new Int32Array(new SharedArrayBuffer(4))
+  const worker = new Worker(
+    `const { workerData, parentPort } = require('node:worker_threads');` +
+      `const { DatabaseSync } = require('node:sqlite');` +
+      `const { filename, mode, statements, signal, holdMs } = workerData;` +
+      `const db = new DatabaseSync(filename, { timeout: 5000 });` +
+      `db.exec('BEGIN ' + mode);` +
+      `for (const sql of statements) db.exec(sql);` +
+      `parentPort.postMessage('locked');` +
+      `Atomics.wait(signal, 0, 0);` +
+      `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, holdMs);` +
+      `db.exec('COMMIT'); db.close();`,
+    { eval: true, workerData: { filename, mode, statements, signal, holdMs: HOLD_MS } },
+  )
+  const done = new Promise<void>((resolve, reject) => {
+    worker.on('error', reject)
+    worker.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`holder exited with ${code}`))))
+  })
+  await Promise.race([new Promise((resolve) => worker.once('message', resolve)), done])
+  return {
+    release: () => {
+      Atomics.store(signal, 0, 1)
+      Atomics.notify(signal, 0)
+    },
+    done,
+  }
+}

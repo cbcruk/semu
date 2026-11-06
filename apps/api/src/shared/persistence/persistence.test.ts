@@ -1,17 +1,17 @@
-import { execFile } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { format } from 'node:util'
 import { Effect, Fiber, Layer, Option } from 'effect'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { OUTBOX_MAX_ATTEMPTS, Outbox, relayLoggingDefects } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
 import { TableFactory, makeSqliteRecordTable, makeTenantTable } from './record-table.ts'
-import { CurrentTransaction, SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
+import { CurrentTransaction, SqliteDatabase, UnitOfWork, keepChanges, openSqlite } from './unit-of-work.ts'
 
 interface Row {
   id: string
@@ -548,10 +548,61 @@ describe('sqlite unit of work', () => {
     ))
 })
 
+/** {@link startChild}로 띄워 아직 끝나지 않은 자식입니다. 테스트가 중간에 실패해도 남지 않게 각 테스트 뒤에 끝냅니다. */
+const running = new Set<ChildProcess>()
+
+/**
+ * 같은 파일을 여는 다른 프로세스를 띄웁니다. `body`에서는 `openSqlite`, `makeSqliteRecordTable`, `ensureMetaTable`과,
+ * 부모가 {@link send}로 보낸 숫자를 한 줄씩 받는 `stdinLine()`을 씁니다. 모듈을 다 읽으면 `ready`를 알립니다.
+ */
+function startChild(body: string) {
+  const module = (name: string) => JSON.stringify(new URL(name, import.meta.url).href)
+  const script =
+    `const { openSqlite } = await import(${module('./unit-of-work.ts')});` +
+    `const { makeSqliteRecordTable } = await import(${module('./record-table.ts')});` +
+    `const { ensureMetaTable } = await import(${module('./meta.ts')});` +
+    `const lines = (await import('node:readline')).createInterface({ input: process.stdin })[Symbol.asyncIterator]();` +
+    `const stdinLine = async () => Number((await lines.next()).value);` +
+    `process.stdout.write('ready\\n');` +
+    body +
+    `;process.stdin.destroy()`
+  const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['pipe', 'pipe', 'pipe'] })
+  running.add(child)
+  let stdout = ''
+  let stderr = ''
+  child.stdout.on('data', (chunk) => (stdout += chunk))
+  child.stderr.on('data', (chunk) => (stderr += chunk))
+  const exit = new Promise<void>((resolve, reject) => {
+    child.on('error', reject)
+    child.on('close', (code) => {
+      running.delete(child)
+      if (code === 0) resolve()
+      else reject(new Error(stderr || `exit ${code}`))
+    })
+  })
+  // 테스트가 먼저 실패해 기다리지 않은 자식이 정리되며 끝나도, 처리되지 않은 거부로 따로 보고되지 않게 합니다.
+  exit.catch(() => {})
+  // 알림 전에 자식이 죽으면 기다리지 않고 그 오류로 실패합니다.
+  const reached = (line: string) =>
+    Promise.race([
+      exit.then(() => Promise.reject(new Error(`exited before ${line}`))),
+      new Promise<void>((resolve) => {
+        const check = () => stdout.split('\n').includes(line) && resolve()
+        check()
+        child.stdout.on('data', check)
+      }),
+    ])
+  return { reached, exit, send: (value: number) => child.stdin.write(`${value}\n`) }
+}
+
 describe('sqlite seeds', () => {
-  const ids = (db: DatabaseSync) =>
+  afterEach(() => {
+    for (const child of running) child.kill()
+  })
+
+  const ids = (db: DatabaseSync, table = 'test_seeded') =>
     db
-      .prepare(`SELECT id FROM test_seeded ORDER BY id`)
+      .prepare(`SELECT id FROM ${table} ORDER BY id`)
       .all()
       .map((row) => row['id'])
 
@@ -565,34 +616,67 @@ describe('sqlite seeds', () => {
     expect(db.isTransaction).toBe(false)
   })
 
-  it('lets processes that open one file together seed each table once without failing', async () => {
+  it('lets processes that open one new file together seed each table once without failing', async () => {
     const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
-    const module = new URL('./record-table.ts', import.meta.url).href
-    const startAt = Date.now() + 1500
-    const script =
-      `const { DatabaseSync } = await import('node:sqlite');` +
-      `const { makeSqliteRecordTable } = await import(${JSON.stringify(module)});` +
-      `const db = new DatabaseSync(${JSON.stringify(filename)});` +
-      `db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');` +
-      `const seed = Array.from({ length: 500 }, (_, i) => ({ id: 'r' + String(i).padStart(4, '0') }));` +
-      `while (Date.now() < ${startAt}) {}` +
-      `for (let t = 0; t < 20; t += 1) makeSqliteRecordTable(db, 'race_' + t, { seed });` +
-      `db.close()`
-    const run = () =>
-      new Promise<void>((resolve, reject) =>
-        execFile(process.execPath, ['--input-type=module', '-e', script], (error, _stdout, stderr) =>
-          error ? reject(new Error(stderr || error.message)) : resolve(),
-        ),
-      )
+    const tables = 10
+    const rows = 200
+    // 모듈을 다 읽은 자식들이 모두 `ready`를 알리면 시작 시각을 보내 한꺼번에 풀어 줍니다. 깨어나는 시각이 자식마다 조금씩 달라,
+    // 받은 시각까지 돌며 기다립니다. 풀린 뒤에 파일을 열어 새 파일의 WAL 전환과 시드가 겹치게 합니다.
+    const children = Array.from({ length: 6 }, () =>
+      startChild(
+        `const startAt = await stdinLine(); while (Date.now() < startAt) {}` +
+          `const db = openSqlite(${JSON.stringify(filename)});` +
+          `const seed = Array.from({ length: ${rows} }, (_, i) => ({ id: 'r' + String(i).padStart(4, '0') }));` +
+          `for (let t = 0; t < ${tables}; t += 1) makeSqliteRecordTable(db, 'race_' + t, { seed });` +
+          `db.close()`,
+      ),
+    )
 
-    await Promise.all(Array.from({ length: 6 }, run))
+    await Promise.all(children.map((child) => child.reached('ready')))
+    const startAt = Date.now() + 100
+    for (const child of children) child.send(startAt)
+    await Promise.all(children.map((child) => child.exit))
 
     const db = new DatabaseSync(filename, { readOnly: true })
-    const counts = Array.from({ length: 20 }, (_, t) => db.prepare(`SELECT count(*) AS n FROM race_${t}`).get()?.['n'])
+    const counts = Array.from(
+      { length: tables },
+      (_, t) => db.prepare(`SELECT count(*) AS n FROM race_${t}`).get()?.['n'],
+    )
     const markers = db.prepare(`SELECT count(*) AS n FROM semu_meta WHERE name LIKE 'seeded:race_%'`).get()?.['n']
+    const mode = db.prepare(`PRAGMA journal_mode`).get()?.['journal_mode']
     db.close()
-    expect(counts).toEqual(Array(20).fill(500))
-    expect(markers).toBe(20)
+    expect(counts).toEqual(Array(tables).fill(rows))
+    expect(markers).toBe(tables)
+    expect(mode).toBe('wal')
+  }, 30_000)
+
+  it('waits for another process seeding the same table and does not seed it again', async () => {
+    const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
+    // 다른 프로세스가 표를 만들어 두고, 시드와 표시를 넣은 트랜잭션을 커밋하지 않은 채 쥐고 있습니다.
+    const holder = startChild(
+      `const db = openSqlite(${JSON.stringify(filename)});` +
+        `makeSqliteRecordTable(db, 'race');` +
+        `ensureMetaTable(db);` +
+        `db.exec('BEGIN IMMEDIATE');` +
+        `makeSqliteRecordTable(db, 'race', { seed: [{ id: 'theirs' }] });` +
+        `process.stdout.write('locked\\n');` +
+        `const releaseAt = await stdinLine(); while (Date.now() < releaseAt) {}` +
+        `db.exec('COMMIT'); db.close()`,
+    )
+    await holder.reached('locked')
+
+    // 그동안 이쪽이 같은 표에 시드를 넣으려 합니다. 표시를 확인하기 전에 쓰기 잠금부터 기다려야, 커밋된 표시를 보고 넘어갑니다.
+    // 이 호출은 동기라 기다리는 동안 이벤트 루프가 멈추므로, 자식이 커밋할 시각을 미리 정해 보냅니다. 그 전에 이쪽이 시작해야
+    // 경합이 생기고, 이쪽이 그보다 늦으면 경합 없이 통과할 뿐 실패하지는 않습니다.
+    holder.send(Date.now() + 300)
+    const db = openSqlite(filename)
+    try {
+      makeSqliteRecordTable<Row>(db, 'race', { seed })
+      expect(ids(db, 'race')).toEqual(['theirs'])
+    } finally {
+      db.close()
+    }
+    await holder.exit
   }, 30_000)
 
   it('seeds a table once, so deleted seed rows do not come back on restart', async () => {

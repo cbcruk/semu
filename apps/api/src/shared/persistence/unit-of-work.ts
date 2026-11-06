@@ -28,23 +28,66 @@ export const keepChanges: Effect.Effect<void> = Effect.gen(function* () {
 export class SqliteDatabase extends Context.Service<SqliteDatabase, { readonly db: DatabaseSync }>()(
   'semu/persistence/SqliteDatabase',
 ) {
-  /**
-   * `filename`의 DB를 엽니다. `:memory:`면 프로세스 메모리 DB입니다. 레이어가 닫힐 때 연결을 닫습니다.
-   *
-   * WAL로 열어 읽기가 쓰기를 막지 않게 하고, 쓰기 잠금을 기다리는 시간을 5초로 둡니다.
-   */
+  /** `filename`의 DB를 {@link openSqlite}로 엽니다. `:memory:`면 프로세스 메모리 DB입니다. 레이어가 닫힐 때 연결을 닫습니다. */
   static readonly layer = (filename: string) =>
     Layer.effect(
       SqliteDatabase,
       Effect.acquireRelease(
-        Effect.sync(() => {
-          const db = new DatabaseSync(filename)
-          db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON;')
-          return SqliteDatabase.of({ db })
-        }),
+        Effect.sync(() => SqliteDatabase.of({ db: openSqlite(filename) })),
         ({ db }) => Effect.sync(() => db.close()),
       ),
     )
+}
+
+/** 다른 연결이 잡은 잠금을 기다리는 시간입니다. */
+export const SQLITE_BUSY_TIMEOUT_MS = 5000
+
+/**
+ * `filename`의 DB를 열고 저장소가 쓰는 설정을 합니다. 잠금은 {@link SQLITE_BUSY_TIMEOUT_MS}까지 기다리고, WAL로 바꿔 읽기가 쓰기를 막지
+ * 않게 하고, 외래 키를 켭니다. WAL로 바꾸지 못하면 예외입니다. `:memory:`는 WAL이 없으므로 `memory` 그대로 둡니다.
+ *
+ * 여러 프로세스가 새 파일을 함께 열면 `PRAGMA journal_mode = WAL`이 busy timeout을 기다리지 않고 바로 `SQLITE_BUSY`로 실패합니다.
+ * 두 연결이 공유 잠금을 쥔 채 서로 배타 잠금을 기다리면 교착이라, SQLite가 busy handler를 부르지 않기 때문입니다. 그래서 이 단계만
+ * 다시 시도합니다. 시도마다 busy timeout을 남은 시간으로 줄여, 다시 시도하는 시간을 모두 합쳐도 {@link SQLITE_BUSY_TIMEOUT_MS}
+ * 안팎입니다.
+ */
+export function openSqlite(filename: string): DatabaseSync {
+  const db = new DatabaseSync(filename, { timeout: SQLITE_BUSY_TIMEOUT_MS })
+  try {
+    const mode = switchToWal(db)
+    if (mode !== 'wal' && mode !== 'memory') {
+      throw new Error(`${filename} could not switch to WAL journal mode (still ${mode})`)
+    }
+    db.exec('PRAGMA foreign_keys = ON')
+    return db
+  } catch (error) {
+    db.close()
+    throw error
+  }
+}
+
+const SQLITE_BUSY = 5
+
+/** WAL로 바꾸고 바뀐 저널 모드를 돌려줍니다. `SQLITE_BUSY`면 기한까지 다시 시도합니다. */
+function switchToWal(db: DatabaseSync): string {
+  const deadline = Date.now() + SQLITE_BUSY_TIMEOUT_MS
+  const pause = new Int32Array(new SharedArrayBuffer(4))
+  try {
+    for (;;) {
+      db.exec(`PRAGMA busy_timeout = ${Math.max(0, deadline - Date.now())}`)
+      try {
+        return String(db.prepare('PRAGMA journal_mode = WAL').get()?.['journal_mode'])
+      } catch (error) {
+        const code = (error as { errcode?: unknown }).errcode
+        // 확장 코드(SQLITE_BUSY_*)도 아래 8비트는 SQLITE_BUSY입니다.
+        if (typeof code !== 'number' || (code & 0xff) !== SQLITE_BUSY || Date.now() >= deadline) throw error
+        // 동시에 다시 부딪치지 않게 조금씩 다르게 쉽니다. 이 함수는 동기라 스레드를 잠깐 멈춥니다.
+        Atomics.wait(pause, 0, 0, Math.min(5 + Math.random() * 20, Math.max(0, deadline - Date.now())))
+      }
+    }
+  } finally {
+    db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS}`)
+  }
 }
 
 /**
