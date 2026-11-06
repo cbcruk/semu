@@ -4,11 +4,13 @@ import { IdempotencyKeys } from '../idempotency.ts'
 import { readObject } from '../legacy-body.ts'
 import { LegacyError } from '../legacy-error.ts'
 import { json } from '../router.ts'
+import { callApi } from '../upstream.ts'
 import type { Route, SignedInContext } from '../router.ts'
 import type { Payslip, PayslipSendJob, PayrollLedger, PayrollRow } from '../upstream.types.ts'
 import { toLegacySummary } from './ledgers.mapping.ts'
 import { ledgerOf, parentOf, read, rowsOf } from './ledgers.routes.ts'
 import {
+  assertRowIdFormat,
   isWageRow,
   parsePayslipSave,
   parseRowIds,
@@ -23,6 +25,9 @@ const CARD = '/api/company/:companyId/payroll/cards/:cardId'
 
 /** BFF가 만든 `Idempotency-Key`의 앞부분입니다. 새 API 쪽에서 현행 화면의 발송을 알아보게 합니다. */
 const SEND_KEY_PREFIX = 'bff-payslip-send'
+
+/** 클라이언트 키를 세션·대상에 묶은 키의 앞부분입니다. */
+const CLIENT_KEY_PREFIX = 'bff-client'
 
 /** 마감 전 카드의 명세서 발송 거절입니다. 현행 서버와 같은 문구입니다. */
 function notClosed(): LegacyError {
@@ -73,9 +78,14 @@ function emailOf(row: PayrollRow, emails: ReadonlyMap<string, string> | undefine
 }
 
 /**
- * 명세서를 보냅니다. 클라이언트가 `Idempotency-Key`를 보내면 그대로 쓰고, 현행 클라이언트처럼 없으면 BFF가
- * 세션·대장·명세서 집합의 지문으로 키를 붙입니다({@link IdempotencyKeys}). 새 API가 명세서를 찾지 못하면(그사이 마감이
- * 풀림) 현행처럼 409입니다.
+ * 명세서를 보냅니다. 새 `:send`는 같은 회사·키면 본문을 보지 않고 처음 작업을 재응답하므로, 어떤 키든 세션·대상에 묶어 넘깁니다.
+ *
+ * - 현행 클라이언트처럼 키가 없으면 세션·대장·명세서 집합의 지문으로 BFF가 키를 정하고 창 안에서 다시 씁니다({@link IdempotencyKeys}).
+ *   작업 전체가 실패했으면(나간 메일 없음) 키를 기억하지 않아 다시 누르면 실제로 다시 보냅니다
+ * - 클라이언트가 `Idempotency-Key`를 보내면 `bff-client:<SHA-256(세션·키·대장·명세서)>`로 바꿔 넘깁니다. 같은 세션이 같은 키로 같은
+ *   대상을 다시 보낼 때만 재응답이고, 다른 사용자나 다른 명세서에 같은 키를 써도 남의 작업을 받지 않습니다
+ * - 같은 지문의 요청은 한 번에 하나씩 갑니다. 제한 시간은 발송용(`sendTimeoutMs`, 기본 2분)입니다
+ * - 새 API가 명세서를 찾지 못하면(그사이 마감이 풀림) 현행처럼 409입니다
  */
 async function send(
   context: SignedInContext,
@@ -83,18 +93,30 @@ async function send(
   payslipIds: readonly string[],
 ): Promise<PayslipSendJob> {
   const sendWith = async (key: string) => {
-    const response = await upstream(context, 'POST', '/v1/payslips:send', {
-      body: { payslipIds },
-      headers: { 'idempotency-key': key },
-    })
+    const response = await callApi(
+      context.deps,
+      context.sessionId,
+      context.params['companyId'],
+      'POST',
+      '/v1/payslips:send',
+      {
+        body: { payslipIds },
+        headers: { 'idempotency-key': key },
+        send: true,
+      },
+    )
     if (response.status === 404) throw notClosed()
     return read<PayslipSendJob>(response)
   }
-  const clientKey = context.request.headers.get('idempotency-key')?.trim()
-  if (clientKey !== undefined && clientKey !== '') return sendWith(clientKey)
+  const keys = context.deps.idempotencyKeys
   // 명세서 ID는 카드의 행 순서라(새 목록 순서) 같은 선택이면 요청의 `row_ids` 순서와 상관없이 같은 지문입니다.
-  const fingerprint = IdempotencyKeys.fingerprint([context.sessionId, ledger.id, ...payslipIds])
-  return context.deps.idempotencyKeys.run(fingerprint, SEND_KEY_PREFIX, sendWith)
+  const target = [context.sessionId, ledger.id, ...payslipIds]
+  const clientKey = context.request.headers.get('idempotency-key')?.trim()
+  if (clientKey !== undefined && clientKey !== '') {
+    const bound = IdempotencyKeys.fingerprint(['client', clientKey, ...target])
+    return keys.serial(bound, () => sendWith(`${CLIENT_KEY_PREFIX}:${bound}`))
+  }
+  return keys.run(IdempotencyKeys.fingerprint(target), SEND_KEY_PREFIX, sendWith, (job) => job.status !== 'FAILED')
 }
 
 /**
@@ -176,8 +198,10 @@ export const payslipRoutes: readonly Route[] = [
     auth: true,
     handle: async (context) => {
       const rowIds = parseRowIds(await readObject(context.request))
+      // 현행 순서: 본문 모양 → 카드 404 → 마감 전 409 → 카드에 없는 행 422.
       const { ledger } = await ledgerOf(context)
       if (ledger.status !== 'CLOSED') throw notClosed()
+      assertRowIdFormat(rowIds)
       const payslips = await payslipsOf(context, ledger)
       // 현행 발송은 근로소득 행만이 아니라 카드의 어느 행이든 받았습니다. 결과는 카드의 행 순서입니다.
       const wanted = new Set(rowIds)
@@ -188,9 +212,7 @@ export const payslipRoutes: readonly Route[] = [
         ledger,
         targets.map((payslip) => payslip.id),
       )
-      return json({
-        results: toLegacySendResults(job, new Map(payslips.map((payslip) => [payslip.id, payslip.rowId]))),
-      })
+      return json({ results: toLegacySendResults(job, new Map(targets.map((payslip) => [payslip.id, payslip.rowId]))) })
     },
   },
   {

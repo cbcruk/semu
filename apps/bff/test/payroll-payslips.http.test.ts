@@ -342,7 +342,6 @@ describe('sending payslips', () => {
         [[], 'row_ids', 'Ensure this list has 1 to 500 items.'],
         [Array.from({ length: 501 }, () => UNKNOWN_ROW), 'row_ids', 'Ensure this list has 1 to 500 items.'],
         [[UNKNOWN_ROW, 7], 'row_ids.1', 'Invalid value.'],
-        [['123'], 'row_ids', 'Some rows are not on this payroll card.'],
       ]
       for (const [rowIds, field, message] of cases) {
         const response = await sendRows(signedIn, cardId, rowIds)
@@ -351,6 +350,36 @@ describe('sending payslips', () => {
       }
 
       expect(calls).toEqual([])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('checks the card and its state before the row IDs, like the legacy server, without reading payslips', async () => {
+    const calls: string[] = []
+    let watching = false
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) => {
+        if (watching) calls.push(`${request.method} ${new URL(request.url).pathname}`)
+        return next(request)
+      },
+    })
+    try {
+      const { cardId } = await closedCard(signedIn)
+      const draft = await (
+        await signedIn.request('POST', `${PAYROLL}/cards/`, { body: { attribution_month: '2026-10' } })
+      ).json()
+      watching = true
+
+      const unknown = await sendRows(signedIn, UNKNOWN_LEDGER, ['123'])
+      const open = await sendRows(signedIn, draft.id, ['123'])
+      const closed = await sendRows(signedIn, cardId, ['123'])
+
+      expect(unknown.status).toBe(404)
+      expect(open.status).toBe(409)
+      expect(closed.status).toBe(422)
+      expect((await closed.json()).errors).toEqual({ row_ids: ['Some rows are not on this payroll card.'] })
+      expect(calls.filter((call) => !call.startsWith('GET /v1/payroll-ledgers/'))).toEqual([])
     } finally {
       await custom.dispose()
     }
@@ -496,7 +525,7 @@ describe('sending payslips only once', () => {
       client: signedIn,
       keys,
     } = await watched({
-      timeoutMs: 100,
+      sendTimeoutMs: 100,
       delaySend: () => (slow ? 300 : 0),
     })
     try {
@@ -543,16 +572,129 @@ describe('sending payslips only once', () => {
     }
   })
 
-  it('passes a client Idempotency-Key through as is', async () => {
+  it('binds a client Idempotency-Key to the session and the payslips', async () => {
+    let businessRowId = ''
     const { harness: custom, client: signedIn, keys } = await watched()
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn, {
+        before: async (id) => void (businessRowId = await addBusinessRow(custom, id)),
+      })
+      const owner = custom.client()
+      await owner.login(OWNER)
+
+      const first = await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-1' })
+      const again = await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-1' })
+      // 다른 사용자가 같은 키로 다른 행을 보냅니다. 새 API는 키를 회사 단위로만 보므로 그대로 넘기면 앞 작업이 돌아옵니다.
+      const other = await sendRows(owner, cardId, [businessRowId], { 'idempotency-key': 'send-1' })
+
+      expect(await again.json()).toEqual(await first.json())
+      expect((await other.json()).results).toEqual([{ row_id: businessRowId, status: 'fail', fail_reason: 'no_email' }])
+      expect(keys[0]).toMatch(/^bff-client:[0-9a-f]{64}$/)
+      expect(keys[1]).toBe(keys[0])
+      expect(keys[2]).not.toBe(keys[0])
+      expect((await upstreamPayslips(custom, cardId)).map((item) => item.delivery.attempts)).toEqual([1, 1])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('sends a double submit with a client key once, one request at a time', async () => {
+    const keys: Array<string | null> = []
+    let inFlight = 0
+    let mostInFlight = 0
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: async (request, next) => {
+        if (!isSend(request)) return next(request)
+        keys.push(request.headers.get('idempotency-key'))
+        inFlight += 1
+        mostInFlight = Math.max(mostInFlight, inFlight)
+        try {
+          // 새 API가 메일을 보내는 동안 다음 요청이 겹치는지 봅니다. 새 API는 키를 처리 뒤에 기억합니다.
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          return await next(request)
+        } finally {
+          inFlight -= 1
+        }
+      },
+    })
     try {
       const { cardId, wageRowId } = await closedCard(signedIn)
 
-      await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'screen-send-1' })
-      await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'screen-send-1' })
+      const responses = await Promise.all([
+        sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-2' }),
+        sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-2' }),
+      ])
 
-      expect(keys).toEqual(['screen-send-1', 'screen-send-1'])
+      expect(responses.map((response) => response.status)).toEqual([200, 200])
+      expect(keys).toHaveLength(2)
+      expect(new Set(keys).size).toBe(1)
+      expect(mostInFlight).toBe(1)
       expect((await upstreamPayslips(custom, cardId))[0].delivery.attempts).toBe(1)
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('refuses a replayed job for other payslips instead of reporting it as sent', async () => {
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: async (request, next) => {
+        if (!isSend(request)) return next(request)
+        const job = {
+          id: 'job_01JBQ000000000000000000000',
+          status: 'SUCCEEDED',
+          result: { items: [{ payslipId: 'psl_01JBQ000000000000000000000', status: 'SENT', failureReason: null }] },
+          createdAt: '2026-10-01T00:00:00.000Z',
+          finishedAt: '2026-10-01T00:00:00.000Z',
+        }
+        return new Response(JSON.stringify(job), { status: 202, headers: { 'content-type': 'application/json' } })
+      },
+    })
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+
+      const response = await sendRows(signedIn, cardId, [wageRowId])
+
+      expect(response.status).toBe(409)
+      expect((await response.json()).code).toBe('IDEMPOTENCY_KEY_REUSED')
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('waits for a slow send with the send timeout instead of the general one', async () => {
+    const { harness: custom, client: signedIn } = await watched({
+      timeoutMs: 100,
+      sendTimeoutMs: 5_000,
+      delaySend: () => 300,
+    })
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+
+      const response = await sendRows(signedIn, cardId, [wageRowId])
+
+      expect(response.status).toBe(200)
+      expect((await upstreamPayslips(custom, cardId))[0].delivery.attempts).toBe(1)
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('sends again right away when nothing went out the first time', async () => {
+    let businessRowId = ''
+    const { harness: custom, client: signedIn, keys } = await watched()
+    try {
+      const { cardId } = await closedCard(signedIn, {
+        before: async (id) => void (businessRowId = await addBusinessRow(custom, id)),
+      })
+
+      const first = await sendRows(signedIn, cardId, [businessRowId])
+      const second = await sendRows(signedIn, cardId, [businessRowId])
+
+      expect((await first.json()).results[0].status).toBe('fail')
+      expect((await second.json()).results[0].status).toBe('fail')
+      expect(keys[1]).not.toBe(keys[0])
+      const business = (await upstreamPayslips(custom, cardId)).find((item) => item.rowId === businessRowId)
+      expect(business.delivery.attempts).toBe(2)
     } finally {
       await custom.dispose()
     }
@@ -660,6 +802,7 @@ describe('saving payslip emails and formulas', () => {
         [{ wage_salary: [{}] }, 'wage_salary.0.id'],
         [{ wage_salary: [{ id: 7 }] }, 'wage_salary.0.id'],
         [{ wage_salary: [{ id: wageRowId, email: 7 }] }, 'wage_salary.0.email'],
+        [{ wage_salary: [{ id: wageRowId, email: 'not-an-email' }] }, 'wage_salary.0.email'],
         [{ wage_salary: [{ id: wageRowId, payment_formulas: [] }] }, 'wage_salary.0.payment_formulas'],
         [{ wage_salary: [{ id: wageRowId, payment_formulas: { 식대: '월 정액' } }] }, 'wage_salary.0.payment_formulas'],
       ]
@@ -668,6 +811,8 @@ describe('saving payslip emails and formulas', () => {
         expect(response.status).toBe(422)
         expect(Object.keys((await response.json()).errors)).toEqual([field])
       }
+      const malformed = await save(signedIn, cardId, { wage_salary: [{ id: wageRowId, email: 'not-an-email' }] })
+      expect((await malformed.json()).errors).toEqual({ 'wage_salary.0.email': ['Invalid email address.'] })
 
       expect(calls).toEqual([])
     } finally {

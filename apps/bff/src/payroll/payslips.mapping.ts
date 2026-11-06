@@ -1,4 +1,4 @@
-import { legacyErrors } from '../legacy-error.ts'
+import { LegacyError, legacyErrors } from '../legacy-error.ts'
 import type { Payslip, PayslipFailureReason, PayslipSendJob, PayrollLedger, PayrollRow } from '../upstream.types.ts'
 import { legacySegment, toLegacyRow } from './ledgers.mapping.ts'
 
@@ -17,6 +17,9 @@ export const MAX_PAYSLIP_ROWS = 500
 
 /** 새 급여대장 행 ID입니다. */
 const ROW_ID = /^pyr_[0-9A-HJKMNP-TV-Z]{26}$/
+
+/** 현행 zod `z.email()`처럼 형식만 봅니다. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 const NOT_ON_CARD = 'Some rows are not on this payroll card.'
 
@@ -85,22 +88,32 @@ export function toLegacyNotification(row: PayrollRow, payslip: Payslip | undefin
 /**
  * 새 발송 작업 → 현행 `POST …/notifications`의 결과입니다. 새 API는 보낸 명세서 순서로 답합니다.
  *
- * @param rowIdOf 명세서 ID → 행 ID입니다. 모르는 명세서(다른 요청의 재응답)는 빼지 않고 명세서 ID를 그대로 씁니다.
+ * 새 API는 같은 회사·키면 본문을 보지 않고 처음 작업을 재응답합니다. 작업의 명세서가 요청한 명세서와 다르면 요청한 명세서는
+ * 나가지 않았으므로 성공처럼 보이지 않게 409 `IDEMPOTENCY_KEY_REUSED`로 거절합니다.
+ *
+ * @param requested 요청한 명세서 ID → 행 ID입니다.
  */
 export function toLegacySendResults(
   job: PayslipSendJob,
-  rowIdOf: ReadonlyMap<string, string>,
+  requested: ReadonlyMap<string, string>,
 ): Array<Record<string, unknown>> {
+  const sent = new Set(job.result.items.map((item) => item.payslipId))
+  if (sent.size !== requested.size || [...requested.keys()].some((id) => !sent.has(id))) {
+    throw new LegacyError(409, {
+      detail: 'This Idempotency-Key was already used for a different send. Send again with a new key.',
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    })
+  }
   return job.result.items.map((item) => ({
-    row_id: rowIdOf.get(item.payslipId) ?? item.payslipId,
+    row_id: requested.get(item.payslipId),
     status: item.status === 'SENT' ? 'success' : 'fail',
     fail_reason: legacyFailReason(item.failureReason),
   }))
 }
 
 /**
- * 현행 발송 본문의 `row_ids`를 읽습니다. 현행처럼 1–500개이고 같은 ID는 한 번으로 봅니다. 새 행 ID 형식이 아니면 이 카드의 행이
- * 아니므로 새 API를 부르기 전에 현행 문구로 422입니다.
+ * 현행 발송 본문의 `row_ids`를 읽습니다. 현행처럼 1–500개의 ID이고 같은 ID는 한 번으로 봅니다. 카드에 있는 행인지(새 행 ID
+ * 형식 포함)는 현행처럼 카드 404·마감 전 409 뒤에 라우트가 봅니다({@link assertRowIdFormat}).
  */
 export function parseRowIds(body: Record<string, unknown>): string[] {
   const value = body['row_ids']
@@ -112,9 +125,12 @@ export function parseRowIds(body: Record<string, unknown>): string[] {
   value.forEach((id, index) => {
     if (typeof id !== 'string') throw legacyErrors.invalidField(`row_ids.${index}`, 'Invalid value.')
   })
-  const ids = [...new Set(value as string[])]
-  if (!ids.every((id) => ROW_ID.test(id))) throw legacyErrors.invalidField('row_ids', NOT_ON_CARD)
-  return ids
+  return [...new Set(value as string[])]
+}
+
+/** 새 행 ID 형식이 아닌 ID는 이 카드의 행일 수 없으므로 명세서를 읽기 전에 현행 문구로 422입니다. */
+export function assertRowIdFormat(ids: readonly string[]): void {
+  if (!ids.every((id) => ROW_ID.test(id))) throw rowsNotOnCard()
 }
 
 /** 현행 행 선택이 카드에 없는 행을 담았을 때의 422입니다. */
@@ -153,7 +169,7 @@ export function parsePayslipSave(body: Record<string, unknown>): PayslipSaveEntr
     if (id === undefined || id === null) throw legacyErrors.invalidField(field('id'), 'This field is required.')
     if (typeof id !== 'string') throw legacyErrors.invalidField(field('id'), 'Invalid value.')
     const email = item['email']
-    if (email !== undefined && email !== null && typeof email !== 'string') {
+    if (email !== undefined && email !== null && (typeof email !== 'string' || !EMAIL.test(email))) {
       throw legacyErrors.invalidField(field('email'), 'Invalid email address.')
     }
     const formulas = item['payment_formulas']

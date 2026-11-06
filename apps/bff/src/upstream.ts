@@ -22,6 +22,12 @@ export interface UpstreamOptions {
    */
   authTimeoutMs?: number
   /**
+   * 외부 효과를 요청 안에서 끝내는 발송(명세서 `:send`)의 제한 시간(ms)입니다. 기본 2분으로 일반 호출보다 깁니다.
+   * 새 API는 명세서마다 차례로 메일을 보내고 끝난 **뒤에** `Idempotency-Key`를 기억하므로, BFF가 먼저 시간 초과로 끝내면
+   * 사용자의 재시도가 처리 중인 발송과 겹쳐 메일이 두 번 나갈 수 있습니다. 그 창을 줄이려고 길게 둡니다.
+   */
+  sendTimeoutMs?: number
+  /**
    * 응답 본문 하나의 최대 크기(바이트)입니다. 기본 10MB입니다. `send`는 본문을 메모리에 다 읽으므로,
    * 넘으면 읽기를 멈추고 요청을 취소한 뒤 502 `UPSTREAM_RESPONSE_TOO_LARGE`로 응답합니다.
    */
@@ -33,6 +39,9 @@ export const DEFAULT_UPSTREAM_TIMEOUT_MS = 10_000
 
 /** 기본 인증 호출 제한 시간입니다. */
 export const DEFAULT_AUTH_TIMEOUT_MS = 30_000
+
+/** 기본 발송 호출 제한 시간입니다. 2분입니다. */
+export const DEFAULT_SEND_TIMEOUT_MS = 120_000
 
 /** 기본 업스트림 응답 본문 최대 크기(바이트)입니다. 10MB입니다. */
 export const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024
@@ -62,6 +71,8 @@ const ACCESS_EXPIRY_SKEW_MS = 30_000
 interface UpstreamRequest {
   /** 로그인·갱신·전환처럼 refresh 쿠키를 회전시키는 호출입니다. {@link UpstreamOptions.authTimeoutMs}를 씁니다. */
   auth?: boolean
+  /** 외부 효과를 요청 안에서 끝내는 발송 호출입니다. {@link UpstreamOptions.sendTimeoutMs}를 씁니다. */
+  send?: boolean
   token?: string | undefined
   cookie?: string | undefined
   body?: unknown
@@ -94,7 +105,9 @@ export async function send(
   const timeoutMs =
     options.auth === true
       ? (deps.upstream.authTimeoutMs ?? DEFAULT_AUTH_TIMEOUT_MS)
-      : (deps.upstream.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS)
+      : options.send === true
+        ? (deps.upstream.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS)
+        : (deps.upstream.timeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS)
   let timer: ReturnType<typeof setTimeout> | undefined
   const timedOut = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {

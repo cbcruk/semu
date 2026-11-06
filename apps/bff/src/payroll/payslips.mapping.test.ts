@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LegacyError } from '../legacy-error.ts'
 import type { Payslip, PayslipSendJob } from '../upstream.types.ts'
 import {
+  assertRowIdFormat,
   legacyFailReason,
   legacyNotificationStatus,
   legacySentAt,
@@ -58,7 +59,7 @@ describe('payslip delivery', () => {
     expect(legacySentAt(undefined)).toBeNull()
   })
 
-  it('maps job items back to rows and keeps unknown payslips visible', () => {
+  it('maps job items back to rows and refuses a job for other payslips', () => {
     const job: PayslipSendJob = {
       id: 'job_1',
       status: 'PARTIALLY_SUCCEEDED',
@@ -72,10 +73,25 @@ describe('payslip delivery', () => {
       finishedAt: '',
     }
 
-    expect(toLegacySendResults(job, new Map([['psl_1', ROW_A]]))).toEqual([
-      { row_id: ROW_A, status: 'success', fail_reason: null },
-      { row_id: 'psl_9', status: 'fail', fail_reason: 'no_email' },
+    const requested = new Map([
+      ['psl_1', ROW_A],
+      ['psl_9', ROW_B],
     ])
+
+    expect(toLegacySendResults(job, requested)).toEqual([
+      { row_id: ROW_A, status: 'success', fail_reason: null },
+      { row_id: ROW_B, status: 'fail', fail_reason: 'no_email' },
+    ])
+    for (const other of [
+      new Map([['psl_1', ROW_A]]),
+      new Map([...requested, ['psl_2', ROW_A]]),
+      new Map([
+        ['psl_1', ROW_A],
+        ['psl_8', ROW_B],
+      ]),
+    ]) {
+      expect(() => toLegacySendResults(job, other)).toThrow(LegacyError)
+    }
   })
 })
 
@@ -84,6 +100,11 @@ describe('legacy payslip bodies', () => {
     expect(parseRowIds({ row_ids: [ROW_B, ROW_A, ROW_B] })).toEqual([ROW_B, ROW_A])
     expect(parseRowIds({ row_ids: Array.from({ length: 500 }, () => ROW_A) })).toEqual([ROW_A])
     expect(fieldsOf(() => parseRowIds({ row_ids: null }))).toEqual({ row_ids: ['This field is required.'] })
+    expect(parseRowIds({ row_ids: ['123'] })).toEqual(['123'])
+    expect(fieldsOf(() => assertRowIdFormat([ROW_A, '123']))).toEqual({
+      row_ids: ['Some rows are not on this payroll card.'],
+    })
+    expect(fieldsOf(() => assertRowIdFormat([ROW_A, ROW_B]))).toBeUndefined()
   })
 
   it('reads save entries, keeping a null email as no override', () => {
@@ -100,5 +121,10 @@ describe('legacy payslip bodies', () => {
     ])
     expect(parsePayslipSave({ wage_salary: Array.from({ length: 500 }, () => ({ id: ROW_A })) })).toHaveLength(500)
     expect(fieldsOf(() => parsePayslipSave({ wage_salary: [null] }))).toEqual({ 'wage_salary.0': ['Invalid value.'] })
+    for (const email of ['a@b', 'a b@c.d', '@c.d', 'a@']) {
+      expect(fieldsOf(() => parsePayslipSave({ wage_salary: [{ id: ROW_A, email }] }))).toEqual({
+        'wage_salary.0.email': ['Invalid email address.'],
+      })
+    }
   })
 })

@@ -44,6 +44,41 @@ describe('IdempotencyKeys', () => {
     expect(after).not.toBe(first)
   })
 
+  it('forgets the key at once when the result says nothing went out, but keeps it after a failure', async () => {
+    const keys = new IdempotencyKeys(1_000, () => 0)
+    const keep = (result: string) => result !== 'nothing sent'
+    const seen: string[] = []
+
+    await keys.run('fp', 'p', async (key) => (seen.push(key), 'nothing sent'), keep)
+    await keys.run('fp', 'p', async (key) => (seen.push(key), 'sent'), keep)
+    await keys.run('fp', 'p', async (key) => (seen.push(key), 'sent'), keep)
+    await expect(
+      keys.run('timeout', 'p', async (key) => {
+        seen.push(key)
+        throw new Error('timeout')
+      }),
+    ).rejects.toThrow('timeout')
+    await keys.run('timeout', 'p', async (key) => (seen.push(key), 'sent'), keep)
+
+    expect(seen[1]).not.toBe(seen[0])
+    expect(seen[2]).toBe(seen[1])
+    expect(seen[4]).toBe(seen[3])
+  })
+
+  it('keeps at most the given number of keys, dropping the least recently used', async () => {
+    const keys = new IdempotencyKeys(1_000, () => 0, 2)
+    const keyOf = (fingerprint: string) => keys.run(fingerprint, 'p', async (key) => key)
+
+    const a = await keyOf('a')
+    const b = await keyOf('b')
+    expect(await keyOf('a')).toBe(a)
+    await keyOf('c')
+
+    expect(keys.size).toBe(2)
+    expect(await keyOf('a')).toBe(a)
+    expect(await keyOf('b')).not.toBe(b)
+  })
+
   it('fingerprints the parts in order without keeping them', () => {
     const fingerprint = IdempotencyKeys.fingerprint(['session', 'cmp_1', 'pyl_1', 'psl_1'])
 
