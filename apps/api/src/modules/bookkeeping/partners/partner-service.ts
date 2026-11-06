@@ -192,7 +192,7 @@ export class PartnerService extends Context.Service<
       const encryptAccounts = (accounts: PartnerInput['bankAccounts']) =>
         (accounts ?? []).map((account, index) => ({
           bankCode: account.bankCode,
-          accountNumberEncrypted: cipher.encrypt(accountDigits(account.accountNumber)),
+          accountNumberEncrypted: cipher.encrypt('partnerAccount', accountDigits(account.accountNumber)),
           accountNumberLast4: accountDigits(account.accountNumber).slice(-4),
           alias: account.alias ?? null,
           isPrimary: account.isPrimary ?? index === 0,

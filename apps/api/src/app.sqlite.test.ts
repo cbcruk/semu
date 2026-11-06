@@ -48,8 +48,8 @@ describe('CiphersLive', () => {
   it('round-trips account numbers and refuses a tampered value', () => {
     const { token, plain } = run(
       Effect.map(AccountNumberCipher, (cipher) => {
-        const token = cipher.encrypt('110123456789')
-        return { token, plain: cipher.decrypt(token) }
+        const token = cipher.encrypt('partnerAccount', '110123456789')
+        return { token, plain: cipher.decrypt('partnerAccount', token) }
       }),
     )
 
@@ -57,8 +57,33 @@ describe('CiphersLive', () => {
     expect(token).not.toContain('110123456789')
     expect(plain).toBe('110123456789')
     expect(() =>
-      run(Effect.map(AccountNumberCipher, (cipher) => cipher.decrypt(token.replace(/:([^:])/, ':A$1')))),
+      run(
+        Effect.map(AccountNumberCipher, (cipher) => cipher.decrypt('partnerAccount', token.replace(/:([^:])/, ':A$1'))),
+      ),
     ).toThrow()
+  })
+
+  it('binds each account number field, so a ciphertext moved to another field does not open', () => {
+    const failures = run(
+      Effect.map(AccountNumberCipher, (cipher) => {
+        const fields = ['companyAccount', 'partnerAccount', 'giroAccount'] as const
+        return fields.flatMap((from) => {
+          const token = cipher.encrypt(from, '110123456789')
+          return fields
+            .filter((to) => to !== from)
+            .map((to) => {
+              try {
+                cipher.decrypt(to, token)
+                return `${from}->${to} opened`
+              } catch (error) {
+                return error instanceof Error ? error.name : 'unknown'
+              }
+            })
+        })
+      }),
+    )
+
+    expect(failures).toEqual(Array(6).fill('DecryptionFailed'))
   })
 
   it('seals credentials with a key derived from the data key', () => {
@@ -198,6 +223,37 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
     expect(logged).toContain('DecryptionFailed')
     expect(logged).toContain('hr/registrationNumber')
     expect(logged).not.toContain('1234567')
+  })
+
+  it('logs a record decode failure without the stored values in its message', async () => {
+    const filename = tempDatabase()
+    const key = new Uint8Array(randomBytes(32))
+    const app = sqliteApp(filename, key)
+    opened.push(app)
+    await app.signIn('owner@semu.example')
+    await app.dispose()
+    opened.length = 0
+
+    const db = new DatabaseSync(filename)
+    db.prepare(`UPDATE hr_employees SET data = ?`).run('{"name":"홍길동","email":"leak@example.com"')
+    db.close()
+
+    const logs: string[] = []
+    const capture = (...args: unknown[]) => void logs.push(args.map(String).join(' '))
+    const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(capture),
+    )
+    const reopened = sqliteApp(filename, key)
+    opened.push(reopened)
+    const token = String((await reopened.signIn('owner@semu.example'))['accessToken'])
+    const listed = await reopened.request('GET', '/v1/employees', { token })
+
+    for (const spy of spies) spy.mockRestore()
+    expect(listed).toMatchObject({ status: 500, body: { code: 'INTERNAL' } })
+    const logged = logs.join('\n')
+    expect(logged).toContain('SyntaxError at src/shared/persistence/json-codec.ts')
+    expect(logged).not.toContain('leak@example.com')
+    expect(logged).not.toContain('홍길동')
   })
 
   it('stores access and onboarding tokens only as hashes and expires the onboarding token', async () => {

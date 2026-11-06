@@ -15,7 +15,7 @@ import {
   loadOrCreateKeyFile,
   parseDataKey,
 } from './data-key.ts'
-import { databaseHasTables, verifyDataKeyFingerprint } from './key-check.ts'
+import { databaseHasTables, refuseUnkeyedDatabase, verifyDataKeyFingerprint } from './key-check.ts'
 
 const key = new Uint8Array(randomBytes(32))
 const RRN = 'hr/registrationNumber/aes-256-gcm'
@@ -179,6 +179,36 @@ describe('database key fingerprint', () => {
     expect(stored).toBe(dataKeyFingerprint(key))
     expect(stored).not.toContain(Buffer.from(key).toString('hex'))
     expect(stored).not.toContain(Buffer.from(key).toString('base64'))
+  })
+
+  it('refuses a database that has data but no fingerprint, without recording the key', () => {
+    const filename = join(tempDir(), 'semu.sqlite')
+    const db = new DatabaseSync(filename)
+    db.exec('CREATE TABLE hr_employees (id TEXT PRIMARY KEY)')
+    db.close()
+
+    expect(() => refuseUnkeyedDatabase(filename)).toThrow(/no data key fingerprint.*Delete the database file/)
+    expect(() => verifyDataKeyFingerprint(filename, key)).toThrow(/no data key fingerprint/)
+    const check = new DatabaseSync(filename, { readOnly: true })
+    const meta = check.prepare(`SELECT name FROM sqlite_master WHERE name = 'semu_meta'`).get()
+    check.close()
+    expect(meta).toBeUndefined()
+  })
+
+  it('accepts a missing or empty database and one opened with its recorded key', () => {
+    const missing = join(tempDir(), 'semu.sqlite')
+    expect(() => refuseUnkeyedDatabase(missing)).not.toThrow()
+
+    const empty = join(tempDir(), 'semu.sqlite')
+    writeFileSync(empty, '')
+    expect(() => refuseUnkeyedDatabase(empty)).not.toThrow()
+    expect(verifyDataKeyFingerprint(empty, key)).toBe('RECORDED')
+
+    const db = new DatabaseSync(empty)
+    db.exec('CREATE TABLE hr_employees (id TEXT PRIMARY KEY)')
+    db.close()
+    expect(() => refuseUnkeyedDatabase(empty)).not.toThrow()
+    expect(verifyDataKeyFingerprint(empty, key)).toBe('MATCHED')
   })
 
   it('sees tables in an existing database', () => {

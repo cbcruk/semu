@@ -154,6 +154,15 @@ describe('company seals', () => {
     expect(sent.body).toMatchObject({ status: 'PENDING', companySealId: seal.body.id })
   })
 
+  it('refuses a seal name longer than 50 characters', async () => {
+    expect((await register('other-company', '도'.repeat(50))).status).toBe(201)
+
+    expect(await register('other-company', '도'.repeat(51))).toMatchObject({
+      status: 400,
+      body: { code: 'VALIDATION_FAILED', violations: [{ field: 'name', code: 'INVALID_VALUE' }] },
+    })
+  })
+
   it("does not show or delete another company's seal", async () => {
     const listed = await app.json('GET', '/company-seals', { token: 'other-company' })
     const removed = await app.json('DELETE', `/company-seals/${SEAL}`, { token: 'other-company' })

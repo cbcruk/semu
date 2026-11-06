@@ -1,10 +1,15 @@
+import { execFile } from 'node:child_process'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Effect, Fiber, Layer, Option } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
-import { Outbox } from './outbox.ts'
+import { Outbox, relayLoggingDefects } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
-import { TableFactory, makeTenantTable } from './record-table.ts'
+import { TableFactory, makeSqliteRecordTable, makeTenantTable } from './record-table.ts'
 import { SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
 
 interface Row {
@@ -159,6 +164,69 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
+  it('records only a defect summary in last_error and keeps relaying past a broken row', () =>
+    run(
+      PersistenceSqliteLive(':memory:'),
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const outbox = yield* Outbox
+        const { db } = yield* SqliteDatabase
+        const received: string[] = []
+        const publish = yield* outbox.channel<{ name: string }>('leak.event->test', (event) =>
+          Effect.suspend(() => {
+            if (event.name === 'boom') return Effect.die(new Error('consumer saw owner@semu.example'))
+            received.push(event.name)
+            return Effect.void
+          }),
+        )
+        yield* unitOfWork.run(publish({ name: 'boom' }))
+        db.prepare(
+          `INSERT INTO outbox (id, channel, data, created_at) VALUES ('evt_broken', 'leak.event->test', ?, ?)`,
+        ).run('{"name":"홍길동","email":"leak@example.com"', new Date().toISOString())
+        yield* unitOfWork.run(publish({ name: 'after' }))
+        received.length = 0
+
+        const logs: string[] = []
+        const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+          vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.join(' '))),
+        )
+        yield* relayLoggingDefects(outbox)
+        for (const spy of spies) spy.mockRestore()
+
+        expect(received).toEqual([])
+        const errors = db
+          .prepare(`SELECT last_error FROM outbox WHERE last_error IS NOT NULL ORDER BY seq`)
+          .all()
+          .map((row) => String(row['last_error']))
+        expect(errors).toHaveLength(2)
+        expect(errors[0]).toMatch(/^Error at src\/shared\/persistence\/persistence\.test\.ts:\d+$/)
+        expect(errors[1]).toMatch(/^SyntaxError at src\/shared\/persistence\/json-codec\.ts:\d+$/)
+        const leaked = [...errors, ...logs].join('\n')
+        for (const value of ['owner@semu.example', 'leak@example.com', '홍길동']) expect(leaked).not.toContain(value)
+      }),
+    ))
+
+  it('logs a relay defect as a summary instead of failing', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const logs: string[] = []
+        const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+          vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.join(' '))),
+        )
+        yield* relayLoggingDefects(
+          Outbox.of({
+            channel: () => Effect.die('unused'),
+            relay: () => Effect.die(new Error('row for leak@example.com')),
+          }),
+        )
+        for (const spy of spies) spy.mockRestore()
+
+        expect(logs.join('\n')).toContain('Outbox relay defect')
+        expect(logs.join('\n')).toContain('Error at src/shared/persistence/persistence.test.ts')
+        expect(logs.join('\n')).not.toContain('leak@example.com')
+      }),
+    ))
+
   it('does not let the relay deliver an event from a transaction that later rolls back, and delivers once', () =>
     run(
       PersistenceSqliteLive(':memory:'),
@@ -193,4 +261,92 @@ describe('sqlite unit of work', () => {
         expect(received).toEqual(['once'])
       }),
     ))
+})
+
+describe('sqlite seeds', () => {
+  const ids = (db: DatabaseSync) =>
+    db
+      .prepare(`SELECT id FROM test_seeded ORDER BY id`)
+      .all()
+      .map((row) => row['id'])
+
+  it('fails on a duplicate seed ID and leaves the table unseeded and unmarked', () => {
+    const db = new DatabaseSync(':memory:')
+    const duplicated = [...seed, { ...seed[0]!, amount: 9 }]
+
+    expect(() => makeSqliteRecordTable<Row>(db, 'test_seeded', { seed: duplicated })).toThrow(/UNIQUE/)
+    expect(ids(db)).toEqual([])
+    expect(db.prepare(`SELECT name FROM semu_meta`).all()).toEqual([])
+    expect(db.isTransaction).toBe(false)
+  })
+
+  it('lets processes that open one file together seed each table once without failing', async () => {
+    const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
+    const module = new URL('./record-table.ts', import.meta.url).href
+    const startAt = Date.now() + 1500
+    const script =
+      `const { DatabaseSync } = await import('node:sqlite');` +
+      `const { makeSqliteRecordTable } = await import(${JSON.stringify(module)});` +
+      `const db = new DatabaseSync(${JSON.stringify(filename)});` +
+      `db.exec('PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');` +
+      `const seed = Array.from({ length: 500 }, (_, i) => ({ id: 'r' + String(i).padStart(4, '0') }));` +
+      `while (Date.now() < ${startAt}) {}` +
+      `for (let t = 0; t < 20; t += 1) makeSqliteRecordTable(db, 'race_' + t, { seed });` +
+      `db.close()`
+    const run = () =>
+      new Promise<void>((resolve, reject) =>
+        execFile(process.execPath, ['--input-type=module', '-e', script], (error, _stdout, stderr) =>
+          error ? reject(new Error(stderr || error.message)) : resolve(),
+        ),
+      )
+
+    await Promise.all(Array.from({ length: 6 }, run))
+
+    const db = new DatabaseSync(filename, { readOnly: true })
+    const counts = Array.from({ length: 20 }, (_, t) => db.prepare(`SELECT count(*) AS n FROM race_${t}`).get()?.['n'])
+    const markers = db.prepare(`SELECT count(*) AS n FROM semu_meta WHERE name LIKE 'seeded:race_%'`).get()?.['n']
+    db.close()
+    expect(counts).toEqual(Array(20).fill(500))
+    expect(markers).toBe(20)
+  }, 30_000)
+
+  it('seeds a table once, so deleted seed rows do not come back on restart', async () => {
+    const db = new DatabaseSync(':memory:')
+    const table = makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+    expect(ids(db)).toEqual(['r1', 'r2'])
+
+    await Effect.runPromise(Effect.all([table.remove('r1'), table.remove('r2')]))
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual([])
+    expect(
+      db
+        .prepare(`SELECT name FROM semu_meta`)
+        .all()
+        .map((row) => row['name']),
+    ).toEqual(['seeded:test_seeded'])
+  })
+
+  it('does not mark a table without a seed, so a seed added later still arrives', () => {
+    const db = new DatabaseSync(':memory:')
+    makeSqliteRecordTable<Row>(db, 'test_seeded')
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'semu_meta'`).get()).toBeUndefined()
+
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual(['r1', 'r2'])
+  })
+
+  it('marks a table that predates the marker without seeding it, and keeps it unseeded after it empties', () => {
+    const db = new DatabaseSync(':memory:')
+    db.exec(`CREATE TABLE test_seeded (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT`)
+    db.prepare(`INSERT INTO test_seeded (id, company_id, data) VALUES ('r9', NULL, ?)`).run(encodeRecord({ id: 'r9' }))
+
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+    expect(ids(db)).toEqual(['r9'])
+    db.exec(`DELETE FROM test_seeded`)
+    makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
+
+    expect(ids(db)).toEqual([])
+  })
 })

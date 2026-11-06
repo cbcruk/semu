@@ -9,7 +9,7 @@ import { AppLive, EncryptedMemoryLive, SqliteLive } from './app.ts'
 import { AccessTokens } from './modules/identity-access/access-tokens.ts'
 import { ACCESS_TOKEN_TTL_SECONDS } from './modules/identity-access/sessions/sessions.ts'
 import { DATA_KEY_BYTES, DATA_KEY_ENV, loadOrCreateKeyFile, parseDataKey } from './shared/crypto/data-key.ts'
-import { databaseHasTables, verifyDataKeyFingerprint } from './shared/crypto/key-check.ts'
+import { databaseHasTables, refuseUnkeyedDatabase, verifyDataKeyFingerprint } from './shared/crypto/key-check.ts'
 
 const port = Number(process.env['PORT'] ?? 3000)
 /** SQLite 파일 경로입니다. `memory`면 저장하지 않고 프로세스 메모리에만 둡니다. */
@@ -38,9 +38,14 @@ function dataKey(): Uint8Array {
   return key
 }
 
-/** 데이터 키를 정하고, 데이터베이스에 남긴 키 지문과 맞는지 봅니다. 맞지 않으면 이유를 남기고 끝냅니다. */
+/**
+ * 데이터 키를 정하고, 데이터베이스에 남긴 키 지문과 맞는지 봅니다. 맞지 않으면 이유를 남기고 끝냅니다.
+ *
+ * 키 지문 없이 데이터가 있는 데이터베이스(데이터 암호화 이전에 만든 것)는 키를 고르기 전에 거부합니다. 지우고 다시 만들어야 합니다.
+ */
 function startupKey(): Uint8Array {
   try {
+    if (!ephemeral) refuseUnkeyedDatabase(database)
     const key = dataKey()
     // 다른 키로 띄우면 저장된 암호문을 열 때마다 500이 나므로, 데이터베이스에 남긴 키 지문이 다르면 시작하지 않습니다.
     if (!ephemeral) verifyDataKeyFingerprint(database, key)

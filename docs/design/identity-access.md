@@ -143,6 +143,7 @@ sequenceDiagram
 - refresh·전환·로그아웃은 그 세션의 이전 access token을 즉시 폐기합니다
 - 세션에는 access token과 `onboardingToken`의 SHA-256(`accessTokenHash`, `onboardingTokenHash`)만 둡니다. 폐기와 조회도 해시로 합니다. 원문은 응답으로만 나갑니다
 - `onboardingToken`은 1시간(세션이 먼저 끝나면 그때) 뒤 만료됩니다. 로그인·refresh마다 새로 발급하고 이전 것은 무효입니다
+- `onboardingToken`으로 회사를 등록하면 세션의 `onboardingTokenHash`를 지웁니다. 같은 토큰으로 회사를 또 등록하면 401입니다. 등록이 실패(409·422)하면 토큰은 남습니다
 - 회사 선택: 요청한 `companyId`(접근 불가면 404) → 마지막으로 쓴 회사 → 가장 먼저 소속된 회사. 회사가 없으면 access token 대신 `onboardingToken`을 줍니다
 - 로그인 실패: 모르는 이메일과 틀린 비밀번호는 같은 401 `INVALID_CREDENTIALS`. 연속 5회 틀리면 423 `ACCOUNT_LOCKED`(해제는 비밀번호 재설정, 미구현)
 - 비밀번호는 scrypt(N=16384, r=8, p=1)로 저장합니다. 정책은 8–20자, 영문·숫자 포함, 공백 불가([password-policy](../reference/rules/password-policy.md))
@@ -368,7 +369,7 @@ stateDiagram-v2
 | 토큰 범위(`COMPANY`·`AGENCY`), `:switch-agency`, `AgencyAuthentication`·`authorizeAgency`, `GET /agency/companies` | 구현 (`access/agent-directory.ts`, `agency/`). 큐 자체는 Tax ([agency-queue.md](agency-queue.md)) |
 | 행위자 계산(소속·배정·팀장·플랜·약관·프로모션) | 구현 (`access/actor-directory.ts`) |
 | access token 만료 | `AccessTokens.layerExpiring` 구현 |
-| 토큰 저장 | access token·onboarding token은 해시만 저장. onboarding token 만료(1시간) 구현 |
+| 토큰 저장 | access token·onboarding token은 해시만 저장. onboarding token 만료(1시간)와 회사 등록 뒤 소비 구현 |
 | 비밀번호 재설정, 이메일 가입, 소셜·제휴 로그인, 파트너 연결, 즐겨찾기, 회사 없는 사용자의 초대 목록 | 미구현 |
 | 구독 변경 이벤트로 토큰 폐기 | 미구현 (Billing 이벤트 대기) |
 | 저장소 | 메모리 구현만 |

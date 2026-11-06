@@ -269,7 +269,7 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `BusinessStatusLookup` | Integrations | `lookup(businessNumber) → { status: REGISTERED | SUSPENDED | CLOSED | UNKNOWN, taxationType, closedOn }` |
 | `HometaxInvoiceIssuer` | Integrations | `issue(request) → { ok, approvalNumber, issuedAt } | { ok: false, errorCode, errorMessage }`, `fetchDetail(companyId, approvalNumber)` |
 | `GiroPaymentGateway` | Integrations | `pay({ companyId, giroId, electronicPaymentNumber, taxKind, bankCode, accountNumber, accountPassword, amount, idempotencyKey }) → { ok, resultCode, resultMessage }` |
-| `AccountNumberCipher` | 공유(데이터 키) | `encrypt(plaintext)`, `decrypt(token)` (동기). 서버는 `layerAesGcm`(AES-256-GCM, 서버 데이터 키에서 파생한 계좌번호용 키), 테스트는 `layerFake` |
+| `AccountNumberCipher` | 공유(데이터 키) | `encrypt(field, plaintext)`, `decrypt(field, token)` (동기). `field`는 `companyAccount`·`partnerAccount`·`giroAccount`이고 필드마다 하위 키와 AAD가 달라 다른 필드로 옮긴 암호문은 열리지 않습니다. 서버는 `layerAesGcm`(AES-256-GCM, 서버 데이터 키에서 파생), 테스트는 `layerFake` |
 
 모두 `ports/`에 있고 `layerFake`가 있습니다. Bookkeeping만 시험할 때(`BookkeepingMemoryLive`)는 가짜를 쓰고, `app.ts`는 `src/wiring/bookkeeping-*.ts` 어댑터로 Integrations·Tax·Payroll에 연결합니다.
 

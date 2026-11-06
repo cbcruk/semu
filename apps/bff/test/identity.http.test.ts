@@ -341,6 +341,83 @@ describe('upstream failures', () => {
     await stalled.dispose()
   })
 
+  it('stops reading an upstream body over the size cap and answers 502', async () => {
+    let oversized = false
+    let pulled = 0
+    let canceled = false
+    const huge = makeHarness({
+      maxResponseBytes: 64 * 1024,
+      intercept: (request, next) =>
+        oversized && new URL(request.url).pathname === '/v1/companies/current'
+          ? Promise.resolve(
+              new Response(
+                new ReadableStream({
+                  pull: (controller) => {
+                    pulled += 1
+                    controller.enqueue(new Uint8Array(16 * 1024).fill(32))
+                  },
+                  cancel: () => {
+                    canceled = true
+                  },
+                }),
+                { status: 200, headers: { 'content-type': 'application/json' } },
+              ),
+            )
+          : next(request),
+    })
+    const legacy = huge.client()
+    await legacy.login('owner@semu.example')
+    expect((await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.corporation}/`)).status).toBe(200)
+    oversized = true
+
+    const response = await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.corporation}/`)
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({
+      detail: 'The upstream API response is too large.',
+      code: 'UPSTREAM_RESPONSE_TOO_LARGE',
+    })
+    expect(pulled).toBeLessThan(10)
+    expect(canceled).toBe(true)
+    oversized = false
+    expect((await legacy.request('GET', '/api/user/me/')).status).toBe(200)
+    await huge.dispose()
+  })
+
+  it('refuses a declared Content-Length over the size cap without reading the body', async () => {
+    let read = false
+    const declared = makeHarness({
+      maxResponseBytes: 64 * 1024,
+      intercept: (request, next) =>
+        new URL(request.url).pathname === '/v1/companies/current'
+          ? Promise.resolve(
+              new Response(
+                new ReadableStream(
+                  {
+                    pull: (controller) => {
+                      read = true
+                      controller.enqueue(new Uint8Array([123]))
+                    },
+                  },
+                  // 읽기 전에는 당겨 오지 않게 합니다.
+                  { highWaterMark: 0 },
+                ),
+                { status: 200, headers: { 'content-type': 'application/json', 'content-length': String(1024 * 1024) } },
+              ),
+            )
+          : next(request),
+    })
+    const legacy = declared.client()
+    await legacy.login('owner@semu.example')
+
+    const response = await legacy.request('GET', `/api/company/${DEMO_COMPANY_IDS.corporation}/`)
+
+    expect(response.status).toBe(502)
+    expect(await response.json()).toMatchObject({ code: 'UPSTREAM_RESPONSE_TOO_LARGE' })
+    expect(read).toBe(false)
+    await declared.dispose()
+  })
+
   it('still clears the legacy session when the upstream sign-out fails', async () => {
     const broken = makeHarness({
       intercept: (request, next) =>

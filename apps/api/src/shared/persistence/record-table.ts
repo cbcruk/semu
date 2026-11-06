@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option, Ref } from 'effect'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
+import { META_TABLE, ensureMetaTable, seededMarker } from './meta.ts'
 import { SqliteDatabase } from './unit-of-work.ts'
 
 /** 저장 레코드입니다. ID는 테이블 안에서 유일합니다. */
@@ -31,7 +32,10 @@ export interface RecordTable<T extends StoredRecord> {
 
 /** 표를 만들 때의 설정입니다. */
 export interface TableOptions<T extends StoredRecord> {
-  /** 표가 비어 있을 때 넣을 레코드입니다. SQLite는 이미 행이 있으면 넣지 않습니다(지운 시드가 되살아나지 않음). */
+  /**
+   * 표를 처음 만들 때 넣을 레코드입니다. SQLite는 표마다 한 번만 넣고 `semu_meta`에 표시를 남깁니다.
+   * 시드 행을 모두 지워도 재시작 때 되살아나지 않습니다.
+   */
   readonly seed?: ReadonlyArray<T>
   /** 레코드의 회사입니다. 주면 `byCompany`가 색인으로 찾습니다. */
   readonly companyOf?: (record: T) => string | null
@@ -95,7 +99,7 @@ export function makeMemoryRecordTable<T extends StoredRecord>(
 
 const TABLE_NAME = /^[a-z][a-z0-9_]*$/
 
-/** SQLite 표입니다. 없으면 만들고 시드를 넣습니다. 읽을 때마다 JSON을 풀어 새 객체를 돌려줍니다. */
+/** SQLite 표입니다. 없으면 만들고 시드를 한 번만 넣습니다. 읽을 때마다 JSON을 풀어 새 객체를 돌려줍니다. */
 export function makeSqliteRecordTable<T extends StoredRecord>(
   db: import('node:sqlite').DatabaseSync,
   name: string,
@@ -107,11 +111,13 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
     `CREATE TABLE IF NOT EXISTS ${name} (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT;` +
       `CREATE INDEX IF NOT EXISTS ${name}_company ON ${name} (company_id, id);`,
   )
-  // 시드는 표가 비어 있을 때만 넣습니다. 지운 시드 행이 재시작 때 되살아나지 않게 합니다.
-  const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
-  if (isEmpty) {
-    const insertSeed = db.prepare(`INSERT INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
-    for (const record of options.seed ?? []) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
+  const seed = options.seed ?? []
+  if (seed.length > 0) {
+    seedOnce(db, name, () => {
+      // 시드 ID가 겹치면 시드 자체의 잘못이므로 조용히 넘기지 않고 실패합니다.
+      const insertSeed = db.prepare(`INSERT INTO ${name} (id, company_id, data) VALUES (?, ?, ?)`)
+      for (const record of seed) insertSeed.run(record.id, companyOf(record), encodeRecord(record))
+    })
   }
 
   const selectOne = db.prepare(`SELECT data FROM ${name} WHERE id = ?`)
@@ -141,6 +147,42 @@ export function makeSqliteRecordTable<T extends StoredRecord>(
       Effect.sync(() => {
         deleteOne.run(id)
       }),
+  }
+}
+
+/**
+ * 표 `name`에 시드를 한 번만 넣습니다. 넣었으면 `semu_meta`에 `seeded:<name>`을 남기고, 표시가 있으면 다시 넣지 않습니다.
+ *
+ * 시드가 있는 표만 부릅니다. 시드가 없는 표에는 표시를 남기지 않아, 나중에 시드를 더하면 이미 있는 데이터베이스에도 들어갑니다.
+ * 표시가 없는 이전 데이터베이스는 표가 비어 있을 때만 넣고 표시를 남깁니다.
+ *
+ * 트랜잭션 밖이면 `BEGIN IMMEDIATE`로 쓰기 잠금을 먼저 잡고 표시를 확인합니다. 같은 파일을 연 다른 프로세스는 busy timeout 동안
+ * 기다렸다가 표시를 보고 넘어갑니다. 읽은 뒤 쓰기로 올리는 지연 트랜잭션(savepoint)은 WAL에서 `SQLITE_BUSY_SNAPSHOT`으로 실패합니다.
+ * 이미 트랜잭션 안이면 그 트랜잭션의 savepoint로 합니다.
+ */
+function seedOnce(db: import('node:sqlite').DatabaseSync, name: string, insertSeed: () => void): void {
+  ensureMetaTable(db)
+  const marker = seededMarker(name)
+  const nested = db.isTransaction
+  db.exec(nested ? 'SAVEPOINT semu_seed' : 'BEGIN IMMEDIATE')
+  try {
+    if (db.prepare(`SELECT 1 FROM ${META_TABLE} WHERE name = ?`).get(marker) === undefined) {
+      const isEmpty = db.prepare(`SELECT NOT EXISTS (SELECT 1 FROM ${name}) AS empty`).get()?.['empty'] === 1
+      if (isEmpty) insertSeed()
+      db.prepare(`INSERT OR IGNORE INTO ${META_TABLE} (name, value) VALUES (?, ?)`).run(
+        marker,
+        new Date().toISOString(),
+      )
+    }
+    db.exec(nested ? 'RELEASE semu_seed' : 'COMMIT')
+  } catch (error) {
+    if (nested) {
+      db.exec('ROLLBACK TO semu_seed')
+      db.exec('RELEASE semu_seed')
+    } else if (db.isTransaction) {
+      db.exec('ROLLBACK')
+    }
+    throw error
   }
 }
 

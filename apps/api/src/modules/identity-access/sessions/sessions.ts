@@ -87,6 +87,8 @@ export class Sessions extends Context.Service<
     invalidateAccess(userId: Id<'user'>, companyId?: Id<'company'>): Effect.Effect<void>
     /** 회사 등록용 토큰의 사용자입니다. */
     onboardingUser(token: string): Effect.Effect<Option.Option<Id<'user'>>>
+    /** 회사 등록에 쓴 onboarding token을 지웁니다. 같은 토큰으로 회사를 또 등록하지 못합니다. 세션은 남습니다. */
+    consumeOnboardingToken(token: string): Effect.Effect<void>
   }
 >()('semu/identity-access/Sessions') {
   static readonly layer = Layer.effect(
@@ -340,6 +342,13 @@ export class Sessions extends Context.Service<
         return expired ? Option.none<Id<'user'>>() : Option.some(session.userId)
       })
 
+      const consumeOnboardingToken = Effect.fn('Sessions.consumeOnboardingToken')(function* (token: string) {
+        const found = yield* sessions.findByOnboardingTokenHash(sha256(token))
+        if (Option.isNone(found)) return
+        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, ...rest } = found.value
+        yield* sessions.save(rest)
+      })
+
       return Sessions.of({
         signIn,
         signInDemo,
@@ -350,6 +359,7 @@ export class Sessions extends Context.Service<
         revokeAll,
         invalidateAccess,
         onboardingUser,
+        consumeOnboardingToken,
       })
     }),
   )
