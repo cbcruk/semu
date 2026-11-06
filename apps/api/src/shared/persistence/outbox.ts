@@ -110,13 +110,18 @@ export class Outbox extends Context.Service<
       /**
        * 이벤트 하나를 넘깁니다. 아직 전달되지 않았는지(죽지 않았는지) 확인, 소비자 처리, 전달 표시를 한 트랜잭션에서 합니다.
        * 그래서 커밋 뒤 전달과 릴레이가 겹쳐도 한 번만 처리되고, 소비자가 실패(결함)하면 소비자의 쓰기와 함께 되돌린 뒤 실패를 따로 남깁니다.
+       *
+       * 트랜잭션을 열지 못하면(다른 프로세스가 쓰기 잠금을 busy timeout보다 오래 쥠) 이벤트를 다뤄 보지도 않았으므로 시도로 세지 않고,
+       * 경고만 남긴 채 다음 릴레이에 맡깁니다.
        */
       const deliver = (seq: number, channel: string, event: () => unknown): Effect.Effect<void> => {
         const handler = handlers.get(channel)
         if (handler === undefined) return Effect.void
+        let started = false
         return unitOfWork
           .run(
             Effect.gen(function* () {
+              started = true
               if (isPending.get(seq) === undefined) return
               yield* handler(event())
               markDelivered.run(new Date().toISOString(), seq)
@@ -124,7 +129,11 @@ export class Outbox extends Context.Service<
           )
           .pipe(
             // `last_error`에는 결함 요약만 남깁니다. 메시지(디코딩 실패면 저장 값)는 남기지 않습니다.
-            Effect.catchDefect((defect) => recordFailure(seq, channel, defect)),
+            Effect.catchDefect((defect) =>
+              started
+                ? recordFailure(seq, channel, defect)
+                : Effect.logWarning('Outbox delivery not started', { seq, channel, error: describeDefect(defect) }),
+            ),
             Effect.asVoid,
           )
       }
