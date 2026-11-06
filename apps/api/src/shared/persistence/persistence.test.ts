@@ -7,7 +7,7 @@ import { Effect, Fiber, Layer, Option } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 import type { Id } from '../ids/ids.types.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
-import { Outbox, relayLoggingDefects } from './outbox.ts'
+import { OUTBOX_MAX_ATTEMPTS, Outbox, relayLoggingDefects } from './outbox.ts'
 import { PersistenceMemoryLive, PersistenceSqliteLive } from './persistence.layer.ts'
 import { TableFactory, makeSqliteRecordTable, makeTenantTable } from './record-table.ts'
 import { SqliteDatabase, UnitOfWork, keepChanges } from './unit-of-work.ts'
@@ -224,6 +224,117 @@ describe('sqlite unit of work', () => {
         expect(logs.join('\n')).toContain('Outbox relay defect')
         expect(logs.join('\n')).toContain('Error at src/shared/persistence/persistence.test.ts')
         expect(logs.join('\n')).not.toContain('leak@example.com')
+      }),
+    ))
+
+  it('marks an event dead after the attempt limit, stops retrying it, logs it once and keeps delivering others', () =>
+    run(
+      PersistenceSqliteLive(':memory:'),
+      Effect.gen(function* () {
+        const unitOfWork = yield* UnitOfWork
+        const outbox = yield* Outbox
+        const { db } = yield* SqliteDatabase
+        const received: string[] = []
+        let poisonCalls = 0
+        const publish = yield* outbox.channel<{ name: string }>('dead.event->test', (event) =>
+          Effect.suspend(() => {
+            if (event.name === 'poison') {
+              poisonCalls += 1
+              return Effect.die(new Error('always fails for owner@semu.example'))
+            }
+            received.push(event.name)
+            return Effect.void
+          }),
+        )
+
+        const logs: string[] = []
+        const spies = (['log', 'info', 'warn', 'error'] as const).map((method) =>
+          vi.spyOn(console, method).mockImplementation((...args: unknown[]) => void logs.push(args.join(' '))),
+        )
+        // 커밋 뒤 전달이 첫 시도입니다.
+        yield* unitOfWork.run(publish({ name: 'poison' }))
+        yield* unitOfWork.run(publish({ name: 'before' }))
+        expect(received).toEqual(['before'])
+        for (let relay = 1; relay < OUTBOX_MAX_ATTEMPTS; relay += 1) {
+          yield* unitOfWork.run(publish({ name: `ok-${relay}` }))
+          yield* outbox.relay()
+        }
+        expect(poisonCalls).toBe(OUTBOX_MAX_ATTEMPTS)
+        expect(received).toEqual(['before', 'ok-1', 'ok-2', 'ok-3', 'ok-4'])
+
+        const dead = db
+          .prepare(`SELECT attempts, last_error, dead_at, delivered_at FROM outbox WHERE dead_at IS NOT NULL`)
+          .all()
+        expect(dead).toHaveLength(1)
+        expect(dead[0]!['attempts']).toBe(OUTBOX_MAX_ATTEMPTS)
+        expect(String(dead[0]!['last_error'])).toMatch(/^Error at src\/shared\/persistence\/persistence\.test\.ts:\d+$/)
+        expect(dead[0]!['delivered_at']).toBeNull()
+
+        expect(yield* outbox.relay()).toBe(0)
+        yield* unitOfWork.run(publish({ name: 'after' }))
+        expect(yield* outbox.relay()).toBe(0)
+        for (const spy of spies) spy.mockRestore()
+
+        expect(poisonCalls).toBe(OUTBOX_MAX_ATTEMPTS)
+        expect(received.at(-1)).toBe('after')
+        expect(logs.filter((line) => line.includes('Outbox event dead'))).toHaveLength(1)
+        expect(logs.join('\n')).not.toContain('owner@semu.example')
+
+        // 운영자가 죽은 이벤트를 다시 살리면 다음 릴레이가 넘깁니다.
+        db.exec('UPDATE outbox SET dead_at = NULL, attempts = 0, last_error = NULL WHERE dead_at IS NOT NULL')
+        expect(yield* outbox.relay()).toBe(1)
+        expect(poisonCalls).toBe(OUTBOX_MAX_ATTEMPTS + 1)
+      }),
+    ))
+
+  it('adds the retry columns to an outbox table created before them and keeps its pending events', () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const filename = join(mkdtempSync(join(tmpdir(), 'semu-outbox-')), 'semu.sqlite')
+        const old = new DatabaseSync(filename)
+        old.exec(
+          `CREATE TABLE outbox (
+            seq INTEGER PRIMARY KEY AUTOINCREMENT,
+            id TEXT NOT NULL UNIQUE,
+            channel TEXT NOT NULL,
+            data TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            delivered_at TEXT
+          ) STRICT;
+          CREATE INDEX outbox_pending ON outbox (delivered_at, seq);`,
+        )
+        old
+          .prepare(`INSERT INTO outbox (id, channel, data, created_at) VALUES ('evt_old', 'old.event->test', ?, ?)`)
+          .run(encodeRecord({ name: 'old' }), new Date().toISOString())
+        old.close()
+
+        const received: string[] = []
+        const open = Effect.gen(function* () {
+          const outbox = yield* Outbox
+          yield* outbox.channel<{ name: string }>('old.event->test', (event) =>
+            Effect.sync(() => void received.push(event.name)),
+          )
+          const { db } = yield* SqliteDatabase
+          return {
+            delivered: yield* outbox.relay(),
+            columns: db
+              .prepare('PRAGMA table_info(outbox)')
+              .all()
+              .map((column) => String(column['name'])),
+            row: db.prepare(`SELECT attempts, last_error, dead_at FROM outbox WHERE id = 'evt_old'`).get(),
+          }
+        })
+
+        const first = yield* Effect.scoped(Effect.provide(open, PersistenceSqliteLive(filename)))
+        expect(first.columns).toEqual(expect.arrayContaining(['attempts', 'last_error', 'dead_at']))
+        expect(first.delivered).toBe(1)
+        expect(first.row).toEqual({ attempts: 1, last_error: null, dead_at: null })
+        expect(received).toEqual(['old'])
+
+        // 다시 열어도(열이 이미 있어도) 그대로 열립니다.
+        const second = yield* Effect.scoped(Effect.provide(open, PersistenceSqliteLive(filename)))
+        expect(second.delivered).toBe(0)
+        expect(received).toEqual(['old'])
       }),
     ))
 
