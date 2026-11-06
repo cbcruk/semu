@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 import { META_TABLE, ensureMetaTable } from '../persistence/meta.ts'
+import { SQLITE_BUSY_TIMEOUT_MS } from '../persistence/unit-of-work.ts'
 import { dataKeyFingerprint } from './data-key.ts'
 
 /** 키 지문을 남기는 {@link META_TABLE}의 행 이름입니다. */
@@ -55,7 +56,8 @@ function refuseUnkeyed(db: DatabaseSync, filename: string): void {
  */
 export function verifyDataKeyFingerprint(filename: string, key: Uint8Array): 'RECORDED' | 'MATCHED' {
   const fingerprint = dataKeyFingerprint(key)
-  const db = new DatabaseSync(filename)
+  // 서버 여러 개가 함께 시작해 지문을 동시에 남겨도 바로 실패하지 않고 잠금을 기다립니다.
+  const db = new DatabaseSync(filename, { timeout: SQLITE_BUSY_TIMEOUT_MS })
   try {
     refuseUnkeyed(db, filename)
     ensureMetaTable(db)
