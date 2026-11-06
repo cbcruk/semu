@@ -5,7 +5,8 @@ import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { addDays } from '../../../shared/time/calendar.ts'
-import type { Actor } from '../../identity-access/actor.types.ts'
+import { hasPermission } from '../../identity-access/actor.ts'
+import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { nowIso, today } from '../billing-access.ts'
 import { BillingMandateRepository } from '../mandates/billing-mandate-repository.ts'
 import type { BillingMandateRecord } from '../mandates/billing-mandate.ts'
@@ -19,12 +20,12 @@ import {
   plannedPayments,
   resultExpectedOn,
 } from './payment-schedule.ts'
-import type { PaymentEvent, PaymentStatus } from './payment-schedule.types.ts'
+import type { PaymentAction, PaymentEvent, PaymentStatus } from './payment-schedule.types.ts'
 import { PaymentNotFound, PaymentTransitionInvalid, RetryDateInvalid } from './payment.ts'
 import type { Payment, PaymentFailureReason, PaymentId, PaymentRecord } from './payment.ts'
 import { PublicHolidays } from './public-holidays.ts'
 
-/** 저장한 결제를 응답 형태로 바꿉니다. 담당자에게만 `allowedActions`를 채웁니다. */
+/** 저장한 결제를 응답 형태로 바꿉니다. `allowedActions`에는 행위자가 가진 대리인 전용 권한(`payment:retry`·`payment:refund`)의 커맨드만 넣습니다. */
 export function toPayment(record: PaymentRecord, actor: Actor, mandate: BillingMandateRecord | undefined): Payment {
   const waiting = record.status === 'SCHEDULED' || record.status === 'RETRYING'
   return {
@@ -41,9 +42,17 @@ export function toPayment(record: PaymentRecord, actor: Actor, mandate: BillingM
       : { account: { bankCode: mandate.bankCode, accountNumberMasked: mandate.accountNumberMasked } }),
     ...(record.settledAt === undefined ? {} : { settledAt: record.settledAt }),
     ...(record.refundedAt === undefined ? {} : { refundedAt: record.refundedAt }),
-    allowedActions: actor.kind === 'AGENCY' ? allowedPaymentActions(record.status) : [],
+    allowedActions: allowedPaymentActions(record.status).filter((action) =>
+      hasPermission(actor, PAYMENT_ACTION_PERMISSION[action]),
+    ),
     version: record.version,
   }
+}
+
+/** 결제 커맨드별 권한입니다. 둘 다 대리인 전용이라 고객 관리자의 `*`로는 생기지 않습니다. */
+const PAYMENT_ACTION_PERMISSION: Record<PaymentAction, Permission> = {
+  RETRY: 'payment:retry',
+  REFUND: 'payment:refund',
 }
 
 /** 출금일 최신순, 같으면 번호 큰 순으로 커서가 이어지도록 오름차순 문자열 키를 만듭니다. */

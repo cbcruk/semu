@@ -66,6 +66,8 @@
 
 **바뀌는 케이스:** `ai_agent hidden from an admin who is not the system admin` → `visible`. 사업자 형태별 신고 메뉴, 급여 구독 시 `employee_management` 숨김, 빈 그룹 정리는 화면 트리 규칙이라 옮기지 않습니다.
 
+**대리인 메뉴(D5, 2026-11-06):** `assigned agency staff see every applicable menu without the terms gate`는 사업자 형태 규칙(`tax_aggr_income`) 때문에 옮기지 않은 케이스이고, 테스트는 대리인 권한을 `*`가 아니라 실제 대리인 기본 권한(`actorPermissions({ kind: 'AGENCY' })`)으로 만듭니다. 이 케이스의 `user_management`는 현행 `visible`에서 서버 기준 `hidden`(`PERMISSION_DENIED`)으로 바뀝니다. 대리인 기본 권한에 `member:*`가 없기 때문입니다([review.md](../review.md#결정) D5). `tax_surtax`·`tax_corporation`은 그대로 보입니다. 고객 사용자의 케이스는 바뀌지 않습니다.
+
 ## 계정
 
 ### password-policy

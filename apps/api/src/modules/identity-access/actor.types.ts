@@ -17,7 +17,8 @@ export type ActorKind = 'CLIENT' | 'AGENCY'
 /**
  * `resource:action` 형식의 권한입니다. 예: `employee:read`, `payroll-ledger:approve`.
  *
- * `resource:*`는 그 리소스의 모든 동작, `*`는 모든 권한입니다. 세무 대리인은 `*`를 받습니다.
+ * `resource:*`는 그 리소스의 모든 동작, `*`는 모든 권한입니다. 다만 와일드카드는 대리인 전용 동작(`filing:process` 등)을
+ * 덮지 않습니다. 세무 대리인은 `*` 대신 카탈로그의 대리인 기본 권한(`AGENT_PERMISSIONS`)을 받습니다(D5).
  */
 export type Permission = `${string}:${string}` | '*'
 
@@ -80,7 +81,7 @@ export interface AgentCompany {
 export interface Agent {
   userId: Id<'user'>
   userKind: AgentKind
-  /** 대리인 권한입니다. 지금은 회사 범위와 같은 `*`이고, D5(대리인 권한 분리)에서 좁힙니다. */
+  /** 대리인 권한입니다. 회사 범위의 대리인 행위자와 같은 `AGENT_PERMISSIONS`입니다(D5). */
   permissions: ReadonlySet<Permission>
   /** 이름 순 담당 회사입니다. */
   companies: ReadonlyArray<AgentCompany>

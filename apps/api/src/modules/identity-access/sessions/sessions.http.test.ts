@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEMO_COMPANY_IDS, DEMO_PASSWORD } from '../demo-seed.ts'
+import { AGENT_PERMISSIONS } from '../permissions/permission-catalog.ts'
 import { cookieOf, makeTestApp } from '../testing-http.ts'
 import type { TestApp } from '../testing-http.ts'
 
@@ -104,13 +105,13 @@ describe('GET /v1/me', () => {
     expect(body.permissions).not.toContain('member:update')
   })
 
-  it('treats assigned agency staff as AGENCY with every permission, including the team of a manager', async () => {
+  it('treats assigned agency staff as AGENCY with the agent permission set, including the team of a manager', async () => {
     const agent = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
     const manager = await app.signIn('manager@agency.example')
 
     expect(agent.body).toMatchObject({ company: { id: DEMO_COMPANY_IDS.individual, actorKind: 'AGENCY' } })
     const me = await (await app.request('GET', '/v1/me', { token: manager.token })).json()
-    expect(me.permissions).toEqual(['*'])
+    expect(me.permissions).toEqual([...AGENT_PERMISSIONS].sort())
     expect(me).not.toHaveProperty('membership')
     expect(me.companies.map((c: { id: string }) => c.id).sort()).toEqual(
       [DEMO_COMPANY_IDS.corporation, DEMO_COMPANY_IDS.individual].sort(),

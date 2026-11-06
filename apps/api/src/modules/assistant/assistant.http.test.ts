@@ -122,12 +122,13 @@ describe('conversations', () => {
     expect(await response.json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED', termCodes: ['TAX_SERVICE'] })
   })
 
-  it('lets agency staff use the assistant for an assigned company', async () => {
+  it('keeps agency staff out of the assistant by default (D5)', async () => {
     const { token } = await app.signIn('agent@agency.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
 
-    expect(response.status).toBe(201)
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'conversation:create' })
   })
 
   it('rejects an empty message', async () => {
