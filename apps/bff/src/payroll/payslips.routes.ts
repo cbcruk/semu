@@ -80,18 +80,15 @@ function emailOf(row: PayrollRow, emails: ReadonlyMap<string, string> | undefine
 /**
  * 명세서를 보냅니다. 새 `:send`는 같은 회사·키면 본문을 보지 않고 처음 작업을 재응답하므로, 어떤 키든 세션·대상에 묶어 넘깁니다.
  *
- * - 현행 클라이언트처럼 키가 없으면 세션·대장·명세서 집합의 지문으로 BFF가 키를 정하고 창 안에서 다시 씁니다({@link IdempotencyKeys}).
- *   작업 전체가 실패했으면(나간 메일 없음) 키를 기억하지 않아 다시 누르면 실제로 다시 보냅니다
- * - 클라이언트가 `Idempotency-Key`를 보내면 `bff-client:<SHA-256(세션·키·대장·명세서)>`로 바꿔 넘깁니다. 같은 세션이 같은 키로 같은
+ * - 현행 클라이언트처럼 키가 없으면 세션·명세서 집합의 지문으로 BFF가 키를 정하고 창 안에서 다시 씁니다({@link IdempotencyKeys}).
+ *   작업 전체가 실패했으면(나간 메일 없음) 키를 기억하지 않아 다시 누르면 실제로 다시 보냅니다. 결과를 모르는 실패(시간 초과·5xx)는
+ *   24시간 동안 같은 키를 써서 새 API가 재응답하거나 이어 보내게 합니다
+ * - 클라이언트가 `Idempotency-Key`를 보내면 `bff-client:<SHA-256(세션·키·명세서)>`로 바꿔 넘깁니다. 같은 세션이 같은 키로 같은
  *   대상을 다시 보낼 때만 재응답이고, 다른 사용자나 다른 명세서에 같은 키를 써도 남의 작업을 받지 않습니다
  * - 같은 지문의 요청은 한 번에 하나씩 갑니다. 제한 시간은 발송용(`sendTimeoutMs`, 기본 2분)입니다
  * - 새 API가 명세서를 찾지 못하면(그사이 마감이 풀림) 현행처럼 409입니다
  */
-async function send(
-  context: SignedInContext,
-  ledger: PayrollLedger,
-  payslipIds: readonly string[],
-): Promise<PayslipSendJob> {
+async function send(context: SignedInContext, payslipIds: readonly string[]): Promise<PayslipSendJob> {
   const sendWith = async (key: string) => {
     const response = await callApi(
       context.deps,
@@ -110,13 +107,21 @@ async function send(
   }
   const keys = context.deps.idempotencyKeys
   // 명세서 ID는 카드의 행 순서라(새 목록 순서) 같은 선택이면 요청의 `row_ids` 순서와 상관없이 같은 지문입니다.
-  const target = [context.sessionId, ledger.id, ...payslipIds]
+  // 명세서 ID는 회사 안에서 유일하고 대장 하나에 속하므로 대장 ID는 넣지 않습니다.
+  const target = [context.sessionId, ...payslipIds]
   const clientKey = context.request.headers.get('idempotency-key')?.trim()
   if (clientKey !== undefined && clientKey !== '') {
     const bound = IdempotencyKeys.fingerprint(['client', clientKey, ...target])
     return keys.serial(bound, () => sendWith(`${CLIENT_KEY_PREFIX}:${bound}`))
   }
-  return keys.run(IdempotencyKeys.fingerprint(target), SEND_KEY_PREFIX, sendWith, (job) => job.status !== 'FAILED')
+  return keys.run(
+    IdempotencyKeys.fingerprint(target),
+    SEND_KEY_PREFIX,
+    sendWith,
+    (job) => job.status !== 'FAILED',
+    // 시간 초과·연결 실패·5xx는 일부가 나갔을 수 있습니다. 4xx(마감 풀림 409 등)는 아무것도 나가지 않았습니다.
+    (error) => !(error instanceof LegacyError) || error.status >= 500,
+  )
 }
 
 /**
@@ -209,7 +214,6 @@ export const payslipRoutes: readonly Route[] = [
       if (targets.length !== wanted.size) throw rowsNotOnCard()
       const job = await send(
         context,
-        ledger,
         targets.map((payslip) => payslip.id),
       )
       return json({ results: toLegacySendResults(job, new Map(targets.map((payslip) => [payslip.id, payslip.rowId]))) })

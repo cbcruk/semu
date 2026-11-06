@@ -635,6 +635,96 @@ describe('sending payslips only once', () => {
     }
   })
 
+  it('binds a client key to the session: same key and payslips from another session send again', async () => {
+    const { harness: custom, client: signedIn, keys } = await watched()
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+      const other = custom.client()
+      await other.login(AGENT)
+
+      await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-3' })
+      await sendRows(other, cardId, [wageRowId], { 'idempotency-key': 'send-3' })
+
+      expect(keys[1]).not.toBe(keys[0])
+      expect((await upstreamPayslips(custom, cardId))[0].delivery.attempts).toBe(2)
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('binds a client key to the payslips: same session and key with other payslips sends both', async () => {
+    let businessRowId = ''
+    const { harness: custom, client: signedIn, keys } = await watched()
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn, {
+        before: async (id) => void (businessRowId = await addBusinessRow(custom, id)),
+      })
+
+      const first = await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-4' })
+      const second = await sendRows(signedIn, cardId, [businessRowId], { 'idempotency-key': 'send-4' })
+
+      expect([first.status, second.status]).toEqual([200, 200])
+      expect((await second.json()).results).toEqual([
+        { row_id: businessRowId, status: 'fail', fail_reason: 'no_email' },
+      ])
+      expect(keys[1]).not.toBe(keys[0])
+      expect((await upstreamPayslips(custom, cardId)).map((item) => item.delivery.attempts)).toEqual([1, 1])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('binds a client key to the key itself: another key for the same payslips sends again', async () => {
+    const { harness: custom, client: signedIn, keys } = await watched()
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+
+      await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-5' })
+      await sendRows(signedIn, cardId, [wageRowId], { 'idempotency-key': 'send-6' })
+
+      expect(keys[1]).not.toBe(keys[0])
+      expect((await upstreamPayslips(custom, cardId))[0].delivery.attempts).toBe(2)
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('keeps the key for a day after an interrupted send, but only the window after a clear refusal', async () => {
+    let failWith: number | undefined
+    const keys: Array<string | null> = []
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) => {
+        if (!isSend(request)) return next(request)
+        keys.push(request.headers.get('idempotency-key'))
+        const status = failWith
+        failWith = undefined
+        if (status === 503) return Promise.resolve(problem(503, { code: 'PAYSLIP_SEND_INTERRUPTED' }))
+        if (status === 404) return Promise.resolve(problem(404, { code: 'PAYSLIP_NOT_FOUND' }))
+        return next(request)
+      },
+    })
+    try {
+      const { cardId, wageRowId } = await closedCard(signedIn)
+
+      failWith = 503
+      expect((await sendRows(signedIn, cardId, [wageRowId])).status).toBe(503)
+      custom.advance(5 * 60_000)
+      expect((await sendRows(signedIn, cardId, [wageRowId])).status).toBe(200)
+
+      custom.advance(61_000)
+      failWith = 404
+      expect((await sendRows(signedIn, cardId, [wageRowId])).status).toBe(409)
+      custom.advance(61_000)
+      await sendRows(signedIn, cardId, [wageRowId])
+
+      expect(keys[1]).toBe(keys[0])
+      expect(keys[2]).not.toBe(keys[1])
+      expect(keys[3]).not.toBe(keys[2])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
   it('refuses a replayed job for other payslips instead of reporting it as sent', async () => {
     const { harness: custom, client: signedIn } = await intercepted({
       intercept: async (request, next) => {
@@ -654,7 +744,7 @@ describe('sending payslips only once', () => {
 
       const response = await sendRows(signedIn, cardId, [wageRowId])
 
-      expect(response.status).toBe(409)
+      expect(response.status).toBe(422)
       expect((await response.json()).code).toBe('IDEMPOTENCY_KEY_REUSED')
     } finally {
       await custom.dispose()

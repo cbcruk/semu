@@ -79,6 +79,48 @@ describe('IdempotencyKeys', () => {
     expect(await keyOf('b')).not.toBe(b)
   })
 
+  it('keeps the key after an uncertain failure until success or the long lifetime, but only the window after a clear refusal', async () => {
+    let now = 0
+    const keys = new IdempotencyKeys(1_000, () => now, 10, 10_000)
+    const fail = (fingerprint: string, uncertain: boolean) =>
+      keys
+        .run(
+          fingerprint,
+          'p',
+          async (key) => {
+            throw Object.assign(new Error('failed'), { key })
+          },
+          () => true,
+          () => uncertain,
+        )
+        .catch((error: { key: string }) => error.key)
+    const keyOf = (fingerprint: string) => keys.run(fingerprint, 'p', async (key) => key)
+
+    const interrupted = await fail('interrupted', true)
+    const refused = await fail('refused', false)
+    now = 5_000
+    expect(await keyOf('interrupted')).toBe(interrupted)
+    expect(await keyOf('refused')).not.toBe(refused)
+    // 성공한 뒤에는 창만큼만 기억합니다.
+    now = 5_000 + 1_000
+    expect(await keyOf('interrupted')).not.toBe(interrupted)
+
+    const late = await fail('late', true)
+    now += 10_000
+    expect(await keyOf('late')).not.toBe(late)
+  })
+
+  it('keeps uncertain keys under the same cap', async () => {
+    const keys = new IdempotencyKeys(1_000, () => 0, 1, 10_000)
+    const failed = await keys
+      .run('a', 'p', async (key) => Promise.reject(Object.assign(new Error('x'), { key })))
+      .catch((error: { key: string }) => error.key)
+    await keys.run('b', 'p', async (key) => key)
+
+    expect(keys.size).toBe(1)
+    expect(await keys.run('a', 'p', async (key) => key)).not.toBe(failed)
+  })
+
   it('fingerprints the parts in order without keeping them', () => {
     const fingerprint = IdempotencyKeys.fingerprint(['session', 'cmp_1', 'pyl_1', 'psl_1'])
 

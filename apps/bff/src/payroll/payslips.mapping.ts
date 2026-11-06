@@ -89,7 +89,8 @@ export function toLegacyNotification(row: PayrollRow, payslip: Payslip | undefin
  * 새 발송 작업 → 현행 `POST …/notifications`의 결과입니다. 새 API는 보낸 명세서 순서로 답합니다.
  *
  * 새 API는 같은 회사·키면 본문을 보지 않고 처음 작업을 재응답합니다. 작업의 명세서가 요청한 명세서와 다르면 요청한 명세서는
- * 나가지 않았으므로 성공처럼 보이지 않게 409 `IDEMPOTENCY_KEY_REUSED`로 거절합니다.
+ * 나가지 않았으므로 성공처럼 보이지 않게 422 `IDEMPOTENCY_KEY_REUSED`로 거절합니다. 현행에는 멱등 키가 없어 따를 선례가 없고, 새 API가
+ * 같은 키·다른 본문에 주는 상태(422)와 같게 둡니다.
  *
  * @param requested 요청한 명세서 ID → 행 ID입니다.
  */
@@ -99,7 +100,7 @@ export function toLegacySendResults(
 ): Array<Record<string, unknown>> {
   const sent = new Set(job.result.items.map((item) => item.payslipId))
   if (sent.size !== requested.size || [...requested.keys()].some((id) => !sent.has(id))) {
-    throw new LegacyError(409, {
+    throw new LegacyError(422, {
       detail: 'This Idempotency-Key was already used for a different send. Send again with a new key.',
       code: 'IDEMPOTENCY_KEY_REUSED',
     })
