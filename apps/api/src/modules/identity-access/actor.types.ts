@@ -1,4 +1,5 @@
 import type { Id } from '../../shared/ids/ids.types.ts'
+import type { GrantedPermission } from './permissions/permission-catalog.ts'
 
 /** 회사가 구독하는 유료 플랜입니다. 현행 `tax_plan`, `has_payroll_plan`을 대신합니다. */
 export type Plan = 'TAXATION' | 'PAYROLL'
@@ -15,12 +16,15 @@ export type BusinessType = 'CORPORATION' | 'INDIVIDUAL'
 export type ActorKind = 'CLIENT' | 'AGENCY'
 
 /**
- * `resource:action` 형식의 권한입니다. 예: `employee:read`, `payroll-ledger:approve`.
+ * 권한 타입은 카탈로그(`permissions/permission-catalog.ts`)에서 만듭니다.
  *
- * `resource:*`는 그 리소스의 모든 동작, `*`는 모든 권한입니다. 다만 와일드카드는 대리인 전용 동작(`filing:process` 등)을
- * 덮지 않습니다. 세무 대리인은 `*` 대신 카탈로그의 대리인 기본 권한(`AGENT_PERMISSIONS`)을 받습니다(D5).
+ * - `Permission`: 카탈로그의 `resource:action`. 예: `employee:read`, `payroll-ledger:approve`
+ * - `PermissionWildcard`: `resource:*`(그 리소스의 모든 동작)와 `*`(모든 권한). 대리인 전용 동작(`filing:process` 등)은 덮지 않습니다
+ * - `GrantedPermission`: 행위자가 가진 권한. 위 둘의 합입니다
+ *
+ * 세무 대리인은 `*` 대신 카탈로그의 대리인 기본 권한(`AGENT_PERMISSIONS`)을 받습니다(D5).
  */
-export type Permission = `${string}:${string}` | '*'
+export type { GrantedPermission, Permission, PermissionWildcard } from './permissions/permission-catalog.ts'
 
 /**
  * 인증을 마친 요청의 행위자입니다. 액세스 토큰 하나는 회사 하나에 묶이고, 회사를 바꾸려면 토큰을 새로 받습니다.
@@ -32,7 +36,7 @@ export interface Actor {
   companyId: Id<'company'>
   kind: ActorKind
   /** 역할 프리셋과 개별 부여를 합쳐 계산한 권한 집합입니다. */
-  permissions: ReadonlySet<Permission>
+  permissions: ReadonlySet<GrantedPermission>
   plans: ReadonlySet<Plan>
   businessType: BusinessType
   /** 아직 동의하지 않은 필수 약관 코드입니다. 비어 있지 않으면 해당 제품 API가 403입니다. */
@@ -82,7 +86,7 @@ export interface Agent {
   userId: Id<'user'>
   userKind: AgentKind
   /** 대리인 권한입니다. 회사 범위의 대리인 행위자와 같은 `AGENT_PERMISSIONS`입니다(D5). */
-  permissions: ReadonlySet<Permission>
+  permissions: ReadonlySet<GrantedPermission>
   /** 이름 순 담당 회사입니다. */
   companies: ReadonlyArray<AgentCompany>
 }

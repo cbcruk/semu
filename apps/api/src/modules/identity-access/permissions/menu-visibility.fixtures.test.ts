@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { actorPermissions } from '../access/actor-permissions.ts'
 import { hasPermission } from '../actor.ts'
-import type { Permission, Plan } from '../actor.types.ts'
+import type { GrantedPermission, Permission, Plan } from '../actor.types.ts'
 import { decideAccess } from '../authorization.ts'
 import { loadRuleCases } from '../rule-fixtures.ts'
 import { testActor } from '../testing.ts'
@@ -53,7 +53,7 @@ function node(menu: string, input: LegacyInput): Record<string, unknown> {
   const permissions =
     input.user.actor === 'agency'
       ? actorPermissions({ kind: 'AGENCY' })
-      : new Set<Permission>(
+      : new Set<GrantedPermission>(
           input.user.isAdmin ? ['*'] : [...BASE_PERMISSIONS, ...permissionsForLegacyMenus(input.user.roleMenuCodes)],
         )
   const actor = testActor({

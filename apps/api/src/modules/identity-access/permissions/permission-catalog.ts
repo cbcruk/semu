@@ -1,4 +1,4 @@
-import type { Permission, Plan } from '../actor.types.ts'
+import type { Plan } from '../actor.types.ts'
 import type {
   LegacyMenuMapping,
   PermissionArea,
@@ -96,6 +96,58 @@ export const PERMISSION_CATALOG = {
 export type PermissionResource = keyof typeof PERMISSION_CATALOG
 
 /**
+ * 카탈로그에 있는 `resource:action` 권한입니다. 카탈로그에서 만든 리터럴 유니온이라 오타는 `tsc`가 잡습니다.
+ *
+ * `authorize({ permission })`·`hasPermission`처럼 요구하는 권한 하나를 받는 곳은 이 타입을 씁니다.
+ * 요구 권한은 언제나 구체적인 동작이라 와일드카드는 들지 않습니다.
+ *
+ * 카탈로그에 없는 문자열이 컴파일되지 않는 것은 `permission-types.test.ts`가 `@ts-expect-error`로 확인합니다.
+ *
+ * @example
+ * ```ts
+ * const ok: Permission = 'employee:read'
+ * ```
+ */
+export type Permission = {
+  [R in PermissionResource]: `${R}:${(typeof PERMISSION_CATALOG)[R]['actions'][number]}`
+}[PermissionResource]
+
+/** 와일드카드 권한입니다. `resource:*`는 그 리소스의 모든 동작, `*`는 모든 권한입니다. 대리인 전용 동작은 덮지 않습니다. */
+export type PermissionWildcard = `${PermissionResource}:*` | '*'
+
+/**
+ * 행위자가 가질 수 있는 권한입니다. 구체 권한과 와일드카드를 합친 것이고, `Actor.permissions`·권한 그룹·템플릿이 이 타입입니다.
+ */
+export type GrantedPermission = Permission | PermissionWildcard
+
+/** 카탈로그의 모든 {@link GrantedPermission}입니다. 저장소·외부에서 온 문자열을 {@link isGrantedPermission}으로 거를 때 씁니다. */
+const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set<string>([
+  '*',
+  ...Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) => [
+    `${resource}:*`,
+    ...entry.actions.map((action) => `${resource}:${action}`),
+  ]),
+])
+
+/**
+ * 문자열이 카탈로그의 권한(와일드카드 포함)인지입니다. 저장소에서 읽은 권한 그룹처럼 타입이 보장되지 않는 값을 경계에서 거릅니다.
+ *
+ * @example
+ * ```ts
+ * isGrantedPermission('employee:*') // true
+ * isGrantedPermission('hr.employees.write') // false
+ * ```
+ */
+export function isGrantedPermission(value: string): value is GrantedPermission {
+  return GRANTED_PERMISSIONS.has(value)
+}
+
+/** 권한의 리소스입니다. `*`처럼 리소스가 없는 값은 받지 않습니다. */
+export function permissionResource(permission: Permission): PermissionResource {
+  return permission.slice(0, permission.indexOf(':')) as PermissionResource
+}
+
+/**
  * 모든 구성원이 권한 그룹 없이 갖는 권한입니다.
  *
  * 현행에서 `requiresPermission: false`였던 메뉴(오늘의 할 일, AI 비서, 지원금 추천, 서식 모음, 급여 계산기)와
@@ -142,12 +194,16 @@ export const AGENT_EXCLUDED_RESOURCES: ReadonlyArray<PermissionResource> = [
  * AGENT_PERMISSIONS.includes('member:*') // false
  * ```
  */
-export const AGENT_PERMISSIONS: ReadonlyArray<Permission> = (
+export const AGENT_PERMISSIONS: ReadonlyArray<GrantedPermission> = (
   Object.entries(PERMISSION_CATALOG) as Array<[PermissionResource, ResourcePermissions]>
-).flatMap(([resource, entry]): Permission[] =>
+).flatMap(([resource, entry]): GrantedPermission[] =>
   AGENT_EXCLUDED_RESOURCES.includes(resource)
     ? []
-    : [`${resource}:*`, ...(entry.agentOnly ?? []).map((action): Permission => `${resource}:${action}`)],
+    : [
+        `${resource}:*`,
+        // 카탈로그의 리소스·동작을 이어 붙인 값이라 카탈로그 권한입니다.
+        ...(entry.agentOnly ?? []).map((action) => `${resource}:${action}` as Permission),
+      ],
 )
 
 /** 권한 그룹 템플릿입니다. 회사는 템플릿을 복사해 권한 그룹을 만듭니다. */
@@ -289,19 +345,19 @@ export function permissionArea(permission: string): PermissionArea | undefined {
 }
 
 /** 현행 메뉴 코드 목록을 재설계 권한으로 바꿉니다. 모르는 코드는 건너뛰고, 모두에게 열린 메뉴는 기본 권한이라 넣지 않습니다. */
-export function permissionsForLegacyMenus(codes: Iterable<string>): Permission[] {
-  const permissions = new Set<Permission>()
+export function permissionsForLegacyMenus(codes: Iterable<string>): GrantedPermission[] {
+  const permissions = new Set<GrantedPermission>()
   for (const code of codes) {
     const mapping = LEGACY_MENU_PERMISSIONS[code]
     if (mapping === undefined || mapping.openToEveryone) continue
-    for (const permission of mapping.permissions) permissions.add(permission as Permission)
+    for (const permission of mapping.permissions) permissions.add(permission)
   }
   return [...permissions].sort()
 }
 
 /** 권한 그룹 화면에 보여 줄 권한 하나입니다. */
 export interface GrantablePermission {
-  permission: string
+  permission: Permission
   area: PermissionArea
   requiredPlans: ReadonlyArray<Plan>
 }
@@ -310,7 +366,7 @@ export interface GrantablePermission {
 export function grantablePermissions(): GrantablePermission[] {
   return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) =>
     entry.actions
-      .map((action) => `${resource}:${action}`)
+      .map((action) => `${resource}:${action}` as Permission)
       .filter(isGrantable)
       .map((permission) => ({ permission, area: entry.area, requiredPlans: entry.plans ?? [] })),
   )
@@ -322,10 +378,10 @@ function catalogEntry(resource: string): ResourcePermissions | undefined {
     : undefined
 }
 
-function menu(permissions: ReadonlyArray<string>, plans: ReadonlyArray<Plan> = []): LegacyMenuMapping {
+function menu(permissions: ReadonlyArray<GrantedPermission>, plans: ReadonlyArray<Plan> = []): LegacyMenuMapping {
   return { permissions, plans, openToEveryone: false }
 }
 
-function open(permissions: ReadonlyArray<string>): LegacyMenuMapping {
+function open(permissions: ReadonlyArray<GrantedPermission>): LegacyMenuMapping {
   return { permissions, plans: [], openToEveryone: true }
 }
