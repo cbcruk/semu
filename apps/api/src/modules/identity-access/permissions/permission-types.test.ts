@@ -1,7 +1,8 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { actorPermissions } from '../access/actor-permissions.ts'
 import { hasPermission } from '../actor.ts'
 import type { AccessRequirement } from '../authorization.ts'
-import { isGrantedPermission } from './permission-catalog.ts'
+import { isGrantable, isGrantedPermission, LEGACY_MENU_PERMISSIONS, ROLE_TEMPLATES } from './permission-catalog.ts'
 import type { GrantedPermission, Permission, PermissionWildcard } from './permission-catalog.ts'
 
 /**
@@ -43,5 +44,33 @@ describe('permission types', () => {
     expect(isGrantedPermission('*')).toBe(true)
     expect(isGrantedPermission('employee:raed')).toBe(false)
     expect(isGrantedPermission('hr.employees.write')).toBe(false)
+  })
+
+  it('drops stored role permissions that a role could not grant', () => {
+    const refused = ['employee:raed', '*', 'member:*', 'member:remove', 'filing:process']
+    const permissions = actorPermissions({
+      kind: 'MEMBER',
+      access: 'MEMBER',
+      rolePermissions: [['employee:*', ...refused]],
+    })
+
+    expect(permissions.has('employee:*')).toBe(true)
+    expect([...permissions].filter((permission) => refused.includes(permission))).toEqual([])
+  })
+
+  it('keeps the admin wildcard and agent permissions, which do not come from stored roles', () => {
+    expect(actorPermissions({ kind: 'MEMBER', access: 'ADMIN', rolePermissions: [] }).has('*')).toBe(true)
+    expect(actorPermissions({ kind: 'AGENCY' }).has('filing:process')).toBe(true)
+  })
+
+  it('keeps every role template and legacy menu permission when stored in a role', () => {
+    const stored = [
+      ...ROLE_TEMPLATES.flatMap((template) => template.permissions),
+      ...Object.values(LEGACY_MENU_PERMISSIONS).flatMap((mapping) => mapping.permissions),
+    ]
+    const permissions = actorPermissions({ kind: 'MEMBER', access: 'MEMBER', rolePermissions: [stored] })
+
+    expect(stored.filter((permission) => !isGrantable(permission))).toEqual([])
+    expect(stored.filter((permission) => !permissions.has(permission))).toEqual([])
   })
 })

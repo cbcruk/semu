@@ -1,6 +1,11 @@
 import type { GrantedPermission } from '../actor.types.ts'
 import type { MemberAccess } from '../members/membership.ts'
-import { AGENT_PERMISSIONS, BASE_PERMISSIONS, isGrantedPermission } from '../permissions/permission-catalog.ts'
+import {
+  AGENT_PERMISSIONS,
+  BASE_PERMISSIONS,
+  isGrantable,
+  isGrantedPermission,
+} from '../permissions/permission-catalog.ts'
 
 /** 권한 계산에 쓰는 행위자의 회사 접근 방식입니다. */
 export type ActorAccess =
@@ -13,7 +18,9 @@ export type ActorAccess =
  * - 배정된 세무 대리인은 {@link AGENT_PERMISSIONS}(D5). 구성원 관리와 AI 비서는 없고 대리인 전용 권한이 있습니다.
  *   회사 범위 토큰의 대리인 행위자와 대리인 범위 토큰의 `Agent`가 이 값을 같이 씁니다
  * - 일반 사용자는 기본 권한과 권한 그룹 권한의 합집합(매뉴얼 "권한 그룹들의 메뉴를 합집합으로 접근").
- *   권한 그룹은 저장소에서 읽은 문자열이라 카탈로그에 없는 값(카탈로그에서 빠진 옛 권한 등)은 버립니다
+ *   권한 그룹은 저장소에서 읽은 문자열이라 저장할 때와 같은 {@link isGrantable}로 다시 거릅니다. 카탈로그에 없는 값,
+ *   `*`, 관리자 전용(`member:*` 등), 대리인 전용(`filing:process` 등) 권한은 저장돼 있어도 버립니다.
+ *   관리자의 `*`와 대리인 권한은 권한 그룹이 아니라 위 두 갈래에서 줍니다
  *
  * @example
  * ```ts
@@ -25,7 +32,8 @@ export function actorPermissions(access: ActorAccess): ReadonlySet<GrantedPermis
   if (access.access === 'ADMIN') return new Set<GrantedPermission>(['*'])
   const permissions = new Set<GrantedPermission>(BASE_PERMISSIONS)
   for (const role of access.rolePermissions) {
-    for (const permission of role) if (isGrantedPermission(permission)) permissions.add(permission)
+    for (const permission of role)
+      if (isGrantedPermission(permission) && isGrantable(permission)) permissions.add(permission)
   }
   return permissions
 }
