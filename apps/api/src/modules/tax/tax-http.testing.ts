@@ -4,13 +4,18 @@ import { testActor } from '../identity-access/testing.ts'
 import { taxMemoryLayer } from './tax.layer.ts'
 import type { TaxMemorySeed } from './tax.layer.ts'
 
-/** 테스트 토큰입니다. `client`는 고객 관리자, `agency`는 세무 대리인, `free`는 플랜이 없는 고객, `individual`은 개인사업자입니다. */
+/**
+ * 테스트 토큰입니다. `client`는 고객 관리자, `agency`는 세무 대리인, `free`는 플랜이 없는 고객, `individual`은 개인사업자,
+ * `viewer`는 신고 건 읽기만 하는 고객, `pendingTerms`는 세무 약관 재동의 전의 관리자, `demo`는 데모 관리자입니다.
+ */
 export const TEST_TOKENS = {
   client: testActor(),
   agency: testActor({ kind: 'AGENCY' }),
   free: testActor({ plans: new Set() }),
   individual: testActor({ businessType: 'INDIVIDUAL' }),
   viewer: testActor({ permissions: new Set(['filing:read', 'action-card:read']) }),
+  pendingTerms: testActor({ pendingTermCodes: ['TAX_SERVICE'] }),
+  demo: testActor({ isDemo: true }),
 } as const
 
 /** 테스트 앱에 보내는 요청입니다. */

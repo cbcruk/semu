@@ -64,7 +64,6 @@ const CHANGED: Record<string, unknown> = {
     'request_certificate',
     'lookup_payroll',
   ],
-  'legacy: assigned agency staff cannot open the assistant menu': { menu: 'ALLOWED' },
 }
 
 /** 서버 규칙으로 옮기지 않은 케이스입니다. */
@@ -81,7 +80,8 @@ function actorOf(input: FixtureInput) {
   if (input.company?.taxPlan === 'taxation') plans.add('TAXATION')
   if (input.company?.hasPayrollPlan === true) plans.add('PAYROLL')
   const kind = input.actor?.kind === 'agency' ? 'AGENCY' : 'CLIENT'
-  const admin = kind === 'AGENCY' || input.actor?.isAdmin !== false
+  if (kind === 'AGENCY') return testActor({ kind, plans })
+  const admin = input.actor?.isAdmin !== false
   return testActor({ kind, plans, permissions: new Set<Permission>(admin ? ['*'] : MEMBER_BASE) })
 }
 

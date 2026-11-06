@@ -52,6 +52,7 @@ export interface HarnessOptions {
   intercept?: (request: Request, next: (request: Request) => Promise<Response>) => Promise<Response>
   timeoutMs?: number
   authTimeoutMs?: number
+  maxResponseBytes?: number
   maxUpstreamPages?: number
 }
 
@@ -70,6 +71,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       fetch: (request) => (options.intercept === undefined ? next(request) : options.intercept(request, next)),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
       ...(options.authTimeoutMs === undefined ? {} : { authTimeoutMs: options.authTimeoutMs }),
+      ...(options.maxResponseBytes === undefined ? {} : { maxResponseBytes: options.maxResponseBytes }),
     },
     publicBaseUrl: PUBLIC_BASE_URL,
     allowedOrigins: [CLIENT_ORIGIN],

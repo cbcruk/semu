@@ -33,3 +33,6 @@ pnpm format        # 또는 format:check
 | `BFF_ALLOWED_ORIGINS` | `BFF_PUBLIC_URL`의 출처 | 로그인을 받는 브라우저 출처(쉼표로 여럿) |
 | `BFF_UPSTREAM_TIMEOUT_MS` | `10000` | 새 API 요청 하나(본문까지)의 제한 시간 |
 | `BFF_AUTH_TIMEOUT_MS` | `30000` | 로그인·갱신·회사 전환의 제한 시간 |
+| `BFF_UPSTREAM_MAX_RESPONSE_BYTES` | `10485760` (10MB) | 새 API 응답 본문 하나의 최대 크기. 넘으면 502 `UPSTREAM_RESPONSE_TOO_LARGE` |
+
+숫자 변수(`PORT`, `BFF_*_MS`, `BFF_UPSTREAM_MAX_RESPONSE_BYTES`)는 비우면 기본값입니다. 숫자가 아니거나 0 이하이면 시작하지 않습니다. 제한 시간(`*_MS`)은 Node 타이머 한도인 2147483647까지입니다.

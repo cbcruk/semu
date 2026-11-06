@@ -44,9 +44,12 @@ export const CompanySeal = Schema.Struct({
 })
 export type CompanySeal = typeof CompanySeal.Type
 
+/** 도장 이름의 최대 길이입니다. 다른 컨텍스트의 이름 필드(상담 신청자·거래처 대표자 이름)와 같은 50자입니다. */
+export const COMPANY_SEAL_NAME_MAX_LENGTH = 50
+
 /** 도장 등록 요청입니다. 현행은 이미지를 multipart로 받았고, 재설계는 먼저 올린 파일 ID를 받습니다. */
 export const CompanySealRegistration = Schema.Struct({
-  name: Schema.NonEmptyString,
+  name: Schema.NonEmptyString.check(Schema.isMaxLength(COMPANY_SEAL_NAME_MAX_LENGTH)),
   source: Schema.Literals(['UPLOAD', 'DRAWN']),
   imageFileId: FileId,
 })

@@ -27,7 +27,7 @@
 | 행위자 | `Actor` | 회사 범위 토큰 하나가 나타내는 "회사 X에서의 사용자 Y". `kind`는 `CLIENT`·`AGENCY` |
 | 토큰 범위 | `TokenScope` | `COMPANY`(회사 하나) 또는 `AGENCY`(대리인의 담당 회사 전체, `/agency/*`만) |
 | 대리인 | `Agent` | 대리인 범위 토큰의 행위자. 담당 회사(`companies`)는 요청마다 배정에서 계산 |
-| 권한 | `Permission` | `resource:action`. `resource:*`와 `*` 와일드카드 |
+| 권한 | `Permission` | `resource:action`. `resource:*`와 `*` 와일드카드. 와일드카드는 대리인 전용 동작을 덮지 않습니다 |
 | 기본 권한 | `BASE_PERMISSIONS` | 모든 구성원이 갖는 권한(홈·AI 비서·지원사업·서식·급여 계산기 등 현행 "모두에게 열린 메뉴") |
 | 권한 그룹 | `Role` | 회사별 권한 프리셋. 구성원에게 여럿 줄 수 있고 합집합입니다 |
 | 그룹 템플릿 | `RoleTemplate` | 현행 `GET /api/perm/roles`의 기본 그룹(경리·인사·급여·세무·설정) |
@@ -45,9 +45,10 @@
 |---|---|---|
 | `CLIENT` + `ADMIN` | 소속 | `*` |
 | `CLIENT` + `MEMBER` | 소속 | `BASE_PERMISSIONS` ∪ 부여한 그룹들의 권한 |
-| `AGENCY` | 배정(본인 또는 팀원) | `*`. 약관 게이트를 건너뜁니다 |
+| `AGENCY` | 배정(본인 또는 팀원) | 대리인 기본 권한 `AGENT_PERMISSIONS`(D5). 약관 게이트를 건너뜁니다 |
 
 - 플랜은 Billing이 구현하는 `CompanyPlans` 포트에서 가져옵니다
+- 대리인 범위 토큰의 `Agent.permissions`도 같은 `actorPermissions({ kind: 'AGENCY' })`로 계산하므로 두 토큰 범위가 같은 권한 표를 봅니다
 - `pendingTermCodes`는 지금 회사에 적용되는 용도(`SIGNUP`, 회사가 `TAXATION`이면 `TAX`)의 필수 약관 중 동의하지 않은 코드입니다
 - 데모 계정(`isDemo`)은 `:read`가 아닌 권한을 쓰는 요청을 모두 거절당합니다
 
@@ -57,25 +58,44 @@
 
 다른 컨텍스트의 `authorize` 문자열은 [`permission-catalog.ts`](../../apps/api/src/modules/identity-access/permissions/permission-catalog.ts)의 표에 있어야 합니다. **관리자 전용** 동작은 권한 그룹에 넣을 수 없고, 관리자 전용 동작이 있는 리소스는 `resource:*`로도 줄 수 없습니다.
 
-| 영역 | 리소스: 동작 (굵게 = 관리자 전용) | 플랜 |
+*기울임* 동작은 **대리인 전용**(`agentOnly`, D5)입니다. 권한 그룹에 넣을 수 없고, `*`·`resource:*` 와일드카드가 덮지 않아 정확히 같은 문자열을 가진 행위자만 통과합니다. 그래서 고객 관리자의 `*`에는 들지 않고, 컨텍스트가 `actor.kind`로 따로 막지 않습니다. 대리인 전용 동작이 있는 리소스도 `resource:*`로는 줄 수 있습니다(나머지 동작만 덮음).
+
+| 영역 | 리소스: 동작 (굵게 = 관리자 전용, 기울임 = 대리인 전용) | 플랜 |
 |---|---|---|
 | 설정 | `company`: read, update · `member`: read, **update**, **remove** · `role`: read, **create**, **update**, **delete** · `invitation`: read, **create**, **cancel** · `audit-log`: **read** | |
-| 구독·결제 | `subscription`: read · `payment`: read · `billing-mandate`: read, create · `consultation`: create | |
+| 구독·결제 | `subscription`: read, *manage* · `payment`: read, *retry*, *refund* · `billing-mandate`: read, create · `consultation`: create | |
 | | `service-contract`: read · `company-document`: read, upload | TAXATION |
 | 연동 | `integration`: CRUD · `scrap-request`: read, create · `certificate`: read, create, delete · `external-service`: read, manage · `business-status`: read · `messenger-channel`: link | |
 | | `hometax-delegation`: read, agree | TAXATION |
 | AI 비서 | `conversation`: read, create, delete · `grant`: read | |
-| 인사·문서 | `employee`: CRUD | TAXATION 또는 PAYROLL |
+| 인사·문서 | `employee`: CRUD, resign, reveal-rrn, reveal-account · `organization`: read, update | TAXATION 또는 PAYROLL |
 | | `document-form`: read | |
-| | `esign-request`: read, create, send, cancel · `esign-template`: CRUD · `certificate-issuance`: read, create | PAYROLL |
-| 급여 | `payroll-ledger`: CRUD, approve · `payslip`: read, send | TAXATION 또는 PAYROLL |
-| | `payroll-setting`: read, update · `severance-settlement`: CRUD | PAYROLL |
+| | `esign-request`: CRUD, send, cancel, void · `esign-template`: CRUD · `certificate-issuance`: read, create, send, void | PAYROLL |
+| 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send | TAXATION 또는 PAYROLL |
+| | `payroll-setting`: read, update · `severance-settlement`: CRUD, complete · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
 | | `labor-cost-report`: read | TAXATION |
 | | `salary-calculation`: create | |
-| 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, pay · `account-title`: read, update · `classification-rule`: CRUD · `realtime-report`: read | |
+| 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update, classify · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, update, pay · `account-title`: CRUD · `classification-rule`: CRUD, apply · `realtime-report`: read · `report`: read | |
 | | `settlement-report`: read | TAXATION |
-| 세무 | `vat-filing`·`withholding-tax-filing`·`corporate-tax-filing`·`income-tax-filing`: read, update, submit | TAXATION |
-| | `estimated-vat`: read · `action-card`: read, update | |
+| 세무 | `filing`: read, update, submit, confirm-ledger, pay, *process* | TAXATION |
+| | `vat-filing`·`withholding-tax-filing`·`corporate-tax-filing`·`income-tax-filing`: read, update, submit | TAXATION |
+| | `estimated-vat`: read · `action-card`: read, update, complete | |
+
+`filing`, `organization`, `payroll-workflow`, `payroll-rate-table`, `payroll-calculator`, `report`는 엔드포인트가 이미 쓰던 리소스를 D5에서 카탈로그에 올린 것입니다. 기존 리소스에서 빠져 있던 동작 17개(`employee:resign`·`reveal-rrn`·`reveal-account`, `esign-request:update`·`delete`·`void`, `certificate-issuance:send`·`void`, `payroll-ledger:submit`·`close`, `severance-settlement:complete`, `bank-transaction:classify`, `giro:update`, `account-title:create`·`delete`, `classification-rule:apply`, `action-card:complete`)도 같이 올려 권한 그룹에서 하나씩 줄 수 있습니다. `permission-catalog.coverage.test.ts`가 소스(테스트 제외)에 나오는 모든 `resource:action` 문자열이 카탈로그에 있는지 확인해 다시 어긋나지 않게 합니다. 대리인 기본 권한이 카탈로그에서 계산되므로 빠져 있으면 대리인이 그 엔드포인트를 쓰지 못합니다. 그 결과 고객 역할 화면(`GET /permissions`)에도 부여 가능 권한으로 나타납니다. 세목별 `*-filing` 리소스는 역할 템플릿과 현행 메뉴 대응이 쓰고 있어 그대로 둡니다.
+
+#### 대리인 기본 권한
+
+결정 D5([review.md](review.md#결정))입니다. 배정된 세무 대리인은 `*` 대신 `AGENT_PERMISSIONS`를 받습니다. 회사 범위 토큰의 대리인 행위자(`Actor.kind = AGENCY`)와 대리인 범위 토큰의 `Agent`가 같은 표를 씁니다.
+
+| 들어 있음 | 빠짐 |
+|---|---|
+| 아래 여섯을 뺀 카탈로그 리소스 전부의 `resource:*`(회사 정보·구독 조회·연동·인사·문서·급여·경리·세무) | 구성원 관리: `member`, `role`, `invitation`, `audit-log` |
+| 대리인 전용 동작: `filing:process`, `subscription:manage`, `payment:retry`, `payment:refund` | AI 비서: `conversation`, `grant` |
+
+- 구성원 관리는 고객 회사의 내부 통제라 대리인 업무가 아닙니다. 대리인은 `/users`·`/roles`·`/invitations`·`/audit-logs`가 403입니다. 회사 정보(`company:*`)는 대리인 업무라 남깁니다
+- AI 비서는 고객용 기능이고 현행도 대리인에게 열지 않았습니다. 대리인은 `/conversations`·`/grants`가 403입니다
+- 카탈로그에 리소스를 더하면 대리인 기본 권한에도 자동으로 들어갑니다. 대리인에게 주지 않을 리소스는 `AGENT_EXCLUDED_RESOURCES`에 넣습니다
+- 대리인 기본 권한은 토큰을 발급할 때 계산합니다. access token은 프로세스 메모리(`AccessTokens.layerExpiring`)에만 있으므로 배포하면 모든 세션의 access token이 사라지고, 클라이언트는 401을 받은 뒤 refresh로 새 권한 표의 토큰을 받습니다. 이전 `*`를 담은 토큰이 남더라도 와일드카드는 대리인 전용 권한을 덮지 않습니다
 
 `BASE_PERMISSIONS`: `company:read`, `action-card:read`, `conversation:read|create|delete`, `grant:read`, `document-form:read`, `salary-calculation:create`, `business-status:read`, `messenger-channel:link`, `consultation:create`.
 
@@ -143,6 +163,7 @@ sequenceDiagram
 - refresh·전환·로그아웃은 그 세션의 이전 access token을 즉시 폐기합니다
 - 세션에는 access token과 `onboardingToken`의 SHA-256(`accessTokenHash`, `onboardingTokenHash`)만 둡니다. 폐기와 조회도 해시로 합니다. 원문은 응답으로만 나갑니다
 - `onboardingToken`은 1시간(세션이 먼저 끝나면 그때) 뒤 만료됩니다. 로그인·refresh마다 새로 발급하고 이전 것은 무효입니다
+- `onboardingToken`으로 회사를 등록하면 세션의 `onboardingTokenHash`를 지웁니다. 같은 토큰으로 회사를 또 등록하면 401입니다. 등록이 실패(409·422)하면 토큰은 남습니다
 - 회사 선택: 요청한 `companyId`(접근 불가면 404) → 마지막으로 쓴 회사 → 가장 먼저 소속된 회사. 회사가 없으면 access token 대신 `onboardingToken`을 줍니다
 - 로그인 실패: 모르는 이메일과 틀린 비밀번호는 같은 401 `INVALID_CREDENTIALS`. 연속 5회 틀리면 423 `ACCOUNT_LOCKED`(해제는 비밀번호 재설정, 미구현)
 - 비밀번호는 scrypt(N=16384, r=8, p=1)로 저장합니다. 정책은 8–20자, 영문·숫자 포함, 공백 불가([password-policy](../reference/rules/password-policy.md))
@@ -162,7 +183,7 @@ sequenceDiagram
 - **수명:** 회사 범위와 같은 10분 access token이고 같은 세션(refresh 쿠키 1일·14일)에 속합니다. 세션은 지금 범위를 기억해서(`SessionRecord.scope`) `:refresh`는 같은 범위로 다시 발급합니다. `:switch-company {companyId}`를 부르면 회사 범위로 돌아갑니다. 세션 하나에는 access token이 하나뿐이라 범위를 바꾸면 이전 범위의 토큰은 바로 401입니다. 대리인 화면이 큐와 회사 화면을 오갈 때마다 전환합니다
 - **범위가 틀리면 403입니다.** 대리인 범위 토큰으로 회사 경로를 부르거나 회사 범위 토큰(대리인이 회사에 들어간 토큰 포함)으로 `/agency/*`를 부르면 403 `TOKEN_SCOPE_MISMATCH`(`requiredScope`)입니다. 토큰은 유효하므로 401(다시 로그인)이 아닙니다(RFC 6750 `insufficient_scope`)
 - **담당 회사는 토큰에 넣지 않습니다.** `AgencyAuthentication`이 요청마다 `AgentDirectory.resolve(userId)`로 본인 배정과(팀장이면) 팀원 배정, 회사 이름·사업자 형태, Billing 플랜을 읽어 `Agent.companies`를 만듭니다. 배정을 풀거나 구독이 바뀌면 토큰을 폐기하지 않아도 다음 요청부터 반영됩니다. 사용자가 비활성이면 401입니다
-- **권한:** `authorizeAgency({ permission, plans? })`가 `authorize`의 대리인 판입니다. 권한은 `Agent.permissions`(지금은 회사 범위와 같은 `*`, D5에서 좁힘)로 보고, `plans`는 거절 대신 **그 플랜을 구독하는 담당 회사만 남깁니다.** 회사 여럿을 가로지르는 목록이라 한 회사의 구독 때문에 전체를 403으로 막지 않습니다. 약관 게이트는 회사 범위의 대리인처럼 건너뜁니다
+- **권한:** `authorizeAgency({ permission, plans? })`가 `authorize`의 대리인 판입니다. 권한은 `Agent.permissions`(회사 범위의 대리인과 같은 [대리인 기본 권한](#대리인-기본-권한), D5)로 보고, `plans`는 거절 대신 **그 플랜을 구독하는 담당 회사만 남깁니다.** 회사 여럿을 가로지르는 목록이라 한 회사의 구독 때문에 전체를 403으로 막지 않습니다. 약관 게이트는 회사 범위의 대리인처럼 건너뜁니다
 - **쓰기는 회사 범위에서만 합니다.** `/agency/*`는 모두 읽기입니다. 신고 건 처리처럼 회사 데이터를 바꾸는 일은 `:switch-company`로 그 회사 토큰을 받아 기존 경로로 합니다. 그래서 회사 리소스의 인가·감사·버전 검사가 한 길로만 지나갑니다
 - 범위 전환은 감사 로그에 `AGENCY_SCOPE_ENTERED`로 남깁니다. 회사로 돌아가는 것은 기존 `COMPANY_SWITCHED`입니다
 
@@ -366,9 +387,10 @@ stateDiagram-v2
 | 초대 생성·목록·취소·미리보기·수락(가입 포함) | 구현 |
 | 감사 로그 조회 | 구현 |
 | 토큰 범위(`COMPANY`·`AGENCY`), `:switch-agency`, `AgencyAuthentication`·`authorizeAgency`, `GET /agency/companies` | 구현 (`access/agent-directory.ts`, `agency/`). 큐 자체는 Tax ([agency-queue.md](agency-queue.md)) |
+| 대리인 권한 분리(D5): 카탈로그 `agentOnly`, `AGENT_PERMISSIONS`, 와일드카드가 대리인 전용 권한을 덮지 않음 | 구현 (`permissions/permission-catalog.ts`, `access/actor-permissions.ts`, `actor.ts`의 `hasPermission`) |
 | 행위자 계산(소속·배정·팀장·플랜·약관·프로모션) | 구현 (`access/actor-directory.ts`) |
 | access token 만료 | `AccessTokens.layerExpiring` 구현 |
-| 토큰 저장 | access token·onboarding token은 해시만 저장. onboarding token 만료(1시간) 구현 |
+| 토큰 저장 | access token·onboarding token은 해시만 저장. onboarding token 만료(1시간)와 회사 등록 뒤 소비 구현 |
 | 비밀번호 재설정, 이메일 가입, 소셜·제휴 로그인, 파트너 연결, 즐겨찾기, 회사 없는 사용자의 초대 목록 | 미구현 |
 | 구독 변경 이벤트로 토큰 폐기 | 미구현 (Billing 이벤트 대기) |
 | 저장소 | 메모리 구현만 |
@@ -377,7 +399,7 @@ stateDiagram-v2
 
 1. 로그인 잠금 해제를 비밀번호 재설정으로만 할지, 시간(예: 30분)으로도 풀지 정해야 합니다
 2. 회사 없는 사용자의 화면(현행 `/no-company`, `/register-company`)에서 받은 초대 목록을 보일 엔드포인트가 필요합니다(`GET /me/invitations`)
-3. 세무 대리인 담당자가 회사 정보를 수정하거나 구성원을 관리하는 것을 허용할지(지금은 `*`) 데스크 업무 범위와 맞춰야 합니다
+3. ~~세무 대리인 담당자가 회사 정보를 수정하거나 구성원을 관리하는 것을 허용할지~~ D5로 정했습니다. 회사 정보 수정은 허용하고 구성원 관리와 AI 비서는 기본으로 주지 않습니다([대리인 기본 권한](#대리인-기본-권한)). 회사별로 더 열어 줄 필요가 생기면 배정에 권한 추가를 둘지 그때 정합니다
 4. 플랜 변경을 토큰에 즉시 반영하려면 Billing의 구독 이벤트를 받아야 합니다. 이벤트 이름과 시점을 [events.md](events.md)에서 합의해야 합니다
 5. 세무 대리인 약관 목록과 코드는 매뉴얼에만 있어 실제 약관 카탈로그를 받아야 합니다
 6. 그룹별 구성원 조회를 `/users?roleId=` 필터로 둘지 정해야 합니다

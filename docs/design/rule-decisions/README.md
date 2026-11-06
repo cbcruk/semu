@@ -18,10 +18,10 @@
 | Identity & Access | [identity-access.md](identity-access.md) | 6 | 32 | 15 | 13 | 4 |
 | Billing | [billing.md](billing.md) | 2 | 11 | 2 | 4 | 5 |
 | Integrations | [integrations.md](integrations.md) | 5 | 28 | 10 | 11 | 7 |
-| Assistant | [assistant.md](assistant.md) | 2 | 11 | 2 | 7 | 2 |
+| Assistant | [assistant.md](assistant.md) | 2 | 11 | 3 | 6 | 2 |
 | Tax | [tax.md](tax.md) | 7 | 41 | 25 | 16 | 0 |
 | HR | [hr.md](hr.md) | 13 | 34 | 22 | 11 | 1 |
 | Documents | [documents.md](documents.md) | 5 | 13 | 9 | 4 | 0 |
 | Payroll | [payroll.md](payroll.md) | 14 | 34 | 19 | 7 | 8 |
 | Bookkeeping | [bookkeeping.md](bookkeeping.md) | 14 | 29 | 12 | 12 | 5 |
-| | **합계** | **68** | **233** | **116** | **85** | **32** |
+| | **합계** | **68** | **233** | **117** | **84** | **32** |

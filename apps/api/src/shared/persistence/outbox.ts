@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Schedule } from 'effect'
 import { newId } from '../ids/ids.ts'
+import { describeDefect } from '../problem/defect-log.ts'
 import { decodeRecord, encodeRecord } from './json-codec.ts'
 import { CurrentTransaction, SqliteDatabase, UnitOfWork } from './unit-of-work.ts'
 
@@ -62,19 +63,22 @@ export class Outbox extends Context.Service<
        * 이벤트 하나를 넘깁니다. 아직 전달되지 않았는지 확인, 소비자 처리, 전달 표시를 한 트랜잭션에서 합니다.
        * 그래서 커밋 뒤 전달과 릴레이가 겹쳐도 한 번만 처리되고, 소비자가 실패(결함)하면 소비자의 쓰기와 함께 되돌린 뒤 실패를 따로 남깁니다.
        */
-      const deliver = (seq: number, channel: string, event: unknown): Effect.Effect<void> => {
+      const deliver = (seq: number, channel: string, event: () => unknown): Effect.Effect<void> => {
         const handler = handlers.get(channel)
         if (handler === undefined) return Effect.void
         return unitOfWork
           .run(
             Effect.gen(function* () {
               if (isPending.get(seq) === undefined) return
-              yield* handler(event)
+              yield* handler(event())
               markDelivered.run(new Date().toISOString(), seq)
             }),
           )
           .pipe(
-            Effect.catchDefect((defect) => unitOfWork.run(Effect.sync(() => markFailed.run(String(defect), seq)))),
+            // `last_error`에는 결함 요약만 남깁니다. 메시지(디코딩 실패면 저장 값)는 남기지 않습니다.
+            Effect.catchDefect((defect) =>
+              unitOfWork.run(Effect.sync(() => markFailed.run(describeDefect(defect), seq))),
+            ),
             Effect.asVoid,
           )
       }
@@ -88,7 +92,7 @@ export class Outbox extends Context.Service<
               Effect.gen(function* () {
                 const result = insert.run(newId('event'), name, encodeRecord(event), new Date().toISOString())
                 const seq = Number(result.lastInsertRowid)
-                const delivery = Effect.suspend(() => deliver(seq, name, decodeRecord(encodeRecord(event))))
+                const delivery = Effect.suspend(() => deliver(seq, name, () => decodeRecord(encodeRecord(event))))
                 const transaction = yield* CurrentTransaction
                 if (transaction === null) yield* delivery
                 else transaction.afterCommit.push(delivery)
@@ -99,7 +103,8 @@ export class Outbox extends Context.Service<
             // 연결이 하나라 트랜잭션 안에서 읽어야 다른 요청이 아직 커밋하지 않은 이벤트를 보지 않습니다.
             const rows = yield* unitOfWork.run(Effect.sync(() => pending.all()))
             for (const row of rows) {
-              yield* deliver(Number(row['seq']), row['channel'] as string, decodeRecord(row['data'] as string))
+              // 디코딩은 전달 안에서 합니다. 깨진 행 하나가 릴레이를 멈추지 않고 그 행의 실패로 남습니다.
+              yield* deliver(Number(row['seq']), row['channel'] as string, () => decodeRecord(row['data'] as string))
             }
             return rows.length
           }),
@@ -109,13 +114,23 @@ export class Outbox extends Context.Service<
 }
 
 /**
+ * 릴레이 한 번입니다. 결함이 나도 끝내지 않고 {@link describeDefect} 요약만 로그에 남깁니다.
+ * 요청 밖(시작·주기 실행)이라 `ProblemFallback`을 거치지 않으므로, 결함 메시지가 그대로 찍히지 않게 여기서 받습니다.
+ */
+export const relayLoggingDefects = (outbox: Outbox['Service']): Effect.Effect<void> =>
+  outbox.relay().pipe(
+    Effect.asVoid,
+    Effect.catchDefect((defect) => Effect.logError('Outbox relay defect', describeDefect(defect))),
+  )
+
+/**
  * 시작할 때와 그 뒤 주기적으로 밀린 이벤트를 다시 넘깁니다. 채널이 모두 등록된 뒤(어댑터 위)에 얹습니다.
  */
 export const OutboxRelayLive = (interval: `${number} seconds` = '30 seconds'): Layer.Layer<never, never, Outbox> =>
   Layer.effectDiscard(
     Effect.gen(function* () {
       const outbox = yield* Outbox
-      yield* outbox.relay()
-      yield* Effect.forkScoped(Effect.repeat(outbox.relay(), Schedule.spaced(interval)))
+      yield* relayLoggingDefects(outbox)
+      yield* Effect.forkScoped(Effect.repeat(relayLoggingDefects(outbox), Schedule.spaced(interval)))
     }),
   )

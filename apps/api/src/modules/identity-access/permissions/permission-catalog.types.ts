@@ -11,6 +11,11 @@ export interface ResourcePermissions {
   actions: ReadonlyArray<string>
   /** 관리자만 가질 수 있어 권한 그룹으로 줄 수 없는 동작입니다. 사용자 초대·권한 관리가 여기에 듭니다. */
   adminOnly?: ReadonlyArray<string>
+  /**
+   * 세무 대리인만 갖는 동작입니다(D5). 권한 그룹에 넣을 수 없고, `*`·`resource:*` 와일드카드도 덮지 않습니다.
+   * 대리인 기본 권한(`AGENT_PERMISSIONS`)이 이 동작을 하나씩 적어 줍니다.
+   */
+  agentOnly?: ReadonlyArray<string>
   /** 이 리소스를 쓰는 데 필요한 플랜입니다. 하나라도 있으면 됩니다. 엔드포인트의 `authorize({ plans })`와 같아야 합니다. */
   plans?: ReadonlyArray<Plan>
 }

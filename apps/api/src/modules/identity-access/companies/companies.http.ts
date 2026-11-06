@@ -26,7 +26,11 @@ export const CurrentCompanyHttpLive = HttpApiBuilder.group(
   }),
 )
 
-/** 회사 등록 핸들러입니다. access token이면 그 사용자, 아니면 onboarding token의 사용자로 등록합니다. */
+/**
+ * 회사 등록 핸들러입니다. access token이면 그 사용자, 아니면 onboarding token의 사용자로 등록합니다.
+ *
+ * onboarding token은 등록에 성공하면 지웁니다. 같은 토큰으로 회사를 여러 개 등록하지 못합니다. 등록이 실패(409·422)하면 남깁니다.
+ */
 export const CompanyRegistrationsHttpLive = HttpApiBuilder.group(
   Api,
   'companyRegistrations',
@@ -38,14 +42,19 @@ export const CompanyRegistrationsHttpLive = HttpApiBuilder.group(
       const token = authorization?.match(/^Bearer (.+)$/i)?.[1]
       if (token === undefined) return yield* new Unauthenticated({})
       const actor = yield* tokens.verify(token)
-      if (Option.isSome(actor)) return actor.value.userId
+      if (Option.isSome(actor)) return { userId: actor.value.userId, onboardingToken: undefined }
       const onboarding = yield* sessions.onboardingUser(token)
-      if (Option.isSome(onboarding)) return onboarding.value
+      if (Option.isSome(onboarding)) return { userId: onboarding.value, onboardingToken: token }
       return yield* new Unauthenticated({})
     })
     return handlers.handleAll({
       register: ({ headers, payload }) =>
-        userOf(headers.authorization).pipe(Effect.flatMap((userId) => companies.register(userId, payload))),
+        Effect.gen(function* () {
+          const { userId, onboardingToken } = yield* userOf(headers.authorization)
+          const registered = yield* companies.register(userId, payload)
+          if (onboardingToken !== undefined) yield* sessions.consumeOnboardingToken(onboardingToken)
+          return registered
+        }),
     })
   }),
 )

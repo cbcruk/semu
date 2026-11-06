@@ -189,7 +189,7 @@ export class ScrapedRecordIngestion extends Context.Service<
                       id: newId('bankAccount'),
                       companyId,
                       bankCode: record.bankCode,
-                      accountNumberEncrypted: cipher.encrypt(accountDigits(record.accountNumber)),
+                      accountNumberEncrypted: cipher.encrypt('companyAccount', accountDigits(record.accountNumber)),
                       accountNumberDigest: digest,
                       accountNumberLast4: accountDigits(record.accountNumber).slice(-4),
                       alias: record.alias ?? null,

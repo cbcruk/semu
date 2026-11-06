@@ -148,6 +148,20 @@ describe('/v1/users', () => {
     expect(again.body).toHaveProperty('onboardingToken')
   })
 
+  it('consumes the onboarding token once it has registered a company', async () => {
+    const owner = await app.signIn('owner@semu.example')
+    await app.request('DELETE', `/v1/users/${DEMO_USER_IDS.member}`, { token: owner.token })
+    const onboarding = String((await app.signIn('member@semu.example')).body.onboardingToken)
+    const register = (businessNumber: string) =>
+      app.request('POST', '/v1/companies', {
+        token: onboarding,
+        body: { name: '새 회사', businessNumber, businessType: 'INDIVIDUAL' },
+      })
+
+    expect((await register('101-86-00006')).status).toBe(201)
+    expect((await register('101-86-00006')).status).toBe(401)
+  })
+
   it('does not let a member without the user-management permissions see or manage members', async () => {
     const { token } = await app.signIn('member@semu.example')
 
