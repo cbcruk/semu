@@ -237,6 +237,7 @@ export function fromLegacyPayrollContract(body: Record<string, unknown>): Payrol
     },
     payMethod: payMethod === 'transfer' ? 'TRANSFER' : 'CASH',
   }
+  assertPayrollInput(input)
   if (payMethod === 'direct') return { input, keepAccountNumber: undefined }
   const bankCode = fields.optionalText('bank_code')
   const accountHolder = fields.optionalText('account_holder')
@@ -244,14 +245,50 @@ export function fromLegacyPayrollContract(body: Record<string, unknown>): Payrol
   const missingAccount = () =>
     legacyErrors.invalidField('account_number', 'Bank transfers need a bank, account number and holder.')
   if (bankCode === null || accountHolder === null) throw missingAccount()
+  if (!/^\d{3}$/.test(bankCode)) throw legacyErrors.invalidField('bank_code', 'Invalid value.')
   if (accountNumber === undefined || (typeof accountNumber === 'string' && accountNumber.includes('*'))) {
     return { input, keepAccountNumber: { bankCode, accountHolder } }
   }
-  const number = fields.optionalText('account_number')
-  if (number === null) throw missingAccount()
+  const text = fields.optionalText('account_number')
+  if (text === null) throw missingAccount()
+  // 현행 서버처럼 공백·하이픈을 빼고 숫자 6–20자리만 받습니다.
+  const digits = text.replace(/[\s-]/g, '')
+  if (!/^\d{6,20}$/.test(digits)) throw legacyErrors.invalidField('account_number', 'Enter digits only.')
   return {
-    input: { ...input, account: { bankCode, accountNumber: number, accountHolder } },
+    input: { ...input, account: { bankCode, accountNumber: digits, accountHolder } },
     keepAccountNumber: undefined,
+  }
+}
+
+/**
+ * 새 API 스키마가 거절할 값을 BFF가 먼저 거절합니다(정수 원 ≥ 0, 시간 > 0, 지급일 1–31, 종료일 ≥ 시작일).
+ *
+ * 가린 계좌번호를 유지하는 `PUT`은 쓰기 전에 원문을 열람하므로, 실패할 쓰기 때문에 열람 기록이 남지 않게 합니다.
+ * 계산 뒤에야 알 수 있는 위반(기본급 음수 `BASE_SALARY_NEGATIVE`)은 새 API가 거절합니다.
+ */
+function assertPayrollInput(input: PayrollContractInput): void {
+  const won = (value: number | undefined, field: string) => {
+    if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+      throw legacyErrors.invalidField(field, 'Ensure this value is a whole number of won, 0 or more.')
+    }
+  }
+  const hours = (value: number | undefined, field: string) => {
+    if (value !== undefined && !(value > 0))
+      throw legacyErrors.invalidField(field, 'Ensure this value is greater than 0.')
+  }
+  won(input.amount, 'amount')
+  hours(input.monthlyWorkHours, 'monthly_work_hours')
+  hours(input.dailyWorkHours, 'daily_work_hours')
+  for (const item of input.paymentItems ?? []) won(item.amount, 'payment_items')
+  for (const [kind, legacy] of FIXED_KINDS) won(input.fixedAllowances?.[kind]?.amount, `fixed_${legacy}_amount`)
+  won(input.bonus?.amount, 'bonus_amount')
+  won(input.annualSalary, 'annual_salary')
+  const day = input.payTiming?.day
+  if (day !== undefined && (!Number.isInteger(day) || day < 1 || day > 31)) {
+    throw legacyErrors.invalidField('pay_day', 'Ensure this value is between 1 and 31.')
+  }
+  if (input.endDate !== undefined && input.endDate < input.startDate) {
+    throw legacyErrors.invalidField('end_date', 'The end date must not be before the start date.')
   }
 }
 

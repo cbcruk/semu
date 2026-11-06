@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_COMPANY_IDS, makeHarness, PUBLIC_BASE_URL } from './legacy-client.ts'
-import type { Harness, LegacyClient } from './legacy-client.ts'
+import type { Harness, HarnessOptions, LegacyClient } from './legacy-client.ts'
 
 const KIM = 'emp_01JBQ00000000000000000D3M1'
 const FREELANCER = 'emp_01JBQ00000000000000000D3M2'
@@ -378,7 +378,7 @@ describe('leaves of absence (휴직)', () => {
     expect(await response.json()).toMatchObject({ reason: 'etc', actual_return_date: '2026-03-20' })
   })
 
-  it('undoes the new leave when its return date is rejected', async () => {
+  it('checks the return date range before registering anything', async () => {
     const response = await client.request('POST', `${PATH}/`, {
       body: { reason: 'etc', start_date: '2026-03-02', end_date: '2026-03-31', actual_return_date: '2026-05-01' },
       headers: { 'if-match': '"1"' },
@@ -386,8 +386,53 @@ describe('leaves of absence (휴직)', () => {
     const list = await (await client.request('GET', `${PATH}/`)).json()
 
     expect(response.status).toBe(422)
-    expect((await response.json()).errors).toEqual({ actual_return_date: ['RETURN_DATE_OUT_OF_RANGE'] })
+    expect((await response.json()).errors).toEqual({
+      actual_return_date: ['The return date must fall after the start and no later than the day after the end.'],
+    })
     expect(list.count).toBe(0)
+  })
+
+  it('refuses PUT with a stale employee version', async () => {
+    const leave = await (
+      await client.request('POST', `${PATH}/`, { body: illness, headers: { 'if-match': '"1"' } })
+    ).json()
+
+    const response = await client.request('PUT', `${PATH}/${leave.id}/`, {
+      body: { ...illness, actual_return_date: '2026-02-02' },
+      headers: { 'if-match': '"9"' },
+    })
+
+    expect(response.status).toBe(412)
+    expect((await response.json()).code).toBe('VERSION_CONFLICT')
+  })
+
+  it('refuses DELETE with a stale employee version', async () => {
+    const leave = await (
+      await client.request('POST', `${PATH}/`, { body: illness, headers: { 'if-match': '"1"' } })
+    ).json()
+
+    const response = await client.request('DELETE', `${PATH}/${leave.id}/`, { headers: { 'if-match': '"9"' } })
+    const list = await (await client.request('GET', `${PATH}/`)).json()
+
+    expect(response.status).toBe(412)
+    expect(list.count).toBe(1)
+  })
+
+  it('reads a missing expected return date as the day after the end, like the legacy server', async () => {
+    const leave = await (
+      await client.request('POST', `${PATH}/`, {
+        body: { ...illness, expected_return_date: '2031-06-01' },
+        headers: { 'if-match': '"1"' },
+      })
+    ).json()
+
+    const response = await client.request('PUT', `${PATH}/${leave.id}/`, {
+      body: { ...illness, expected_return_date: null },
+      headers: { 'if-match': '"1"' },
+    })
+
+    expect(response.status).toBe(422)
+    expect(Object.keys((await response.json()).errors)).toEqual(['non_field_errors'])
   })
 
   it('records a return with PUT and refuses other edits the new API cannot make', async () => {
@@ -501,5 +546,212 @@ describe('retirement (퇴직)', () => {
     expect(removed.status).toBe(204)
     expect(removed.headers.get('etag')).toBe('"3"')
     expect(after.leave_date).toBeNull()
+  })
+})
+
+/** 새 API 요청을 가로채는 하니스로 로그인한 클라이언트입니다. 기본 하니스와 별도로 테스트 안에서 정리합니다. */
+async function intercepted(options: HarnessOptions): Promise<{ harness: Harness; client: LegacyClient }> {
+  const custom = makeHarness(options)
+  const signedIn = custom.client()
+  await signedIn.login('owner@semu.example')
+  return { harness: custom, client: signedIn }
+}
+
+/** 새 API의 문제 응답입니다. */
+function problem(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ type: 'about:blank', title: 'Rejected', status, ...body }), {
+    status,
+    headers: { 'content-type': 'application/problem+json' },
+  })
+}
+
+const isReturn = (request: Request) => request.method === 'POST' && /\/v1\/leaves\/[^/]+:return$/.test(request.url)
+
+describe('leave registration with a return date across two new API calls', () => {
+  const PATH = `${KIM_PATH}/leave-of-absences`
+  const finished = { reason: 'etc', start_date: '2026-03-02', end_date: '2026-03-31', actual_return_date: '2026-03-20' }
+
+  it('undoes the new leave when the new API rejects the return', async () => {
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) =>
+        isReturn(request)
+          ? Promise.resolve(
+              problem(422, {
+                code: 'LEAVE_INVALID',
+                violations: [{ field: 'actualReturnDate', code: 'RETURN_DATE_OUT_OF_RANGE' }],
+              }),
+            )
+          : next(request),
+    })
+    try {
+      const response = await signedIn.request('POST', `${PATH}/`, { body: finished, headers: { 'if-match': '"1"' } })
+      const list = await (await signedIn.request('GET', `${PATH}/`)).json()
+
+      expect(response.status).toBe(422)
+      expect((await response.json()).errors).toEqual({ actual_return_date: ['RETURN_DATE_OUT_OF_RANGE'] })
+      expect(list.count).toBe(0)
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('logs and asks to reload when undoing fails, without logging personal data', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) => {
+        if (isReturn(request)) return Promise.resolve(problem(422, { code: 'LEAVE_INVALID', violations: [] }))
+        if (request.method === 'DELETE') return Promise.resolve(problem(503, { code: 'UNAVAILABLE' }))
+        return next(request)
+      },
+    })
+    try {
+      const response = await signedIn.request('POST', `${PATH}/`, { body: finished, headers: { 'if-match': '"1"' } })
+      const list = await (await signedIn.request('GET', `${PATH}/`)).json()
+
+      expect(response.status).toBe(502)
+      expect((await response.json()).code).toBe('PARTIAL_WRITE')
+      expect(list.count).toBe(1)
+      expect(errors).toHaveBeenCalledWith(expect.any(String), { leaveId: list.results[0].id, status: 503 })
+    } finally {
+      errors.mockRestore()
+      await custom.dispose()
+    }
+  })
+
+  it('keeps the leave when the return times out, since the outcome is unknown', async () => {
+    const { harness: custom, client: signedIn } = await intercepted({
+      timeoutMs: 200,
+      intercept: async (request, next) => {
+        if (isReturn(request)) await new Promise((resolve) => setTimeout(resolve, 400))
+        return next(request)
+      },
+    })
+    try {
+      const response = await signedIn.request('POST', `${PATH}/`, { body: finished, headers: { 'if-match': '"1"' } })
+      const list = await (await signedIn.request('GET', `${PATH}/`)).json()
+
+      expect(response.status).toBe(504)
+      expect((await response.json()).code).toBe('PARTIAL_WRITE')
+      expect(list.count).toBe(1)
+    } finally {
+      await custom.dispose()
+    }
+  })
+})
+
+describe('payroll contract writes and the account number reveal', () => {
+  const PATH = `${KIM_PATH}/payroll-contracts/${DEMO_PAYROLL_CONTRACT}/`
+  const masked = {
+    start_date: '2025-03-02',
+    wage_type: 'monthly',
+    amount: 3_400_000,
+    pay_method: 'transfer',
+    bank_code: '004',
+    account_number: '********6789',
+    account_holder: '김세무',
+  }
+
+  /** 계좌번호 열람과 `PUT`의 `If-Match`를 기록하는 하니스입니다. */
+  async function watching() {
+    const reveals: string[] = []
+    const ifMatches: Array<string | null> = []
+    const setup = await intercepted({
+      intercept: (request, next) => {
+        if (request.url.endsWith('/account-number')) reveals.push(request.url)
+        if (request.method === 'PUT') ifMatches.push(request.headers.get('if-match'))
+        return next(request)
+      },
+    })
+    return { ...setup, reveals, ifMatches }
+  }
+
+  it('does not reveal the account number for a stale If-Match or an invalid body', async () => {
+    const { harness: custom, client: signedIn, reveals } = await watching()
+    try {
+      const stale = await signedIn.request('PUT', PATH, { body: masked, headers: { 'if-match': '"7"' } })
+      const invalid = await signedIn.request('PUT', PATH, { body: { ...masked, monthly_work_hours: -1 } })
+
+      expect(stale.status).toBe(412)
+      expect((await stale.json()).code).toBe('VERSION_CONFLICT')
+      expect(invalid.status).toBe(422)
+      expect((await invalid.json()).errors).toEqual({ monthly_work_hours: ['Ensure this value is greater than 0.'] })
+      expect(reveals).toEqual([])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('reveals once to keep the account, guarding the write with the version it just read', async () => {
+    const { harness: custom, client: signedIn, reveals, ifMatches } = await watching()
+    try {
+      const response = await signedIn.request('PUT', PATH, { body: masked })
+
+      expect(response.status).toBe(200)
+      expect(reveals).toHaveLength(1)
+      expect(ifMatches).toEqual(['"1"'])
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('strips spaces and hyphens from a new account number like the legacy server', async () => {
+    const response = await client.request('PUT', PATH, { body: { ...masked, account_number: '110 123-456 789' } })
+
+    expect(response.status).toBe(200)
+    expect((await response.json()).account_number).toBe('********6789')
+  })
+
+  it('flags a wage below the minimum', async () => {
+    const response = await client.request('POST', `${KIM_PATH}/payroll-contracts/`, {
+      body: { start_date: '2027-01-01', wage_type: 'hourly', amount: 5_000, pay_method: 'direct' },
+    })
+
+    expect(response.status).toBe(201)
+    expect((await response.json()).minimum_wage).toMatchObject({ hourly: 10_320, is_below: true })
+  })
+})
+
+describe('retirement version checks', () => {
+  const PATH = `${KIM_PATH}/retirement-info/`
+  const resignation = { leave_date: '2026-10-31', leaving_reason: '11' }
+
+  it('needs If-Match to cancel by clearing the leave date', async () => {
+    await client.request('PUT', PATH, { body: resignation, headers: { 'if-match': '"1"' } })
+
+    const response = await client.request('PUT', PATH, { body: { leave_date: null } })
+
+    expect(response.status).toBe(428)
+  })
+
+  it('checks the version on DELETE even without a retirement', async () => {
+    const response = await client.request('DELETE', PATH, { headers: { 'if-match': '"5"' } })
+
+    expect(response.status).toBe(412)
+  })
+
+  it('rejects a detail reason without a leave date instead of dropping it', async () => {
+    const response = await client.request('PUT', PATH, { body: { leaving_detail_reason: '11-1' } })
+
+    expect(response.status).toBe(422)
+    expect((await response.json()).errors).toEqual({ leaving_detail_reason: ['Not supported by the new API yet.'] })
+  })
+
+  it('answers a completed severance settlement with the legacy 400', async () => {
+    const { harness: custom, client: signedIn } = await intercepted({
+      intercept: (request, next) =>
+        request.url.endsWith(':cancel-resignation')
+          ? Promise.resolve(problem(409, { code: 'RETIREMENT_COMPLETED', title: 'Severance settlement is completed' }))
+          : next(request),
+    })
+    try {
+      await signedIn.request('PUT', PATH, { body: resignation, headers: { 'if-match': '"1"' } })
+
+      const response = await signedIn.request('DELETE', PATH, { headers: { 'if-match': '"2"' } })
+
+      expect(response.status).toBe(400)
+      expect((await response.json()).code).toBe('RETIREMENT_COMPLETED')
+    } finally {
+      await custom.dispose()
+    }
   })
 })

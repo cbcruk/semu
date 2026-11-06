@@ -13,6 +13,7 @@ import {
   workContractField,
 } from './contracts.mapping.ts'
 import {
+  assertVersion,
   EMPLOYEE_BASE,
   expectNoContent,
   newestFirst,
@@ -202,9 +203,12 @@ export const contractRoutes: readonly Route[] = [
     handle: async (context) => {
       const request = fromLegacyPayrollContract(await readObject(context.request))
       const [{ contract, response: current }] = await Promise.all([payrollContract(context), wageEmployee(context)])
+      // 현행 `PUT`은 버전을 보지 않았습니다. 클라이언트가 보낸 `If-Match`는 계좌번호를 열람하기 전에 확인하고,
+      // 없으면 방금 읽은 버전으로 읽은 뒤의 변경을 덮어쓰지 않습니다.
+      const sent = optionalIfMatch(context.request)
+      if (sent !== undefined) assertVersion(contract.version, sent, 'payroll contract')
+      const ifMatch = sent ?? current.headers.get('etag') ?? undefined
       const input = await withKeptAccount(context, request, contract)
-      // 현행 `PUT`은 버전을 보지 않았습니다. 읽은 뒤 다른 요청이 바꾸지 않았는지는 방금 읽은 버전으로 확인합니다.
-      const ifMatch = optionalIfMatch(context.request) ?? current.headers.get('etag') ?? undefined
       const response = await upstream(context, 'PUT', `/v1/payroll-contracts/${encodeURIComponent(contract.id)}`, {
         body: input,
         ...(ifMatch === undefined ? {} : { headers: { 'if-match': ifMatch } }),

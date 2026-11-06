@@ -37,7 +37,7 @@ export type RetirementChange =
  * 현행 퇴직 정보 본문(`PUT retirement-info/`)을 지금 직원과 비교해 할 일을 정합니다.
  *
  * 퇴직금 제도(`grant` 밖), 중간정산, 퇴직금은 새 API에 자리가 없어 기본값이 아니면 422입니다.
- * 퇴직일 없이 사유만 저장하는 것도 새 API에서는 할 수 없어 422입니다.
+ * 퇴직일 없이 사유·상세 사유만 저장하는 것도 새 API에서는 할 수 없어 422입니다.
  */
 export function retirementChange(employee: Employee, body: Record<string, unknown>): RetirementChange {
   const fields = new LegacyFields(body)
@@ -53,6 +53,7 @@ export function retirementChange(employee: Employee, body: Record<string, unknow
   const current = employee.resignation
   if (leaveDate === null) {
     if (reason !== null) throw legacyErrors.invalidField('leaving_reason', 'Not supported by the new API yet.')
+    if (detail !== null) throw legacyErrors.invalidField('leaving_detail_reason', 'Not supported by the new API yet.')
     return current === undefined ? { kind: 'none' } : { kind: 'cancel' }
   }
   if (reason === null) throw legacyErrors.invalidField('leaving_reason', 'Choose the leaving reason.')

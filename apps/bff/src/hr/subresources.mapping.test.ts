@@ -125,6 +125,17 @@ describe('leave mapping', () => {
     expect(changesBesidesReturn(current, create)).toBe(true)
     expect(create.reason).toBe('OTHER')
   })
+
+  it('compares the expected return date, reading a missing one as the day after the end', () => {
+    const body = { reason: 'parental', start_date: '2026-01-01', end_date: '2026-06-30' }
+    const extended = { ...current, expectedReturnDate: '2026-08-01' }
+
+    expect(changesBesidesReturn(current, fromLegacyLeave({ ...body, expected_return_date: null }).create)).toBe(false)
+    expect(changesBesidesReturn(extended, fromLegacyLeave({ ...body, expected_return_date: null }).create)).toBe(true)
+    expect(changesBesidesReturn(current, fromLegacyLeave({ ...body, expected_return_date: '2026-07-15' }).create)).toBe(
+      true,
+    )
+  })
 })
 
 describe('retirement mapping', () => {

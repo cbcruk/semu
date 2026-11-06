@@ -109,8 +109,13 @@ export function optionalIfMatch(request: Request): string | undefined {
  * @throws {LegacyError} 412 `VERSION_CONFLICT`
  */
 export function assertEmployeeVersion(employee: Employee, ifMatch: string): void {
+  assertVersion(employee.version, ifMatch, 'employee')
+}
+
+/** `If-Match`의 버전이 지금 버전과 다르면 412 `VERSION_CONFLICT`입니다. */
+export function assertVersion(current: number, ifMatch: string, resource: string): void {
   const version = Number(VERSION_TAG.exec(ifMatch)?.[1])
-  if (version !== employee.version) throw legacyErrors.staleVersion('employee')
+  if (version !== current) throw legacyErrors.staleVersion(resource)
 }
 
 /** 현행 목록 순서(시작일 내림차순, 같으면 ID 내림차순)로 정렬합니다. 새 ID는 만든 순서대로 커집니다. */

@@ -19,6 +19,7 @@ import {
 import type { WageEmployee } from './employee-scope.ts'
 import { drfPage, pageOf } from './hr.mapping.ts'
 import {
+  assertReturnDateInRange,
   changesBesidesReturn,
   fromLegacyLeave,
   leaveField,
@@ -59,6 +60,36 @@ async function recordReturn(context: SignedInContext, leave: Leave, actualReturn
     }),
     { rename: leaveField },
   )
+}
+
+/**
+ * 등록 뒤 복직 기록이 실패했을 때 처리합니다. 현행은 등록과 복직이 한 트랜잭션이었습니다.
+ *
+ * - 새 API가 분명히 거절했으면(4xx) 방금 만든 휴직을 지워 되돌리고 그 거절을 돌려줍니다
+ * - 결과를 모르면(시간 초과·연결 실패·5xx) 복직이 이미 기록됐을 수 있으므로 지우지 않습니다. 지우면 복직 신고만 남을 수
+ *   있습니다. 클라이언트에는 다시 읽으라는 오류를 줍니다
+ * - 되돌리기가 실패하면 로그를 남기고(휴직 ID와 상태만) 다시 읽으라는 오류를 줍니다
+ *
+ * @returns 던질 오류
+ */
+async function undoLeave(context: SignedInContext, leave: Leave, error: unknown): Promise<unknown> {
+  const reload = (status: number) =>
+    new LegacyError(status, {
+      detail:
+        'The leave was registered but its return date may not be recorded. Reload the leave list before retrying.',
+      code: 'PARTIAL_WRITE',
+    })
+  if (!(error instanceof LegacyError) || error.status >= 500)
+    return reload(error instanceof LegacyError ? error.status : 502)
+  const undone = await upstream(context, 'DELETE', `/v1/leaves/${encodeURIComponent(leave.id)}`).catch(
+    (failure: unknown) => failure,
+  )
+  if (undone instanceof Response && undone.ok) return error
+  console.error('BFF: undoing a leave after a rejected return date failed', {
+    leaveId: leave.id,
+    status: undone instanceof Response ? undone.status : undone instanceof LegacyError ? undone.status : undefined,
+  })
+  return reload(502)
 }
 
 /** 현행 `PUT`이 새 API로 옮길 수 없는 변경을 담았을 때입니다. */
@@ -119,6 +150,7 @@ export const leaveRoutes: readonly Route[] = [
     handle: async (context) => {
       const ifMatch = requireIfMatch(context.request)
       const request = fromLegacyLeave(await readObject(context.request))
+      if (request.actualReturnDate !== null) assertReturnDateInRange(request.create, request.actualReturnDate)
       const { employee, etag } = await wageEmployee(context)
       assertEmployeeVersion(employee, ifMatch)
       let leave = await read<Leave>(
@@ -131,9 +163,7 @@ export const leaveRoutes: readonly Route[] = [
         try {
           leave = await recordReturn(context, leave, request.actualReturnDate)
         } catch (error) {
-          // 현행은 한 트랜잭션이었습니다. 복직 기록이 거절되면 방금 만든 휴직을 지워 되돌립니다.
-          await upstream(context, 'DELETE', `/v1/leaves/${encodeURIComponent(leave.id)}`).catch(() => undefined)
-          throw error
+          throw await undoLeave(context, leave, error)
         }
       }
       return json(toLegacyLeave(leave), 201, etagHeader(etag))
