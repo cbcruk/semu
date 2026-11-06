@@ -1,5 +1,6 @@
 import { appendClearedSessionCookies, appendSessionCookies, parseCookies, SESSION_COOKIE } from '../cookies.ts'
 import { camelCase, transformKeys } from '../keys.ts'
+import { readObject } from '../legacy-body.ts'
 import { LegacyError, legacyErrors } from '../legacy-error.ts'
 import { etagFrom, json } from '../router.ts'
 import type { Route } from '../router.ts'
@@ -8,24 +9,6 @@ import type { BffDeps } from '../upstream.ts'
 import { callApi, ensureAccess, readJson, signIn, signOut } from '../upstream.ts'
 import type { Company, Me } from '../upstream.types.ts'
 import { toLegacyCompany, toLegacyMe, toLegacyMeWithoutCompany, toLegacyProfile } from './identity.mapping.ts'
-
-/**
- * 요청 본문을 JSON 객체로 읽습니다.
- *
- * `Content-Type`이 `application/json`이 아니면 415입니다. HTML 폼은 `text/plain`·`application/x-www-form-urlencoded`로
- * 다른 사이트에서도 사전 요청 없이 보낼 수 있으므로, 그런 본문을 JSON으로 읽지 않습니다.
- */
-async function readObject(request: Request): Promise<Record<string, unknown>> {
-  const mediaType = request.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase()
-  if (mediaType !== 'application/json') {
-    throw new LegacyError(415, { detail: 'Send the body as application/json.', code: 'UNSUPPORTED_MEDIA_TYPE' })
-  }
-  const body: unknown = await request.json().catch(() => undefined)
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw legacyErrors.invalidField('non_field_errors', 'Send a JSON object.')
-  }
-  return body as Record<string, unknown>
-}
 
 /**
  * 로그인 요청이 허용된 출처에서 왔는지 봅니다. 로그인에는 아직 CSRF 토큰이 없어서, 다른 사이트가 피해자 브라우저를
