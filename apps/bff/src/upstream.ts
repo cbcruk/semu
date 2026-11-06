@@ -47,6 +47,8 @@ export interface BffDeps {
   publicBaseUrl: string
   /** 커서 목록을 끝까지 읽을 때 따라가는 최대 쪽 수입니다. */
   maxUpstreamPages: number
+  /** 현행 급여카드 목록 한 번에 행을 읽는 최대 대장 수입니다. 넘으면 행 호출 전에 502입니다. */
+  maxLedgerRowReads: number
   /** 로그인을 받는 브라우저 출처입니다. */
   allowedOrigins: ReadonlySet<string>
 }

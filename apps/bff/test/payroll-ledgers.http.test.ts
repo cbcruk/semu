@@ -6,6 +6,8 @@ import type { Harness, HarnessOptions, LegacyClient } from './legacy-client.ts'
 const PAYROLL = `/api/company/${DEMO_COMPANY_IDS.corporation}/payroll`
 const KIM = 'emp_01JBQ00000000000000000D3M1'
 const UNKNOWN_LEDGER = 'pyl_01JBQ000000000000000000000'
+/** 현행 확정·해제는 세무 대리인만 했으므로 기본 사용자는 담당자입니다. */
+const AGENT = 'agent@agency.example'
 
 let harness: Harness
 let client: LegacyClient
@@ -13,7 +15,7 @@ let client: LegacyClient
 beforeEach(async () => {
   harness = makeHarness()
   client = harness.client()
-  await client.login('owner@semu.example')
+  await client.login(AGENT)
 })
 
 afterEach(() => harness.dispose())
@@ -39,7 +41,7 @@ async function post(signedIn: LegacyClient, path: string, headers?: Record<strin
 async function intercepted(options: HarnessOptions): Promise<{ harness: Harness; client: LegacyClient }> {
   const custom = makeHarness(options)
   const signedIn = custom.client()
-  await signedIn.login('owner@semu.example')
+  await signedIn.login(AGENT)
   return { harness: custom, client: signedIn }
 }
 
@@ -385,11 +387,14 @@ describe('releasing a fixed card across two new API calls', () => {
   }
 
   it('closes the ledger again when the new API rejects the return to input', async () => {
+    const closes: Array<string | null> = []
     const { harness: custom, client: signedIn } = await intercepted({
-      intercept: (request, next) =>
-        isCommand(request, 'return-to-draft')
+      intercept: (request, next) => {
+        if (isCommand(request, 'close')) closes.push(request.headers.get('if-match'))
+        return isCommand(request, 'return-to-draft')
           ? Promise.resolve(problem(403, { code: 'PERMISSION_DENIED', permission: 'payroll-ledger:submit' }))
-          : next(request),
+          : next(request)
+      },
     })
     try {
       const id = await fixedCard(signedIn)
@@ -398,6 +403,8 @@ describe('releasing a fixed card across two new API calls', () => {
       expect(response.status).toBe(403)
       expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'payroll-ledger:submit' })
       expect(await upstreamLedger(custom, id)).toMatchObject({ status: 'CLOSED', version: 5 })
+      // 확정(버전 2 → 3)과 되돌리기(`:reopen` 뒤 버전 4)의 `:close`입니다. 되돌리기도 버전을 확인합니다.
+      expect(closes).toEqual(['"2"', '"4"'])
     } finally {
       await custom.dispose()
     }
@@ -710,6 +717,97 @@ describe('reading every ledger', () => {
       expect(body.results.map((card: any) => card.attribution_month)).toEqual([...months].reverse())
       expect(body.results.every((card: any) => card.headcount.wage_salary === 1)).toBe(true)
       expect(cursors).toEqual([null, expect.any(String)])
+    } finally {
+      await custom.dispose()
+    }
+  })
+})
+
+describe('legacy authorization and plans', () => {
+  it('keeps fix and release for agency staff and refuses company users before any call', async () => {
+    const writes: string[] = []
+    const { harness: custom, client: owner } = await intercepted({
+      intercept: (request, next) => {
+        if (isCommand(request, 'close') || isCommand(request, 'reopen') || isCommand(request, 'return-to-draft')) {
+          writes.push(new URL(request.url).pathname)
+        }
+        return next(request)
+      },
+    })
+    try {
+      await owner.login('owner@semu.example')
+      const card = await createCard(owner, '2026-09')
+      const calculated = await post(owner, `${card.id}/calculate/`)
+      const fix = await post(owner, `${card.id}/extensions/fix/`)
+      const release = await post(owner, `${card.id}/extensions/release/`)
+
+      expect(calculated.status).toBe(200)
+      expect(fix.status).toBe(403)
+      expect(await fix.json()).toEqual({
+        detail: 'Only agency staff may fix a payroll card.',
+        code: 'PERMISSION_DENIED',
+      })
+      expect(release.status).toBe(403)
+      expect((await release.json()).code).toBe('PERMISSION_DENIED')
+      expect(writes).toEqual([])
+
+      const agent = custom.client()
+      await agent.login(AGENT)
+      const fixed = await post(agent, `${card.id}/extensions/fix/`)
+      const released = await post(agent, `${card.id}/extensions/release/`)
+
+      expect(fixed.status).toBe(200)
+      expect(released.status).toBe(200)
+      expect(await upstreamLedger(custom, card.id)).toMatchObject({ status: 'DRAFT' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
+  it('pins the current gap: a taxation-only company cannot open the cards because the new ledgers need PAYROLL', async () => {
+    // 현행 급여 관리는 기장(TAXATION) 메뉴였습니다. 새 대장은 PAYROLL만 받으므로 이 조각으로 갈아타기 전에 정해야 합니다.
+    const sole = harness.client()
+    await sole.login('sole@semu.example')
+    const base = `/api/company/${DEMO_COMPANY_IDS.individual}/payroll`
+
+    const summary = await sole.request('GET', `${base}/card-summary/`)
+    const create = await sole.request('POST', `${base}/cards/`, { body: { attribution_month: '2026-09' } })
+
+    for (const response of [summary, create]) {
+      expect(response.status).toBe(403)
+      expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', required_plans: ['PAYROLL'] })
+    }
+  })
+})
+
+describe('row reads of the card lists', () => {
+  it('stops before reading rows of more ledgers than the cap, and the year filter keeps it under', async () => {
+    const rowReads: string[] = []
+    const { harness: custom, client: signedIn } = await intercepted({
+      maxLedgerRowReads: 2,
+      intercept: (request, next) => {
+        if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/rows')) rowReads.push(request.url)
+        return next(request)
+      },
+    })
+    try {
+      await createCard(signedIn, '2026-09')
+      await createCard(signedIn, '2026-10')
+      await createCard(signedIn, '2027-01')
+      rowReads.length = 0
+
+      const all = await signedIn.request('GET', `${PAYROLL}/card-summary/`)
+      const grouped = await signedIn.request('GET', `${PAYROLL}/card-summary/group-by-attr-date/`)
+
+      expect(all.status).toBe(502)
+      expect((await all.json()).code).toBe('UPSTREAM_LIST_TOO_LARGE')
+      expect(grouped.status).toBe(502)
+      expect(rowReads).toEqual([])
+
+      const year = await signedIn.request('GET', `${PAYROLL}/card-summary/?year=2026`)
+
+      expect(year.status).toBe(200)
+      expect((await year.json()).results).toHaveLength(2)
     } finally {
       await custom.dispose()
     }

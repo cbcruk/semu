@@ -30,6 +30,12 @@ const SWEEP_INTERVAL_MS = 60_000
 /** 커서 목록을 끝까지 읽을 때의 기본 최대 쪽 수입니다. 200개씩이면 직원 10,000명입니다. */
 const DEFAULT_MAX_UPSTREAM_PAGES = 50
 
+/**
+ * 현행 급여카드 목록이 행을 읽는 기본 최대 대장 수입니다. 대장마다 행 호출 하나라, 월 정기 대장과 추가 대장으로
+ * 10년 넘게 쓴 회사(약 200개)까지 받고 그보다 많으면 연도로 거르게 합니다.
+ */
+export const DEFAULT_MAX_LEDGER_ROW_READS = 200
+
 /** BFF 설정입니다. */
 export interface BffOptions {
   upstream: UpstreamOptions
@@ -43,6 +49,8 @@ export interface BffOptions {
   store?: SessionStore
   now?: () => number
   maxUpstreamPages?: number
+  /** 현행 급여카드 목록이 행을 읽는 최대 대장 수입니다. 기본 {@link DEFAULT_MAX_LEDGER_ROW_READS}입니다. */
+  maxLedgerRowReads?: number
 }
 
 /** 현행 와이어를 받는 BFF입니다. 웹 표준 `Request` → `Response` 핸들러 하나입니다. */
@@ -78,6 +86,7 @@ export function createBff(options: BffOptions): Bff {
         : options.allowedOrigins.map((origin) => new URL(origin).origin),
     ),
     maxUpstreamPages: options.maxUpstreamPages ?? DEFAULT_MAX_UPSTREAM_PAGES,
+    maxLedgerRowReads: options.maxLedgerRowReads ?? DEFAULT_MAX_LEDGER_ROW_READS,
   }
   const route = makeRouter(ROUTES)
   let lastSweep = deps.now()

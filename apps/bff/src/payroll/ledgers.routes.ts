@@ -122,8 +122,20 @@ async function allLedgers(
   }
 }
 
-/** 대장마다 행을 읽습니다. 동시에 {@link ROW_READ_CONCURRENCY}개까지 보냅니다. */
+/**
+ * 대장마다 행을 읽습니다. 동시에 {@link ROW_READ_CONCURRENCY}개까지 보냅니다.
+ *
+ * 대장 하나에 행 호출 하나라, 대장이 `maxLedgerRowReads`개를 넘으면 행을 읽기 전에 502 `UPSTREAM_LIST_TOO_LARGE`로 멈춥니다.
+ * 현행 클라이언트는 연도(`year`)·귀속월(`attr_date`)로 거르면 됩니다.
+ */
 async function withRows(context: SignedInContext, ledgers: readonly PayrollLedger[]): Promise<LedgerWithRows[]> {
+  const limit = context.deps.maxLedgerRowReads
+  if (ledgers.length > limit) {
+    throw new LegacyError(502, {
+      detail: `The payroll card list has more than ${limit} cards to total; filter by year or use the new API.`,
+      code: 'UPSTREAM_LIST_TOO_LARGE',
+    })
+  }
   const results: LedgerWithRows[] = new Array(ledgers.length)
   let next = 0
   const worker = async () => {
@@ -215,6 +227,18 @@ async function undoReopen(context: SignedInContext, reopened: Versioned, error: 
     status: undone instanceof LegacyError ? undone.status : undefined,
   })
   return partial(502)
+}
+
+/**
+ * 현행 확정·해제는 세무 대리인만 했습니다(현행 `legacyFix`·`legacyRelease`의 `actors: ['agency']`). 새 직접 운영은 고객도
+ * 마감·마감 해제를 받지만, 정할 때까지 BFF가 고객 사용자를 현행과 같은 403으로 막습니다. 새 API를 부르기 전에 봅니다.
+ */
+async function requireAgency(context: SignedInContext, action: string): Promise<void> {
+  const session = await context.deps.store.get(context.sessionId)
+  if (session === undefined) throw legacyErrors.unauthenticated({ endsSession: true })
+  if (session.user.kind === 'CLIENT') {
+    throw new LegacyError(403, { detail: `Only agency staff may ${action} a payroll card.`, code: 'PERMISSION_DENIED' })
+  }
 }
 
 /** 현행 카드 이름(`name`)을 읽습니다. 현행처럼 앞뒤 공백을 빼고 1–100자입니다. */
@@ -437,6 +461,7 @@ export const payrollLedgerRoutes: readonly Route[] = [
     auth: true,
     handle: async (context) => {
       const ifMatch = optionalIfMatch(context.request)
+      await requireAgency(context, 'fix')
       const current = await ledgerOf(context)
       // 현행 확정은 계산을 마친 카드에서만 됐습니다. 새 `:close`는 입력 중인 대장도 받으므로 BFF가 막습니다.
       if (current.ledger.status !== 'SUBMITTED') throw invalidTransition('fix', current.ledger)
@@ -455,6 +480,7 @@ export const payrollLedgerRoutes: readonly Route[] = [
     auth: true,
     handle: async (context) => {
       const ifMatch = optionalIfMatch(context.request)
+      await requireAgency(context, 'release')
       const current = await ledgerOf(context)
       const expected = ifMatch ?? versionTag(current.ledger.version)
       let released: Versioned
