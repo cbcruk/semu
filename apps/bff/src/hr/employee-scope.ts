@@ -1,6 +1,7 @@
 import { LegacyError, legacyErrors, renameFieldErrors } from '../legacy-error.ts'
 import type { SignedInContext } from '../router.ts'
 import { callApi, readJson } from '../upstream.ts'
+import type { CallOptions } from '../upstream.ts'
 import type { Employee } from '../upstream.types.ts'
 
 /**
@@ -17,7 +18,7 @@ export function upstream(
   context: SignedInContext,
   method: string,
   path: string,
-  options: { body?: unknown; headers?: Record<string, string> } = {},
+  options: Pick<CallOptions, 'body' | 'headers' | 'guard'> = {},
 ): Promise<Response> {
   return callApi(context.deps, context.sessionId, context.params['companyId'], method, path, options)
 }

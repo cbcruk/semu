@@ -4,6 +4,7 @@ import { LegacyError, legacyErrors } from '../legacy-error.ts'
 import { json } from '../router.ts'
 import type { Route, SignedInContext } from '../router.ts'
 import { readJson } from '../upstream.ts'
+import type { SessionGuard } from '../upstream.ts'
 import type { Page, PayrollLedger, PayrollLedgerStatus, PayrollRow } from '../upstream.types.ts'
 import {
   booleanQuery,
@@ -75,8 +76,8 @@ async function versioned(response: Response): Promise<Versioned> {
 }
 
 /** 경로의 대장을 읽습니다. */
-export async function ledgerOf(context: SignedInContext): Promise<Versioned> {
-  return versioned(await upstream(context, 'GET', ledgerPath(context)))
+export async function ledgerOf(context: SignedInContext, guard?: SessionGuard): Promise<Versioned> {
+  return versioned(await upstream(context, 'GET', ledgerPath(context), guard === undefined ? {} : { guard }))
 }
 
 /** 대장의 행 전체입니다. */
@@ -173,15 +174,17 @@ async function closedOfMonth(context: SignedInContext, ledger: PayrollLedger): P
   return withRows(context, await allLedgers(context, { attributionMonth: ledger.attributionMonth, status: 'CLOSED' }))
 }
 
-/** 대장 커맨드를 보냅니다. `ifMatch`가 없으면 새 API가 버전을 보지 않습니다. */
+/** 대장 커맨드를 보냅니다. `ifMatch`가 없으면 새 API가 버전을 보지 않습니다. `guard`는 보내기 직전의 확인입니다. */
 async function command(
   context: SignedInContext,
   ledger: PayrollLedger,
   name: string,
   ifMatch: string | undefined,
+  guard: SessionGuard | undefined,
   body?: unknown,
 ): Promise<Versioned> {
-  const options: { body?: unknown; headers?: Record<string, string> } = {}
+  const options: { body?: unknown; headers?: Record<string, string>; guard?: SessionGuard } = {}
+  if (guard !== undefined) options.guard = guard
   if (body !== undefined) options.body = body
   if (ifMatch !== undefined) options.headers = { 'if-match': ifMatch }
   return versioned(
@@ -217,7 +220,8 @@ async function undoReopen(context: SignedInContext, reopened: Versioned, error: 
   if (!(error instanceof LegacyError) || error.status >= 500) {
     return partial(error instanceof LegacyError ? error.status : 502)
   }
-  const undone = await command(context, reopened.ledger, 'close', versionTag(reopened.ledger.version)).catch(
+  // 되돌리기는 확인하지 않습니다. 그사이 행위자 종류가 바뀌어도 해제가 반쯤 된 대장을 남기지 않는 쪽이 낫습니다.
+  const undone = await command(context, reopened.ledger, 'close', versionTag(reopened.ledger.version), undefined).catch(
     (failure: unknown) => failure,
   )
   if (!(undone instanceof Error)) return error
@@ -231,14 +235,20 @@ async function undoReopen(context: SignedInContext, reopened: Versioned, error: 
 
 /**
  * 현행 확정·해제는 세무 대리인만 했습니다(현행 `legacyFix`·`legacyRelease`의 `actors: ['agency']`). 새 직접 운영은 고객도
- * 마감·마감 해제를 받지만, 정할 때까지 BFF가 고객 사용자를 현행과 같은 403으로 막습니다. 새 API를 부르기 전에 봅니다.
+ * 마감·마감 해제를 받지만, 정할 때까지 BFF가 고객으로 행동하는 사용자를 현행과 같은 403으로 막습니다.
+ *
+ * 기준은 사용자 종류가 아니라 **경로 회사에서의 행위자 종류**입니다. 세무 대리인 계정도 그 회사의 멤버면 현행·새 API 모두
+ * 고객으로 다루기 때문입니다. 행위자 종류는 세션의 access token을 받은 새 API 세션 응답(`company.actorKind`)에서 옵니다.
+ *
+ * 확인은 {@link callApi}의 `guard`로, 대장 읽기와 각 커맨드를 보내기 직전에 그 호출의 토큰과 같은 grant로 합니다. 그래서 토큰이
+ * 폐기돼(예: 멤버 가입) 401로 갱신하면 새 grant로 다시 확인하고, 커맨드는 늘 그것을 보내는 토큰의 행위자 종류로 막힙니다.
+ * 세션의 회사는 `callApi`가 경로 회사로 맞춘 뒤라 따로 보지 않습니다. 첫 확인이 대장 읽기라 현행처럼 행위자가 상태보다 먼저입니다.
  */
-async function requireAgency(context: SignedInContext, action: string): Promise<void> {
-  const session = await context.deps.store.get(context.sessionId)
-  if (session === undefined) throw legacyErrors.unauthenticated({ endsSession: true })
-  if (session.user.kind === 'CLIENT') {
-    throw new LegacyError(403, { detail: `Only agency staff may ${action} a payroll card.`, code: 'PERMISSION_DENIED' })
-  }
+function agencyOnly(action: string): SessionGuard {
+  return (session) =>
+    session.actorKind === 'AGENCY'
+      ? undefined
+      : new LegacyError(403, { detail: `Only agency staff may ${action} a payroll card.`, code: 'PERMISSION_DENIED' })
 }
 
 /** 현행 카드 이름(`name`)을 읽습니다. 현행처럼 앞뒤 공백을 빼고 1–100자입니다. */
@@ -461,8 +471,8 @@ export const payrollLedgerRoutes: readonly Route[] = [
     auth: true,
     handle: async (context) => {
       const ifMatch = optionalIfMatch(context.request)
-      await requireAgency(context, 'fix')
-      const current = await ledgerOf(context)
+      const guard = agencyOnly('fix')
+      const current = await ledgerOf(context, guard)
       // 현행 확정은 계산을 마친 카드에서만 됐습니다. 새 `:close`는 입력 중인 대장도 받으므로 BFF가 막습니다.
       if (current.ledger.status !== 'SUBMITTED') throw invalidTransition('fix', current.ledger)
       const { ledger, etag } = await command(
@@ -470,6 +480,7 @@ export const payrollLedgerRoutes: readonly Route[] = [
         current.ledger,
         'close',
         ifMatch ?? versionTag(current.ledger.version),
+        guard,
       )
       return json(await summaryOf(context, ledger), 200, etagHeader(etag))
     },
@@ -480,17 +491,23 @@ export const payrollLedgerRoutes: readonly Route[] = [
     auth: true,
     handle: async (context) => {
       const ifMatch = optionalIfMatch(context.request)
-      await requireAgency(context, 'release')
-      const current = await ledgerOf(context)
+      const guard = agencyOnly('release')
+      const current = await ledgerOf(context, guard)
       const expected = ifMatch ?? versionTag(current.ledger.version)
       let released: Versioned
       if (current.ledger.status === 'SUBMITTED') {
-        released = await command(context, current.ledger, 'return-to-draft', expected)
+        released = await command(context, current.ledger, 'return-to-draft', expected, guard)
       } else if (current.ledger.status === 'CLOSED' && current.ledger.workflow === 'DIRECT_CLOSE') {
         // 새 API에서는 마감 해제(`CLOSED` → `SUBMITTED`)와 입력으로 되돌리기가 두 커맨드입니다.
-        const reopened = await command(context, current.ledger, 'reopen', expected, { reason: RELEASE_REASON })
+        const reopened = await command(context, current.ledger, 'reopen', expected, guard, { reason: RELEASE_REASON })
         try {
-          released = await command(context, reopened.ledger, 'return-to-draft', versionTag(reopened.ledger.version))
+          released = await command(
+            context,
+            reopened.ledger,
+            'return-to-draft',
+            versionTag(reopened.ledger.version),
+            guard,
+          )
         } catch (error) {
           throw await undoReopen(context, reopened, error)
         }

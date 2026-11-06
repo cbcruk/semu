@@ -85,3 +85,21 @@ export class IdempotencyKeyRequired extends HttpApiError.Problem<IdempotencyKeyR
   { type: problemType('IDEMPOTENCY_KEY_REQUIRED'), status: 428, title: 'Idempotency-Key header required' },
   { code: Schema.tag('IDEMPOTENCY_KEY_REQUIRED') },
 ) {}
+
+/** 같은 범위(회사·행위자)의 `Idempotency-Key`를 본문이 다른 요청에 다시 썼습니다. 키를 새로 만들어야 합니다. */
+export class IdempotencyKeyReused extends HttpApiError.Problem<IdempotencyKeyReused>()(
+  'IdempotencyKeyReused',
+  { type: problemType('IDEMPOTENCY_KEY_REUSED'), status: 422, title: 'Idempotency-Key was used for another request' },
+  { code: Schema.tag('IDEMPOTENCY_KEY_REUSED') },
+) {}
+
+/** 같은 `Idempotency-Key`의 앞 요청이 아직 처리 중입니다. 끝난 뒤 같은 키로 다시 보내면 처음 응답을 받습니다. */
+export class IdempotencyKeyInProgress extends HttpApiError.Problem<IdempotencyKeyInProgress>()(
+  'IdempotencyKeyInProgress',
+  {
+    type: problemType('IDEMPOTENCY_KEY_IN_PROGRESS'),
+    status: 409,
+    title: 'A request with this Idempotency-Key is still in progress',
+  },
+  { code: Schema.tag('IDEMPOTENCY_KEY_IN_PROGRESS') },
+) {}
