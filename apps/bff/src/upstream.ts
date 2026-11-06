@@ -168,7 +168,7 @@ export async function readJson<A>(response: Response): Promise<A> {
 
 /** 로그인·갱신·전환 응답으로 BFF 세션을 고칩니다. */
 export function applyGrant(
-  session: Omit<BffSession, 'accessToken' | 'accessExpiresAt' | 'companyId'>,
+  session: Omit<BffSession, 'accessToken' | 'accessExpiresAt' | 'companyId' | 'actorKind'>,
   grant: SessionGrant,
   refreshCookie: string | undefined,
   now: number,
@@ -186,7 +186,10 @@ export function applyGrant(
     next.accessToken = grant.accessToken
     next.accessExpiresAt = now + (grant.expiresIn ?? 600) * 1000 - ACCESS_EXPIRY_SKEW_MS
   }
-  if (grant.company !== undefined) next.companyId = grant.company.id
+  if (grant.company !== undefined) {
+    next.companyId = grant.company.id
+    next.actorKind = grant.company.actorKind
+  }
   return next
 }
 

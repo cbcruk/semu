@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RELEASE_REASON } from '../src/payroll/ledgers.routes.ts'
-import { DEMO_COMPANY_IDS, makeHarness } from './legacy-client.ts'
+import { DEMO_COMPANY_IDS, DEMO_PASSWORD, makeHarness } from './legacy-client.ts'
 import type { Harness, HarnessOptions, LegacyClient } from './legacy-client.ts'
 
 const PAYROLL = `/api/company/${DEMO_COMPANY_IDS.corporation}/payroll`
@@ -763,6 +763,72 @@ describe('legacy authorization and plans', () => {
       await custom.dispose()
     }
   })
+
+  /**
+   * 담당자를 법인 회사의 관리자로 초대해 받게 합니다. 데모 시드에는 대리인 계정이면서 회사 멤버인 계정이 없습니다.
+   * 멤버십이 배정보다 먼저라 담당자는 법인 회사에서 고객으로 행동하고, 개인 회사에서는 여전히 대리인입니다.
+   */
+  async function agentJoinsCorporation(target: Harness): Promise<void> {
+    const owner = await target.api.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.corporation })
+    const invited = await target.api.request('POST', '/v1/invitations', {
+      token: owner.token,
+      body: { email: AGENT, access: 'ADMIN', roleIds: [] },
+    })
+    expect(invited.status).toBe(201)
+    const accepted = await target.api.request('POST', '/v1/invitations:accept', {
+      body: { token: await target.api.lastMailToken(), password: DEMO_PASSWORD },
+    })
+    expect(accepted.status).toBe(200)
+  }
+
+  it.each([
+    ['signed in to the company', undefined],
+    ['signed in to a company it serves as agency', DEMO_COMPANY_IDS.individual],
+  ])(
+    'refuses fix and release for an agency account that is a member of the company (%s)',
+    async (_, startingCompany) => {
+      const writes: string[] = []
+      const custom = makeHarness({
+        intercept: (request, next) => {
+          if (isCommand(request, 'close') || isCommand(request, 'reopen') || isCommand(request, 'return-to-draft')) {
+            writes.push(new URL(request.url).pathname)
+          }
+          return next(request)
+        },
+      })
+      try {
+        const agent = custom.client()
+        await agent.login(AGENT)
+        const card = await createCard(agent, '2026-09')
+        expect((await post(agent, `${card.id}/calculate/`)).status).toBe(200)
+        await agentJoinsCorporation(custom)
+
+        const member = custom.client()
+        await member.login(AGENT)
+        if (startingCompany !== undefined) {
+          // 세션을 대리인으로 행동하는 회사에 먼저 묶어, 지금 세션의 행위자 종류가 아니라 경로 회사의 것을 보는지 확인합니다.
+          expect((await member.request('GET', `/api/company/${startingCompany}/`)).status).toBe(200)
+        }
+        const fix = await post(member, `${card.id}/extensions/fix/`)
+        const release = await post(member, `${card.id}/extensions/release/`)
+
+        expect(fix.status).toBe(403)
+        expect(await fix.json()).toEqual({
+          detail: 'Only agency staff may fix a payroll card.',
+          code: 'PERMISSION_DENIED',
+        })
+        expect(release.status).toBe(403)
+        expect(await release.json()).toEqual({
+          detail: 'Only agency staff may release a payroll card.',
+          code: 'PERMISSION_DENIED',
+        })
+        expect(writes).toEqual([])
+        expect(await upstreamLedger(custom, card.id)).toMatchObject({ status: 'SUBMITTED' })
+      } finally {
+        await custom.dispose()
+      }
+    },
+  )
 
   it('pins the current gap: a taxation-only company cannot open the cards because the new ledgers need PAYROLL', async () => {
     // 현행 급여 관리는 기장(TAXATION) 메뉴였습니다. 새 대장은 PAYROLL만 받으므로 이 조각으로 갈아타기 전에 정해야 합니다.

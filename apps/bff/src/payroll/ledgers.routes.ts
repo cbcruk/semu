@@ -3,7 +3,7 @@ import { readObject } from '../legacy-body.ts'
 import { LegacyError, legacyErrors } from '../legacy-error.ts'
 import { json } from '../router.ts'
 import type { Route, SignedInContext } from '../router.ts'
-import { readJson } from '../upstream.ts'
+import { ensureAccess, readJson } from '../upstream.ts'
 import type { Page, PayrollLedger, PayrollLedgerStatus, PayrollRow } from '../upstream.types.ts'
 import {
   booleanQuery,
@@ -231,12 +231,15 @@ async function undoReopen(context: SignedInContext, reopened: Versioned, error: 
 
 /**
  * 현행 확정·해제는 세무 대리인만 했습니다(현행 `legacyFix`·`legacyRelease`의 `actors: ['agency']`). 새 직접 운영은 고객도
- * 마감·마감 해제를 받지만, 정할 때까지 BFF가 고객 사용자를 현행과 같은 403으로 막습니다. 새 API를 부르기 전에 봅니다.
+ * 마감·마감 해제를 받지만, 정할 때까지 BFF가 고객으로 행동하는 사용자를 현행과 같은 403으로 막습니다. 새 API를 부르기 전에 봅니다.
+ *
+ * 기준은 사용자 종류가 아니라 **경로 회사에서의 행위자 종류**입니다. 세무 대리인 계정도 그 회사의 멤버면 현행·새 API 모두
+ * 고객으로 다루기 때문입니다. 행위자 종류는 세션이 경로 회사에 묶일 때 받은 새 API 세션 응답(`company.actorKind`)에서 옵니다.
+ * 세션이 이미 경로 회사에 묶여 있으면 새 API를 부르지 않고, 아니면 어차피 다음 호출이 할 회사 전환을 먼저 합니다.
  */
 async function requireAgency(context: SignedInContext, action: string): Promise<void> {
-  const session = await context.deps.store.get(context.sessionId)
-  if (session === undefined) throw legacyErrors.unauthenticated({ endsSession: true })
-  if (session.user.kind === 'CLIENT') {
+  const session = await ensureAccess(context.deps, context.sessionId, context.params['companyId'])
+  if (session.companyId !== context.params['companyId'] || session.actorKind !== 'AGENCY') {
     throw new LegacyError(403, { detail: `Only agency staff may ${action} a payroll card.`, code: 'PERMISSION_DENIED' })
   }
 }
