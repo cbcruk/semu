@@ -45,7 +45,7 @@ export interface GiroRecord {
 
 /** 지로 납부 시도 한 건입니다. 비밀번호는 저장하지 않습니다. */
 export interface GiroPaymentRecord {
-  /** 멱등 키로 만든 ID입니다. `<고지서 ID>:<Idempotency-Key>` */
+  /** 납부 요청의 멱등 참조(`IdempotentAttempt.reference`)입니다. 이 규칙 이전 행은 `<고지서 ID>:<Idempotency-Key>`입니다. */
   id: string
   companyId: Id<'company'>
   giroId: Id<'giro'>

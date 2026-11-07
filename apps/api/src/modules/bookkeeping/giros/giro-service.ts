@@ -1,11 +1,18 @@
 import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
-import { Context, Effect, Layer, Option } from 'effect'
+import { Context, Effect, Layer } from 'effect'
+import { outcomeUnknownOnDefect, runIdempotent } from '../../../shared/http/idempotency.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
-import type { VersionMismatch } from '../../../shared/problem/problem.ts'
+import type {
+  ExternalOutcomeUnknown,
+  IdempotencyKeyInProgress,
+  IdempotencyKeyRequired,
+  IdempotencyKeyReused,
+  VersionMismatch,
+} from '../../../shared/problem/problem.ts'
 import { nowAndToday, orFail } from '../common/lookup.ts'
 import { accountDigits } from '../common/masking.ts'
-import { GiroPaymentRepository, GiroRepository } from '../common/repositories.ts'
+import { BookkeepingIdempotency, GiroPaymentRepository, GiroRepository } from '../common/repositories.ts'
 import { AccountNumberCipher } from '../ports/account-number-cipher.ts'
 import { GiroPaymentGateway } from '../ports/giro-payment-gateway.ts'
 import { allowedGiroCommands, transitionGiro } from './giro-status.ts'
@@ -40,14 +47,30 @@ export class GiroService extends Context.Service<
       command: Exclude<GiroCommand, 'PAY'>,
       input: { memo?: string; expectedVersion?: number },
     ): Effect.Effect<Giro, GiroNotFound | GiroTransitionInvalid | VersionMismatch>
-    /** 앱에서 납부합니다. 같은 `Idempotency-Key`의 재시도는 처음 결과를 돌려줍니다. */
+    /**
+     * 앱에서 납부합니다. `Idempotency-Key`는 회사·행위자마다 따로이고, 같은 키·같은 본문으로 24시간 안에 다시 오면 처음 응답을
+     * 돌려줍니다. 비밀번호와 계좌번호 전체는 지문에 넣지 않습니다(고지서·은행·계좌 끝 4자리만).
+     *
+     * 금융결제원이 거절하면 시도와 고지서 이력은 남기고 키는 남기지 않아, 같은 키로 고쳐 다시 보내면 새로 납부를 요청합니다.
+     * 납부 결과를 확인하지 못하면 503 `EXTERNAL_OUTCOME_UNKNOWN`이고, 같은 키·같은 본문의 재시도는 같은 참조로 다시 물어 이중 출금을
+     * 막습니다.
+     */
     pay(
       companyId: Id<'company'>,
       actorUserId: Id<'user'>,
       id: Id<'giro'>,
-      idempotencyKey: string,
+      idempotencyKey: string | undefined,
       input: GiroPaymentInput,
-    ): Effect.Effect<Giro, GiroNotFound | GiroTransitionInvalid | GiroPaymentFailed>
+    ): Effect.Effect<
+      Giro,
+      | GiroNotFound
+      | GiroTransitionInvalid
+      | GiroPaymentFailed
+      | IdempotencyKeyRequired
+      | IdempotencyKeyReused
+      | IdempotencyKeyInProgress
+      | ExternalOutcomeUnknown
+    >
   }
 >()('semu/bookkeeping/GiroService') {
   static readonly layer = Layer.effect(
@@ -57,6 +80,7 @@ export class GiroService extends Context.Service<
       const payments = yield* GiroPaymentRepository
       const gateway = yield* GiroPaymentGateway
       const cipher = yield* AccountNumberCipher
+      const idempotency = yield* BookkeepingIdempotency
 
       const find = (companyId: Id<'company'>, id: Id<'giro'>) =>
         orFail(repository.findById(companyId, id), () => new GiroNotFound({}))
@@ -112,60 +136,76 @@ export class GiroService extends Context.Service<
           return toGiro(yield* transition(row, command, actorUserId, input.memo ?? ''))
         }),
 
-        pay: Effect.fn('GiroService.pay')(function* (companyId, actorUserId, id, idempotencyKey, input) {
-          const row = yield* find(companyId, id)
-          const paymentId = `${id}:${idempotencyKey}`
-          const previous = yield* payments.findById(companyId, paymentId)
-          if (Option.isSome(previous)) {
-            if (previous.value.status === 'FAILED') {
-              return yield* new GiroPaymentFailed({
-                resultCode: previous.value.resultCode ?? '',
-                resultMessage: previous.value.resultMessage ?? '',
-              })
-            }
-            return toGiro(row)
-          }
-          if (transitionGiro(row.status, 'PAY') === undefined) {
-            return yield* new GiroTransitionInvalid({ currentStatus: row.status, command: 'PAY' })
-          }
-          const { now } = yield* nowAndToday
-          const result = yield* gateway.pay({
-            companyId,
-            giroId: id,
-            electronicPaymentNumber: row.electronicPaymentNumber,
-            taxKind: row.taxKind,
-            bankCode: input.bankCode,
-            accountNumber: accountDigits(input.accountNumber),
-            accountPassword: input.accountPassword,
-            amount: row.payAmount,
-            idempotencyKey,
-          })
-          yield* payments.save({
-            id: paymentId,
-            companyId,
-            giroId: id,
-            bankCode: input.bankCode,
-            accountNumberEncrypted: cipher.encrypt('giroAccount', accountDigits(input.accountNumber)),
-            accountNumberLast4: accountDigits(input.accountNumber).slice(-4),
-            amount: row.payAmount,
-            status: result.ok ? 'SUCCEEDED' : 'FAILED',
-            resultCode: result.resultCode,
-            resultMessage: result.resultMessage,
-            requestedBy: actorUserId,
-            createdAt: now,
-          })
-          if (!result.ok) {
-            yield* repository.save({
-              ...row,
-              history: [...row.history, { type: 'PAYMENT_FAILED', memo: result.resultMessage, actorUserId, at: now }],
-              version: row.version + 1,
-            })
-            // 실패 응답(4xx)이어도 납부 시도 기록은 남겨야 같은 멱등성 키로 다시 출금하지 않습니다.
-            yield* keepChanges
-            return yield* new GiroPaymentFailed({ resultCode: result.resultCode, resultMessage: result.resultMessage })
-          }
-          return toGiro(yield* transition(row, 'PAY', actorUserId, ''))
-        }),
+        pay: (companyId, actorUserId, id, idempotencyKey, input) =>
+          runIdempotent(
+            {
+              store: idempotency,
+              companyId,
+              actorUserId,
+              key: idempotencyKey,
+              operation: 'giro.pay',
+              request: {
+                giroId: id,
+                bankCode: input.bankCode,
+                accountNumberLast4: accountDigits(input.accountNumber).slice(-4),
+              },
+            },
+            (attempt) =>
+              Effect.gen(function* () {
+                const row = yield* find(companyId, id)
+                if (transitionGiro(row.status, 'PAY') === undefined) {
+                  return yield* new GiroTransitionInvalid({ currentStatus: row.status, command: 'PAY' })
+                }
+                return yield* outcomeUnknownOnDefect(
+                  'giro.pay',
+                  Effect.gen(function* () {
+                    const { now } = yield* nowAndToday
+                    const result = yield* gateway.pay({
+                      companyId,
+                      giroId: id,
+                      electronicPaymentNumber: row.electronicPaymentNumber,
+                      taxKind: row.taxKind,
+                      bankCode: input.bankCode,
+                      accountNumber: accountDigits(input.accountNumber),
+                      accountPassword: input.accountPassword,
+                      amount: row.payAmount,
+                      idempotencyKey: attempt.reference,
+                    })
+                    yield* payments.save({
+                      id: attempt.reference,
+                      companyId,
+                      giroId: id,
+                      bankCode: input.bankCode,
+                      accountNumberEncrypted: cipher.encrypt('giroAccount', accountDigits(input.accountNumber)),
+                      accountNumberLast4: accountDigits(input.accountNumber).slice(-4),
+                      amount: row.payAmount,
+                      status: result.ok ? 'SUCCEEDED' : 'FAILED',
+                      resultCode: result.resultCode,
+                      resultMessage: result.resultMessage,
+                      requestedBy: actorUserId,
+                      createdAt: now,
+                    })
+                    if (!result.ok) {
+                      yield* repository.save({
+                        ...row,
+                        history: [
+                          ...row.history,
+                          { type: 'PAYMENT_FAILED', memo: result.resultMessage, actorUserId, at: now },
+                        ],
+                        version: row.version + 1,
+                      })
+                      // 실패 응답(4xx)이어도 납부 시도와 이력은 남깁니다. 키는 남기지 않으므로 같은 키의 재시도는 새로 납부를 요청합니다.
+                      yield* keepChanges
+                      return yield* new GiroPaymentFailed({
+                        resultCode: result.resultCode,
+                        resultMessage: result.resultMessage,
+                      })
+                    }
+                    return toGiro(yield* transition(row, 'PAY', actorUserId, ''))
+                  }),
+                )
+              }),
+          ),
       })
     }),
   )

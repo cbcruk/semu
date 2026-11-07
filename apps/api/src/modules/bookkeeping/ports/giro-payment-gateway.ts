@@ -10,6 +10,10 @@ export interface GiroPaymentRequest {
   accountNumber: string
   accountPassword: string
   amount: number
+  /**
+   * 납부 요청의 멱등 참조입니다. 클라이언트의 `Idempotency-Key` 원문이 아니라 시도마다 만든 값입니다. 결과를 확인하지 못한 납부를
+   * 같은 키로 다시 보내면 같은 값이 오고, 구현은 다시 출금하지 않고 처음 결과를 돌려줘야 합니다.
+   */
   idempotencyKey: string
 }
 

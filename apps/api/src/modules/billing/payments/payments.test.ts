@@ -1,6 +1,7 @@
 import { Effect, Layer, Option } from 'effect'
 import { describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { BillingIdempotency } from '../billing-idempotency.ts'
 import { demoMandates, DEMO_PAYMENT_IDS, demoPayments, demoSubscriptions } from '../billing-seed.ts'
 import { BillingMandateRepository } from '../mandates/billing-mandate-repository.ts'
 import { SubscriptionRepository } from '../subscriptions/subscription-repository.ts'
@@ -29,6 +30,7 @@ const layer = Payments.layer.pipe(
       ]),
       BillingMandateRepository.layerMemory(demoMandates()),
       PublicHolidays.layerMemory(),
+      BillingIdempotency.layerMemory,
     ),
   ),
 )

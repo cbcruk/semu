@@ -103,3 +103,18 @@ export class IdempotencyKeyInProgress extends HttpApiError.Problem<IdempotencyKe
   },
   { code: Schema.tag('IDEMPOTENCY_KEY_IN_PROGRESS') },
 ) {}
+
+/**
+ * 외부 기관(은행·금융결제원·홈택스)에 요청을 보냈지만 결과를 확인하지 못했습니다(연동 결함·시간 초과). 돈이 나갔거나 발급됐을 수
+ * 있습니다. 같은 `Idempotency-Key`·같은 본문으로 다시 보내면 같은 요청으로 외부 기관에 다시 물어 결과를 받습니다. 새 키로 보내면
+ * 같은 일이 두 번 일어날 수 있습니다.
+ */
+export class ExternalOutcomeUnknown extends HttpApiError.Problem<ExternalOutcomeUnknown>()(
+  'ExternalOutcomeUnknown',
+  {
+    type: problemType('EXTERNAL_OUTCOME_UNKNOWN'),
+    status: 503,
+    title: 'The external system did not confirm the result',
+  },
+  { code: Schema.tag('EXTERNAL_OUTCOME_UNKNOWN') },
+) {}

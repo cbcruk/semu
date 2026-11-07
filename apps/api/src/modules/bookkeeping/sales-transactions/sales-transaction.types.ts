@@ -82,6 +82,10 @@ export interface TaxInvoiceRecord {
   id: Id<'taxInvoice'>
   companyId: Id<'company'>
   salesTransactionId: Id<'salesTransaction'>
+  /**
+   * 홈택스에 넘긴 발급 요청의 멱등 참조(`IdempotentAttempt.reference`)입니다. 이름은 이전 그대로이고, 이 규칙 이전 행은 클라이언트가
+   * 보낸 `Idempotency-Key` 원문입니다. 응답에는 넣지 않습니다.
+   */
   idempotencyKey: string
   status: TaxInvoiceStatus
   /** 국세청 승인번호입니다. */

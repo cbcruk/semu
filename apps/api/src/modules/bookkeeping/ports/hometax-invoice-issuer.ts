@@ -5,7 +5,10 @@ import { Context, Effect, Layer } from 'effect'
 export interface InvoiceIssueRequest {
   companyId: string
   salesTransactionId: string
-  /** 같은 키의 재시도는 같은 결과를 돌려줘야 합니다. */
+  /**
+   * 발급 요청의 멱등 참조입니다. 클라이언트의 `Idempotency-Key` 원문이 아니라 시도마다 만든 값이고, 결과를 확인하지 못한 발급을
+   * 같은 키로 다시 보내면 같은 값이 옵니다. 같은 값의 재시도는 다시 발급하지 않고 같은 결과를 돌려줘야 합니다.
+   */
   idempotencyKey: string
   writeDate: string
   buyerBusinessNumber: string | null

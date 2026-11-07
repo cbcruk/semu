@@ -1,6 +1,7 @@
-import { Clock, Effect, Layer } from 'effect'
+import { Effect, Layer } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import { DAY_MS, shiftableClock } from '../../../shared/testing/shiftable-clock.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
 import { payrollTestApp, type PayrollTestApp } from '../payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from '../payroll-test-fixtures.ts'
@@ -10,7 +11,6 @@ import { PayrollSettingRepository } from '../settings/payroll-setting-repository
 
 const OTHER_TOKEN = 'other-client-token'
 const OTHER_USER_ID = 'usr_01JBQ000000000000000000002' as Id<'user'>
-const DAY_MS = 24 * 60 * 60 * 1000
 
 /**
  * 보낸 메일을 세는 가짜 메일러입니다. `delayMs`만큼 기다린 뒤 보내고, 보낸 뒤 `ackDelayMs`만큼 늦게 응답합니다.
@@ -64,23 +64,6 @@ function controlledDirectory(control: { dieOnFind: boolean }) {
   ).pipe(
     Layer.provide(PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }])),
   )
-}
-
-/** 시각을 옮길 수 있는 시계입니다. 잠들기는 실제 시계에 맡깁니다. `Clock`은 참조라 레이어 출력 타입이 `never`여서 넓힙니다. */
-function shiftableClock(offset: { ms: number }): Layer.Layer<any> {
-  const layer = Layer.effect(
-    Clock.Clock,
-    Effect.map(Clock.clockWith(Effect.succeed), (real): Clock.Clock => ({
-      monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
-      monotonicTimeNanos: real.monotonicTimeNanos,
-      sleep: (duration) => real.sleep(duration),
-      currentTimeMillisUnsafe: () => real.currentTimeMillisUnsafe() + offset.ms,
-      currentTimeMillis: Effect.sync(() => real.currentTimeMillisUnsafe() + offset.ms),
-      currentTimeNanosUnsafe: () => real.currentTimeNanosUnsafe() + BigInt(offset.ms) * 1_000_000n,
-      currentTimeNanos: Effect.sync(() => real.currentTimeNanosUnsafe() + BigInt(offset.ms) * 1_000_000n),
-    })),
-  )
-  return layer as Layer.Layer<unknown> as Layer.Layer<any>
 }
 
 interface Fixture {
