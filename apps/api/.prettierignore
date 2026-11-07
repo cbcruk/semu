@@ -1,5 +1,4 @@
 pnpm-lock.yaml
 *.md
 test/fixtures/
-legacy/
 dist/
