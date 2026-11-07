@@ -39,7 +39,8 @@ describe('rate tables', () => {
       expect(paths.some((path) => path.startsWith(`${group}.`))).toBe(true)
     }
     const unverified = unverifiedRatePaths(rates)
-    expect(unverified).toContain('longTermCare.ratioOfHealthPpm')
+    expect(unverified).not.toContain('longTermCare.ratioOfHealthPpm')
+    expect(unverified).toContain('employmentInsurance.premiumRoundingUnit')
     expect(unverified).toContain('wageIncomeTax.simpleTaxStrategy')
     expect(unverified).not.toContain('nationalPension.baseMax')
     expect(unverified).not.toContain('nationalPension.employeeRatePpm')
@@ -58,12 +59,14 @@ describe('rate tables', () => {
     expect(BUILT_IN_RATE_TABLES.every((table) => unverifiedRatePaths(table).length > 0)).toBe(true)
   })
 
-  it('confirms the long-term care ratio only from November 2026 (법률 제21690호 부칙 제3조)', () => {
+  it('confirms the long-term care ratio from the 2026 press release, then from 법률 제21690호 부칙 제3조 in November', () => {
     const october = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10')
     const november = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11')
 
     expect(november.longTermCare.ratioOfHealthPpm).toBe(131_400)
-    expect(unverifiedRatePaths(october)).toContain('longTermCare.ratioOfHealthPpm')
+    expect(october.longTermCare.ratioOfHealthPpm).toBe(131_400)
+    expect(unverifiedRatePaths(october)).not.toContain('longTermCare.ratioOfHealthPpm')
+    expect(october.verification['longTermCare.ratioOfHealthPpm']?.source).toContain('13.14%')
     expect(unverifiedRatePaths(november)).not.toContain('longTermCare.ratioOfHealthPpm')
     expect(november.verification['longTermCare.ratioOfHealthPpm']?.source).toContain('부칙 제3조')
     expect(november.nationalPension).toEqual(october.nationalPension)

@@ -10,6 +10,6 @@ export interface ReferenceCode {
   detailType: 'ARTIST' | 'SPECIAL' | null
   effectiveFrom: string
   effectiveTo: string | null
-  /** 스펙으로 확인한 값인지입니다. */
+  /** 코드·이름을 법령 서식 원문으로 확인했는지입니다. */
   verified: boolean
 }

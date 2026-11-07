@@ -2,18 +2,18 @@
 
 인사 규칙 13개의 열린 질문 34개에 대한 서버 결정입니다. 설계는 [hr.md](../hr.md)에 있습니다. 읽는 법은 [README](README.md)를 따릅니다.
 
-> **상태: 결정됨 (가정 포함, 2026-11-05).** 권장안을 결정으로 채택했습니다. 보류 8건 중 7건은 법령·고시 원문을 확인해 정했습니다. 남은 **보류**는 현행 동작을 임시 결정으로 둡니다.
+> **상태: 결정됨 (가정 포함, 2026-11-07).** 권장안을 결정으로 채택했습니다. 보류 8건 중 7건은 법령·고시 원문을 확인해 정했고(2026-11-05), 남은 고정수당 가산율은 새 입력(회사 규모)이 필요한 설계 문제라 현행 1.0을 임시 결정으로 두고 권장 설계를 [hr.md 열린 질문](../hr.md#열린-질문) 3에 남겼습니다(2026-11-07).
 
 ## 요약
 
-| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 보류 |
+| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 가정 |
 |---|---|---:|---:|---:|---:|
 | 직원 | [employee-duplicate-rrn](#employee-duplicate-rrn) | 2 | 2 | 0 | 0 |
 | 직원 | [employee-status](#employee-status) | 2 | 1 | 1 | 0 |
 | 직원 | [legacy-employment-status](#legacy-employment-status) | 2 | 1 | 1 | 0 |
 | 직원 | [contract-expiry-warning](#contract-expiry-warning) | 3 | 3 | 0 | 0 |
 | 계약 | [work-contract-validation](#work-contract-validation) | 3 | 0 | 3 | 0 |
-| 계약 | [payroll-contract-wage](#payroll-contract-wage) | 3 | 0 | 2 | 1 |
+| 계약 | [payroll-contract-wage](#payroll-contract-wage) | 3 | 1 | 2 | 0 |
 | 계약 | [indefinite-conversion-alert](#indefinite-conversion-alert) | 3 | 2 | 1 | 0 |
 | 4대보험 | [social-insurance-eligibility](#social-insurance-eligibility) | 3 | 2 | 1 | 0 |
 | 휴직·퇴사 | [leave-validation](#leave-validation) | 3 | 1 | 2 | 0 |
@@ -21,7 +21,7 @@
 | 조직 | [organization-unit-in-use](#organization-unit-in-use) | 2 | 2 | 0 | 0 |
 | 세금·가족 | [deduction-validation](#deduction-validation) | 3 | 3 | 0 | 0 |
 | 세금·가족 | [dependant-count](#dependant-count) | 2 | 2 | 0 | 0 |
-| | **합계** | **34** | **22** | **11** | **1** |
+| | **합계** | **34** | **23** | **11** | **0** |
 
 ## 직원
 
@@ -88,7 +88,7 @@
 
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
-| 1 | 고정수당 가산율을 법정 가산율로 바꿀까요 | **보류:** 가산율 1.0을 유지합니다. 급여 컨텍스트의 수당 계산과 대조한 뒤 정합니다 | 스펙 R10 메모: 스크린샷 값이 1.0과 맞습니다. 확인한 것: 법정 가산은 연장·야간·휴일(8시간 이내) 50%, 휴일 8시간 초과 100%입니다([근로기준법 제56조](https://www.law.go.kr/법령/근로기준법)). 다만 상시 4명 이하 사업장은 법 일부만 적용됩니다(제11조 ②). 남은 것: 회사의 상시 근로자 수 입력과 Payroll `overtime-multipliers`와의 대조 |
+| 1 | 고정수당 가산율을 법정 가산율로 바꿀까요 | **따름(임시):** 가산율 1.0을 유지합니다. 권장 설계는 회사 규모(Payroll 급여 설정의 5인 미만 여부)를 받아 5인 이상이면 Payroll `overtime-multipliers`의 기본 배수(연장 1.5, 야간 0.5, 휴일 1.5, 휴일연장 2.0)를, 5인 미만이면 가산 없는 배수를 쓰는 것입니다. HR이 Payroll 설정을 읽는 포트가 필요해 구현하지 않았습니다([hr.md 열린 질문](../hr.md#열린-질문) 3, 2026-11-07) | 스펙 R10 메모: 스크린샷 값이 1.0과 맞습니다. 확인한 것: 법정 가산은 연장·야간·휴일(8시간 이내) 50%, 휴일 8시간 초과 100%입니다([근로기준법 제56조](https://www.law.go.kr/법령/근로기준법)). 다만 상시 4명 이하 사업장은 법 일부만 적용됩니다(제11조 ②). 남은 것: 회사의 상시 근로자 수 입력과 Payroll `overtime-multipliers`와의 대조 |
 | 2 | 최저시급을 참조데이터로 옮길까요 | **바꿈:** `calculateWage`가 `minimumHourlyWage`를 입력으로 받고, 서비스가 연도별 값을 넣습니다 | 고시 값은 해마다 바뀝니다 |
 | 3 | 수습 기간 최저임금(90%)을 판정할까요 | **바꿈:** 감액 허용 조건(1년 이상 계약, 단순노무 아님, 지급률 90% 이상)은 근로계약 검증이 봅니다. 급여계약은 수습이 3개월을 넘고 수습 시급(최저임금 산입 시급 × 지급률)이 최저시급보다 낮으면 `PROBATION_BELOW_MINIMUM_WAGE` 경고를 냅니다 | 감액은 수습 시작일부터 3개월 이내만, 시간급 최저임금에서 10%를 뺀 금액입니다([최저임금법 제5조 ②](https://www.law.go.kr/법령/최저임금법), [시행령 제3조](https://www.law.go.kr/법령/최저임금법시행령)) |
 

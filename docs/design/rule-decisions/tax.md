@@ -6,7 +6,7 @@
 
 ## 요약
 
-| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 보류 |
+| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 가정 |
 |---|---|---:|---:|---:|---:|
 | 신고 건 | [filing-status-transitions](#filing-status-transitions) | 8 | 2 | 6 | 0 |
 | 신고 건 | [filing-requirements](#filing-requirements) | 6 | 5 | 1 | 0 |

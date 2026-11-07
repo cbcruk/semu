@@ -6,7 +6,7 @@
 
 ## 요약
 
-| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 보류 |
+| 영역 | 규칙 | 질문 | 따름 | 바꿈 | 가정 |
 |---|---|---:|---:|---:|---:|
 | 전자서명 | [esign-request-transitions](#esign-request-transitions) | 3 | 1 | 2 | 0 |
 | 전자서명 | [esign-send-validation](#esign-send-validation) | 3 | 2 | 1 | 0 |

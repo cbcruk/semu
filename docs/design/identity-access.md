@@ -409,3 +409,4 @@ stateDiagram-v2
 7. 대리인이 큐 화면에서 시작하는 경우가 대부분이면 로그인에서 바로 대리인 범위를 받게(`POST /auth/sessions {scope: AGENCY}`) 할지 정해야 합니다. 지금은 로그인 뒤 `:switch-agency`를 한 번 더 부릅니다
 8. 큐와 회사 화면을 탭 두 개로 동시에 띄우려면 세션 하나에 범위별 access token을 하나씩 두어야 합니다. 지금은 세션당 하나라 전환하면 다른 범위의 토큰이 폐기됩니다
 9. **배정 해제의 토큰 폐기.** 회사 범위 토큰은 배정을 요청마다 다시 보지 않아, 배정이 풀린 대리인이 만료(10분)까지 그 회사에서 쓰기를 할 수 있습니다. 원천세 대행(2026-11-07, [tax.md](tax.md#커맨드))으로 그 쓰기에 제출·납부가 들어갑니다. 배정 해제를 이 API로 들일 때 `Sessions.invalidateAccess(userId, companyId)`를 부를지(위 표에 한 줄), 회사 범위의 대리인 토큰만 요청마다 배정을 다시 볼지 정합니다
+10. **가입 때 사업자 상태조회.** 등록 전에 폐업을 막기로 정했습니다([규칙 결정](rule-decisions/identity-access.md#business-number-checksum) 3, 레거시와 같음). 구현하려면 Identity & Access에 상태조회 포트를 두고 `wiring/`에서 Integrations `BusinessStatusClient`로 구현합니다. 휴업·실패·알 수 없음은 허용하고, 막을 때의 오류 코드(예: 422 `BUSINESS_CLOSED`)를 함께 정합니다
