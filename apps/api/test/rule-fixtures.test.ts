@@ -14,10 +14,14 @@ const REPO_ROOT = join(import.meta.dirname, '..', '..', '..')
 const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'rules')
 const RULE_DOC_DIR = join(REPO_ROOT, 'docs', 'reference', 'rules')
 
-/** 지운 이전 구현입니다. 이 경로의 출처는 커밋 `f115042`의 트리에 있어 작업 트리에서 확인하지 않습니다. */
-const REMOVED_LEGACY_PREFIX = 'apps/api/legacy/'
+/** 지운 자료입니다. 이 경로의 출처는 적힌 커밋의 트리에 있어 작업 트리에서 확인하지 않습니다. */
+const REMOVED_SOURCE_PREFIXES = [
+  'apps/api/legacy/', // f115042
+  'docs/reference/legacy-design/', // 3c6f890
+]
 
-const sourceExists = (file: string) => file.startsWith(REMOVED_LEGACY_PREFIX) || existsSync(join(REPO_ROOT, file))
+const sourceExists = (file: string) =>
+  REMOVED_SOURCE_PREFIXES.some((prefix) => file.startsWith(prefix)) || existsSync(join(REPO_ROOT, file))
 
 const files = readdirSync(FIXTURE_DIR).filter((file) => file.endsWith('.json'))
 
