@@ -5,7 +5,7 @@
 - **케이스 출처:** 각 규칙의 픽스처(`apps/api/test/fixtures/rules/<rule>.json`)는 엔트리 번들 분석([`docs/reference/spec/`](../spec/))과 매뉴얼([`alfred-manual/`](../../../alfred-manual/README.md))을 읽고 적은 케이스입니다. 화면 컴포넌트가 번들에 없어 원본 함수를 실행할 수 없으므로 모든 케이스가 `traced`입니다. 실제 서버는 호출하지 않았고 케이스의 회사·직원·금액 값은 모두 만든 값입니다
 - **현행 동작 그대로:** 버그로 보이는 동작도 고치지 않고 담았습니다. 각 문서의 "서버 이전 시 주의"와 픽스처의 `openQuestions`가 결정할 목록이고, 결정은 [`docs/design/rule-decisions/`](../../design/rule-decisions/README.md)에 있습니다
 - **원본 위치:** 번들 줄 번호는 spec 문서의 표기(`B:73510`)를 그대로 씁니다. 번들 자체는 이 저장소에 없으므로, 판단에 필요한 근거는 각 문서의 "근거" 절에 발췌해 두었습니다
-- **검사:** `pnpm test`가 픽스처 형식, `sources[].file` 경로, 문서 짝을 확인합니다 (`apps/api/test/rule-fixtures.test.ts`)
+- **검사:** `pnpm test`가 픽스처 형식, `sources[].file` 경로(지운 이전 구현 `apps/api/legacy/...`는 커밋 `f115042`에 있어 작업 트리에서 확인하지 않음), 문서 짝을 확인합니다 (`apps/api/test/rule-fixtures.test.ts`)
 
 규칙 68개, 케이스 765건 (모두 추적), 열린 질문 233개.
 
