@@ -11,9 +11,9 @@ import { PayrollSettingRepository } from './settings/payroll-setting-repository.
  * 계산기는 현행 메뉴처럼 `PAYROLL`만 엽니다. 토큰마다 같은 회사의 다른 구독을 흉내 냅니다.
  */
 const PLAN_CASES: ReadonlyArray<readonly [token: string, plans: ReadonlyArray<Plan>, attributionMonth: string]> = [
-  ['payroll-only', ['PAYROLL'], '2026-04'],
-  ['taxation-only', ['TAXATION'], '2026-05'],
-  ['both-plans', ['TAXATION', 'PAYROLL'], '2026-06'],
+  ['payroll-only', ['PAYROLL'], '2027-04'],
+  ['taxation-only', ['TAXATION'], '2027-05'],
+  ['both-plans', ['TAXATION', 'PAYROLL'], '2027-06'],
 ]
 
 const app = payrollTestApp(
@@ -46,11 +46,39 @@ describe('payroll plan gate', () => {
       expect(
         (await app.request('GET', `/payroll-ledgers?attributionMonth=${attributionMonth}`, { token })).status,
       ).toBe(200)
+      expect((await app.request('GET', `/payroll-ledgers/${ledgerId}`, { token })).status).toBe(200)
+      expect(
+        (await app.request('PATCH', `/payroll-ledgers/${ledgerId}`, { token, body: { title: `${token} 급여` } }))
+          .status,
+      ).toBe(200)
+
+      const extra = await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
+        token,
+        body: { payeeName: '임시', input: { incomeType: 'OTHER', payAmount: 100_000 } },
+      })
+      expect(extra.status).toBe(201)
+      const extraRow = `/payroll-ledgers/${ledgerId}/rows/${extra.body.id}`
+      expect(
+        (
+          await app.request('PATCH', extraRow, {
+            token,
+            body: { input: { incomeType: 'OTHER', payAmount: 200_000 } },
+          })
+        ).status,
+      ).toBe(200)
+      expect((await app.request('DELETE', extraRow, { token })).status).toBe(204)
+      expect((await app.request('POST', `/payroll-ledgers/${ledgerId}:recalculate`, { token })).status).toBe(200)
       expect((await app.request('POST', `/payroll-ledgers/${ledgerId}:close`, { token })).status).toBe(200)
+
+      const additional = await app.request('POST', '/payroll-ledgers', { token, body: { attributionMonth } })
+      expect(additional.status).toBe(201)
+      expect(additional.body.kind).toBe('ADDITIONAL')
+      expect((await app.request('DELETE', `/payroll-ledgers/${additional.body.id}`, { token })).status).toBe(204)
 
       const payslips = await app.request('GET', `/payslips?ledgerId=${ledgerId}`, { token })
       expect(payslips.status).toBe(200)
       expect(payslips.body.items).toHaveLength(2)
+      expect((await app.request('GET', `/payslips/${payslips.body.items[0].id}`, { token })).status).toBe(200)
       const sent = await app.request('POST', '/payslips:send', {
         token,
         headers: { 'idempotency-key': `plan-${token}` },
@@ -76,7 +104,7 @@ describe('payroll plan gate', () => {
       })
 
       expect(response.status, `${method} ${path}`).toBe(403)
-      expect(response.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['PAYROLL', 'TAXATION'] })
+      expect(response.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['TAXATION', 'PAYROLL'] })
     }
     const send = await app.request('POST', '/payslips:send', {
       token: 'no-plan',
@@ -84,7 +112,7 @@ describe('payroll plan gate', () => {
       body: { payslipIds: ['psl_01JBQ000000000000000000001'] },
     })
     expect(send.status).toBe(403)
-    expect(send.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['PAYROLL', 'TAXATION'] })
+    expect(send.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['TAXATION', 'PAYROLL'] })
   })
 
   it('asks a taxation-only company for the tax terms it can agree to, not for a payroll term', async () => {
