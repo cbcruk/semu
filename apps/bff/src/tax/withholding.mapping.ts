@@ -142,6 +142,19 @@ function legacyEventType(type: string): string {
 }
 
 /**
+ * 새 이력 행위자 → 현행 `actor_type`(`filing_events.actor_type`의 `client`·`agency`·`system`)입니다.
+ *
+ * 현행 고객 경로는 대리인이 보낸 제출·제출 취소·납부·제출 자료 응답도 `client`로 기록했습니다. 새 API는 요청한 사람을
+ * 행위자로 남기고 대행 표시(`onBehalfOf: CLIENT`)를 따로 두므로(2026-11-07 결정), 그 줄은 `agency`입니다.
+ * 현행 이력에는 대행 표시를 둘 자리가 없어 내보내지 않습니다.
+ */
+const LEGACY_ACTOR_TYPE: Record<FilingHistoryEntry['actorKind'], 'client' | 'agency' | 'system'> = {
+  CLIENT: 'client',
+  AGENCY: 'agency',
+  SYSTEM: 'system',
+}
+
+/**
  * 이력 `detail` → 현행 `payload`입니다. 키는 snake_case, 항목 코드·응답은 현행 소문자입니다. 비었으면 `null`입니다.
  * 문서 추가(`DOCUMENT_ADDED`)의 `type`은 현행 `document_uploaded`의 `doc_type`(소문자)입니다.
  */
@@ -201,7 +214,7 @@ export function toLegacyFilingDetail(filing: Filing, history: readonly FilingHis
       })),
     timeline: history.map((entry) => ({
       type: legacyEventType(entry.type),
-      actor_type: entry.actorKind.toLowerCase(),
+      actor_type: LEGACY_ACTOR_TYPE[entry.actorKind],
       from_status: entry.fromStatus === null ? null : legacyFilingStatus(entry.fromStatus),
       to_status: entry.toStatus === null ? null : legacyFilingStatus(entry.toStatus),
       payload: legacyPayload(entry.type, entry.detail),

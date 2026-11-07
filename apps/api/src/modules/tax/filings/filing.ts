@@ -158,6 +158,8 @@ export type Filing = typeof Filing.Type
 export const FilingHistoryEntry = Schema.Struct({
   type: Schema.String,
   actorKind: Schema.Literals(['CLIENT', 'AGENCY', 'SYSTEM']),
+  /** 대리인이 고객 대신 한 일(고객 커맨드 대행, 제출 자료 응답·파일)이면 `CLIENT`입니다. 그 밖에는 키가 없습니다. */
+  onBehalfOf: Schema.optionalKey(Schema.Literal('CLIENT')),
   fromStatus: Schema.NullOr(FilingStatus),
   toStatus: Schema.NullOr(FilingStatus),
   detail: Schema.Record(Schema.String, Schema.Union([Schema.String, Schema.Number])),

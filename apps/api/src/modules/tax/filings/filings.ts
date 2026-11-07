@@ -218,7 +218,7 @@ export class Filings extends Context.Service<
           ...filing,
           ...commandPatch(filing, input, now),
           status: result.to,
-          history: [...filing.history, historyEntry(actor, input, filing.status, result.to, now)],
+          history: [...filing.history, historyEntry(actor, input, filing.status, result.to, now, result.onBehalfOf)],
           version: filing.version + 1,
           updatedAt: now,
         }
@@ -256,6 +256,8 @@ export class Filings extends Context.Service<
               type: historyType,
               actorKind: actor.kind,
               actorId: actor.userId,
+              // 제출 자료는 고객 몫이라 대리인이 고치면 고객 대신 한 일로 남깁니다.
+              ...(actor.kind === 'AGENCY' ? { onBehalfOf: 'CLIENT' as const } : {}),
               fromStatus: null,
               toStatus: null,
               detail: { code, ...detail },
@@ -492,6 +494,7 @@ function historyEntry(
   from: FilingStatus,
   to: FilingStatus,
   now: string,
+  onBehalfOf: 'CLIENT' | undefined,
 ): FilingHistoryRecord {
   const { command, ...rest } = input
   const detail = Object.fromEntries(
@@ -501,6 +504,7 @@ function historyEntry(
     type: command as FilingCommand,
     actorKind: actor.kind,
     actorId: actor.userId,
+    ...(onBehalfOf === undefined ? {} : { onBehalfOf }),
     fromStatus: from,
     toStatus: to,
     detail,
