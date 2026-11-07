@@ -80,9 +80,18 @@ export async function ledgerOf(context: SignedInContext, guard?: SessionGuard): 
   return versioned(await upstream(context, 'GET', ledgerPath(context), guard === undefined ? {} : { guard }))
 }
 
-/** 대장의 행 전체입니다. */
-export async function rowsOf(context: SignedInContext, ledger: PayrollLedger): Promise<PayrollRow[]> {
-  const response = await upstream(context, 'GET', `/v1/payroll-ledgers/${encodeURIComponent(ledger.id)}/rows`)
+/** 대장의 행 전체입니다. `guard`는 보내기 직전의 확인입니다. */
+export async function rowsOf(
+  context: SignedInContext,
+  ledger: PayrollLedger,
+  guard?: SessionGuard,
+): Promise<PayrollRow[]> {
+  const response = await upstream(
+    context,
+    'GET',
+    `/v1/payroll-ledgers/${encodeURIComponent(ledger.id)}/rows`,
+    guard === undefined ? {} : { guard },
+  )
   return (await read<{ items: PayrollRow[] }>(response)).items
 }
 
@@ -90,9 +99,10 @@ export async function rowsOf(context: SignedInContext, ledger: PayrollLedger): P
  * 조건에 맞는 대장 전체를 읽습니다. 현행 카드 목록은 페이지가 없어 끝까지 읽습니다.
  * 끝없이 돌지 않게 `maxUpstreamPages`쪽에서 멈추고, 같은 커서가 다시 오면 바로 멈춥니다. 둘 다 502입니다.
  */
-async function allLedgers(
+export async function allLedgers(
   context: SignedInContext,
-  filter: { attributionMonth?: string; status?: PayrollLedgerStatus } = {},
+  filter: { attributionMonth?: string; paymentMonth?: string; status?: PayrollLedgerStatus } = {},
+  guard?: SessionGuard,
 ): Promise<PayrollLedger[]> {
   const { deps } = context
   const ledgers: PayrollLedger[] = []
@@ -107,9 +117,12 @@ async function allLedgers(
     }
     const query = new URLSearchParams({ limit: String(UPSTREAM_PAGE_SIZE) })
     if (filter.attributionMonth !== undefined) query.set('attributionMonth', filter.attributionMonth)
+    if (filter.paymentMonth !== undefined) query.set('paymentMonth', filter.paymentMonth)
     if (filter.status !== undefined) query.set('status', filter.status)
     if (cursor !== undefined) query.set('cursor', cursor)
-    const page = await read<Page<PayrollLedger>>(await upstream(context, 'GET', `/v1/payroll-ledgers?${query}`))
+    const page = await read<Page<PayrollLedger>>(
+      await upstream(context, 'GET', `/v1/payroll-ledgers?${query}`, guard === undefined ? {} : { guard }),
+    )
     ledgers.push(...page.items)
     cursor = page.nextCursor
     if (cursor === undefined) return legacyCardOrder(ledgers)
@@ -129,7 +142,11 @@ async function allLedgers(
  * 대장 하나에 행 호출 하나라, 대장이 `maxLedgerRowReads`개를 넘으면 행을 읽기 전에 502 `UPSTREAM_LIST_TOO_LARGE`로 멈춥니다.
  * 현행 클라이언트는 연도(`year`)·귀속월(`attr_date`)로 거르면 됩니다.
  */
-async function withRows(context: SignedInContext, ledgers: readonly PayrollLedger[]): Promise<LedgerWithRows[]> {
+export async function withRows(
+  context: SignedInContext,
+  ledgers: readonly PayrollLedger[],
+  guard?: SessionGuard,
+): Promise<LedgerWithRows[]> {
   const limit = context.deps.maxLedgerRowReads
   if (ledgers.length > limit) {
     throw new LegacyError(502, {
@@ -144,7 +161,7 @@ async function withRows(context: SignedInContext, ledgers: readonly PayrollLedge
       const index = next
       next += 1
       const ledger = ledgers[index] as PayrollLedger
-      results[index] = { ledger, rows: await rowsOf(context, ledger) }
+      results[index] = { ledger, rows: await rowsOf(context, ledger, guard) }
     }
   }
   await Promise.all(Array.from({ length: Math.min(ROW_READ_CONCURRENCY, ledgers.length) }, worker))

@@ -313,7 +313,7 @@ D9 순서의 세 번째 조각입니다. 현행 급여카드(급여 관리, 스�
 | `GET cards/fixed-payrolls-with-keyword/`, `GET cards/employee-names/` | 없음 | payroll.md에서 없앤 경로. 지난 행 검색은 HR 직원 검색과 행 목록으로 |
 | `GET`·`POST /api/company/new-payroll/maintain-payroll/:id/` | 없음 | payroll.md에서 없앰(이관 때 한 번 정함) |
 | 명세서 `cards/:c/payslip/…` (스펙 18–22) | `GET /payslips?ledgerId=`, `POST /payslips:send` | [명세서 조각](#명세서-조각)에서 옮김 |
-| `payroll/withholding-summary/:paymentMonth` | Tax | 다음 조각(원천세 신고) |
+| `payroll/withholding-summary/:paymentMonth` | `/payroll-ledgers?paymentMonth=` + `/filings` | [원천세 조각](#원천세-조각)에서 옮김 |
 | BPO 대장·입력·명세서(스펙 34–113), 퇴직금 정산, 인건비 보고서, 급여 설정 | `/payroll-ledgers`, `/severance-settlements`, `/payroll-settings` 등 | 승인 운영 화면과 설정 화면은 별도 조각 |
 | 급여 계산기·참조 코드(스펙 25–33) | `/payroll-calculator:simulate`, `/payroll-reference-codes` | 회사 경로 밖의 참조 데이터. 별도 조각 |
 
@@ -406,6 +406,98 @@ D9 순서의 네 번째 조각입니다. 현행 급여카드의 급여명세서(
 4. **발송 여부 요약.** 현행 카드 목록은 `payslips_sent`로 발송 여부를 보였습니다. 대장에 `payslipsSentAt` 같은 요약을 둘지 정합니다
 5. **계산식 문구.** 회사가 명세서 계산식을 고치던 기능을 둘지는 payroll.md 열린 질문 6(문구와 PDF)과 같은 질문입니다
 
+## 원천세 조각
+
+D9 순서의 다섯 번째 조각입니다. 현행 세무 > 원천세 화면(`/api/company/:companyId/tax/withholding-tax/…`, 근거는 [tax-api-design.md 9절](../reference/legacy-design/tax-api-design.md)과 현행 구현 `apps/api/legacy/src/modules/filings/`)을 새 신고 건(`/v1/filings`)으로 옮기고, 급여 쪽의 원천세 요약(`payroll/withholding-summary/:paymentMonth`)을 새 급여대장과 신고 건으로 만듭니다. 코드는 `apps/bff/src/tax/`입니다. 이번에는 **신고 건 읽기와 고객의 생애 주기**(제출 자료 응답·제출·제출 취소·납부)만 옮기고, 파일과 다른 세목·세무 일정·대리인 경로는 [남은 것](#원천세에서-남은-것)입니다.
+
+> **플랜과 약관은 현행과 같습니다.** 현행 원천세 메뉴(`tax_withholding`)는 기장(`TAXATION`) 플랜과 세무 약관을 요구했고, 새 신고 건도 `filing:*` + `TAXATION` + 약관입니다. 플랜이 없으면 403 `ENTITLEMENT_REQUIRED`(`promotion_url: null`), 약관을 다시 동의해야 하면 403 `TAX_TERMS_REQUIRED`입니다. 급여대장·명세서 조각의 플랜 문제는 여기에는 없습니다. 다만 원천세 요약은 대장을 읽으므로 `PAYROLL`도 필요합니다([열린 질문 3](#원천세-열린-질문))
+
+| 현행 (`/api/company/:companyId/` 아래) | 새 API |
+|---|---|
+| `GET tax/withholding-tax/?year=&limit=&offset=` | `GET /v1/filings?taxType=WITHHOLDING_TAX`(끝까지). 연도·순서·DRF 페이지는 BFF |
+| `GET tax/withholding-tax/:filingId/` | `GET /v1/filings/{id}` + `GET /v1/filings/{id}/history` |
+| `PUT tax/withholding-tax/:filingId/requirements/:code/` `{response, note?}` | `GET /v1/filings/{id}` + `PATCH /v1/filings/{id}/requirements/{CODE}` |
+| `POST tax/withholding-tax/:filingId/submit/`, `unsubmit/` | `GET /v1/filings/{id}` + `POST /v1/filings/{id}:submit`, `:unsubmit` |
+| `POST tax/withholding-tax/:filingId/pay/` `{paid_on}` | `GET /v1/filings/{id}` + `POST /v1/filings/{id}:pay {paidOn}` |
+| `GET payroll/withholding-summary/:paymentMonth` (대리인 전용) | `GET /v1/filings?taxType=WITHHOLDING_TAX`(끝까지) + `GET /v1/payroll-ledgers?paymentMonth=`(끝까지) + 마감된 대장마다 `GET …/rows` |
+
+### 번역
+
+- **세목.** 현행은 세목이 경로에 있었고(`requireFilingOfType`) 다른 세목의 신고 건은 404 "Filing not found."였습니다. 새 API는 세목이 필드라, BFF가 쓰기 전에 신고 건을 읽어 `taxType`이 `WITHHOLDING_TAX`가 아니면 커맨드를 보내지 않고 404입니다. 새 신고 건 ID 형식(`fil_`)이 아닌 ID(현행 UUID 등)는 새 API를 부르지 않고 404입니다
+- **상태·종류.** 새 상태는 소문자이고 `CANCELED`는 현행 철자 `cancelled`입니다. 종류 `MONTHLY`·`SEMIANNUAL`은 `monthly`·`semiannual`, 종결 방식은 `paid`·`refund`·`no_payment`입니다
+- **기간.** 현행 `tax_period_key`는 매월 `2026-10-payment`, 반기 `2026-H2-semiannual`이었으므로 새 `periodKey`에 접미사를 붙입니다. `year`는 기간 시작의 연도, `quarter`는 매월이면 그 달의 분기, 반기면 상반기 2·하반기 4(현행 값)입니다
+- **진행 단계.** 현행 `step`·`step_index`·`step_count`는 부가세 밖 세목의 다섯 단계(자료 제출 가능, 자료 검토중, 작업중, 납부, 마감)였습니다. 새 API는 단계 이름을 내려주지 않으므로(클라이언트가 고름) BFF가 상태로 현행 문구를 붙입니다. 예정·취소는 단계가 없어 `null`, 0입니다
+- **제출 자료.** 항목 코드는 현행 소문자(`business_income`) ↔ 새 대문자(`BUSINESS_INCOME`)입니다. 이름(`label`)은 새 API가 주지 않으므로 BFF가 현행 문구를 붙입니다. 응답은 소문자, 자동 연계 항목(`payroll_ledger_closed`)의 `linked_status`는 `PROVIDED`면 `closed`, 아니면 `open`입니다. 원천세 항목이 아닌 코드(부가세 코드, 대문자)는 현행처럼 404 "Requirement not found."이고 새 API를 부르지 않습니다
+- **문서.** 현행 고객 경로는 행위자와 상관없이 고객 시점으로 문서를 걸렀습니다(바뀐 문서 빼고, 매입매출장은 확인 단계부터, 신고서·납부서·고지서는 신고 뒤부터). 새 API는 대리인에게 모든 문서를 주므로 BFF가 같은 기준으로 거릅니다
+- **이력.** 새 `history`를 현행 `timeline`으로 옮깁니다. 커맨드는 현행 전이 이름(`START_REVIEW` → `startReview`), `DOCUMENT_ADDED`는 `document_uploaded`, 그 밖(`REQUIREMENT_ANSWERED` 등)은 소문자이고 현행에 없던 종류(`REQUIREMENT_LINKED`, `DEADLINES_REFRESHED`, `SCHEDULE_CANCELED`)도 소문자로 냅니다. `detail`은 키를 snake_case로 바꾼 `payload`(비면 `null`)이고, 항목 코드·응답 값은 소문자입니다
+- **목록.** 새 API에 연도 필터가 없어 원천세 신고 건을 끝까지 읽고(200개씩, 회사 하나에 한 해 12건 남짓) 기간 시작 연도로 거릅니다. 순서는 현행 SQL(기간 시작 내림차순, 수정 차수 내림차순, ID 순)이고 `limit/offset`은 현행처럼 기본 20, 최대 100입니다. 끝까지 읽기는 인사 목록과 같은 쪽 수 상한·반복 커서 검사를 둡니다(502 `UPSTREAM_LIST_TOO_LARGE`, `UPSTREAM_CURSOR_REPEATED`)
+- **오류.** 현행 서버(`filings.service.ts`)와 같은 상태·코드·문구로 바꿉니다
+
+| 새 API | 현행 |
+|---|---|
+| 404 `FILING_NOT_FOUND` / `REQUIREMENT_NOT_FOUND` | 404 `NOT_FOUND` "Filing not found." / "Requirement not found." |
+| 409 `FILING_TRANSITION_INVALID`, `FILING_LOCKED` | 409 `INVALID_TRANSITION` "The filing is {현행 상태} and does not allow this action." |
+| 403 `FILING_ACTOR_NOT_ALLOWED` | 403 `PERMISSION_DENIED` "Only client users can submit a filing." (현행은 행위자가 틀리면 권한 부족과 같은 오류였음) |
+| 409 `REQUIREMENT_AUTO_LINKED` | 422 `VALIDATION_FAILED`, `errors.code` |
+| 422 `REQUIREMENT_HAS_FILES` | 422 `VALIDATION_FAILED`, `errors.response` |
+| 422 `FILING_REQUIREMENTS_PENDING` | 422 `VALIDATION_FAILED`, `errors.requirements` "Answer every requirement item before submitting." |
+| 412 `VERSION_MISMATCH` | 412 `VERSION_CONFLICT` (공통 표) |
+
+### 쓰기와 버전
+
+- **상태 전이(제출·제출 취소·납부)는 `If-Match`가 필수입니다**(현행 `requireIfMatch`). 없으면 428 `PRECONDITION_REQUIRED` "Send If-Match with the filing version.", 형식이 틀리면 412 `VERSION_CONFLICT`이고 둘 다 새 API를 부르기 전입니다. 받은 값을 새 커맨드에 그대로 넘기므로 버전 비교는 새 API가 합니다
+- 검사 순서는 현행처럼 `If-Match` → 본문(`paid_on`이 `YYYY-MM-DD`, 실제 날짜인지는 새 API가 봐서 422 `paid_on`) → 신고 건·세목(404) → 새 커맨드입니다
+- 제출 자료 응답은 현행처럼 `If-Match`를 받지 않습니다(상태로 잠그고 버전은 오름). 본문(`response`는 `pending`·`not_applicable`, `note`는 1000자 이하 문자열이거나 `null`)을 신고 건을 읽기 **전에** 보고, 모르는 필드는 현행 zod처럼 무시합니다
+- 응답은 현행처럼 목록 항목 형태이고, 현행에 없던 `ETag`(새 버전)를 붙입니다
+- 쓰기는 모두 새 API 호출 하나라(앞의 `GET`은 읽기) 되돌리기·`PARTIAL_WRITE`가 없습니다
+
+**현행과 다르게 남는 것:**
+
+- **고객 경로의 대리인.** 현행 고객 경로는 요청한 사람이 누구든 고객(`clientActor`)으로 전이를 기록했으므로, 회사 경로로 들어온 세무 대리인도 제출·납부를 할 수 있었습니다. 새 API는 토큰의 행위자 종류로 보고 대리인의 `:submit`·`:pay`를 403 `FILING_ACTOR_NOT_ALLOWED`로 거절하며, BFF는 이를 현행 403 `PERMISSION_DENIED`로 줍니다. 대리인의 화면은 현행에서도 `/api/desk`였으므로 BFF가 고객으로 바꿔 보내지 않습니다([열린 질문 4](#원천세-열린-질문)). 테스트가 지금 동작을 고정해 둡니다
+- **오류 순서.** 현행 전이는 상태가 틀리면 버전보다 먼저 409였고, 새 API는 버전(412)을 먼저 봅니다. 제출 자료도 현행은 "파일이 붙은 항목의 해당 없음"(422)이 잠금(409)보다 먼저였고 새 API는 잠금이 먼저입니다. 둘 다 거절이라 결과가 바뀌지는 않습니다
+
+### 원천세 요약
+
+현행 `GET payroll/withholding-summary/:paymentMonth`는 담당자 전용으로, 지급월의 완료 카드와 완료 퇴직 정산을 원천징수이행상황신고서 줄(`A01`·`A21`·`A03`·`A25`·`A40`)로 묶었습니다. 새 API에는 이 요약이 없어(Payroll이 지급월 마감 이벤트에 같은 집계를 실어 Tax에 넘길 뿐) BFF가 만듭니다.
+
+- **대리인만.** 현행처럼 그 회사에서 세무 대리인으로 행동하지 않으면 403 `PERMISSION_DENIED` "Only agency staff can read the withholding summary."입니다. 급여대장 확정·해제와 같이 `callApi`의 `guard`로 보내는 호출마다 그 토큰의 grant로 봅니다(오래된 grant면 한 번 갱신해 다시 봄). 첫 호출(신고 건 목록) 전에 보므로 현행처럼 행위자가 지급월 형식(404 "Payment month not found.")보다 먼저이고, 거절된 요청은 새 API의 업무 경로에 닿지 않습니다
+- **대장.** `paymentMonth` 필터로 지급일이 그 달인 대장을 끝까지 읽고, `ledger_closed`는 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다(현행 `payrollLedgerResponse`). `open_card_ids`·`closed_card_ids`는 새 대장 ID입니다. 마감된 대장의 행만 읽고(급여대장 조각의 행 읽기 상한·동시 4개를 그대로 씀), 계산 결과가 없는 행은 0원으로 셉니다
+- **줄.** 근로(월급·일급·시급) → `A01`, 일용 → `A03`, 사업 → `A25`, 기타 → `A40`이고, 인원은 줄마다 직원 ID(없으면 이름)로 중복 없이 셉니다. 현행처럼 모든 줄과 요약에 `verified: false`를 붙입니다(코드 대응 미확인)
+- **신고 건.** 지급월 1일을 덮는 원천세 신고 건 중 취소되지 않은 것, 수정 차수가 가장 큰 것입니다(현행 `findWithholdingFiling`). 없으면 `null`입니다
+- **금액은 로그에 남기지 않습니다**(테스트가 `console`을 지켜봄)
+
+### 원천세에서 옮기지 못한 것
+
+쓰기 쪽에는 새 API에 자리가 없는 필드가 없습니다(현행 `note`·`paid_on` 모두 새 API가 저장). 응답에서 BFF가 채우지 못하는 필드입니다.
+
+| 현행 필드 | 응답 | 이유 |
+|---|---|---|
+| 제출 자료 파일 `original_name`, `mime_type`, `size_bytes`, `created_at` | `null` (`id`는 새 파일 ID) | 새 신고 건은 파일 ID(`fle_`)만 가짐. 파일 저장소(D7)가 아직 없음([tax.md 열린 질문 2](tax.md#열린-질문)) |
+| 문서 `original_name`, `mime_type`, `size_bytes` | `null` | 같음 |
+| 요약의 퇴직소득 `A21` 인원·금액 | `null`, 합계에서 빠짐 | 새 퇴직금 정산(`/v1/severance-settlements`)에 지급일이 없어 지급월로 묶을 수 없음([열린 질문 2](#원천세-열린-질문)) |
+| 제출 자료 `label`, 진행 단계 `step` | BFF가 현행 문구 | 새 API는 화면 문구를 내려주지 않음(P1). 화면을 새 API로 옮기면 클라이언트가 코드로 고름 |
+| 이력의 현행에 없던 종류 | 소문자 | 새 API가 더한 이력(`requirement_linked` 등) |
+
+### 원천세에서 남은 것
+
+이번 조각에 없는 현행 세무 경로는 현행 404 `NOT_FOUND`입니다.
+
+| 현행 | 새 API | 남긴 이유 |
+|---|---|---|
+| 제출 자료 파일 올리기·내려받기·떼기 `…/requirements/:code/files[/:fileId]/`, 문서 내려받기 `…/documents/:docId/` | 파일 저장소 업로드·다운로드 + `POST`·`DELETE /v1/filings/{id}/requirements/{code}/files[/{fileId}]`, `GET /v1/filings/{id}/documents/{docId}` | 현행은 multipart 업로드와 파일 본문 응답. 새 API에 파일 저장소(D7)가 없어 받을 곳·내려줄 곳이 없음. 떼기만 옮기면 올린 파일 없이 떼기만 남아 화면이 절반이 됨 |
+| 부가세·법인세·종합소득세 `tax/surtax/…`, `tax/corporation-tax/…`, `tax/aggr-income-tax/…`, 매입매출장 확인·이의(`ledger/confirm`·`dispute`) | 같은 `/v1/filings` (`taxType`) | 세목별 조각. 부가세 목록의 현행 리포트 필드(`process_step`, `purchase_sales_ledger_*`)와 매입매출장 단계 번역이 더 필요. 이번 조각의 번역(`withholding.mapping.ts`)을 세목 인자로 넓히면 됨 |
+| 세무 일정 `tax/calendar/?year=` | `GET /v1/tax-calendar?year=` | 모든 세목을 함께 주는 화면. 세목 조각들이 모인 뒤 |
+| 담당자 경로 `/api/desk/filings/…` | `GET /v1/agency/filings` + 회사 토큰의 커맨드 | 회사 경로 밖(대리인 범위 토큰). 대리인 화면 조각 |
+| 오늘의 할 일·진행 현황 `home/action-cards/…`, `home/tracker` | `/v1/action-cards`, `GET /v1/filings?open=true` | 홈 화면 조각 |
+
+### 원천세 열린 질문
+
+1. **원천세 요약 엔드포인트.** 지금은 BFF가 신고 건 전체, 지급월 대장 전체, 마감된 대장마다 행을 읽습니다(대장 N개면 N+2 호출 이상). Payroll은 같은 집계(`withholdingSummary`)를 이미 계산해 `payroll_pay_month.closed` 이벤트에 싣습니다. 새 API에 `GET /v1/payroll-pay-months/{month}/withholding`(Payroll) 같은 조회를 둘지, Tax가 이벤트로 받은 집계를 신고 건에 저장해 보여 줄지 정합니다. 줄 코드(`A01` 등)는 Tax가 정한다는 규칙([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md))과 함께 정합니다
+2. **퇴직소득(A21)의 지급월.** 새 퇴직금 정산에는 지급일이 없어 요약의 `A21`이 비어 있습니다. `SeveranceSettlement`에 지급일(`paymentDate`)을 둘지, 퇴직금을 퇴사월 대장의 행으로 넣을지 정합니다([현행 급여 스펙](../reference/spec/payroll.md) 열린 질문 12와 같음). 정하기 전에는 `A21`이 `null`이라 요약의 합계가 퇴직소득을 빼고 셉니다
+3. **원천세 요약의 플랜.** 현행 요약은 플랜을 보지 않았고(대리인만), 새로는 대장 읽기에 `PAYROLL`, 신고 건 읽기에 `TAXATION`이 필요합니다. 기장만 쓰는 회사(데모 `individual`)는 403 `ENTITLEMENT_REQUIRED`(`required_plans: ["PAYROLL"]`)이고 테스트가 지금 동작을 고정해 둡니다. [급여대장 열린 질문 7](#급여대장-열린-질문)(급여대장을 어떤 플랜이 여는가)과 함께 정합니다
+4. **고객 경로의 대리인.** 현행 고객 경로는 대리인의 제출·납부를 고객의 것으로 기록했습니다. 새 API는 막습니다(지금 BFF도 막음). 대리인이 고객 대신 자료를 제출하거나 납부를 기록해야 하는 업무가 있으면, 새 API에 대리인 대행 커맨드(이력에 대리인으로 남김)를 둘지 정합니다
+5. **신고 건 연도 필터.** 현행 목록은 `year`로 걸렀고 새 목록에는 기간 필터가 없어 BFF가 끝까지 읽습니다. 회사 하나의 원천세는 한 해 12건 남짓이라 지금은 문제가 없고, 오래 쓴 회사가 늘면 `GET /v1/filings`에 `periodFrom`·`periodTo`를 더할지 정합니다
+
 ## 화면 이전
 
 1. **BFF로 갈아타기.** 현행 클라이언트의 API 호스트를 BFF로 돌립니다. 이 전환은 클라이언트가 실제로 부르는 경로가 모두 BFF에 있을 때만 합니다. 없는 경로는 현행 404 `NOT_FOUND`이므로, 스테이징에서 404를 경로별로 모아 남은 조각을 셉니다
@@ -422,5 +514,6 @@ D9 순서의 네 번째 조각입니다. 현행 급여카드의 급여명세서(
 - 인사 하위 리소스(`test/hr-subresources.http.test.ts`): 근로·급여계약·휴직·퇴직의 현행 요청이 새 API에 쓰이고 현행 형태로 돌아오는지, 직원 버전 `If-Match`(428/412), 가린 계좌번호 유지, 옮기지 못한 필드의 422, 복직 거절 시 되돌리기, 다른 직원 경로의 계약 404
 - 급여대장(`test/payroll-ledgers.http.test.ts`): 현행 카드 만들기·읽기·목록·묶음이 새 대장과 그 행에서 현행 형태로 나오는지, 계산 확정·확정·해제가 새 커맨드로 가는지, 현행이 막던 전이(입력 중 확정, 정기 카드 삭제)와 고객의 확정·해제(403, 그 회사의 멤버인 대리인 계정·같은 세션에서 멤버가 된 경우·대리인 회사에서 멤버 회사로 전환한 경우·`actorKind` 없는 grant 포함, 다른 회사에 묶인 대리인 세션과 멤버십이 지워진 뒤의 200), `If-Match` 형식 검사와 읽은 버전 넣기, 해제 두 호출의 되돌리기(거절·결과 모름·시간 초과·세션 끝남·되돌리기 실패·승인 운영), 되돌리기 `:close`의 `If-Match`, 추가 카드 거절 사유, 마감된 같은 달 카드, 대장 전체 읽기의 커서 상한과 행 읽기 상한, 기장만 쓰는 회사의 403(지금 동작 고정)
 - 명세서(`test/payroll-payslips.http.test.ts`): 카드 404·마감 전 409가 행 ID 형식 422보다 먼저인지, 클라이언트 키를 세션·키·대상 각각에 묶는지(다른 사용자가 같은 키로 다른 행을 보내도 실제로 보냄, 다른 세션·같은 키·같은 대상, 같은 세션·같은 키·다른 대상, 같은 세션·다른 키), BFF 키도 세션·대상 각각에 묶는지, 결과를 모르는 실패(503) 뒤에는 창이 지나도 같은 키이고 분명한 거절(409) 뒤에는 창만큼인지·같은 키 두 번 누르기가 한 번에 하나씩 가는지, 다른 명세서의 재응답 작업을 422로 거절하는지, 발송이 긴 제한 시간을 쓰는지, 전부 실패한 발송은 바로 다시 보내는지, 마감된 카드의 명세서 화면·발송 현황이 새 명세서와 HR 이메일에서 현행 형태로 나오는지, 마감 전 카드는 `/v1/payslips`를 부르지 않고 발송은 409인지, 발송 결과·실패 사유·`sent_at`, 카드의 어느 행이든 발송하고 화면은 근로 행만, 고객도 발송, 본문 검증이 새 API 전, 카드에 없는 행은 보내기 전에 422, 발송 중 마감 풀림(409), 직원 읽기 권한이 없을 때와 다른 실패, 빈 추가 카드의 부모와 직원 읽기 생략, 두 번 누르기(동시·연속)·다른 행 집합·다른 세션·시간 초과 뒤 재시도·토큰 갱신 뒤 재전송의 키와 실제 발송 횟수, 재응답 시간이 지난 뒤 다시 보내기, 클라이언트 키 그대로 넘기기, 로그에 이메일·금액이 없는지, 이메일·계산식 저장의 받음과 422, 기장만 쓰는 회사의 403(지금 동작 고정). `src/idempotency.test.ts`는 같은 지문의 직렬화(앞 요청 실패 뒤에도), 재응답 시간 경계, 결과에 따른 키 버리기·예외 뒤 유지, 키 수 상한(오래 쓰지 않은 것부터)을 봅니다
+- 원천세(`test/tax-withholding.http.test.ts`): 원천세 신고 건 목록이 현행 형태·순서·연도·DRF 페이지로 나오는지, 잘못된 연도는 새 API 전에 422, 상세의 항목 이름·자동 연계 상태·이력, 다른 세목·없는 신고 건·새 ID 형식이 아닌 ID의 404(마지막은 새 API를 부르지 않음, 부가세 신고 건에 보낸 제출도 404), 옮기지 않은 경로(다른 세목·세무 일정·파일·문서)의 404, 플랜·약관 게이트(무료 회사 403 `ENTITLEMENT_REQUIRED`, 약관 미동의 403 `TAX_TERMS_REQUIRED`), 제출 자료 응답과 본문 검증이 신고 건 읽기 전인지·원천세 밖 코드의 404, 자동 연계·잠금 오류의 현행 번역, 전이의 `If-Match` 428·412와 `paid_on` 검증이 새 API 전인지, 제출·제출 취소의 버전·남은 항목 422·틀린 상태 409, 고객 경로의 대리인 제출 403(지금 동작 고정), 대리인에게도 고객 시점 문서만 보이는지, 신고 뒤 문서·이력과 납부·환급 건 납부 409, 새 API가 거절한 날짜의 필드 오류, 원천세 요약의 줄·합계·신고 건과 지급월 마감 뒤 급여대장 마감분 연계, 마감 전 대장과 빈 달, 고객 요약 403이 업무 호출 전·지급월 형식 404보다 먼저인지, 기장만 쓰는 회사의 요약 403(지금 동작 고정), 끝없는·반복 커서 502, 로그에 금액이 없는지. `src/tax/withholding.mapping.test.ts`는 기간 키·분기, 단계 없음·`cancelled`, 항목 코드, 현행 순서와 지급월을 덮는 신고 건, 오류 번역을 봅니다
 - 오류(잘못된 비밀번호, 검증 실패, CSRF 누락, 권한·플랜 부족, 없는 직원), 회사 전환(경로로 전환, `/jwt`, 접근 불가 회사, 동시 전환), 토큰 만료 갱신, 새 API가 폐기한 세션을 덮습니다
 - 경계: `text/plain` 로그인(415), 다른 출처 로그인, 다시 로그인, 업스트림 시간 초과·응답 크기 초과·로그아웃 실패, 끝없는 커서·반복 커서, 잘못된 퍼센트 인코딩·회사 ID, 만료 세션 정리, 자물쇠 중첩·순서
