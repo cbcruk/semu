@@ -69,6 +69,11 @@ export function legacyStatus(status: PayrollLedgerStatus): LegacyStatus {
   return status === 'CLOSED' ? 'done' : 'calculating'
 }
 
+/** 소득 구분 → 현행 BPO 소득 구분(`wage-monthly`, `daily` 등)입니다. */
+export function bpoSegment(incomeType: PayrollIncomeType): string {
+  return BPO_SEGMENT[incomeType]
+}
+
 /** 소득 구분 → 현행 소득 구분입니다. */
 export function legacySegment(incomeType: PayrollIncomeType): LegacySegment {
   return LEGACY_SEGMENT[incomeType]
@@ -186,6 +191,20 @@ function taxDeductionMode(input: PayrollRowInput): 'before_tax' | 'after_tax' {
   return input.taxDeductionMode === 'AFTER_TAX' ? 'after_tax' : 'before_tax'
 }
 
+/** 근로 행의 근무 시트를 현행 근무 시트(`work`, 시간 단위)로 옮깁니다. 새 행은 분 단위이고 주휴 주 수는 시트 밖에 둡니다. */
+export function toLegacyWork(input: PayrollRowInput): Record<string, number> {
+  return {
+    regular_hours: hours(input.work?.regularMinutes),
+    overtime_hours: hours(input.work?.overtimeMinutes),
+    night_hours: hours(input.work?.nightMinutes),
+    holiday_hours: hours(input.work?.holidayMinutes),
+    holiday_overtime_hours: hours(input.work?.holidayOvertimeMinutes),
+    absence_hours: hours(input.work?.absenceMinutes),
+    weekly_holiday_deduction_days: input.work?.weeklyHolidayDeductionDays ?? 0,
+    weekly_holiday_weeks: input.weeklyHolidayWeeks ?? 0,
+  }
+}
+
 /** 행 입력을 현행 행에 펼친 입력 필드로 옮깁니다. 현행은 입력 JSON을 행에 그대로 펼쳤습니다. */
 export function toLegacyInput(input: PayrollRowInput): Record<string, unknown> {
   switch (input.incomeType) {
@@ -204,16 +223,7 @@ export function toLegacyInput(input: PayrollRowInput): Record<string, unknown> {
             : { payable_days: input.proration.payableDays, total_days: input.proration.totalDays },
         payment_items: items(input.paymentItems),
         deduction_items: items(input.otherDeductions),
-        work: {
-          regular_hours: hours(input.work?.regularMinutes),
-          overtime_hours: hours(input.work?.overtimeMinutes),
-          night_hours: hours(input.work?.nightMinutes),
-          holiday_hours: hours(input.work?.holidayMinutes),
-          holiday_overtime_hours: hours(input.work?.holidayOvertimeMinutes),
-          absence_hours: hours(input.work?.absenceMinutes),
-          weekly_holiday_deduction_days: input.work?.weeklyHolidayDeductionDays ?? 0,
-          weekly_holiday_weeks: input.weeklyHolidayWeeks ?? 0,
-        },
+        work: toLegacyWork(input),
         insurance_notice: insuranceNotice(input.insuranceNotice),
       }
     case 'DAILY':

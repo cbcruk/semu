@@ -22,10 +22,20 @@ const UPSTREAM_PAGE_SIZE = 200
 /**
  * 근로소득자 전체를 읽습니다. 현행 `limit/offset`·건수·탭 집계를 커서 목록으로 흉내 낼 수 없어 끝까지 읽고 BFF에서 자릅니다.
  * 회사 하나의 직원 수(수백 명)에서는 감당할 만하고, 화면을 새 API로 옮기면 사라집니다.
+ */
+export function allWageEmployees(context: SignedInContext): Promise<Employee[]> {
+  return allEmployees(context, 'WAGE')
+}
+
+/**
+ * 직원 전체를 읽습니다. `kind`가 없으면 근로·일용·사업·기타소득자 모두입니다.
  *
  * 끝없이 돌지 않게 `maxUpstreamPages`쪽에서 멈추고, 같은 커서가 다시 오면 바로 멈춥니다. 둘 다 502입니다.
  */
-export async function allWageEmployees({ deps, sessionId, params }: SignedInContext): Promise<Employee[]> {
+export async function allEmployees(
+  { deps, sessionId, params }: SignedInContext,
+  kind?: Employee['kind'],
+): Promise<Employee[]> {
   const employees: Employee[] = []
   const seen = new Set<string>()
   let cursor: string | undefined
@@ -36,7 +46,8 @@ export async function allWageEmployees({ deps, sessionId, params }: SignedInCont
         code: 'UPSTREAM_LIST_TOO_LARGE',
       })
     }
-    const query = new URLSearchParams({ kind: 'WAGE', limit: String(UPSTREAM_PAGE_SIZE) })
+    const query = new URLSearchParams(kind === undefined ? {} : { kind })
+    query.set('limit', String(UPSTREAM_PAGE_SIZE))
     if (cursor !== undefined) query.set('cursor', cursor)
     const page = await readJson<Page<Employee>>(
       await callApi(deps, sessionId, params['companyId'], 'GET', `/v1/employees?${query}`),

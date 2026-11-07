@@ -5,6 +5,7 @@ import { leaveRoutes } from './hr/leaves.routes.ts'
 import { retirementRoutes } from './hr/retirement.routes.ts'
 import { identityRoutes } from './identity/identity.routes.ts'
 import { IdempotencyKeys } from './idempotency.ts'
+import { bpoPayslipRoutes } from './payroll/bpo-payslips.routes.ts'
 import { payrollLedgerRoutes } from './payroll/ledgers.routes.ts'
 import { payslipRoutes } from './payroll/payslips.routes.ts'
 import { withholdingRoutes } from './tax/withholding.routes.ts'
@@ -24,6 +25,7 @@ export const ROUTES: readonly Route[] = [
   ...retirementRoutes,
   ...payrollLedgerRoutes,
   ...payslipRoutes,
+  ...bpoPayslipRoutes,
   ...withholdingRoutes,
 ]
 
