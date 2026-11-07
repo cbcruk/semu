@@ -7,6 +7,7 @@ import { identityRoutes } from './identity/identity.routes.ts'
 import { IdempotencyKeys } from './idempotency.ts'
 import { payrollLedgerRoutes } from './payroll/ledgers.routes.ts'
 import { payslipRoutes } from './payroll/payslips.routes.ts'
+import { withholdingRoutes } from './tax/withholding.routes.ts'
 import { LegacyError, legacyErrors } from './legacy-error.ts'
 import { makeRouter } from './router.ts'
 import type { Route } from './router.ts'
@@ -23,6 +24,7 @@ export const ROUTES: readonly Route[] = [
   ...retirementRoutes,
   ...payrollLedgerRoutes,
   ...payslipRoutes,
+  ...withholdingRoutes,
 ]
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])

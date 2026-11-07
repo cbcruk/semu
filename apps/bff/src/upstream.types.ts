@@ -397,3 +397,73 @@ export interface PayslipSendJob {
   createdAt: string
   finishedAt: string
 }
+
+/** 신고 건 상태입니다. */
+export type FilingStatus =
+  | 'SCHEDULED'
+  | 'REQUESTED'
+  | 'SUBMITTED'
+  | 'REVIEWING'
+  | 'LEDGER_PENDING'
+  | 'PREPARING'
+  | 'FILED'
+  | 'SETTLED'
+  | 'CANCELED'
+
+/** `GET /v1/filings`의 신고 건입니다. `isOverdue`·`progress`는 새 API가 계산합니다. */
+export interface FilingSummary {
+  id: string
+  taxType: 'VAT' | 'WITHHOLDING_TAX' | 'CORPORATE_TAX' | 'INCOME_TAX'
+  kind: 'PRELIMINARY' | 'FINAL' | 'NOTICE' | 'MONTHLY' | 'SEMIANNUAL' | 'INTERIM' | 'ANNUAL'
+  periodKey: string
+  revision: number
+  periodStart: string
+  periodEnd: string
+  statutoryDue: string | null
+  dueDate: string | null
+  paymentDue: string | null
+  submitDue: string | null
+  status: FilingStatus
+  isOverdue: boolean
+  progress: { stage: string | null; index: number; count: number }
+  payableAmount: number | null
+  settlement: 'PAID' | 'REFUND' | 'NO_PAYMENT' | null
+  paidOn: string | null
+  ledgerUploadedAt: string | null
+  ledgerConfirmedAt: string | null
+  ledgerDisputeCount: number
+  paymentSlipSentAt: string | null
+  version: number
+  updatedAt: string
+}
+
+/** `GET /v1/filings/{id}`의 신고 건입니다. 고객에게는 지금 볼 수 있는 문서만 옵니다. */
+export interface Filing extends FilingSummary {
+  requirements: Array<{
+    code: string
+    response: 'PENDING' | 'PROVIDED' | 'NOT_APPLICABLE'
+    autoLinked: boolean
+    note: string | null
+    fileIds: string[]
+    updatedAt: string | null
+  }>
+  documents: Array<{
+    id: string
+    type: 'LEDGER' | 'RETURN' | 'PAYMENT_SLIP' | 'NOTICE'
+    fileId: string
+    createdAt: string
+    firstViewedAt: string | null
+    replacedAt: string | null
+  }>
+  allowedActions: string[]
+}
+
+/** `GET /v1/filings/{id}/history`의 이력 한 줄입니다. */
+export interface FilingHistoryEntry {
+  type: string
+  actorKind: 'CLIENT' | 'AGENCY' | 'SYSTEM'
+  fromStatus: FilingStatus | null
+  toStatus: FilingStatus | null
+  detail: Record<string, string | number>
+  occurredAt: string
+}
