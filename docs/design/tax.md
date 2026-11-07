@@ -56,7 +56,7 @@ Filing                                   fil_
 ├─ documents[]    { id(fdc_), type, fileId, createdAt, firstViewedAt, replacedAt }
 ├─ allowedActions[]                      # 보는 행위자 기준
 ├─ version, updatedAt
-└─ history[] (별도 경로)  { type, actorKind, fromStatus, toStatus, detail, occurredAt }
+└─ history[] (별도 경로)  { type, actorKind, onBehalfOf?, fromStatus, toStatus, detail, occurredAt }
 ```
 
 ```
@@ -115,8 +115,8 @@ stateDiagram-v2
 | 커맨드 | 본문 | 행위자 | 권한 | 조건·효과 |
 |---|---|---|---|---|
 | `:request` | `{ submitDue, message? }` | 대리인 | `filing:process` | `submitDue`를 정하고 자료 제출 카드를 엶 |
-| `:submit` | | 고객 | `filing:submit` | 자동 연계가 아닌 `PENDING` 항목이 있으면 422 `FILING_REQUIREMENTS_PENDING`(`requirementCodes`) |
-| `:unsubmit` | | 고객 | `filing:submit` | |
+| `:submit` | | 고객 (원천세는 대리인 대행) | `filing:submit` | 자동 연계가 아닌 `PENDING` 항목이 있으면 422 `FILING_REQUIREMENTS_PENDING`(`requirementCodes`) |
+| `:unsubmit` | | 고객 (원천세는 대리인 대행) | `filing:submit` | |
 | `:start-review` | | 대리인 | `filing:process` | 고객은 더 고칠 수 없음 |
 | `:reject` | `{ reason, submitDue }` | 대리인 | `filing:process` | 자료 제출 카드를 다시 엶(`reopenCount` +1) |
 | `:upload-ledger` | `{ ledgerFileId }` | 대리인 | `filing:process` | 부가세만. `LEDGER_PENDING`에서 보내면 매입매출장을 바꾸고 확인 시각을 지움 |
@@ -125,12 +125,16 @@ stateDiagram-v2
 | `:start-preparing` | | 대리인 | `filing:process` | 부가세 외 |
 | `:file` | `{ payableAmount, paymentDue?, returnFileId, paymentSlipFileId? }` | 대리인 | `filing:process` | 신고서(와 납부서)를 붙이고 신고 완료를 한 트랜잭션에서. `paymentDue`가 없으면 기존 납부 기한 |
 | `:record-notice` | `{ noticeFileId, payableAmount ≥ 0, paymentDue }` | 대리인 | `filing:process` | 예정고지만. 고지서를 붙임 |
-| `:pay` | `{ paidOn }` | 고객 | `filing:pay` | `payableAmount > 0`. `settlement: PAID` |
+| `:pay` | `{ paidOn }` | 고객 (원천세는 대리인 대행) | `filing:pay` | `payableAmount > 0`. `settlement: PAID` |
 | `:close` | | 대리인 | `filing:process` | `payableAmount ≤ 0`. 음수면 `REFUND`, 0이면 `NO_PAYMENT` |
 | `:cancel` | `{ reason }` | 대리인 | `filing:process` | 열린 카드를 모두 닫음 |
 
 - 응답은 바뀐 신고 건과 `ETag`입니다. `If-Match`가 있고 버전이 다르면 412 `VERSION_MISMATCH`입니다
 - 사유·메시지·금액은 이력 `detail`에 남습니다
+- **대리인 대행(2026-11-07).** 그 회사에 배정된 세무 대리인은 원천세의 `:submit`·`:unsubmit`·`:pay`를 고객 대신 보낼 수 있습니다. 전이표의 행위자는 그대로 고객이고 규칙에 대행 세목(`agencyProxyTaxTypes`)을 둡니다. 이력의 `actorKind`·`actorId`는 요청한 대리인이고 `onBehalfOf: CLIENT`가 붙습니다. 대리인이 고친 제출 자료 응답·파일 이력에도 같은 표시가 붙습니다(제출 자료 쓰기는 전부터 세목과 상관없이 대리인도 받음). 상태 전이·할 일 카드·`filing.status_changed`는 고객이 보낸 것과 같습니다
+  - 범위는 결정이 다룬 원천세뿐입니다. 부가세·법인세·종합소득세의 고객 커맨드와 매입매출장 확인·이의는 대리인이 보내면 그대로 403 `FILING_ACTOR_NOT_ALLOWED`입니다. 넓히려면 `AGENCY_PROXY_TAX_TYPES`에 세목을 더합니다
+  - 배정은 회사 토큰을 발급할 때 봅니다. 배정되지 않은 회사의 토큰은 받을 수 없고(`COMPANY_NOT_FOUND`), 다른 회사 토큰으로는 신고 건이 없습니다(404). 권한은 대리인 기본 권한의 `filing:*`(`filing:submit`·`filing:pay`)입니다
+  - 별도 대행 커맨드를 두지 않은 이유: 전이·효과가 고객 커맨드와 같아 커맨드·경로·카드 트리거·현행 번역을 두 벌로 늘릴 뿐이고, 차이는 "누가"뿐이라 이력의 행위자와 대행 표시로 충분합니다
 
 ### allowedActions
 
@@ -148,6 +152,7 @@ stateDiagram-v2
 | `SETTLED`, `CANCELED` | | |
 
 - `SUBMIT`은 남은 항목이 있어도 넣습니다. 버튼을 켜 두고 누르면 422로 남은 항목을 알려 주는 편이 화면에 낫기 때문입니다
+- 대리인이 대행할 수 있는 고객 커맨드는 대리인의 `allowedActions`에 넣지 않습니다. 차례인 행위자의 커맨드만 넣어 대리인 큐의 `allowedActions`가 "대리인이 할 일"로 남게 합니다
 
 ### 제출 자료
 
@@ -245,7 +250,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 | 대리인 큐 `GET /agency/action-cards` | `action-card:read`(대리인 범위) | 카드마다 | 건너뜀 |
 | 예상 부가세 | `estimated-vat:read` | | |
 
-- 권한을 통과해도 행위자가 틀리면 403 `FILING_ACTOR_NOT_ALLOWED`(`action`, `requiredActorKind`)입니다. 권한은 "이 사용자가 할 수 있는가", 행위자는 "이 신고 건에서 누구 차례인가"입니다
+- 권한을 통과해도 행위자가 틀리면 403 `FILING_ACTOR_NOT_ALLOWED`(`action`, `requiredActorKind`)입니다. 권한은 "이 사용자가 할 수 있는가", 행위자는 "이 신고 건에서 누구 차례인가"입니다. 원천세의 고객 커맨드는 대리인도 대행할 수 있습니다([커맨드](#커맨드))
 - `filing:process`는 대리인 전용(D5)이라 고객 관리자의 `*`에도 없습니다. 신고 건을 볼 수 있는(`filing:read`) 고객이 대리인 커맨드나 문서 붙이기를 부르면 `PERMISSION_DENIED` 대신 같은 403 `FILING_ACTOR_NOT_ALLOWED`(`requiredActorKind: AGENCY`)로 돌려줍니다. 플랜·약관 재동의·데모 쓰기 검사는 D5 전처럼 각자의 오류를 먼저 줍니다. 권한 검사에서 바로 거절하므로 신고 건이 없거나 `If-Match`가 달라도 이 오류가 먼저입니다
 - 예상 부가세는 플랜 없이 열고(현행 무료 고객도 봄), 확정 세액을 쓸지만 플랜으로 정합니다
 
