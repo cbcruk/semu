@@ -113,7 +113,8 @@
 | `employment_employee` | `employee:*` | PAYROLL |
 | `employment_e_sign`, `settings_e_sign` | `esign-request:*`, `esign-template:*` | PAYROLL |
 | `employment_certificate` | `certificate-issuance:*` | PAYROLL |
-| `payroll_settlement`, `payroll_management` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_settlement` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_management` | `payroll-ledger:*`, `payslip:*` | TAXATION (메뉴는 현행 기장 메뉴, 권한은 PAYROLL 또는 TAXATION) |
 | `payroll_setting` | `payroll-setting:*` | PAYROLL |
 | `severance_pay_settlement` | `severance-settlement:*` | PAYROLL |
 | `tax_surtax`, `tax_withholding`, `tax_corporation`, `tax_aggr_income` | `vat-filing:*`, `withholding-tax-filing:*`, `corporate-tax-filing:*`, `income-tax-filing:*` | TAXATION |
