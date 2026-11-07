@@ -12,7 +12,7 @@ export interface EvidenceAmounts {
 /**
  * 부가세 포함 합계에서 세액을 나눕니다. `합계 − ⌊합계 × 10 / 11⌋`이고 음수(취소)는 부호를 지킵니다.
  *
- * 예상 부가세와 같은 규칙입니다 (`legacy/src/lib/money.ts`의 `splitVatFromTotal`).
+ * 예상 부가세와 같은 규칙입니다 (`apps/api/legacy/src/lib/money.ts`의 `splitVatFromTotal`).
  */
 export function splitVatFromTotal(total: number): number {
   const absolute = Math.abs(total)

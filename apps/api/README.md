@@ -10,7 +10,10 @@ semu 백엔드 API 서버입니다. Effect(`effect/http-api`)로 만든 모듈�
 | `src/modules/<context>/` | 바운디드 컨텍스트 하나. `<context>.api.ts`(계약)와 `<context>.layer.ts`(핸들러·메모리 구현)를 내보냅니다 |
 | `src/modules/identity-access/` | 인증 미들웨어(`Authentication`), 행위자(`CurrentActor`), 인가(`authorize`)를 모든 컨텍스트에 제공합니다 |
 | `test/fixtures/rules/` | 현행 규칙의 입력 → 출력 케이스. 문서는 [`docs/reference/rules/`](../../docs/reference/rules/README.md) |
-| `legacy/` | 현행 와이어를 그대로 받던 이전 구현(Hono + `node:sqlite`). 이식이 끝날 때까지 참고용으로 둡니다. 빌드·테스트 대상이 아닙니다 |
+
+## 이전 구현(`legacy/`)
+
+현행 와이어를 그대로 받던 이전 구현(Hono + `node:sqlite`)은 2026-11-07에 지웠습니다. 문서·주석·규칙 픽스처가 인용하는 `apps/api/legacy/...` 경로는 커밋 `f115042`의 트리를 가리킵니다. 원문은 `git show f115042:apps/api/legacy/<경로>`로 봅니다.
 
 ## 개발
 

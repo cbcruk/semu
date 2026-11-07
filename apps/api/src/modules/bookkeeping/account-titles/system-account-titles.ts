@@ -13,7 +13,7 @@ type Row = [
   cashCategory: string | null,
 ]
 
-/** 현행 기본 체계(`legacy/src/db/migrations/0040-bookkeeping.sql`)를 옮긴 행입니다. 체계 전체는 추정입니다. */
+/** 현행 기본 체계(`apps/api/legacy/src/db/migrations/0040-bookkeeping.sql`)를 옮긴 행입니다. 체계 전체는 추정입니다. */
 const ROWS: Row[] = [
   [10, null, 1, 'sales', '매출', '재화와 용역을 판매해 얻은 수익', ['SALES', 'DEPOSIT', 'WITHDRAWAL'], 'REVENUE', null],
   [11, 10, 2, 'sales.revenue', '매출', '상품·제품·용역 매출', ['SALES', 'DEPOSIT'], 'REVENUE', '매출 대금'],

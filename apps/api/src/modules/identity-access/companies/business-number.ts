@@ -3,7 +3,7 @@ const BUSINESS_NUMBER_WEIGHTS = [1, 3, 7, 1, 3, 7, 1, 3, 5] as const
 /**
  * 사업자등록번호에서 하이픈을 빼고 검증 숫자가 맞으면 숫자 10자리를, 아니면 `undefined`를 돌려줍니다.
  *
- * 국세청 검증 숫자 계산은 현행 구현(`legacy/src/modules/platform/platform.utils.ts`)과 같습니다.
+ * 국세청 검증 숫자 계산은 현행 구현(`apps/api/legacy/src/modules/platform/platform.utils.ts`)과 같습니다.
  *
  * @example
  * ```ts
