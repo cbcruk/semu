@@ -420,7 +420,7 @@ D9 순서의 다섯 번째 조각입니다. 현행 세무 > 원천세 화면(`/a
 | `PUT tax/withholding-tax/:filingId/requirements/:code/` `{response, note?}` | `GET /v1/filings/{id}` + `PATCH /v1/filings/{id}/requirements/{CODE}` |
 | `POST tax/withholding-tax/:filingId/submit/`, `unsubmit/` | `GET /v1/filings/{id}` + `POST /v1/filings/{id}:submit`, `:unsubmit` |
 | `POST tax/withholding-tax/:filingId/pay/` `{paid_on}` | `GET /v1/filings/{id}` + `POST /v1/filings/{id}:pay {paidOn}` |
-| `GET payroll/withholding-summary/:paymentMonth` (대리인 전용) | `GET /v1/filings?taxType=WITHHOLDING_TAX`(끝까지) + `GET /v1/payroll-ledgers?paymentMonth=`(끝까지) + 마감된 대장마다 `GET …/rows` |
+| `GET payroll/withholding-summary/:paymentMonth` (대리인 전용) | `GET /v1/filings?taxType=WITHHOLDING_TAX`(끝까지) + `GET /v1/payroll-ledgers?paymentMonth=`(끝까지) + 마감된 대장마다 `GET …/rows` + `GET /v1/severance-settlements?paymentMonth=&status=COMPLETED` |
 
 ### 번역
 
@@ -469,6 +469,7 @@ D9 순서의 다섯 번째 조각입니다. 현행 세무 > 원천세 화면(`/a
 - **지급월 형식.** 잘못된 지급월은 새 API의 업무 경로를 읽지 않고 404 "Payment month not found."입니다. 현행처럼 행위자가 먼저라, 이때는 경로 회사로 맞춘 세션(`ensureAccess`, 인증 호출만)의 grant로 대리인인지 보고 아니면 403입니다. 이 경우만 오래된 grant를 갱신해 다시 보지 않습니다(읽는 것이 없어 드러나는 데이터도 없음)
 - **대장.** `paymentMonth` 필터로 지급일이 그 달인 대장을 끝까지 읽고, `ledger_closed`는 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다(현행 `payrollLedgerResponse`). `open_card_ids`·`closed_card_ids`는 새 대장 ID입니다. 마감된 대장의 행만 읽고(급여대장 조각의 행 읽기 상한·동시 4개를 그대로 씀), 계산 결과가 없는 행은 0원으로 셉니다
 - **줄.** 근로(월급·일급·시급) → `A01`, 일용 → `A03`, 사업 → `A25`, 기타 → `A40`이고, 인원은 줄마다 직원 ID(없으면 이름)로 중복 없이 셉니다. 현행처럼 모든 줄과 요약에 `verified: false`를 붙입니다(코드 대응 미확인)
+- **퇴직소득 `A21`.** 지급일(`paymentDate`)이 그 달인 완료(`COMPLETED`) 퇴직금 정산입니다(현행 `listCompletedSettlementsPaidBetween`). 인원은 직원 수, `total_paid`·`taxable_paid`는 퇴직금(`severancePay`), `income_tax`는 퇴직소득세, `local_income_tax`는 그 지방소득세이고 합계에 들어갑니다. 대장과 상관없이 세므로 마감한 대장이 없는 달에도 채워집니다. 계산만 한 정산, 지급일이 없는 정산(지급일 전에 완료해 저장한 것)은 세지 않습니다. 정산 목록 호출도 `agencyOnly` 가드로 보내고, 대장처럼 `PAYROLL` 플랜이 필요하지만 대장 읽기 뒤에 부르므로 플랜 동작은 그대로입니다(신고 건만 `ENTITLEMENT_REQUIRED`면 `filing: null`)
 - **신고 건.** 지급월 1일을 덮는 원천세 신고 건 중 취소되지 않은 것, 수정 차수가 가장 큰 것입니다(현행 `findWithholdingFiling`). 없으면 `null`입니다. 기장(`TAXATION`) 플랜이 없어 신고 건 읽기가 403 `ENTITLEMENT_REQUIRED`이면(급여만 쓰는 회사) 현행처럼 요약은 주고 `filing: null`입니다. 다른 거절(권한 등)은 그대로 줍니다
 - **금액은 로그에 남기지 않습니다**(테스트가 `console`을 지켜봄)
 
@@ -480,7 +481,6 @@ D9 순서의 다섯 번째 조각입니다. 현행 세무 > 원천세 화면(`/a
 |---|---|---|
 | 제출 자료 파일 `original_name`, `mime_type`, `size_bytes`, `created_at` | `null` (`id`는 새 파일 ID) | 새 신고 건은 파일 ID(`fle_`)만 가짐. 파일 저장소(D7)가 아직 없음([tax.md 열린 질문 2](tax.md#열린-질문)) |
 | 문서 `original_name`, `mime_type`, `size_bytes` | `null` | 같음 |
-| 요약의 퇴직소득 `A21` 인원·금액 | `null`, 합계에서 빠짐 | 새 퇴직금 정산(`/v1/severance-settlements`)에 지급일이 없어 지급월로 묶을 수 없음([열린 질문 2](#원천세-열린-질문)) |
 | 제출 자료 `label`, 진행 단계 `step` | BFF가 현행 문구 | 새 API는 화면 문구를 내려주지 않음(P1). 화면을 새 API로 옮기면 클라이언트가 코드로 고름 |
 | 이력의 현행에 없던 종류 | 소문자 | 새 API가 더한 이력(`requirement_linked` 등) |
 
@@ -498,8 +498,8 @@ D9 순서의 다섯 번째 조각입니다. 현행 세무 > 원천세 화면(`/a
 
 ### 원천세 열린 질문
 
-1. **원천세 요약 엔드포인트.** 지금은 BFF가 신고 건 전체, 지급월 대장 전체, 마감된 대장마다 행을 읽습니다(대장 N개면 N+2 호출 이상). Payroll은 같은 집계(`withholdingSummary`)를 이미 계산해 `payroll_pay_month.closed` 이벤트에 싣습니다. 새 API에 `GET /v1/payroll-pay-months/{month}/withholding`(Payroll) 같은 조회를 둘지, Tax가 이벤트로 받은 집계를 신고 건에 저장해 보여 줄지 정합니다. 줄 코드(`A01` 등)는 Tax가 정한다는 규칙([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md))과 함께 정합니다
-2. **퇴직소득(A21)의 지급월.** 새 퇴직금 정산에는 지급일이 없어 요약의 `A21`이 비어 있습니다. `SeveranceSettlement`에 지급일(`paymentDate`)을 둘지, 퇴직금을 퇴사월 대장의 행으로 넣을지 정합니다([현행 급여 스펙](../reference/spec/payroll.md) 열린 질문 12와 같음). 정하기 전에는 `A21`이 `null`이라 요약의 합계가 퇴직소득을 빼고 셉니다
+1. **원천세 요약 엔드포인트.** 지금은 BFF가 신고 건 전체, 지급월 대장 전체, 마감된 대장마다 행을 읽습니다(대장 N개면 N+3 호출 이상). Payroll은 같은 집계(`withholdingSummary`)를 이미 계산해 `payroll_pay_month.closed` 이벤트에 싣습니다. 새 API에 `GET /v1/payroll-pay-months/{month}/withholding`(Payroll) 같은 조회를 둘지, Tax가 이벤트로 받은 집계를 신고 건에 저장해 보여 줄지 정합니다. 줄 코드(`A01` 등)는 Tax가 정한다는 규칙([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md))과 함께 정합니다
+2. ~~**퇴직소득(A21)의 지급월.**~~ **정함(2026-11-07).** `SeveranceSettlement`에 지급일(`paymentDate`)을 두고, 요약은 지급월의 완료 정산으로 `A21`을 채워 합계에 넣습니다([원천세 요약](#원천세-요약), [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 지급월 마감 이벤트·Tax 신고 건에 퇴직소득을 넣는 것은 [payroll.md 열린 질문 2](payroll.md#열린-질문)에 남았습니다
 3. **원천세 요약의 플랜.** 현행 요약은 플랜을 보지 않았고(대리인만), 새로는 대장 읽기에 `PAYROLL`, 신고 건 읽기에 `TAXATION`이 필요합니다. 급여만 쓰는 회사(`TAXATION` 없음)는 BFF가 신고 건을 `null`로 두어 현행과 같게 맞췄습니다. 기장만 쓰는 회사(데모 `individual`)는 403 `ENTITLEMENT_REQUIRED`(`required_plans: ["PAYROLL"]`)이고 테스트가 지금 동작을 고정해 둡니다. [급여대장 열린 질문 7](#급여대장-열린-질문)(급여대장을 어떤 플랜이 여는가)과 함께 정합니다. 약관도 같습니다: 현행 요약은 세무 약관을 보지 않았지만, 새로는 신고 건 읽기가 약관 재동의를 요구할 때 403 `TAX_TERMS_REQUIRED`이고 BFF는 `ENTITLEMENT_REQUIRED`만 `filing: null`로 내리므로 요약 전체가 실패합니다
 4. **고객 경로의 대리인.** 현행 고객 경로는 대리인의 제출·제출 취소·납부와 제출 자료 응답을 모두 고객의 것으로 기록했습니다. 새 API는 앞의 셋을 막고(지금 BFF도 막음), 제출 자료 응답은 대리인으로 기록합니다. 대리인이 고객 대신 자료를 제출하거나 납부를 기록해야 하는 업무가 있으면, 새 API에 대리인 대행 커맨드(이력에 대리인으로 남김)를 둘지 정합니다
 5. **신고 건 연도 필터.** 현행 목록은 `year`로 걸렀고 새 목록에는 기간 필터가 없어 BFF가 끝까지 읽습니다. 회사 하나의 원천세는 한 해 12건 남짓이라 지금은 문제가 없고, 오래 쓴 회사가 늘면 `GET /v1/filings`에 `periodFrom`·`periodTo`를 더할지 정합니다

@@ -272,10 +272,10 @@ POST /payslips:send     { payslipIds[] }      Idempotency-Key 필수(없으면 4
 ## 퇴직금 정산
 
 ```
-GET   /severance-settlements?status=
-POST  /severance-settlements            { employeeId, input? }               201 + ETag
+GET   /severance-settlements?status=&paymentMonth=
+POST  /severance-settlements            { employeeId, input?, paymentDate? } 201 + ETag
 GET   /severance-settlements/{settlementId}
-PATCH /severance-settlements/{settlementId}   { input }                      If-Match, CALCULATED만
+PATCH /severance-settlements/{settlementId}   { input?, paymentDate? }       If-Match, CALCULATED만
 POST  /severance-settlements/{settlementId}:complete | :reopen | :exclude {reason} | :include
 ```
 
@@ -291,6 +291,13 @@ stateDiagram-v2
 - HR의 퇴사일이 없으면 422 `SEVERANCE_NOT_APPLICABLE`(`NOT_LEFT`), 퇴직급여 형태가 퇴직금이 아니면(`DB`·`DC`) `NOT_SEVERANCE_PAY_PLAN`입니다. 같은 직원의 정산이 이미 있으면 409 `SEVERANCE_SETTLEMENT_EXISTS`(`settlementId`)입니다
 - 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다. 상여·연차수당·통상임금(일)은 입력으로 받습니다
 - 퇴직소득세는 **퇴직월** 기준표를 씁니다. 규칙은 [severance-pay](../reference/rules/severance-pay.md)입니다
+- **지급일(`paymentDate`).** 원천세 퇴직소득(A21)은 지급일의 달(지급월)에 셉니다(2026-11-07 결정, 퇴직금은 대장 행이 아니라 정산에 둠). 퇴직금은 퇴직월과 다른 달에 줄 수 있어(법정 기한은 퇴직 뒤 14일) 퇴직월로는 묶을 수 없습니다
+  - 계산됨에서는 없어도 됩니다. 만들기·`PATCH`로 정하고 `PATCH`의 `null`은 지웁니다. `PATCH`에서 빠진 필드(`input` 포함)는 그대로 둡니다
+  - `:complete` 때 없으면 마지막 근무일로 채웁니다(현행 `complete`가 `payment_date`를 `base_date`로 채운 것과 같음). 그래서 완료된 정산은 모두 지급일이 있습니다. 완료를 막지 않은 이유: 현행 화면의 완료는 지급일 없이도 됐고, BFF가 현행 `complete`를 옮길 때도 같은 기본값을 넣어야 하므로 새 API가 한 곳에서 정합니다
+  - 마지막 근무일보다 앞서면 422 `SEVERANCE_PAYMENT_DATE_INVALID`(`lastWorkDate`)입니다. 당일은 받습니다(위 기본값). 형식이 틀리거나 없는 날이면 400입니다
+  - 완료한 정산의 지급일을 바꾸려면 `:reopen` 뒤 `PATCH`합니다. 다시 열어도 지급일은 남습니다
+  - `?paymentMonth=YYYY-MM`은 지급일이 그 달인 정산만 줍니다. 원천세 요약은 `status=COMPLETED`와 함께 씁니다. 목록은 지금처럼 페이지 없이 회사 정산 전체입니다(퇴사자 수만큼)
+  - 이 필드 전에 저장한 정산은 `paymentDate: null`이고 어느 지급월에도 들지 않습니다. 저장은 JSON 열이라 이관이 필요 없고, 다시 열고 완료하면 마지막 근무일로 채워집니다
 - 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
 ## 인건비
@@ -380,6 +387,7 @@ flowchart LR
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
 | 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
+| 422 | `SEVERANCE_PAYMENT_DATE_INVALID` | 퇴직금 지급일이 마지막 근무일보다 앞섬 | `lastWorkDate` |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | 같은 키, 다른 본문의 명세서 발송 | |
 | 428 | `IDEMPOTENCY_KEY_REQUIRED` | 키 없는 명세서 발송 | |
 | 503 | `PAYSLIP_SEND_INTERRUPTED` | 메일 연동 오류로 발송이 중간에 멈춤. 같은 키로 다시 보내면 나머지만 보냄 | |
@@ -483,8 +491,8 @@ flowchart LR
 | 116 | `GET .../status-counts/` | 미구현. 목록 응답의 `counts` 안 |
 | 117 | `GET .../:s/` | `GET /severance-settlements/{settlementId}` |
 | 118-119 | `GET .../:s/monthly-wages/[:m/]` | 상세의 `result.breakdown`과 입력 `threeMonthWages` |
-| 120 | `POST .../:s/temp-save/` | `PATCH /severance-settlements/{settlementId} { input }` |
-| 121 | `POST .../:s/complete/` | `POST /severance-settlements/{settlementId}:complete` |
+| 120 | `POST .../:s/temp-save/` | `PATCH /severance-settlements/{settlementId} { input, paymentDate }` |
+| 121 | `POST .../:s/complete/` | `PATCH { input, paymentDate }`(바뀐 것이 있으면) + `POST /severance-settlements/{settlementId}:complete`. 지급일이 없으면 마지막 근무일 |
 | 122 | `POST .../:s/reopen/` | `POST /severance-settlements/{settlementId}:reopen` |
 | 123 | `GET .../interim-candidates/` | 미구현 (중간정산) |
 | 124 | `POST .../` `{ kind, employee_ids }` | `POST /severance-settlements { employeeId }` (퇴직만, 한 명씩) |
@@ -538,7 +546,9 @@ flowchart LR
 ## 열린 질문
 
 1. **간이세액표.** 공식 표(300만원·1인 74,350원)와 산식(60,380원)이 크게 다릅니다. 공식 표를 기준표 데이터로 넣고 `lookupSimpleTaxTable`로 바꿀지 확인이 필요합니다
-2. **퇴직금 지급과 원천세.** 퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 A21에 언제 넘길지 Tax와 정해야 합니다
+2. **퇴직금 지급과 원천세.** ~~퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 A21에 언제 넘길지~~ **정함(2026-11-07):** 정산에 지급일(`paymentDate`)을 두고 지급월의 완료 정산을 A21로 셉니다([퇴직금 정산](#퇴직금-정산)). BFF의 원천세 요약이 이것으로 A21을 채웁니다. 남은 것:
+   - `payroll_pay_month.closed`의 `withholding[]`과 Tax의 신고 건에는 아직 퇴직소득이 없습니다. 지급월 마감은 대장으로만 판정하므로, 퇴직금 완료·다시 열기도 그 달의 이벤트를 낼지(대장이 없는 달은?), 집계에 `RETIREMENT` 종류를 더할지 Tax와 정합니다
+   - 신고된 지급월(`WITHHOLDING_FILED`)의 정산 완료·다시 열기·지급일 이동은 막지 않습니다. 대장처럼 `WithholdingFilingLock`으로 막을지 함께 정합니다
 3. **지급일 이동 잠금.** 지급일을 신고된 달로, 또는 신고된 달에서 옮기는 것을 모두 막습니다. 신고 정정과 함께 허용할지 정해야 합니다
 4. **명부 변동 알림.** 현행 `inquire-wage-employees-change`를 대장 `warnings`(`ROSTER_CHANGED`)로 줄지, HR 이벤트(`employee.joined`·`left`)를 받아 대장에 표시할지 정해야 합니다
 5. **상여 대장.** 근로소득이 있는 별도 대장은 지금 막습니다. 상여를 따로 지급하는 회사가 있으면 간이세액 특례(지급대상기간)와 함께 설계합니다
