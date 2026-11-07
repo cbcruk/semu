@@ -85,6 +85,13 @@ export function toLegacyNotification(row: PayrollRow, payslip: Payslip | undefin
   }
 }
 
+/** 행 하나의 발송 결과입니다. 현행 급여카드는 이 모양 그대로, BPO는 `status`를 `notification_status`로 줍니다. */
+export interface LegacySendResult {
+  row_id: string
+  status: LegacyNotificationStatus
+  fail_reason: string | null
+}
+
 /**
  * 새 발송 작업 → 현행 `POST …/notifications`의 결과입니다. 새 API는 보낸 명세서 순서로 답합니다.
  *
@@ -94,10 +101,7 @@ export function toLegacyNotification(row: PayrollRow, payslip: Payslip | undefin
  *
  * @param requested 요청한 명세서 ID → 행 ID입니다.
  */
-export function toLegacySendResults(
-  job: PayslipSendJob,
-  requested: ReadonlyMap<string, string>,
-): Array<Record<string, unknown>> {
+export function toLegacySendResults(job: PayslipSendJob, requested: ReadonlyMap<string, string>): LegacySendResult[] {
   const sent = new Set(job.result.items.map((item) => item.payslipId))
   if (sent.size !== requested.size || [...requested.keys()].some((id) => !sent.has(id))) {
     throw new LegacyError(422, {
@@ -106,7 +110,7 @@ export function toLegacySendResults(
     })
   }
   return job.result.items.map((item) => ({
-    row_id: requested.get(item.payslipId),
+    row_id: requested.get(item.payslipId) as string,
     status: item.status === 'SENT' ? 'success' : 'fail',
     fail_reason: legacyFailReason(item.failureReason),
   }))
