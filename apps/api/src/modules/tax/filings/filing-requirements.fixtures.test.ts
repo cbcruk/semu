@@ -40,7 +40,7 @@ function cases(check: string): FixtureCase[] {
   return fixture.cases.filter((testCase) => testCase.input['check'] === check)
 }
 
-describe('filing-requirements fixture', () => {
+describe('제출 자료 항목 픽스처(filing-requirements)', () => {
   it.each(cases('template').map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     const codes = requirementTemplate(
       LEGACY_TAX_TYPE[input['taxType']]!,
@@ -83,7 +83,7 @@ describe('filing-requirements fixture', () => {
     },
   )
 
-  it('ports every case', () => {
+  it('픽스처의 사례를 모두 옮겼습니다', () => {
     const checks = new Set(['template', 'answer', 'files', 'payroll-ledger'])
 
     expect(fixture.cases.filter((testCase) => !checks.has(testCase.input['check']))).toEqual([])

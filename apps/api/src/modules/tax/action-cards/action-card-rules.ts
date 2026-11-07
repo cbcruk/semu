@@ -45,11 +45,11 @@ export function filingCardEffects(trigger: FilingCardTrigger, filing: FilingCard
       return [{ op: 'CLOSE', kind: 'CONFIRM_LEDGER' }]
     case 'FILE':
     case 'RECORD_NOTICE': {
-      const effects: ActionCardEffect[] = [
+      const 효과: ActionCardEffect[] = [
         { op: 'OPEN', kind: 'REVIEW_FILING_RESULT', dueDate: filing.dueDate ?? filing.paymentDue },
       ]
-      if ((filing.payableAmount ?? 0) > 0) effects.push({ op: 'OPEN', kind: 'PAY_TAX', dueDate: filing.paymentDue })
-      return effects
+      if ((filing.payableAmount ?? 0) > 0) 효과.push({ op: 'OPEN', kind: 'PAY_TAX', dueDate: filing.paymentDue })
+      return 효과
     }
     case 'PAY':
     case 'CLOSE':
@@ -73,8 +73,8 @@ export function completedCardStatus(
   dueDate: string | null,
   today: string,
 ): Exclude<ActionCardStatus, 'OPEN'> {
-  const overdue = dueDate !== null && today > dueDate
-  return completion === 'SKIP' && overdue ? 'SKIPPED_OVERDUE' : 'DONE'
+  const 마감일경과임 = dueDate !== null && today > dueDate
+  return completion === 'SKIP' && 마감일경과임 ? 'SKIPPED_OVERDUE' : 'DONE'
 }
 
 /**
@@ -84,8 +84,8 @@ export function completedCardStatus(
  */
 export function openCardState(existing: CardOpenState | undefined, dueDate: string | null): CardOpenState {
   if (existing === undefined) return { status: 'OPEN', reopenCount: 0, dueDate, completedAt: null }
-  const reopening = existing.status !== 'OPEN'
-  return { status: 'OPEN', reopenCount: existing.reopenCount + (reopening ? 1 : 0), dueDate, completedAt: null }
+  const 닫힌카드임 = existing.status !== 'OPEN'
+  return { status: 'OPEN', reopenCount: existing.reopenCount + (닫힌카드임 ? 1 : 0), dueDate, completedAt: null }
 }
 
 /** 이 문서를 열면 결과 확인 카드를 닫는지입니다. 고객이 신고서나 예정고지서를 열 때만 닫습니다. */

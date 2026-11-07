@@ -38,7 +38,7 @@ function cases(check: string): FixtureCase[] {
   return fixture.cases.filter((testCase) => testCase.input['check'] === check)
 }
 
-describe('filing-progress fixture', () => {
+describe('신고 진행 단계 픽스처(filing-progress)', () => {
   it.each(cases('step').map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     const progress = filingProgress(LEGACY_TAX_TYPE[input['taxType']]!, LEGACY_FILING_STATUS[input['status']]!)
 
@@ -58,7 +58,7 @@ describe('filing-progress fixture', () => {
     expect(overdue).toBe(expected['isOverdue'])
   })
 
-  it('ports every case', () => {
+  it('픽스처의 사례를 모두 옮겼습니다', () => {
     expect(cases('step').length + cases('overdue').length).toBe(fixture.cases.length)
   })
 })

@@ -37,7 +37,7 @@ export const FILING_TRANSITIONS: Record<FilingCommand, FilingTransitionRule> = {
 }
 
 /** 예정고지 건이 받는 커맨드입니다. 고지서로 끝나므로 자료 요청·검토 흐름이 없습니다. */
-const NOTICE_COMMANDS: ReadonlySet<FilingCommand> = new Set(['RECORD_NOTICE', 'CANCEL', 'PAY', 'CLOSE'])
+const 고지건커맨드: ReadonlySet<FilingCommand> = new Set(['RECORD_NOTICE', 'CANCEL', 'PAY', 'CLOSE'])
 
 /** 고객이 자료를 고칠 수 있는 상태입니다. 그 밖의 상태에서 자료 쓰기는 409 `FILING_LOCKED`입니다. */
 export const CLIENT_EDITABLE_STATUSES: ReadonlyArray<FilingStatus> = ['REQUESTED']
@@ -73,19 +73,19 @@ export function transitionFiling(
   actor: FilingActorKind,
   facts: FilingTransitionFacts,
 ): FilingTransitionResult {
-  const rule = FILING_TRANSITIONS[command]
-  const proxy =
-    rule.actor === 'CLIENT' && actor === 'AGENCY' && (rule.agencyProxyTaxTypes ?? []).includes(facts.taxType)
-  if (rule.actor !== actor && !proxy) {
-    return { ok: false, code: 'FILING_ACTOR_NOT_ALLOWED', requiredActor: rule.actor }
+  const 전이규칙 = FILING_TRANSITIONS[command]
+  const 대행임 =
+    전이규칙.actor === 'CLIENT' && actor === 'AGENCY' && (전이규칙.agencyProxyTaxTypes ?? []).includes(facts.taxType)
+  if (전이규칙.actor !== actor && !대행임) {
+    return { ok: false, code: 'FILING_ACTOR_NOT_ALLOWED', requiredActor: 전이규칙.actor }
   }
-  if (!rule.from.includes(from) || !satisfiesFacts(command, facts)) {
+  if (!전이규칙.from.includes(from) || !신고건조건충족인가(command, facts)) {
     return { ok: false, code: 'FILING_TRANSITION_INVALID' }
   }
   if (command === 'SUBMIT' && facts.pendingRequirementCodes.length > 0) {
     return { ok: false, code: 'FILING_REQUIREMENTS_PENDING' }
   }
-  return proxy ? { ok: true, to: rule.to, onBehalfOf: 'CLIENT' } : { ok: true, to: rule.to }
+  return 대행임 ? { ok: true, to: 전이규칙.to, onBehalfOf: 'CLIENT' } : { ok: true, to: 전이규칙.to }
 }
 
 /**
@@ -103,13 +103,13 @@ export function allowedFilingCommands(
   facts: FilingTransitionFacts,
 ): FilingCommand[] {
   return (Object.keys(FILING_TRANSITIONS) as FilingCommand[]).filter((command) => {
-    const rule = FILING_TRANSITIONS[command]
-    return rule.actor === actor && rule.from.includes(status) && satisfiesFacts(command, facts)
+    const 전이규칙 = FILING_TRANSITIONS[command]
+    return 전이규칙.actor === actor && 전이규칙.from.includes(status) && 신고건조건충족인가(command, facts)
   })
 }
 
-function satisfiesFacts(command: FilingCommand, facts: FilingTransitionFacts): boolean {
-  if (facts.kind === 'NOTICE' && !NOTICE_COMMANDS.has(command)) return false
+function 신고건조건충족인가(command: FilingCommand, facts: FilingTransitionFacts): boolean {
+  if (facts.kind === 'NOTICE' && !고지건커맨드.has(command)) return false
   switch (command) {
     case 'UPLOAD_LEDGER':
       return facts.taxType === 'VAT'

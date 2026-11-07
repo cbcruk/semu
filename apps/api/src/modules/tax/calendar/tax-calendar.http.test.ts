@@ -6,8 +6,8 @@ import type { TaxTestApp } from '../tax-http.testing.ts'
 let app: TaxTestApp
 afterEach(() => app.dispose())
 
-describe('GET /v1/tax-calendar', () => {
-  it('lists the year by payment due and links the filings that exist', async () => {
+describe('세무 달력 조회(GET /v1/tax-calendar)', () => {
+  it('한 해의 신고 의무를 납부 기한 순으로 보여 주고 만들어진 신고 건을 잇습니다', async () => {
     app = taxTestApp({ profiles: [DEMO_TAX_PROFILE], holidays: DEMO_HOLIDAYS, filings: DEMO_FILINGS })
 
     const response = await app.send('/tax-calendar?year=2026')
@@ -31,7 +31,7 @@ describe('GET /v1/tax-calendar', () => {
     })
   })
 
-  it('needs a tax profile', async () => {
+  it('세무 설정이 없으면 404 TAX_PROFILE_NOT_FOUND입니다', async () => {
     app = taxTestApp()
 
     const response = await app.send('/tax-calendar?year=2026')
@@ -40,7 +40,7 @@ describe('GET /v1/tax-calendar', () => {
     expect(await response.json()).toMatchObject({ code: 'TAX_PROFILE_NOT_FOUND' })
   })
 
-  it('validates the year', async () => {
+  it('연도가 정수가 아니면 400입니다', async () => {
     app = taxTestApp({ profiles: [DEMO_TAX_PROFILE] })
 
     const response = await app.send('/tax-calendar?year=26.5')

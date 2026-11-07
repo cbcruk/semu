@@ -30,8 +30,8 @@ export function vatEstimatePeriod(businessType: BusinessType, on: string): VatPe
   const year = Number(on.slice(0, 4))
   const month = Number(on.slice(5, 7))
   if (businessType === 'CORPORATION') {
-    const first = `${on.slice(0, 4)}-${String(month - ((month - 1) % 3)).padStart(2, '0')}`
-    return { start: `${first}-01`, end: lastDayOfMonth(addMonths(first, 2)), unit: 'QUARTER' }
+    const 분기시작월 = `${on.slice(0, 4)}-${String(month - ((month - 1) % 3)).padStart(2, '0')}`
+    return { start: `${분기시작월}-01`, end: lastDayOfMonth(addMonths(분기시작월, 2)), unit: 'QUARTER' }
   }
   return vatHalfPeriod(year, month <= 6 ? 1 : 2)
 }
@@ -50,8 +50,8 @@ export function vatHalfPeriod(year: number, half: 1 | 2): VatPeriod {
  */
 export function splitVatFromTotal(total: number): number {
   const absolute = Math.abs(total)
-  const vat = absolute - Math.floor((absolute * 10) / 11)
-  return total < 0 ? -vat : vat
+  const 세액 = absolute - Math.floor((absolute * 10) / 11)
+  return total < 0 ? -세액 : 세액
 }
 
 /** 금액에 ppm 비율을 곱하고 0 쪽으로 버립니다. */
@@ -84,38 +84,39 @@ export function dedupeSales(rows: ReadonlyArray<SalesEvidence>): SalesEvidence[]
  * 미분류 매입은 빼고 건수만 셉니다. 그래서 예상 세액은 높게 나오는 쪽으로 틀립니다.
  */
 export function estimateVat(input: VatEstimateInput): VatEstimate {
-  const inPeriod = (date: string): boolean => date >= input.period.start && date <= input.period.end
+  /** 시작일·종료일 그날 포함입니다. */
+  const 기간안인가 = (date: string): boolean => date >= input.period.start && date <= input.period.end
   const breakdown = new Map<string, VatBreakdownEntry>()
-  const entryFor = (side: VatBreakdownEntry['side'], source: VatBreakdownEntry['source'], included: boolean) => {
+  const 출처별내역 = (side: VatBreakdownEntry['side'], source: VatBreakdownEntry['source'], 합계포함임: boolean) => {
     const key = `${side}:${source}`
-    let entry = breakdown.get(key)
-    if (entry === undefined) {
-      entry = { side, source, vatAmount: 0, includedInTotal: included, lastSyncedAt: null }
-      breakdown.set(key, entry)
+    let 내역 = breakdown.get(key)
+    if (내역 === undefined) {
+      내역 = { side, source, vatAmount: 0, includedInTotal: 합계포함임, lastSyncedAt: null }
+      breakdown.set(key, 내역)
     }
-    return entry
+    return 내역
   }
 
   let outputTax = 0
   let cardSplitEstimated = false
-  for (const row of dedupeSales(input.sales.filter((sale) => inPeriod(sale.issuedOn)))) {
-    const included = INCLUDED_SALES_SOURCES.includes(row.source)
-    const vat = salesVatOf(row, input.taxableCardRatioPpm)
-    const entry = entryFor('SALES', row.source, included)
-    entry.vatAmount += vat
-    entry.lastSyncedAt = latest(entry.lastSyncedAt, row.syncedAt)
-    if (included) outputTax += vat
-    if (included && row.vatAmount === null) cardSplitEstimated = true
+  for (const row of dedupeSales(input.sales.filter((sale) => 기간안인가(sale.issuedOn)))) {
+    const 합계포함임 = INCLUDED_SALES_SOURCES.includes(row.source)
+    const 세액 = salesVatOf(row, input.taxableCardRatioPpm)
+    const 내역 = 출처별내역('SALES', row.source, 합계포함임)
+    내역.vatAmount += 세액
+    내역.lastSyncedAt = latest(내역.lastSyncedAt, row.syncedAt)
+    if (합계포함임) outputTax += 세액
+    if (합계포함임 && row.vatAmount === null) cardSplitEstimated = true
   }
 
   let inputTax = 0
   let nonDeductibleCount = 0
   let unclassifiedCount = 0
-  for (const row of input.purchases.filter((purchase) => inPeriod(purchase.issuedOn))) {
-    const entry = entryFor('PURCHASE', row.source, true)
-    entry.lastSyncedAt = latest(entry.lastSyncedAt, row.syncedAt)
+  for (const row of input.purchases.filter((purchase) => 기간안인가(purchase.issuedOn))) {
+    const 내역 = 출처별내역('PURCHASE', row.source, true)
+    내역.lastSyncedAt = latest(내역.lastSyncedAt, row.syncedAt)
     if (row.deductible === true) {
-      entry.vatAmount += row.vatAmount
+      내역.vatAmount += row.vatAmount
       inputTax += row.vatAmount
     } else if (row.deductible === false) {
       nonDeductibleCount++
@@ -141,16 +142,19 @@ export function estimateVat(input: VatEstimateInput): VatEstimate {
  * 그 기간 안의 예정·확정 신고 건 납부 세액을 더합니다. 예정고지 금액은 넣지 않습니다.
  */
 export function confirmedVat(period: VatPeriod, filings: ReadonlyArray<VatFilingFact>): number | null {
-  const filed = (filing: VatFilingFact): boolean => filing.status === 'FILED' || filing.status === 'SETTLED'
-  const within = (filing: VatFilingFact): boolean =>
+  const 신고완료인가 = (filing: VatFilingFact): boolean => filing.status === 'FILED' || filing.status === 'SETTLED'
+  const 과세기간안인가 = (filing: VatFilingFact): boolean =>
     filing.periodStart >= period.start && filing.periodEnd <= period.end
-  const finalFiled = filings.some(
-    (filing) => filing.kind === 'FINAL' && filed(filing) && filing.periodEnd === period.end,
+  const 확정신고완료임 = filings.some(
+    (filing) => filing.kind === 'FINAL' && 신고완료인가(filing) && filing.periodEnd === period.end,
   )
-  if (!finalFiled) return null
+  if (!확정신고완료임) return null
   return filings
-    .filter((filing) => (filing.kind === 'PRELIMINARY' || filing.kind === 'FINAL') && filed(filing) && within(filing))
-    .reduce((sum, filing) => sum + (filing.payableAmount ?? 0), 0)
+    .filter(
+      (filing) =>
+        (filing.kind === 'PRELIMINARY' || filing.kind === 'FINAL') && 신고완료인가(filing) && 과세기간안인가(filing),
+    )
+    .reduce((합계, filing) => 합계 + (filing.payableAmount ?? 0), 0)
 }
 
 /**
@@ -160,22 +164,22 @@ export function confirmedVat(period: VatPeriod, filings: ReadonlyArray<VatFiling
  * 진행 중인 반기의 예상 세액은 오늘까지의 증빙으로 계산합니다.
  */
 export function vatTrend(input: VatTrendInput): VatTrendPoint[] {
-  const currentYear = Number(input.today.slice(0, 4))
-  const points: VatTrendPoint[] = []
-  for (let year = currentYear - input.years + 1; year <= currentYear; year++) {
+  const 올해 = Number(input.today.slice(0, 4))
+  const 추이: VatTrendPoint[] = []
+  for (let year = 올해 - input.years + 1; year <= 올해; year++) {
     for (const half of [1, 2] as const) {
-      const period = vatHalfPeriod(year, half)
-      if (period.start > input.today) continue
-      const confirmed = input.hasTaxationPlan ? confirmedVat(period, input.filings) : null
-      if (confirmed !== null) {
-        points.push({ year, half, amount: confirmed, source: 'CONFIRMED' })
+      const 과세기간 = vatHalfPeriod(year, half)
+      if (과세기간.start > input.today) continue
+      const 확정세액 = input.hasTaxationPlan ? confirmedVat(과세기간, input.filings) : null
+      if (확정세액 !== null) {
+        추이.push({ year, half, amount: 확정세액, source: 'CONFIRMED' })
         continue
       }
-      const end = period.end < input.today ? period.end : input.today
-      points.push({ year, half, amount: input.estimate({ ...period, end }), source: 'ESTIMATED' })
+      const 계산종료일 = 과세기간.end < input.today ? 과세기간.end : input.today
+      추이.push({ year, half, amount: input.estimate({ ...과세기간, end: 계산종료일 }), source: 'ESTIMATED' })
     }
   }
-  return points
+  return 추이
 }
 
 function latest(current: string | null, candidate: string): string {

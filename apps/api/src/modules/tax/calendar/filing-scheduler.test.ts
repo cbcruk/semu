@@ -24,8 +24,8 @@ function run<A>(effect: Effect.Effect<A, never, FilingScheduler | FilingReposito
 
 const semiannual: TaxProfile = { ...DEMO_TAX_PROFILE, withholdingCycle: 'SEMIANNUAL' }
 
-describe('FilingScheduler', () => {
-  it('creates the upcoming filings once and changes nothing on a rerun', async () => {
+describe('신고 일정 배치(FilingScheduler)', () => {
+  it('다가오는 신고 건을 한 번만 만들고 다시 돌려도 아무것도 바꾸지 않습니다', async () => {
     const [first, second, filings] = await run(
       Effect.gen(function* () {
         const scheduler = yield* FilingScheduler
@@ -48,7 +48,7 @@ describe('FilingScheduler', () => {
     })
   })
 
-  it('cancels scheduled monthly withholding after the switch to semiannual payment', async () => {
+  it('반기 납부로 바꾸면 SCHEDULED인 매월 원천세 신고 건을 취소합니다', async () => {
     const events: TaxEvent[] = []
     const result = await run(
       Effect.gen(function* () {

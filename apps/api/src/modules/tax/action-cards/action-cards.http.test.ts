@@ -30,8 +30,8 @@ function card(id: string, overrides: Partial<ActionCardRecord> = {}): ActionCard
 let app: TaxTestApp
 afterEach(() => app.dispose())
 
-describe('GET /v1/action-cards', () => {
-  it('lists open cards by due date and hides the internal fields', async () => {
+describe('할 일 카드 목록 조회(GET /v1/action-cards)', () => {
+  it('진행 중인 카드를 마감일 순으로 보여 주고 내부 필드는 숨깁니다', async () => {
     app = taxTestApp({
       actionCards: [card('1'), card('2', { kind: 'PAY_TAX', dueDate: '2026-11-10' }), card('3', { status: 'DONE' })],
     })
@@ -45,7 +45,7 @@ describe('GET /v1/action-cards', () => {
     expect(body.items[0]).not.toHaveProperty('companyId')
   })
 
-  it('shows the closed tab', async () => {
+  it('완료 탭에는 닫힌 카드를 보여 줍니다', async () => {
     app = taxTestApp({
       actionCards: [card('1'), card('3', { status: 'DONE', completedAt: '2026-11-02T00:00:00.000Z' })],
     })
@@ -55,7 +55,7 @@ describe('GET /v1/action-cards', () => {
     expect(body.items).toMatchObject([{ status: 'DONE' }])
   })
 
-  it('hides cards of a plan the company does not have', async () => {
+  it('회사가 가입하지 않은 플랜의 카드는 숨깁니다', async () => {
     app = taxTestApp({ actionCards: [card('1')] })
 
     const list = await (await app.send('/action-cards', { token: 'free' })).json()
@@ -66,8 +66,8 @@ describe('GET /v1/action-cards', () => {
   })
 })
 
-describe('GET /v1/action-cards:summary', () => {
-  it('counts both tabs and gives the nearest due date', async () => {
+describe('할 일 카드 요약(GET /v1/action-cards:summary)', () => {
+  it('두 탭의 카드 수와 가장 가까운 마감일을 알려 줍니다', async () => {
     app = taxTestApp({
       actionCards: [card('1'), card('2', { dueDate: '2026-11-10' }), card('3', { status: 'SKIPPED_OVERDUE' })],
     })
@@ -78,8 +78,8 @@ describe('GET /v1/action-cards:summary', () => {
   })
 })
 
-describe('POST /v1/action-cards/{cardId}:complete', () => {
-  it('marks an overdue skip as SKIPPED_OVERDUE', async () => {
+describe('할 일 카드 닫기(POST /v1/action-cards/{cardId}:complete)', () => {
+  it('마감일이 지난 뒤 넘어가면 SKIPPED_OVERDUE가 됩니다', async () => {
     app = taxTestApp({ actionCards: [card('1', { dueDate: '2000-01-01' })] })
 
     const response = await app.send(`/action-cards/${card('1').id}:complete`, { body: { completion: 'SKIP' } })
@@ -88,7 +88,7 @@ describe('POST /v1/action-cards/{cardId}:complete', () => {
     expect(await response.json()).toMatchObject({ status: 'SKIPPED_OVERDUE' })
   })
 
-  it('refuses a closed card', async () => {
+  it('이미 닫힌 카드는 다시 닫을 수 없습니다', async () => {
     app = taxTestApp({ actionCards: [card('1', { status: 'DONE' })] })
 
     const response = await app.send(`/action-cards/${card('1').id}:complete`, { body: { completion: 'DONE' } })
@@ -97,7 +97,7 @@ describe('POST /v1/action-cards/{cardId}:complete', () => {
     expect(await response.json()).toMatchObject({ code: 'ACTION_CARD_CLOSED', currentStatus: 'DONE' })
   })
 
-  it('needs the complete permission', async () => {
+  it('카드를 닫으려면 완료 권한이 있어야 합니다', async () => {
     app = taxTestApp({ actionCards: [card('1')] })
 
     const response = await app.send(`/action-cards/${card('1').id}:complete`, {

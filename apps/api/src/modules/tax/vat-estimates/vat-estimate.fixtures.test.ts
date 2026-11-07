@@ -64,7 +64,7 @@ function filingOf(row: Record<string, any>): VatFilingFact {
   }
 }
 
-describe('estimated-vat fixture', () => {
+describe('예상 부가세 픽스처(estimated-vat)', () => {
   it.each(cases('period').map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     const period = vatEstimatePeriod(input['businessType'] === 'corporate' ? 'CORPORATION' : 'INDIVIDUAL', input['on'])
 
@@ -130,7 +130,7 @@ describe('estimated-vat fixture', () => {
     )
   })
 
-  it('ports every case', () => {
+  it('픽스처의 사례를 모두 옮겼습니다', () => {
     const checks = ['period', 'sales-vat', 'estimate', 'trend']
 
     expect(checks.reduce((sum, check) => sum + cases(check).length, 0)).toBe(fixture.cases.length)

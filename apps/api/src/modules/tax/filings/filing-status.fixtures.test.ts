@@ -56,7 +56,7 @@ function actual(result: FilingTransitionResult): { ok: boolean; to?: string; cod
 
 const ported = fixture.cases.filter((testCase) => !(testCase.name in NOT_PORTED))
 
-describe('filing-status-transitions fixture', () => {
+describe('신고 건 상태 전이 픽스처(filing-status-transitions)', () => {
   it.each(ported.map((testCase) => [testCase.name, testCase] as const))('%s', (_, testCase) => {
     const { input } = testCase
     const result = transitionFiling(
@@ -74,14 +74,14 @@ describe('filing-status-transitions fixture', () => {
     expect(actual(result)).toEqual(expectedOf(testCase))
   })
 
-  it('accounts for every case that is not ported', () => {
+  it('서버 테스트로 옮기지 않은 사례는 모두 이유가 적혀 있습니다', () => {
     const names = new Set(ported.map((testCase) => testCase.name))
     const rest = fixture.cases.map((testCase) => testCase.name).filter((name) => !names.has(name))
 
     expect(rest.sort()).toEqual(Object.keys(NOT_PORTED).sort())
   })
 
-  it('names only cases that exist as changed', () => {
+  it('바꿈으로 정한 사례는 모두 픽스처에 있습니다', () => {
     const names = new Set(fixture.cases.map((testCase) => testCase.name))
 
     expect(Object.keys(CHANGED).filter((name) => !names.has(name))).toEqual([])

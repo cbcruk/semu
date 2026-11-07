@@ -47,8 +47,8 @@ function tokenOf(signingUrl: string): string {
   return signingUrl.slice(signingUrl.lastIndexOf('/') + 1)
 }
 
-describe('e-sign requests', () => {
-  it('fills the recipient from HR and lists only draft actions', async () => {
+describe('전자서명 요청', () => {
+  it('수신자를 인사 정보로 채우고 초안에서 할 수 있는 액션만 보여 줍니다', async () => {
     const employeeId = await hire()
     const created = await draft(employeeId)
 
@@ -60,7 +60,7 @@ describe('e-sign requests', () => {
     })
   })
 
-  it('collects every send violation', async () => {
+  it('발송할 수 없는 이유를 모두 모아 알려 줍니다', async () => {
     const employeeId = await hire({ email: undefined })
     const created = await draft(employeeId, { fieldValues: {}, companySealId: undefined })
     const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`)
@@ -74,7 +74,7 @@ describe('e-sign requests', () => {
     ])
   })
 
-  it('sends, refuses edits after sending and cancels', async () => {
+  it('발송한 뒤에는 수정할 수 없고 취소는 할 수 있습니다', async () => {
     const employeeId = await hire()
     const created = await draft(employeeId)
     const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`, { ifMatch: '"1"' })
@@ -96,7 +96,7 @@ describe('e-sign requests', () => {
     expect(resent.body).toMatchObject({ status: 'PENDING' })
   })
 
-  it("refuses another company's seal", async () => {
+  it('다른 회사의 도장을 고르면 NOT_FOUND 위반입니다', async () => {
     const created = await app.json('POST', '/esign-requests', {
       token: 'other-company',
       body: {
@@ -114,7 +114,7 @@ describe('e-sign requests', () => {
     })
   })
 
-  it('marks a failed mail as SEND_FAILED', async () => {
+  it('메일 발송에 실패하면 SEND_FAILED가 됩니다', async () => {
     const employeeId = await hire({ email: 'fail@example.com' })
     const created = await draft(employeeId)
     const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`)
@@ -123,14 +123,14 @@ describe('e-sign requests', () => {
   })
 })
 
-describe('company seals', () => {
+describe('회사 도장·사인', () => {
   const register = (token: string, name = '직인') =>
     app.json('POST', '/company-seals', {
       token,
       body: { name, source: 'UPLOAD', imageFileId: 'fle_01JBQ000000000000000000002' },
     })
 
-  it('lets another company register its own seal and send with it', async () => {
+  it('다른 회사도 자기 도장을 등록해 그 도장으로 보낼 수 있습니다', async () => {
     const seal = await register('other-company')
     expect(seal.status).toBe(201)
 
@@ -154,7 +154,7 @@ describe('company seals', () => {
     expect(sent.body).toMatchObject({ status: 'PENDING', companySealId: seal.body.id })
   })
 
-  it('refuses a seal name longer than 50 characters', async () => {
+  it('도장 이름이 50자를 넘으면 거절합니다', async () => {
     expect((await register('other-company', '도'.repeat(50))).status).toBe(201)
 
     expect(await register('other-company', '도'.repeat(51))).toMatchObject({
@@ -163,7 +163,7 @@ describe('company seals', () => {
     })
   })
 
-  it("does not show or delete another company's seal", async () => {
+  it('다른 회사의 도장은 보이지 않고 지울 수도 없습니다', async () => {
     const listed = await app.json('GET', '/company-seals', { token: 'other-company' })
     const removed = await app.json('DELETE', `/company-seals/${SEAL}`, { token: 'other-company' })
 
@@ -171,7 +171,7 @@ describe('company seals', () => {
     expect(removed).toMatchObject({ status: 404, body: { code: 'COMPANY_SEAL_NOT_FOUND' } })
   })
 
-  it('allows five active seals and frees a slot on delete', async () => {
+  it('도장은 5개까지 두고 하나를 지우면 한 자리가 빕니다', async () => {
     const created = []
     for (let index = 0; index < 5; index += 1) created.push(await register('other-company', `도장 ${index}`))
     expect(created.map((seal) => seal.status)).toEqual([201, 201, 201, 201, 201])
@@ -187,8 +187,8 @@ describe('company seals', () => {
   })
 })
 
-describe('signer link', () => {
-  it('verifies the signer and completes the request', async () => {
+describe('서명 링크', () => {
+  it('서명자가 본인확인 뒤 서명하면 요청이 완료됩니다', async () => {
     const employeeId = await hire()
     const created = await draft(employeeId)
     const sent = await app.json('POST', `/esign-requests/${created.body.id}:send`)
@@ -217,8 +217,8 @@ describe('signer link', () => {
   })
 })
 
-describe('signer lockout', () => {
-  it('counts down and then locks', async () => {
+describe('서명자 잠금', () => {
+  it('본인확인에 실패할 때마다 남은 횟수가 줄고 다 쓰면 잠깁니다', async () => {
     const employeeId = await hire()
     const created = await draft(employeeId)
     const token = tokenOf((await app.json('POST', `/esign-requests/${created.body.id}:send`)).body.signingUrl)
@@ -237,8 +237,8 @@ describe('signer lockout', () => {
   })
 })
 
-describe('certificates', () => {
-  it('numbers, sends and voids a certificate', async () => {
+describe('제증명 발급', () => {
+  it('증명서에 발급번호를 매기고 발송하고 무효화합니다', async () => {
     const employeeId = await hire()
     const year = new Date().getFullYear()
     const first = await app.json('POST', '/certificate-issuances', {
@@ -264,7 +264,7 @@ describe('certificates', () => {
     expect(third.body.issueNumber).toBe(`${year}-0003`)
   })
 
-  it('needs a leave date for a retirement certificate', async () => {
+  it('퇴직증명서는 퇴사일이 있어야 발급합니다', async () => {
     const employeeId = await hire()
     const issued = await app.json('POST', '/certificate-issuances', {
       body: { templateId: RETIREMENT_CERTIFICATE, employeeId },
@@ -274,7 +274,7 @@ describe('certificates', () => {
     expect(issued.body.violations).toEqual([{ field: 'employeeId', code: 'LEAVE_DATE_REQUIRED' }])
   })
 
-  it('requires the payroll plan', async () => {
+  it('급여 플랜이 있어야 발급합니다', async () => {
     const response = await app.json('GET', '/certificate-issuances', { token: 'no-plan' })
 
     expect(response.status).toBe(403)
@@ -282,8 +282,8 @@ describe('certificates', () => {
   })
 })
 
-describe('templates', () => {
-  it('lists base templates', async () => {
+describe('전자서명 템플릿', () => {
+  it('기본 템플릿 목록을 보여 줍니다', async () => {
     const response = await app.json('GET', '/esign-templates')
 
     expect(response.body.items.map((template: { kind: string }) => template.kind)).toContain('SALARY_CONTRACT')

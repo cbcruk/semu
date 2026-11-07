@@ -6,22 +6,23 @@ import type {
   EsignTransitionResult,
 } from './esign-request-status.types.ts'
 
-const REOPENABLE = {
+/** 취소·만료·발송 실패로 멈춘 요청이 받는 사건입니다. '중단된 요청'은 새로 지은 말입니다. */
+const 중단된요청의전이 = {
   RESEND: 'PENDING',
   SEND_REJECTED: 'SEND_FAILED',
   REVERT_TO_DRAFT: 'DRAFT',
   DELETE: 'DELETED',
 } as const
 
-const TRANSITIONS: Record<EsignRequestStatus, Partial<Record<EsignRequestEvent, EsignRequestStatus | 'DELETED'>>> = {
+const 전이표: Record<EsignRequestStatus, Partial<Record<EsignRequestEvent, EsignRequestStatus | 'DELETED'>>> = {
   DRAFT: { UPDATE: 'DRAFT', DELETE: 'DELETED', SEND: 'PENDING', SEND_REJECTED: 'SEND_FAILED' },
   PENDING: { CANCEL: 'CANCELED', VERIFY_SIGNER: 'IN_PROGRESS', EXPIRE: 'EXPIRED' },
   IN_PROGRESS: { CANCEL: 'CANCELED', VERIFY_SIGNER: 'IN_PROGRESS', COMPLETE: 'COMPLETED', EXPIRE: 'EXPIRED' },
   COMPLETED: { VOID: 'VOIDED' },
   VOIDED: {},
-  EXPIRED: REOPENABLE,
-  CANCELED: REOPENABLE,
-  SEND_FAILED: REOPENABLE,
+  EXPIRED: 중단된요청의전이,
+  CANCELED: 중단된요청의전이,
+  SEND_FAILED: 중단된요청의전이,
 }
 
 /** 서명 기본 기한(발송일 + 16일)입니다. 매뉴얼 스크린샷 2026.06.23 → 07.09에서 추정했습니다. */
@@ -40,15 +41,15 @@ export const ESIGN_DUE_DAYS = 16
  * ```
  */
 export function transitionEsignRequest(from: EsignRequestStatus, event: EsignRequestEvent): EsignTransitionResult {
-  const to = TRANSITIONS[from][event]
+  const to = 전이표[from][event]
   return to === undefined ? { ok: false, code: 'ESIGN_REQUEST_TRANSITION_INVALID' } : { ok: true, to }
 }
 
 /** 관리자 화면 버튼을 켜는 `allowedActions`입니다. 완료된 요청은 `DOWNLOAD`를 더합니다. */
 export function allowedEsignActions(status: EsignRequestStatus): EsignRequestAction[] {
-  const commands = ['UPDATE', 'DELETE', 'SEND', 'RESEND', 'REVERT_TO_DRAFT', 'CANCEL', 'VOID'] as const
-  const allowed: EsignRequestAction[] = commands.filter((command) => TRANSITIONS[status][command] !== undefined)
-  return status === 'COMPLETED' ? [...allowed, 'DOWNLOAD'] : allowed
+  const 커맨드목록 = ['UPDATE', 'DELETE', 'SEND', 'RESEND', 'REVERT_TO_DRAFT', 'CANCEL', 'VOID'] as const
+  const 허용액션: EsignRequestAction[] = 커맨드목록.filter((command) => 전이표[status][command] !== undefined)
+  return status === 'COMPLETED' ? [...허용액션, 'DOWNLOAD'] : 허용액션
 }
 
 /** 서명자 링크가 닫힌 상태입니다. 완료는 다운로드를 위해 열려 있습니다. */

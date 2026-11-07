@@ -34,8 +34,8 @@ function ids(body: { items: Array<{ id: string }> }): string[] {
   return body.items.map((item) => item.id)
 }
 
-describe('GET /v1/agency/filings', () => {
-  it('lists the filings of assigned companies only, nearest due first, with the company and agency actions', async () => {
+describe('대리인 신고 건 큐(GET /v1/agency/filings)', () => {
+  it('담당 회사의 신고 건만 기한이 가까운 순으로 회사와 대리인 액션을 붙여 보여 줍니다', async () => {
     const token = await (await agent()).agencyToken()
 
     const response = await app.request('GET', '/v1/agency/filings', { token })
@@ -56,7 +56,7 @@ describe('GET /v1/agency/filings', () => {
     expect(body.items.map((item: { company: { id: string } }) => item.company.id)).not.toContain(DEMO_COMPANY_IDS.demo)
   })
 
-  it('filters by company, tax type, status and due date', async () => {
+  it('회사·세목·상태·기한으로 거릅니다', async () => {
     const token = await (await agent()).agencyToken()
     const list = async (query: string) =>
       ids(await (await app.request('GET', `/v1/agency/filings?${query}`, { token })).json())
@@ -69,7 +69,7 @@ describe('GET /v1/agency/filings', () => {
     expect(await list('open=false')).toEqual([])
   })
 
-  it('answers 404 COMPANY_NOT_FOUND for a company that is not assigned to the agent', async () => {
+  it('담당하지 않은 회사는 404 COMPANY_NOT_FOUND입니다', async () => {
     const token = await (await agent()).agencyToken()
 
     const response = await app.request('GET', `/v1/agency/filings?companyId=${DEMO_COMPANY_IDS.demo}`, { token })
@@ -78,7 +78,7 @@ describe('GET /v1/agency/filings', () => {
     expect(await response.json()).toMatchObject({ code: 'COMPANY_NOT_FOUND' })
   })
 
-  it('pages across companies with a cursor', async () => {
+  it('커서로 여러 회사에 걸쳐 페이지를 넘깁니다', async () => {
     const token = await (await agent()).agencyToken()
 
     const first = await (await app.request('GET', '/v1/agency/filings?limit=2', { token })).json()
@@ -91,7 +91,7 @@ describe('GET /v1/agency/filings', () => {
     expect(second).not.toHaveProperty('nextCursor')
   })
 
-  it('refuses a customer with 403, since a company token cannot call /agency/*', async () => {
+  it('회사 토큰으로는 /agency/*를 부를 수 없어 고객은 403입니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/agency/filings', { token })
@@ -101,8 +101,8 @@ describe('GET /v1/agency/filings', () => {
   })
 })
 
-describe('GET /v1/agency/action-cards', () => {
-  it('shows the cards a filing command opened in a company, across companies, until they close', async () => {
+describe('대리인 할 일 카드 큐(GET /v1/agency/action-cards)', () => {
+  it('신고 건 커맨드가 연 카드를 여러 회사에 걸쳐 닫힐 때까지 보여 줍니다', async () => {
     const session = await agent(DEMO_COMPANY_IDS.individual)
     const requested = await app.request('POST', `/v1/filings/${INDIVIDUAL_WITHHOLDING}:request`, {
       token: session.companyToken,
@@ -134,7 +134,7 @@ describe('GET /v1/agency/action-cards', () => {
     })
   })
 
-  it('answers 404 for an unassigned company, 403 for a live company token and 401 for the token the switch revoked', async () => {
+  it('담당하지 않은 회사는 404, 살아 있는 회사 토큰은 403, 전환으로 폐기된 토큰은 401입니다', async () => {
     const session = await agent()
     const token = await session.agencyToken()
     const otherSession = await app.signIn('agent@agency.example')

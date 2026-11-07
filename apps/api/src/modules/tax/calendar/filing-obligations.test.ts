@@ -19,8 +19,8 @@ function resolve(profile: TaxCalendarProfile, from: string, to: string) {
   return resolveFilingObligations({ profile, from, to, holidays: new Set() })
 }
 
-describe('interim prepayment', () => {
-  it('files corporate tax for the first six months by the end of August', () => {
+describe('중간예납', () => {
+  it('12월 결산 법인은 1–6월분 법인세 중간예납을 8월 말일까지 신고합니다', () => {
     const interim = resolve(corporation, '2026-01-01', '2026-12-31').find((item) => item.kind === 'INTERIM')
     expect(interim).toEqual({
       taxType: 'CORPORATE_TAX',
@@ -34,7 +34,7 @@ describe('interim prepayment', () => {
     })
   })
 
-  it('follows a March fiscal year end', () => {
+  it('3월 결산 법인은 4–9월이 중간예납기간이고 기간 이름은 사업연도 종료 연도입니다', () => {
     const interim = resolve({ ...corporation, fiscalYearEndMonth: 3 }, '2026-01-01', '2026-12-31').find(
       (item) => item.kind === 'INTERIM',
     )
@@ -46,7 +46,7 @@ describe('interim prepayment', () => {
     })
   })
 
-  it('collects individual income tax by notice on November 30', () => {
+  it('개인의 종합소득세 중간예납은 11월 30일 고지로 징수합니다', () => {
     const notice = resolve(individual, '2026-11-01', '2026-11-30').find((item) => item.taxType === 'INCOME_TAX')
     expect(notice).toEqual({
       taxType: 'INCOME_TAX',
@@ -60,16 +60,16 @@ describe('interim prepayment', () => {
     })
   })
 
-  it('rolls a weekend deadline forward', () => {
+  it('기한이 주말이면 다음 영업일로 미룹니다', () => {
     const notice = resolve(individual, '2025-11-01', '2025-12-31').find((item) => item.taxType === 'INCOME_TAX')
     expect(notice?.paymentDue).toBe('2025-12-01')
   })
 })
 
-describe('simplified VAT taxpayer', () => {
+describe('간이과세자 부가세', () => {
   const simplified: TaxCalendarProfile = { ...individual, vatTaxpayerType: 'SIMPLIFIED' }
 
-  it('has a July notice and one annual return', () => {
+  it('7월 예정부과 고지와 1년 확정 신고 하나가 있습니다', () => {
     const vat = resolve(simplified, '2026-01-01', '2027-01-31').filter((item) => item.taxType === 'VAT')
     expect(vat.map((item) => [item.kind, item.periodKey, item.periodStart, item.periodEnd, item.paymentDue])).toEqual([
       ['FINAL', '2025', '2025-01-01', '2025-12-31', '2026-01-26'],
@@ -78,7 +78,7 @@ describe('simplified VAT taxpayer', () => {
     ])
   })
 
-  it('files a preliminary return instead of a notice after issuing tax invoices', () => {
+  it('세금계산서를 발급했으면 고지 대신 예정 신고합니다', () => {
     const issuer = { ...simplified, vatSimplifiedInvoiceIssuer: true }
     const preliminary = resolve(issuer, '2026-07-01', '2026-07-31').find((item) => item.taxType === 'VAT')
     expect(preliminary).toEqual({
@@ -93,7 +93,7 @@ describe('simplified VAT taxpayer', () => {
     })
   })
 
-  it('treats a corporation as a general taxpayer', () => {
+  it('법인은 일반과세자로 봅니다', () => {
     const general = resolve(corporation, '2026-01-01', '2026-12-31').filter((item) => item.taxType === 'VAT')
     const flagged = resolve({ ...corporation, vatTaxpayerType: 'SIMPLIFIED' }, '2026-01-01', '2026-12-31').filter(
       (item) => item.taxType === 'VAT',

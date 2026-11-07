@@ -2,8 +2,8 @@ import { newId } from '../../../shared/ids/ids.ts'
 import type { FilingDocumentType, FilingStatus } from '../tax.types.ts'
 import type { FilingDocumentId, FilingDocumentRecord } from './filing.types.ts'
 
-const LEDGER_VISIBLE: ReadonlyArray<FilingStatus> = ['LEDGER_PENDING', 'PREPARING', 'FILED', 'SETTLED']
-const RESULT_VISIBLE: ReadonlyArray<FilingStatus> = ['FILED', 'SETTLED']
+const 매입매출장이보이는상태: ReadonlyArray<FilingStatus> = ['LEDGER_PENDING', 'PREPARING', 'FILED', 'SETTLED']
+const 결과문서가보이는상태: ReadonlyArray<FilingStatus> = ['FILED', 'SETTLED']
 
 /**
  * 고객이 지금 상태에서 이 문서를 볼 수 있는지입니다.
@@ -16,7 +16,7 @@ export function isDocumentVisibleToClient(
   status: FilingStatus,
 ): boolean {
   if (document.replacedAt !== null) return false
-  return (document.type === 'LEDGER' ? LEDGER_VISIBLE : RESULT_VISIBLE).includes(status)
+  return (document.type === 'LEDGER' ? 매입매출장이보이는상태 : 결과문서가보이는상태).includes(status)
 }
 
 /**
@@ -29,11 +29,11 @@ export function attachDocument(
   added: { type: FilingDocumentType; fileId: FilingDocumentRecord['fileId'] },
   now: string,
 ): FilingDocumentRecord[] {
-  const kept = documents.map((document) =>
+  const 기존문서 = documents.map((document) =>
     document.type === added.type && document.replacedAt === null ? { ...document, replacedAt: now } : document,
   )
   return [
-    ...kept,
+    ...기존문서,
     {
       id: newFilingDocumentId(),
       type: added.type,

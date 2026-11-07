@@ -7,7 +7,7 @@ import type {
   RequirementTemplate,
 } from './filing-requirements.types.ts'
 
-const VAT_TEMPLATE: ReadonlyArray<RequirementTemplate> = [
+const 부가세체크리스트: ReadonlyArray<RequirementTemplate> = [
   { code: 'PG_ONLINE_SALES', autoLinked: false },
   { code: 'EXPORT_FX', autoLinked: false },
   { code: 'PAPER_TAX_INVOICE', autoLinked: false },
@@ -16,9 +16,9 @@ const VAT_TEMPLATE: ReadonlyArray<RequirementTemplate> = [
   { code: 'DEPOSIT_FUND_ACCOUNTS', autoLinked: false },
 ]
 
-const PAYROLL_LEDGER: RequirementTemplate = { code: 'PAYROLL_LEDGER_CLOSED', autoLinked: true }
+const 급여대장마감항목: RequirementTemplate = { code: 'PAYROLL_LEDGER_CLOSED', autoLinked: true }
 
-const WITHHOLDING_TEMPLATE: ReadonlyArray<RequirementTemplate> = [
+const 원천세체크리스트: ReadonlyArray<RequirementTemplate> = [
   { code: 'BUSINESS_INCOME', autoLinked: false },
   { code: 'OTHER_INCOME', autoLinked: false },
   { code: 'DAILY_WAGE', autoLinked: false },
@@ -38,9 +38,9 @@ export function requirementTemplate(
   hasPayrollPlan: boolean,
 ): RequirementTemplate[] {
   if (kind === 'NOTICE') return []
-  if (taxType === 'VAT') return [...VAT_TEMPLATE]
+  if (taxType === 'VAT') return [...부가세체크리스트]
   if (taxType === 'WITHHOLDING_TAX')
-    return hasPayrollPlan ? [PAYROLL_LEDGER, ...WITHHOLDING_TEMPLATE] : [...WITHHOLDING_TEMPLATE]
+    return hasPayrollPlan ? [급여대장마감항목, ...원천세체크리스트] : [...원천세체크리스트]
   return []
 }
 
