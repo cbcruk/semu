@@ -77,6 +77,14 @@ async function filed(target: Harness, client: LegacyClient, payableAmount: numbe
   return filing.version
 }
 
+/** 새 API의 문제 응답입니다. */
+function problem(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify({ type: 'about:blank', title: 'Rejected', status, ...body }), {
+    status,
+    headers: { 'content-type': 'application/problem+json' },
+  })
+}
+
 /** 새 API를 부른 기록을 남기는 하네스입니다. 로그인 호출은 지웁니다. */
 async function watched(email: string): Promise<{ harness: Harness; client: LegacyClient; calls: string[] }> {
   const calls: string[] = []
@@ -130,6 +138,36 @@ describe('withholding filings (세무 > 원천세) list and detail', () => {
     expect(other).toEqual({ count: 0, next: null, previous: null, results: [] })
     const paged = await (await owner.request('GET', `${WITHHOLDING}/?limit=1&offset=1`)).json()
     expect(paged).toMatchObject({ count: 1, results: [], previous: expect.stringContaining('offset=0') })
+  })
+
+  it('orders filings like the legacy SQL whatever order the new API gives', async () => {
+    const custom = makeHarness({
+      intercept: async (request, next) => {
+        const url = new URL(request.url)
+        if (request.method !== 'GET' || url.pathname !== '/v1/filings') return next(request)
+        const page: any = await (await next(request)).json()
+        const [october] = page.items
+        const items = [
+          { ...october, id: 'fil_01JBQ0000000000000000000S1', periodStart: '2026-09-01', periodEnd: '2026-09-30' },
+          october,
+          { ...october, id: 'fil_01JBQ0000000000000000000R1', revision: 1 },
+          { ...october, id: 'fil_01JBQ0000000000000000000A0' },
+        ]
+        return new Response(JSON.stringify({ items }), { headers: { 'content-type': 'application/json' } })
+      },
+    })
+    try {
+      const client = await signedIn(custom, OWNER)
+      const body = await (await client.request('GET', `${WITHHOLDING}/`)).json()
+      expect(body.results.map((item: { id: string }) => item.id)).toEqual([
+        'fil_01JBQ0000000000000000000R1',
+        'fil_01JBQ0000000000000000000A0',
+        OCTOBER,
+        'fil_01JBQ0000000000000000000S1',
+      ])
+    } finally {
+      await custom.dispose()
+    }
   })
 
   it('rejects a malformed year before calling the new API', async () => {
@@ -256,6 +294,20 @@ describe('withholding requirements and transitions', () => {
     ])
   })
 
+  it('keeps the stored note when the legacy body leaves it out or sends null, like the legacy COALESCE', async () => {
+    const path = `${WITHHOLDING}/${OCTOBER}/requirements/business_income/`
+    const note = async () =>
+      (await (await owner.request('GET', `${WITHHOLDING}/${OCTOBER}/`)).json()).requirements[1].note
+
+    await owner.request('PUT', path, { body: { response: 'not_applicable', note: 'keep me' } })
+    expect((await owner.request('PUT', path, { body: { response: 'pending', note: null } })).status).toBe(200)
+    expect(await note()).toBe('keep me')
+    expect((await owner.request('PUT', path, { body: { response: 'not_applicable' } })).status).toBe(200)
+    expect(await note()).toBe('keep me')
+    await owner.request('PUT', path, { body: { response: 'not_applicable', note: '바꾼 메모' } })
+    expect(await note()).toBe('바꾼 메모')
+  })
+
   it('validates the body before reading the filing and refuses codes the legacy screen did not have', async () => {
     const { harness: custom, client, calls } = await watched(OWNER)
     try {
@@ -359,7 +411,10 @@ describe('withholding requirements and transitions', () => {
     const version = await answerAll(owner)
     const stale = await owner.request('POST', `${WITHHOLDING}/${OCTOBER}/submit/`, { headers: { 'if-match': '"1"' } })
     expect(stale.status).toBe(412)
-    expect((await stale.json()).code).toBe('VERSION_CONFLICT')
+    expect(await stale.json()).toMatchObject({
+      detail: 'The filing was changed by someone else. Reload and try again.',
+      code: 'VERSION_CONFLICT',
+    })
 
     const submitted = await owner.request('POST', `${WITHHOLDING}/${OCTOBER}/submit/`, {
       headers: { 'if-match': `"${version}"` },
@@ -424,7 +479,11 @@ describe('withholding requirements and transitions', () => {
 
     for (const body of seen) {
       expect(body.documents).toEqual([expect.objectContaining({ doc_type: 'return', replaced_at: null })])
-      expect(body.timeline.at(-1)).toMatchObject({ type: 'document_uploaded', actor_type: 'agency' })
+      expect(body.timeline.at(-1)).toMatchObject({
+        type: 'document_uploaded',
+        actor_type: 'agency',
+        payload: { doc_type: 'return', file_id: 'fle_01JBQ00000000000000000RTN2' },
+      })
     }
     expect(seen[0].documents[0].id).toBe(seen[1].documents[0].id)
   })
@@ -503,9 +562,19 @@ describe('withholding requirements and transitions', () => {
 
 describe('withholding summary (급여 → 원천세)', () => {
   /** BFF로 귀속월 카드를 만들고 계산 확정·확정까지 합니다. 지급일은 기본값(그달 25일)입니다. */
-  async function closedCard(client: LegacyClient, month: string): Promise<string> {
-    const created = await client.request('POST', `${COMPANY}/payroll/cards/`, { body: { attribution_month: month } })
+  async function closedCard(
+    client: LegacyClient,
+    month: string,
+    options: { paymentDate?: string; before?: (cardId: string) => Promise<void> } = {},
+  ): Promise<string> {
+    const created = await client.request('POST', `${COMPANY}/payroll/cards/`, {
+      body: {
+        attribution_month: month,
+        ...(options.paymentDate === undefined ? {} : { payment_date: options.paymentDate }),
+      },
+    })
     const card = await created.json()
+    await options.before?.(card.id)
     expect((await client.request('POST', `${COMPANY}/payroll/cards/${card.id}/calculate/`)).status).toBe(200)
     expect((await client.request('POST', `${COMPANY}/payroll/cards/${card.id}/extensions/fix/`)).status).toBe(200)
     return card.id
@@ -559,6 +628,108 @@ describe('withholding summary (급여 → 원천세)', () => {
     expect(filing.requirements[0]).toMatchObject({ code: 'payroll_ledger_closed', linked_status: 'closed' })
   })
 
+  it('counts each person once per line across ledgers and rows without an employee', async () => {
+    const agent = await signedIn(harness, AGENT)
+    const { token } = await harness.api.signIn(OWNER, { companyId: DEMO_COMPANY_IDS.corporation })
+    const addBusiness = async (ledgerId: string, payeeName: string) => {
+      const response = await harness.api.request('POST', `/v1/payroll-ledgers/${ledgerId}/rows`, {
+        token,
+        body: { payeeName, input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
+      })
+      expect(response.status).toBe(201)
+    }
+    // 9월 귀속 카드를 10월에 지급해 김세무의 근로 행이 같은 지급월에 둘입니다.
+    const september = await closedCard(agent, '2026-09', {
+      paymentDate: '2026-10-05',
+      before: async (id) => {
+        await addBusiness(id, '박프리')
+        await addBusiness(id, '박프리')
+        await addBusiness(id, '최프리')
+      },
+    })
+    const october = await closedCard(agent, '2026-10')
+
+    const body = await (await agent.request('GET', `${SUMMARY}/2026-10/`)).json()
+
+    expect(body.closed_card_ids).toEqual([september, october].sort())
+    const line = (code: string) => body.lines.find((item: { code: string }) => item.code === code)
+    expect(line('A01')).toMatchObject({ headcount: 1 })
+    expect(line('A01').total_paid).toBeGreaterThan(3_400_000)
+    expect(line('A25')).toMatchObject({ headcount: 2, total_paid: 3_000_000 })
+    expect(body.totals.headcount).toBe(3)
+  })
+
+  it('falls back to no filing when the company has no taxation plan, like the legacy summary', async () => {
+    const custom = makeHarness({
+      intercept: (request, next) =>
+        request.method === 'GET' && new URL(request.url).pathname === '/v1/filings'
+          ? Promise.resolve(problem(403, { code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['TAXATION'] }))
+          : next(request),
+    })
+    try {
+      const agent = await signedIn(custom, AGENT)
+      const response = await agent.request('GET', `${SUMMARY}/2026-10/`)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ payment_month: '2026-10', filing: null })
+    } finally {
+      await custom.dispose()
+    }
+
+    const denied = makeHarness({
+      intercept: (request, next) =>
+        request.method === 'GET' && new URL(request.url).pathname === '/v1/filings'
+          ? Promise.resolve(problem(403, { code: 'PERMISSION_DENIED' }))
+          : next(request),
+    })
+    try {
+      const agent = await signedIn(denied, AGENT)
+      expect((await agent.request('GET', `${SUMMARY}/2026-10/`)).status).toBe(403)
+    } finally {
+      await denied.dispose()
+    }
+  })
+
+  it('checks the actor again on every ledger and row call with the grant that sends it', async () => {
+    for (const target of ['/v1/payroll-ledgers', '/rows']) {
+      let armed = false
+      let refused = false
+      let resent = 0
+      const custom = makeHarness({
+        intercept: async (request, next) => {
+          const path = new URL(request.url).pathname
+          if (refused && request.method === 'GET' && path.endsWith(target)) resent += 1
+          // 그 호출의 토큰을 한 번 폐기하고, 갱신한 grant에서는 고객으로 행동하게 합니다.
+          if (armed && !refused && request.method === 'GET' && path.endsWith(target)) {
+            refused = true
+            return problem(401, { code: 'UNAUTHENTICATED' })
+          }
+          const response = await next(request)
+          if (!refused || path !== '/v1/auth/sessions:refresh') return response
+          const grant: any = await response.json()
+          const headers = new Headers(response.headers)
+          headers.delete('content-length')
+          return new Response(JSON.stringify({ ...grant, company: { ...grant.company, actorKind: 'CLIENT' } }), {
+            status: response.status,
+            headers,
+          })
+        },
+      })
+      try {
+        const agent = await signedIn(custom, AGENT)
+        await closedCard(agent, '2026-10')
+        armed = true
+        const response = await agent.request('GET', `${SUMMARY}/2026-10/`)
+        expect(refused).toBe(true)
+        // 고객 grant로는 같은 호출을 다시 보내지 않습니다.
+        expect(resent).toBe(0)
+        expect(response.status).toBe(403)
+        expect((await response.json()).code).toBe('PERMISSION_DENIED')
+      } finally {
+        await custom.dispose()
+      }
+    }
+  })
+
   it('lists open ledgers and counts no rows of them, and answers an empty month', async () => {
     const agent = await signedIn(harness, AGENT)
     const created = await (
@@ -594,10 +765,16 @@ describe('withholding summary (급여 → 원천세)', () => {
       await custom.dispose()
     }
 
-    const agent = await signedIn(harness, AGENT)
-    const invalid = await agent.request('GET', `${SUMMARY}/2026-13/`)
-    expect(invalid.status).toBe(404)
-    expect(await invalid.json()).toEqual({ detail: 'Payment month not found.', code: 'NOT_FOUND' })
+    const { harness: other, client: agent, calls: agentCalls } = await watched(AGENT)
+    try {
+      const invalid = await agent.request('GET', `${SUMMARY}/2026-13/`)
+      expect(invalid.status).toBe(404)
+      expect(await invalid.json()).toEqual({ detail: 'Payment month not found.', code: 'NOT_FOUND' })
+      // 잘못된 지급월은 새 API의 업무 경로를 읽지 않습니다.
+      expect(agentCalls.filter((call) => !call.startsWith('POST /v1/auth/'))).toEqual([])
+    } finally {
+      await other.dispose()
+    }
   })
 
   it('pins the current plan gap: a taxation-only company has no summary because ledgers need PAYROLL', async () => {

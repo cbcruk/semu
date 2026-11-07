@@ -1,4 +1,4 @@
-import { LegacyError } from '../legacy-error.ts'
+import { LegacyError, legacyErrors } from '../legacy-error.ts'
 import { snakeCase } from '../keys.ts'
 import type { LedgerWithRows } from '../payroll/ledgers.mapping.ts'
 import type {
@@ -141,15 +141,21 @@ function legacyEventType(type: string): string {
   return LEGACY_TRANSITION[type] ?? type.toLowerCase()
 }
 
-/** 이력 `detail` → 현행 `payload`입니다. 키는 snake_case, 항목 코드·응답은 현행 소문자입니다. 비었으면 `null`입니다. */
-function legacyPayload(detail: Record<string, string | number>): Record<string, unknown> | null {
+/**
+ * 이력 `detail` → 현행 `payload`입니다. 키는 snake_case, 항목 코드·응답은 현행 소문자입니다. 비었으면 `null`입니다.
+ * 문서 추가(`DOCUMENT_ADDED`)의 `type`은 현행 `document_uploaded`의 `doc_type`(소문자)입니다.
+ */
+function legacyPayload(type: string, detail: Record<string, string | number>): Record<string, unknown> | null {
   const entries = Object.entries(detail)
   if (entries.length === 0) return null
   return Object.fromEntries(
-    entries.map(([key, value]) => [
-      snakeCase(key),
-      (key === 'code' || key === 'response') && typeof value === 'string' ? value.toLowerCase() : value,
-    ]),
+    entries.map(([key, value]) => {
+      if (type === 'DOCUMENT_ADDED' && key === 'type') return ['doc_type', String(value).toLowerCase()]
+      return [
+        snakeCase(key),
+        (key === 'code' || key === 'response') && typeof value === 'string' ? value.toLowerCase() : value,
+      ]
+    }),
   )
 }
 
@@ -198,7 +204,7 @@ export function toLegacyFilingDetail(filing: Filing, history: readonly FilingHis
       actor_type: entry.actorKind.toLowerCase(),
       from_status: entry.fromStatus === null ? null : legacyFilingStatus(entry.fromStatus),
       to_status: entry.toStatus === null ? null : legacyFilingStatus(entry.toStatus),
-      payload: legacyPayload(entry.detail),
+      payload: legacyPayload(entry.type, entry.detail),
       created_at: entry.occurredAt,
     })),
   }
@@ -317,6 +323,7 @@ function sum(values: readonly number[]): number {
  * | 409 `REQUIREMENT_AUTO_LINKED` | 422 `code` "This item is linked automatically and cannot be edited." |
  * | 422 `REQUIREMENT_HAS_FILES` | 422 `response` "Remove the attached files before marking the item as not applicable." |
  * | 422 `FILING_REQUIREMENTS_PENDING` | 422 `requirements` "Answer every requirement item before submitting." |
+ * | 412 `VERSION_MISMATCH` | 412 `VERSION_CONFLICT` "The filing was changed by someone else. Reload and try again." |
  *
  * @param status 거절 전에 읽은 신고 건 상태입니다. 새 API 오류에 지금 상태가 없을 때 씁니다.
  */
@@ -351,6 +358,11 @@ export function toLegacyFilingError(error: LegacyError, status?: FilingStatus): 
       return invalidField('response', 'Remove the attached files before marking the item as not applicable.')
     case 'FILING_REQUIREMENTS_PENDING':
       return invalidField('requirements', 'Answer every requirement item before submitting.')
+    case 'VERSION_CONFLICT': {
+      // 문구만 현행 것으로 바꾸고, 다른 조각처럼 새 API의 `current_version`은 남깁니다.
+      const stale = legacyErrors.staleVersion('filing')
+      return new LegacyError(412, { ...error.body, detail: stale.body.detail })
+    }
     default:
       return error
   }

@@ -6,7 +6,7 @@ import { allLedgers, withRows } from '../payroll/ledgers.routes.ts'
 import { isYearMonth } from '../payroll/ledgers.mapping.ts'
 import { json } from '../router.ts'
 import type { Route, SignedInContext } from '../router.ts'
-import { readJson } from '../upstream.ts'
+import { ensureAccess, readJson } from '../upstream.ts'
 import type { SessionGuard } from '../upstream.ts'
 import type { Filing, FilingHistoryEntry, FilingSummary, Page } from '../upstream.types.ts'
 import {
@@ -182,7 +182,8 @@ function requirementBody(raw: Record<string, unknown>): {
   }
   return {
     response: response === 'pending' ? 'PENDING' : 'NOT_APPLICABLE',
-    ...(note === undefined ? {} : { note: note as string | null }),
+    // 현행은 `note = COALESCE(?, note)`라 빠지거나 `null`인 메모는 기존 메모를 남겼습니다. 새 API는 `null`을 지우기로 읽으므로 보내지 않습니다.
+    ...(typeof note === 'string' ? { note } : {}),
   }
 }
 
@@ -260,9 +261,18 @@ export const withholdingRoutes: readonly Route[] = [
     path: '/api/company/:companyId/payroll/withholding-summary/:paymentMonth',
     auth: true,
     handle: async (context) => {
-      const filings = await allWithholdingFilings(context, agencyOnly)
       const month = context.params['paymentMonth'] ?? ''
-      if (!isYearMonth(month)) throw legacyErrors.notFound('Payment month')
+      if (!isYearMonth(month)) {
+        // 현행은 행위자(403)가 지급월 형식(404)보다 먼저였습니다. 새 API의 업무 경로를 읽지 않고, 경로 회사로 맞춘 세션의 grant로 봅니다.
+        const session = await ensureAccess(context.deps, context.sessionId, context.params['companyId'])
+        throw agencyOnly(session) ?? legacyErrors.notFound('Payment month')
+      }
+      const filings = await allWithholdingFilings(context, agencyOnly).catch((error: unknown) => {
+        // 현행 요약은 플랜을 보지 않았고, 신고 건이 없는 회사는 `filing: null`이었습니다. 기장(`TAXATION`) 플랜이 없어 신고 건을
+        // 읽을 수 없는 급여 회사도 같게 둡니다. 다른 거절(권한·약관 등)은 그대로 줍니다.
+        if (error instanceof LegacyError && error.body.code === 'ENTITLEMENT_REQUIRED') return []
+        throw error
+      })
       const ledgers = await allLedgers(context, { paymentMonth: month }, agencyOnly)
       const closed = await withRows(
         context,
