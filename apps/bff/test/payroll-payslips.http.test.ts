@@ -423,15 +423,18 @@ describe('sending payslips', () => {
     }
   })
 
-  it('pins the current gap: a taxation-only company cannot open payslips because they need PAYROLL', async () => {
-    const sole = harness.client()
-    await sole.login('sole@semu.example')
+  it('opens payslips to a taxation-only company, like the legacy payroll_management menu', async () => {
+    // 2026-11-07에 새 명세서를 급여대장과 같이 PAYROLL 또는 TAXATION에 열기로 정했습니다.
     const base = `/api/company/${DEMO_COMPANY_IDS.individual}/payroll`
+    const created = await client.request('POST', `${base}/cards/`, { body: { attribution_month: '2026-09' } })
+    expect(created.status).toBe(201)
+    const card = await created.json()
+    expect((await client.request('POST', `${base}/cards/${card.id}/calculate/`)).status).toBe(200)
+    expect((await client.request('POST', `${base}/cards/${card.id}/extensions/fix/`)).status).toBe(200)
 
-    const screen = await sole.request('GET', `${base}/cards/${UNKNOWN_LEDGER}/payslip/`)
+    const screen = await client.request('GET', `${base}/cards/${card.id}/payslip/`)
 
-    expect(screen.status).toBe(403)
-    expect(await screen.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', required_plans: ['PAYROLL'] })
+    expect(screen.status).toBe(200)
   })
 })
 

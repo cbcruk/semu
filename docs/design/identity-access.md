@@ -73,7 +73,7 @@
 | | `esign-request`: CRUD, send, cancel, void · `esign-template`: CRUD · `certificate-issuance`: read, create, send, void | PAYROLL |
 | 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send | TAXATION 또는 PAYROLL |
 | | `payroll-setting`: read, update · `severance-settlement`: CRUD, complete · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
-| | `labor-cost-report`: read | TAXATION |
+| | `labor-cost-report`: read | TAXATION 또는 PAYROLL |
 | | `salary-calculation`: create | |
 | 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update, classify · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, update, pay · `account-title`: CRUD · `classification-rule`: CRUD, apply · `realtime-report`: read · `report`: read | |
 | | `settlement-report`: read | TAXATION |
@@ -113,7 +113,8 @@
 | `employment_employee` | `employee:*` | PAYROLL |
 | `employment_e_sign`, `settings_e_sign` | `esign-request:*`, `esign-template:*` | PAYROLL |
 | `employment_certificate` | `certificate-issuance:*` | PAYROLL |
-| `payroll_settlement`, `payroll_management` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_settlement` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_management` | `payroll-ledger:*`, `payslip:*` | TAXATION (메뉴는 현행 기장 메뉴, 권한은 PAYROLL 또는 TAXATION) |
 | `payroll_setting` | `payroll-setting:*` | PAYROLL |
 | `severance_pay_settlement` | `severance-settlement:*` | PAYROLL |
 | `tax_surtax`, `tax_withholding`, `tax_corporation`, `tax_aggr_income` | `vat-filing:*`, `withholding-tax-filing:*`, `corporate-tax-filing:*`, `income-tax-filing:*` | TAXATION |

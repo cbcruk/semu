@@ -9,6 +9,7 @@ import { daysBetween } from '../../../shared/time/calendar.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
+import { LEDGER_PLANS } from '../payroll-access.ts'
 import {
   AdditionalLedgerBlocked,
   EmployeeNotFound,
@@ -83,8 +84,6 @@ type LedgerResponse = typeof PayrollLedger.Type
 type RowResponse = typeof PayrollRow.Type
 type Run<A, E = LedgerError> = Effect.Effect<A, E, CurrentActor | LedgerDeps>
 
-const PLANS = ['PAYROLL'] as const
-
 /** 상태 커맨드별 권한입니다. 승인·반려는 고객의 결재 권한이라 따로 둡니다. */
 export const TRANSITION_PERMISSIONS: Record<LedgerTransition, Permission> = {
   SUBMIT: 'payroll-ledger:submit',
@@ -102,7 +101,7 @@ export const listLedgers = (
   query: PageQuery & { attributionMonth?: string; paymentMonth?: string; status?: LedgerStatus },
 ): Run<PageOf<LedgerResponse>, AccessDenied> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: LEDGER_PLANS, requiresTerms: true })
     const ledgers = (yield* (yield* PayrollLedgerRepository).list(actor.companyId)).filter(
       (ledger) =>
         (query.attributionMonth === undefined || ledger.attributionMonth === query.attributionMonth) &&
@@ -118,7 +117,7 @@ export const listLedgers = (
 /** 급여대장 하나입니다. */
 export const getLedger = (id: Id<'payrollLedger'>): Run<LedgerResponse, AccessDenied | PayrollLedgerNotFound> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: LEDGER_PLANS, requiresTerms: true })
     return yield* respond(actor, yield* findOrFail(actor.companyId, id))
   })
 
@@ -127,7 +126,7 @@ export const listRows = (
   id: Id<'payrollLedger'>,
 ): Run<{ items: RowResponse[] }, AccessDenied | PayrollLedgerNotFound> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:read', plans: LEDGER_PLANS, requiresTerms: true })
     const ledger = yield* findOrFail(actor.companyId, id)
     return { items: ledger.rows.map((row) => rowResponse(ledger, row)) }
   })
@@ -138,7 +137,7 @@ export const listRows = (
  */
 export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<LedgerResponse> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:create', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:create', plans: LEDGER_PLANS, requiresTerms: true })
     const repository = yield* PayrollLedgerRepository
     const setting = yield* (yield* PayrollSettingRepository).get(actor.companyId)
     const before = yield* repository.list(actor.companyId)
@@ -206,7 +205,7 @@ export const updateLedger = (
   expected: number | undefined,
 ): Run<LedgerResponse> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     const now = yield* nowIso
     let next: PayrollLedgerRecord = { ...ledger, ...patch, version: ledger.version + 1, updatedAt: now }
@@ -224,7 +223,7 @@ export const updateLedger = (
 /** 입력 중인 대장을 지웁니다. 추가 대장이 딸린 정기 대장은 추가 대장을 먼저 지워야 합니다. */
 export const deleteLedger = (id: Id<'payrollLedger'>, expected: number | undefined): Run<void> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:delete', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:delete', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     if (ledger.status !== 'DRAFT') {
       return yield* new PayrollLedgerTransitionInvalid({ ledgerStatus: ledger.status, action: 'DELETE' })
@@ -247,7 +246,7 @@ export const addRow = (
   expected: number | undefined,
 ): Run<{ ledger: PayrollLedgerRecord; row: RowResponse }> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     const now = yield* nowIso
     const payee = yield* payeeOf(actor, ledger, before, payload)
@@ -276,7 +275,7 @@ export const updateRow = (
   expected: number | undefined,
 ): Run<{ ledger: PayrollLedgerRecord; row: RowResponse }> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     const row = ledger.rows.find((candidate) => candidate.id === rowId)
     if (row === undefined) return yield* new PayrollRowNotFound({})
@@ -306,7 +305,7 @@ export const updateRow = (
 /** 행을 지웁니다. */
 export const deleteRow = (id: Id<'payrollLedger'>, rowId: Id<'payrollRow'>, expected: number | undefined): Run<void> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     if (!ledger.rows.some((row) => row.id === rowId)) return yield* new PayrollRowNotFound({})
     const now = yield* nowIso
@@ -321,7 +320,7 @@ export const deleteRow = (id: Id<'payrollLedger'>, rowId: Id<'payrollRow'>, expe
 /** HR 정보를 다시 받아 모든 행을 다시 계산합니다. 기준표·설정이 바뀐 뒤에 씁니다. */
 export const recalculateLedger = (id: Id<'payrollLedger'>, expected: number | undefined): Run<LedgerResponse> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: PLANS, requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     const directory = yield* PayrollEmployeeDirectory
     const now = yield* nowIso
@@ -352,7 +351,7 @@ export const transitionLedger = (
   Effect.gen(function* () {
     const actor = yield* authorize({
       permission: TRANSITION_PERMISSIONS[transition],
-      plans: PLANS,
+      plans: LEDGER_PLANS,
       requiresTerms: true,
     })
     const repository = yield* PayrollLedgerRepository
