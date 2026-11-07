@@ -343,7 +343,12 @@ flowchart LR
 
 ## 접근 요건
 
-모든 경로는 플랜 `PAYROLL`(인건비 보고서는 `PAYROLL` 또는 `TAXATION`)과 약관 동의가 필요합니다.
+모든 경로는 플랜과 약관 동의가 필요합니다. 급여대장·행·명세서·인건비 보고서는 `PAYROLL` 또는 `TAXATION`, 나머지(급여 설정·운영 방식, 기준표·참조 코드, 계산기, 퇴직금)는 `PAYROLL`입니다.
+
+- **급여대장·명세서를 기장에도 엶 (2026-11-07 결정).** 현행 급여 관리(`payroll_management`)는 기장(`TAXATION`) 메뉴였고, 급여 아웃소싱(`PAYROLL`)은 급여 정산(`payroll_settlement`)으로 같은 대장을 썼습니다. 기장 고객을 `PAYROLL`로 옮기지 않고 두 플랜 모두에 엽니다. 플랜 목록은 권한 카탈로그의 `PAYROLL_LEDGER_PLANS` 한 곳이고, 카탈로그의 `payroll-ledger`·`payslip`·`labor-cost-report`와 급여 엔드포인트([payroll-access.ts](../../apps/api/src/modules/payroll/payroll-access.ts)의 `LEDGER_PLANS`)가 함께 씁니다. 그래서 권한 그룹 화면의 `requiredPlans`와 엔드포인트가 어긋나지 않습니다. 둘 다 없으면 403 `ENTITLEMENT_REQUIRED`(`requiredPlans: ["TAXATION", "PAYROLL"]`)입니다
+- **`PAYROLL`만 여는 경로.** 급여 설정·퇴직금·기준표·계산기는 현행에서도 급여 아웃소싱 메뉴(`payroll_setting`, `severance_pay_settlement`)였으므로 그대로 둡니다. 기장만 쓰는 회사의 대장은 저장된 급여 설정이 없으면 기본값(현행 기본값, 직접 운영)으로 계산합니다. 대장 계산이 안에서 설정·기준표를 읽는 것은 플랜을 보지 않습니다
+- **약관.** 급여 전용 약관은 없습니다. `requiresTerms`는 회사 플랜이 정한 약관(가입 약관, 기장이면 세무 약관)을 보므로, 기장만 쓰는 회사는 스스로 동의할 수 있는 세무 약관에만 걸립니다(403 `TERMS_REAGREEMENT_REQUIRED`). 대리인은 약관 게이트를 건너뜁니다
+- **원천세 제출 자료.** 원천세 신고 건의 "급여대장 마감분" 자동 연계 항목은 현행처럼 급여 플랜 회사에만 넣습니다([filing-requirements.ts](../../apps/api/src/modules/tax/filings/filing-requirements.ts)). 이 결정은 대장을 여는 플랜만 바꾸고 신고 체크리스트는 바꾸지 않았습니다. 이유는 둘입니다. 현행도 이 항목을 급여 구독 고객에게만 넣었습니다([tax-api-design.md](../reference/legacy-design/tax-api-design.md)의 원천세 제출 자료 표). 그리고 기장 고객은 대부분 급여대장을 쓰지 않으므로, 이 항목을 넣으면 기간에 대장이 없어 응답이 영영 `PENDING`으로 남습니다. 자동 연계 항목은 제출 전 남은 항목 검사에서 빠지므로(`filing-view.ts`의 `transitionFacts`) 제출을 막지는 않지만, 고객 화면에는 끝나지 않는 "대기" 항목으로 보여 혼란을 줍니다([열린 질문 10](#열린-질문))
 
 | 엔드포인트 | 권한 |
 |---|---|
@@ -561,3 +566,4 @@ flowchart LR
    - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
+10. **기장 회사의 "급여대장 마감분".** 급여대장을 기장(`TAXATION`)에도 열었지만 원천세의 "급여대장 마감분" 자동 연계 항목은 급여 플랜 회사에만 넣습니다([접근 요건](#접근-요건)). 대장을 쓰는 기장 회사에도 넣으려면 "신고 기간에 대장이 있으면 마감 여부로, 없으면 `NOT_APPLICABLE`" 같은 규칙이 필요합니다. 지금 판정(`payrollLedgerResponse`)은 대장이 없으면 `PENDING`이라, 그대로 넣으면 대장을 쓰지 않는 기장 회사의 화면에 끝나지 않는 대기 항목이 남습니다(제출은 막지 않음). 기간 중에 대장이 생기거나 지워질 때 항목을 넣고 빼는 것도 함께 정합니다

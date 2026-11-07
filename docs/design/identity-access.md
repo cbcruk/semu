@@ -73,7 +73,7 @@
 | | `esign-request`: CRUD, send, cancel, void · `esign-template`: CRUD · `certificate-issuance`: read, create, send, void | PAYROLL |
 | 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send | TAXATION 또는 PAYROLL |
 | | `payroll-setting`: read, update · `severance-settlement`: CRUD, complete · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
-| | `labor-cost-report`: read | TAXATION |
+| | `labor-cost-report`: read | TAXATION 또는 PAYROLL |
 | | `salary-calculation`: create | |
 | 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update, classify · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, update, pay · `account-title`: CRUD · `classification-rule`: CRUD, apply · `realtime-report`: read · `report`: read | |
 | | `settlement-report`: read | TAXATION |
@@ -113,7 +113,8 @@
 | `employment_employee` | `employee:*` | PAYROLL |
 | `employment_e_sign`, `settings_e_sign` | `esign-request:*`, `esign-template:*` | PAYROLL |
 | `employment_certificate` | `certificate-issuance:*` | PAYROLL |
-| `payroll_settlement`, `payroll_management` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_settlement` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
+| `payroll_management` | `payroll-ledger:*`, `payslip:*` | TAXATION (메뉴는 현행 기장 메뉴, 권한은 PAYROLL 또는 TAXATION) |
 | `payroll_setting` | `payroll-setting:*` | PAYROLL |
 | `severance_pay_settlement` | `severance-settlement:*` | PAYROLL |
 | `tax_surtax`, `tax_withholding`, `tax_corporation`, `tax_aggr_income` | `vat-filing:*`, `withholding-tax-filing:*`, `corporate-tax-filing:*`, `income-tax-filing:*` | TAXATION |
@@ -182,14 +183,14 @@ sequenceDiagram
 - **누가:** 사용자 종류가 `AGENCY_STAFF`·`AGENCY_MANAGER`인 활성 사용자만입니다. 고객 사용자(데모 포함)는 403 `AGENCY_SCOPE_NOT_ALLOWED`이고 세션은 바뀌지 않습니다. 배정이 하나도 없는 대리인도 받을 수 있고, 큐가 비어 있을 뿐입니다
 - **수명:** 회사 범위와 같은 10분 access token이고 같은 세션(refresh 쿠키 1일·14일)에 속합니다. 세션은 지금 범위를 기억해서(`SessionRecord.scope`) `:refresh`는 같은 범위로 다시 발급합니다. `:switch-company {companyId}`를 부르면 회사 범위로 돌아갑니다. 세션 하나에는 access token이 하나뿐이라 범위를 바꾸면 이전 범위의 토큰은 바로 401입니다. 대리인 화면이 큐와 회사 화면을 오갈 때마다 전환합니다
 - **범위가 틀리면 403입니다.** 대리인 범위 토큰으로 회사 경로를 부르거나 회사 범위 토큰(대리인이 회사에 들어간 토큰 포함)으로 `/agency/*`를 부르면 403 `TOKEN_SCOPE_MISMATCH`(`requiredScope`)입니다. 토큰은 유효하므로 401(다시 로그인)이 아닙니다(RFC 6750 `insufficient_scope`)
-- **담당 회사는 토큰에 넣지 않습니다.** `AgencyAuthentication`이 요청마다 `AgentDirectory.resolve(userId)`로 본인 배정과(팀장이면) 팀원 배정, 회사 이름·사업자 형태, Billing 플랜을 읽어 `Agent.companies`를 만듭니다. 배정을 풀거나 구독이 바뀌면 토큰을 폐기하지 않아도 다음 요청부터 반영됩니다. 사용자가 비활성이면 401입니다
+- **담당 회사는 토큰에 넣지 않습니다.** `AgencyAuthentication`이 요청마다 `AgentDirectory.resolve(userId)`로 본인 배정과(팀장이면) 팀원 배정, 회사 이름·사업자 형태, Billing 플랜을 읽어 `Agent.companies`를 만듭니다. 대리인 범위 토큰은 배정을 풀거나 구독이 바뀌면 폐기하지 않아도 다음 요청부터 반영됩니다. 회사 범위 토큰은 발급할 때 배정을 보고 요청마다 다시 보지 않으므로, 배정이 풀린 회사의 토큰은 만료(10분)나 refresh까지 남습니다([열린 질문 9](#열린-질문)). 사용자가 비활성이면 401입니다
 - **권한:** `authorizeAgency({ permission, plans? })`가 `authorize`의 대리인 판입니다. 권한은 `Agent.permissions`(회사 범위의 대리인과 같은 [대리인 기본 권한](#대리인-기본-권한), D5)로 보고, `plans`는 거절 대신 **그 플랜을 구독하는 담당 회사만 남깁니다.** 회사 여럿을 가로지르는 목록이라 한 회사의 구독 때문에 전체를 403으로 막지 않습니다. 약관 게이트는 회사 범위의 대리인처럼 건너뜁니다
 - **쓰기는 회사 범위에서만 합니다.** `/agency/*`는 모두 읽기입니다. 신고 건 처리처럼 회사 데이터를 바꾸는 일은 `:switch-company`로 그 회사 토큰을 받아 기존 경로로 합니다. 그래서 회사 리소스의 인가·감사·버전 검사가 한 길로만 지나갑니다
 - 범위 전환은 감사 로그에 `AGENCY_SCOPE_ENTERED`로 남깁니다. 회사로 돌아가는 것은 기존 `COMPANY_SWITCHED`입니다
 
 ### 토큰 무효화
 
-행위자 계산의 근거가 바뀌면 `Sessions.invalidateAccess(userId, companyId?)`로 그 사용자의 access token만 폐기합니다. 세션은 남으므로 클라이언트는 401을 받고 refresh로 새 권한을 받습니다. 대리인 범위 토큰은 회사를 담지 않으므로 회사를 지정한 폐기에서 빠지고, 배정 변경도 폐기 없이 다음 요청에 반영됩니다.
+행위자 계산의 근거가 바뀌면 `Sessions.invalidateAccess(userId, companyId?)`로 그 사용자의 access token만 폐기합니다. 세션은 남으므로 클라이언트는 401을 받고 refresh로 새 권한을 받습니다. 대리인 범위 토큰은 회사를 담지 않으므로 회사를 지정한 폐기에서 빠지고, 배정 변경도 폐기 없이 다음 요청에 반영됩니다. 회사 범위 토큰의 배정 해제는 아래 표에 없습니다.
 
 | 원인 | 대상 |
 |---|---|
@@ -199,6 +200,8 @@ sequenceDiagram
 | 초대 수락 | 수락한 사용자 |
 
 플랜 변경(구독 시작·해지)은 Billing 이벤트를 받아 같은 방식으로 폐기할 예정입니다. 그 전까지는 access token 수명(10분)이 지연의 상한입니다.
+
+대리인 배정 해제도 아직 폐기하지 않습니다. 배정을 바꾸는 경로가 이 API에 없기 때문입니다(대리인 내부 도구, 범위 밖). 그래서 배정이 풀린 대리인도 이미 받은 그 회사의 토큰으로 최대 10분 동안 쓰기(예: 원천세 제출·납부 대행)를 할 수 있고, refresh는 배정을 다시 보므로 거기서 막힙니다([열린 질문 9](#열린-질문)).
 
 ## 회사
 
@@ -405,3 +408,4 @@ stateDiagram-v2
 6. 그룹별 구성원 조회를 `/users?roleId=` 필터로 둘지 정해야 합니다
 7. 대리인이 큐 화면에서 시작하는 경우가 대부분이면 로그인에서 바로 대리인 범위를 받게(`POST /auth/sessions {scope: AGENCY}`) 할지 정해야 합니다. 지금은 로그인 뒤 `:switch-agency`를 한 번 더 부릅니다
 8. 큐와 회사 화면을 탭 두 개로 동시에 띄우려면 세션 하나에 범위별 access token을 하나씩 두어야 합니다. 지금은 세션당 하나라 전환하면 다른 범위의 토큰이 폐기됩니다
+9. **배정 해제의 토큰 폐기.** 회사 범위 토큰은 배정을 요청마다 다시 보지 않아, 배정이 풀린 대리인이 만료(10분)까지 그 회사에서 쓰기를 할 수 있습니다. 원천세 대행(2026-11-07, [tax.md](tax.md#커맨드))으로 그 쓰기에 제출·납부가 들어갑니다. 배정 해제를 이 API로 들일 때 `Sessions.invalidateAccess(userId, companyId)`를 부를지(위 표에 한 줄), 회사 범위의 대리인 토큰만 요청마다 배정을 다시 볼지 정합니다

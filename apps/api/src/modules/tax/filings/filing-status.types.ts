@@ -4,7 +4,14 @@ import type { FilingActorKind, FilingKind, FilingStatus, TaxType } from '../tax.
 export interface FilingTransitionRule {
   from: ReadonlyArray<FilingStatus>
   to: FilingStatus
+  /** 이 커맨드의 차례인 행위자입니다. `allowedActions`는 이 행위자에게만 커맨드를 넣습니다. */
   actor: FilingActorKind
+  /**
+   * 대리인이 고객 대신 보낼 수 있는 세목입니다. 고객 커맨드에만 둡니다.
+   *
+   * 대리인이 보내면 이력에 대리인(`actorKind: AGENCY`)과 `onBehalfOf: CLIENT`가 남습니다.
+   */
+  agencyProxyTaxTypes?: ReadonlyArray<TaxType>
 }
 
 /** 전이 허용 여부를 바꾸는 신고 건의 사실입니다. */
@@ -23,4 +30,5 @@ export type FilingTransitionErrorCode =
 
 /** 현재 상태에 신고 건 커맨드를 적용해 본 결과입니다. */
 export type FilingTransitionResult =
-  { ok: true; to: FilingStatus } | { ok: false; code: FilingTransitionErrorCode; requiredActor?: FilingActorKind }
+  | { ok: true; to: FilingStatus; onBehalfOf?: 'CLIENT' }
+  | { ok: false; code: FilingTransitionErrorCode; requiredActor?: FilingActorKind }

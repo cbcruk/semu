@@ -457,14 +457,46 @@ describe('withholding requirements and transitions', () => {
     ])
   })
 
-  it('pins the actor difference: agency staff on the legacy client path get 403 instead of acting as the client', async () => {
+  it('lets agency staff answer, submit, unsubmit and pay for the client and shows them as agency in the timeline', async () => {
     const agent = await signedIn(harness, AGENT)
-    const read = await agent.request('GET', `${WITHHOLDING}/${OCTOBER}/`)
-    expect(read.status).toBe(200)
+    const answered = await answerAll(agent)
 
-    const submit = await agent.request('POST', `${WITHHOLDING}/${OCTOBER}/submit/`, { headers: { 'if-match': '"1"' } })
-    expect(submit.status).toBe(403)
-    expect(await submit.json()).toEqual({ detail: 'Only client users can submit a filing.', code: 'PERMISSION_DENIED' })
+    const submitted = await agent.request('POST', `${WITHHOLDING}/${OCTOBER}/submit/`, {
+      headers: { 'if-match': `"${answered}"` },
+    })
+    expect(submitted.status).toBe(200)
+    expect(await submitted.json()).toMatchObject({ status: 'submitted', version: answered + 1 })
+    const unsubmitted = await agent.request('POST', `${WITHHOLDING}/${OCTOBER}/unsubmit/`, {
+      headers: { 'if-match': `"${answered + 1}"` },
+    })
+    expect(unsubmitted.status).toBe(200)
+    expect(await unsubmitted.json()).toMatchObject({ status: 'requested', version: answered + 2 })
+
+    const version = await filed(harness, owner, 120_000)
+    const paid = await agent.request('POST', `${WITHHOLDING}/${OCTOBER}/pay/`, {
+      headers: { 'if-match': `"${version}"` },
+      body: { paid_on: '2026-11-10' },
+    })
+    expect(paid.status).toBe(200)
+    expect(await paid.json()).toMatchObject({ status: 'settled', settlement: 'paid', paid_on: '2026-11-10' })
+
+    const timeline = (await (await owner.request('GET', `${WITHHOLDING}/${OCTOBER}/`)).json()).timeline
+    const byType = (type: string) => timeline.filter((event: { type: string }) => event.type === type)
+    expect(byType('requirement_answered').slice(0, CLIENT_ITEMS.length)).toEqual(
+      CLIENT_ITEMS.map(() => expect.objectContaining({ actor_type: 'agency' })),
+    )
+    expect(byType('submit').map((event: { actor_type: string }) => event.actor_type)).toEqual(['agency', 'client'])
+    expect(byType('unsubmit')).toEqual([
+      expect.objectContaining({
+        actor_type: 'agency',
+        from_status: 'submitted',
+        to_status: 'requested',
+        payload: null,
+      }),
+    ])
+    expect(byType('pay')).toEqual([
+      expect.objectContaining({ actor_type: 'agency', to_status: 'settled', payload: { paid_on: '2026-11-10' } }),
+    ])
   })
 
   it('shows agency staff the client view of documents, like the legacy client path', async () => {
@@ -898,15 +930,21 @@ describe('withholding summary (급여 → 원천세)', () => {
     }
   })
 
-  it('pins the current plan gap: a taxation-only company has no summary because ledgers need PAYROLL', async () => {
+  it('gives a taxation-only company its summary, since ledgers open to TAXATION too', async () => {
     const agent = await signedIn(harness, AGENT)
-    const response = await agent.request(
-      'GET',
-      `/api/company/${DEMO_COMPANY_IDS.individual}/payroll/withholding-summary/2026-10/`,
-    )
+    const payroll = `/api/company/${DEMO_COMPANY_IDS.individual}/payroll`
+    const created = await agent.request('POST', `${payroll}/cards/`, { body: { attribution_month: '2026-10' } })
+    expect(created.status).toBe(201)
+    const card = await created.json()
 
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', required_plans: ['PAYROLL'] })
+    const response = await agent.request('GET', `${payroll}/withholding-summary/2026-10/`)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      payment_month: '2026-10',
+      ledger_closed: false,
+      open_card_ids: [card.id],
+    })
   })
 
   it('stops reading an endless or repeating filing cursor', async () => {

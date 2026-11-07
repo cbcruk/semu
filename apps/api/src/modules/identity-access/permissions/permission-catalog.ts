@@ -9,6 +9,14 @@ import type {
 const CRUD = ['read', 'create', 'update', 'delete'] as const
 
 /**
+ * 급여대장·명세서·인건비 보고서를 여는 플랜입니다. 급여·세무 중 하나만 구독해도 됩니다(2026-11-07 결정).
+ *
+ * 카탈로그의 세 리소스와 급여 엔드포인트(`payroll/payroll-access.ts`의 `LEDGER_PLANS`)가 이 값 하나를 써서,
+ * 권한 그룹 화면의 `requiredPlans`와 엔드포인트의 `ENTITLEMENT_REQUIRED`가 어긋나지 않습니다.
+ */
+export const PAYROLL_LEDGER_PLANS = ['TAXATION', 'PAYROLL'] as const
+
+/**
  * 재설계의 권한 카탈로그입니다. 키가 리소스, 값이 그 리소스의 동작입니다.
  *
  * 다른 컨텍스트의 `authorize({ permission })` 문자열은 이 표의 `리소스:동작`이어야 합니다.
@@ -54,12 +62,12 @@ export const PERMISSION_CATALOG = {
   'payroll-ledger': {
     area: 'PAYROLL',
     actions: [...CRUD, 'submit', 'approve', 'close'],
-    plans: ['TAXATION', 'PAYROLL'],
+    plans: PAYROLL_LEDGER_PLANS,
   },
-  payslip: { area: 'PAYROLL', actions: ['read', 'send'], plans: ['TAXATION', 'PAYROLL'] },
+  payslip: { area: 'PAYROLL', actions: ['read', 'send'], plans: PAYROLL_LEDGER_PLANS },
   'payroll-setting': { area: 'PAYROLL', actions: ['read', 'update'], plans: ['PAYROLL'] },
   'severance-settlement': { area: 'PAYROLL', actions: [...CRUD, 'complete'], plans: ['PAYROLL'] },
-  'labor-cost-report': { area: 'PAYROLL', actions: ['read'], plans: ['TAXATION'] },
+  'labor-cost-report': { area: 'PAYROLL', actions: ['read'], plans: PAYROLL_LEDGER_PLANS },
   'salary-calculation': { area: 'PAYROLL', actions: ['create'] },
   'payroll-workflow': { area: 'PAYROLL', actions: ['update'], plans: ['PAYROLL'] },
   'payroll-rate-table': { area: 'PAYROLL', actions: ['read'], plans: ['PAYROLL'] },

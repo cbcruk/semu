@@ -480,6 +480,8 @@ export interface Filing extends FilingSummary {
 export interface FilingHistoryEntry {
   type: string
   actorKind: 'CLIENT' | 'AGENCY' | 'SYSTEM'
+  /** 대리인이 고객 대신 한 일이면 `CLIENT`입니다. 그 밖에는 키가 없습니다. */
+  onBehalfOf?: 'CLIENT'
   fromStatus: FilingStatus | null
   toStatus: FilingStatus | null
   detail: Record<string, string | number>

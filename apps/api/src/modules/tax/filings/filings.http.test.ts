@@ -228,6 +228,159 @@ describe('VAT filing flow', () => {
   })
 })
 
+describe('withholding commands sent by agency staff for the client (2026-11-07)', () => {
+  const clientItems = () =>
+    withholding()
+      .requirements.filter((requirement) => !requirement.autoLinked)
+      .map((requirement) => requirement.code)
+
+  const card = async (kind: string) =>
+    (await (await app.send('/action-cards?status=CLOSED')).json()).items
+      .concat((await (await app.send('/action-cards')).json()).items)
+      .find((item: { kind: string }) => item.kind === kind)
+
+  it('lets assigned agency staff answer, submit and unsubmit, and records the agency acting for the client', async () => {
+    const events: TaxEvent[] = []
+    app = taxTestApp({ filings: [withholding({ status: 'SCHEDULED' })], events })
+
+    const requested = await app.send(`/filings/${WHT_ID}:request`, {
+      token: 'agency',
+      body: { submitDue: '2026-11-05' },
+    })
+    expect(requested.status).toBe(200)
+    expect(await card('SUBMIT_MATERIALS')).toMatchObject({ status: 'OPEN' })
+    for (const code of clientItems()) {
+      const answered = await app.send(`/filings/${WHT_ID}/requirements/${code}`, {
+        method: 'PATCH',
+        token: 'agency',
+        body: { response: 'NOT_APPLICABLE' },
+      })
+      expect(answered.status).toBe(200)
+    }
+    const version = clientItems().length + 2
+    const submitted = await app.send(`/filings/${WHT_ID}:submit`, {
+      method: 'POST',
+      token: 'agency',
+      ifMatch: `"${version}"`,
+    })
+    expect(submitted.status).toBe(200)
+    expect(await submitted.json()).toMatchObject({ status: 'SUBMITTED', allowedActions: ['START_REVIEW', 'CANCEL'] })
+    expect((await (await app.send(`/filings/${WHT_ID}`)).json()).allowedActions).toEqual(['UNSUBMIT'])
+    expect(await card('SUBMIT_MATERIALS')).toMatchObject({ status: 'DONE' })
+
+    const unsubmitted = await app.send(`/filings/${WHT_ID}:unsubmit`, { method: 'POST', token: 'agency' })
+    expect(unsubmitted.status).toBe(200)
+    expect(await unsubmitted.json()).toMatchObject({ status: 'REQUESTED' })
+    expect(await card('SUBMIT_MATERIALS')).toMatchObject({ status: 'OPEN' })
+
+    const { items } = await (await app.send(`/filings/${WHT_ID}/history`)).json()
+    expect(items[0]).toMatchObject({ type: 'REQUEST', actorKind: 'AGENCY' })
+    expect(items[0]).not.toHaveProperty('onBehalfOf')
+    expect(items[1]).toMatchObject({ type: 'REQUIREMENT_ANSWERED', actorKind: 'AGENCY', onBehalfOf: 'CLIENT' })
+    expect(items.slice(-2)).toEqual([
+      expect.objectContaining({
+        type: 'SUBMIT',
+        actorKind: 'AGENCY',
+        onBehalfOf: 'CLIENT',
+        fromStatus: 'REQUESTED',
+        toStatus: 'SUBMITTED',
+      }),
+      expect.objectContaining({ type: 'UNSUBMIT', actorKind: 'AGENCY', onBehalfOf: 'CLIENT' }),
+    ])
+    expect(events).toMatchObject([
+      { type: 'filing.status_changed', fromStatus: 'SCHEDULED', toStatus: 'REQUESTED' },
+      { type: 'filing.status_changed', fromStatus: 'REQUESTED', toStatus: 'SUBMITTED' },
+      { type: 'filing.status_changed', fromStatus: 'SUBMITTED', toStatus: 'REQUESTED' },
+    ])
+  })
+
+  it('lets assigned agency staff record the payment of a filed return and closes the payment card', async () => {
+    app = taxTestApp({ filings: [withholding({ status: 'PREPARING' })] })
+
+    const filed = await app.send(`/filings/${WHT_ID}:file`, {
+      token: 'agency',
+      body: { payableAmount: 120_000, returnFileId: FILE_ID },
+    })
+    expect(filed.status).toBe(200)
+    expect(await card('PAY_TAX')).toMatchObject({ status: 'OPEN' })
+    const agencyView = await (await app.send(`/filings/${WHT_ID}`, { token: 'agency' })).json()
+    const paid = await app.send(`/filings/${WHT_ID}:pay`, {
+      method: 'POST',
+      token: 'agency',
+      body: { paidOn: '2026-11-10' },
+    })
+
+    expect(agencyView.allowedActions).toEqual([])
+    expect(paid.status).toBe(200)
+    expect(await paid.json()).toMatchObject({ status: 'SETTLED', settlement: 'PAID', paidOn: '2026-11-10' })
+    expect(await card('PAY_TAX')).toMatchObject({ status: 'DONE' })
+    const { items } = await (await app.send(`/filings/${WHT_ID}/history`)).json()
+    expect(items.at(-1)).toMatchObject({
+      type: 'PAY',
+      actorKind: 'AGENCY',
+      onBehalfOf: 'CLIENT',
+      detail: { paidOn: '2026-11-10' },
+    })
+  })
+
+  it('refuses agency staff who are not assigned to the company', async () => {
+    app = taxTestApp({ filings: [withholding({ status: 'REQUESTED', requirements: [] })] })
+
+    const submit = await app.send(`/filings/${WHT_ID}:submit`, { method: 'POST', token: 'otherAgency' })
+    const answer = await app.send(`/filings/${WHT_ID}/requirements/BUSINESS_INCOME`, {
+      method: 'PATCH',
+      token: 'otherAgency',
+      body: { response: 'NOT_APPLICABLE' },
+    })
+
+    expect(submit.status).toBe(404)
+    expect(await submit.json()).toMatchObject({ code: 'FILING_NOT_FOUND' })
+    expect(answer.status).toBe(404)
+    expect((await (await app.send(`/filings/${WHT_ID}`)).json()).status).toBe('REQUESTED')
+  })
+
+  it.each([
+    ['VAT', 'SUBMIT', 'REQUESTED', 'submit'],
+    ['VAT', 'UNSUBMIT', 'SUBMITTED', 'unsubmit'],
+    ['VAT', 'PAY', 'FILED', 'pay'],
+    ['VAT', 'CONFIRM_LEDGER', 'LEDGER_PENDING', 'confirm-ledger'],
+    ['CORPORATE_TAX', 'SUBMIT', 'REQUESTED', 'submit'],
+    ['CORPORATE_TAX', 'UNSUBMIT', 'SUBMITTED', 'unsubmit'],
+    ['CORPORATE_TAX', 'PAY', 'FILED', 'pay'],
+    ['INCOME_TAX', 'SUBMIT', 'REQUESTED', 'submit'],
+    ['INCOME_TAX', 'UNSUBMIT', 'SUBMITTED', 'unsubmit'],
+    ['INCOME_TAX', 'PAY', 'FILED', 'pay'],
+  ] as const)("keeps %s %s as the client's own command", async (taxType, command, status, path) => {
+    app = taxTestApp({
+      filings: [vat({ taxType, kind: 'FINAL', status, requirements: [], payableAmount: 482_000 })],
+    })
+
+    const response = await app.send(`/filings/${VAT_ID}:${path}`, {
+      method: 'POST',
+      token: 'agency',
+      ...(command === 'PAY' ? { body: { paidOn: '2026-11-10' } } : {}),
+    })
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({
+      code: 'FILING_ACTOR_NOT_ALLOWED',
+      action: command,
+      requiredActorKind: 'CLIENT',
+    })
+  })
+
+  it('records the client without the marker when the client acts', async () => {
+    app = taxTestApp({ filings: [withholding({ status: 'FILED', payableAmount: 120_000 })] })
+
+    const paid = await app.send(`/filings/${WHT_ID}:pay`, { method: 'POST', body: { paidOn: '2026-11-10' } })
+
+    expect(paid.status).toBe(200)
+    const { items } = await (await app.send(`/filings/${WHT_ID}/history`)).json()
+    expect(items.at(-1)).toMatchObject({ type: 'PAY', actorKind: 'CLIENT' })
+    expect(items.at(-1)).not.toHaveProperty('onBehalfOf')
+  })
+})
+
 describe('agent commands called by a client (D5)', () => {
   const startReview = (token: 'client' | 'viewer' | 'pendingTerms' | 'demo' | 'free') =>
     app.send(`/filings/${VAT_ID}:start-review`, { method: 'POST', token })
