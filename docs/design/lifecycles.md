@@ -105,7 +105,7 @@ flowchart TD
   resigned -.-> sev["POST /severance-settlements → CALCULATED<br/>3개월 임금은 마감된 대장 행에서"]
   sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일"]
   sevdone -- "정산 상태 이벤트" --> hrstatus["HR severanceSettlementStatus 갱신"]:::todo
-  hrstatus --> guard["COMPLETED면 직원 삭제·퇴사 취소 409<br/>RETIREMENT_COMPLETED"]
+  hrstatus -. "이후 HR 커맨드가 조회" .-> guard["COMPLETED면 직원 삭제·퇴사 취소·다시 퇴사 409<br/>RETIREMENT_COMPLETED"]
   sevdone --> a21["지급월 원천세 A21로 집계"]:::open
   resigned -.-> cert["POST /certificate-issuances<br/>퇴직증명서 ISSUED"]
   classDef todo stroke-dasharray: 5 5
@@ -129,7 +129,7 @@ flowchart TD
   integ --> scrap["POST /scrap-requests → QUEUED → RUNNING<br/>사용자 요청은 600초 쿨다운"]
   cron["정기 수집 스케줄러"]:::todo -.-> scrap
   scrap --> ingest["ScrapedRecordSink → ScrapedRecordIngestion.ingest<br/>externalKey로 멱등, 거래처 연결, FILL_EMPTY 자동분류"]
-  issue["POST /tax-invoices<br/>세금계산서 발급 → 매출 TAX_INVOICE 증빙"] --> evidence
+  issue["POST /tax-invoices<br/>세금계산서 발급 → 매출 증빙(source: TAX_INVOICE)"] --> evidence
   ingest --> evidence["증빙 Evidence·입출금 BankTransaction"]
   evidence -.-> classify[":classify·:batchClassify, 입출금 :link"]
   classify --> reports["실시간 손익·자금 현황"]
