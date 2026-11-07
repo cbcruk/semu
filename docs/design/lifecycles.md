@@ -46,7 +46,7 @@
 
 ## 업무 흐름
 
-아래 흐름도의 점선 테두리 상자는 설계만 있고 구현되지 않은 단계, 굵은 테두리 상자는 열린 질문으로 남은 단계입니다. 실선 화살표는 같은 요청이나 이벤트로 이어지는 것, 점선 화살표는 사람이 다음 일을 하는 것입니다. 단계 이름은 각 문서의 커맨드와 [events.md](events.md#이벤트-목록)의 이벤트 이름을 씁니다.
+아래 흐름도의 점선 테두리 상자는 설계만 있고 구현되지 않은 단계, 굵은 테두리 상자는 열린 질문으로 남은 단계입니다. 실선 화살표는 같은 요청이나 이벤트로 이어지는 것, 점선 화살표는 사람이 다음 일을 하거나 나중에 다른 요청이 조회하는 것입니다(라벨로 구분). 단계 이름은 각 문서의 커맨드와 [events.md](events.md#이벤트-목록)의 이벤트 이름을 씁니다.
 
 ### 1. 급여대장에서 원천세 납부까지
 
@@ -71,7 +71,7 @@ flowchart TD
   request -.-> submitF["고객 또는 대리인 대행 :submit"]
   submitF -.-> review[":start-review → :start-preparing"]
   review -.-> file[":file → FILED<br/>filing.status_changed"]
-  file --> lock["WithholdingFilingLock.isFiled<br/>그 지급월 대장 금액 변경 409"]
+  file -. "이후 대장 커맨드가 조회" .-> lock["WithholdingFilingLock.isFiled<br/>그 지급월 대장 금액 변경 409"]
   file -.-> pay[":pay(대행 가능) → SETTLED"]
   judge -. "withholding[] 집계" .-> codes["Tax가 A01·A03·A25·A40으로 변환"]:::todo
   pay -.-> stmt["지급명세서·간이지급명세서"]:::todo
@@ -104,7 +104,8 @@ flowchart TD
   resign -. "employee.resigned" .-> start["퇴직금 정산 시작 알림"]:::todo
   resigned -.-> sev["POST /severance-settlements → CALCULATED<br/>3개월 임금은 마감된 대장 행에서"]
   sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일"]
-  sevdone --> hrstatus["HR severanceSettlementStatus 갱신<br/>삭제·퇴사 취소 409"]:::todo
+  sevdone -- "정산 상태 이벤트" --> hrstatus["HR severanceSettlementStatus 갱신"]:::todo
+  hrstatus --> guard["COMPLETED면 직원 삭제·퇴사 취소 409<br/>RETIREMENT_COMPLETED"]
   sevdone --> a21["지급월 원천세 A21로 집계"]:::open
   resigned -.-> cert["POST /certificate-issuances<br/>퇴직증명서 ISSUED"]
   classDef todo stroke-dasharray: 5 5
@@ -116,7 +117,7 @@ flowchart TD
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
 - **열린 질문.** 퇴직금 지급월을 원천세 A21로 센다고 정했지만(2026-11-07), 지급월 마감 이벤트에 퇴직소득을 실을지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
-- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. 중간정산과 퇴직 후보 목록도 없습니다
+- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. HR의 `RETIREMENT_COMPLETED` 가드(409)는 구현됐지만 상태를 채우는 구독이 없어 지금은 걸리지 않습니다([hr.md](hr.md#구현-상태)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지
 

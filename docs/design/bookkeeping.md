@@ -49,7 +49,7 @@
 | POST | `/v1/evidence/{evidenceId}:classify` | `evidence:classify` | 계정과목(`null`이면 미분류로)·거래처. `MANUAL`로 기록. `If-Match` |
 | POST | `/v1/evidence:batchClassify` | `evidence:classify` | 최대 500건을 같은 계정으로 |
 
-- 증빙은 수집으로만 생깁니다. 만들기·지우기 엔드포인트가 없습니다
+- 증빙은 수집 반영과 세금계산서 발급(승인번호로 매출 `TAX_INVOICE` 증빙, [아래](#거래명세서와-세금계산서-발급))으로만 생깁니다. 만들기·지우기 엔드포인트가 없습니다
 - 금액은 `amounts { supplyAmount, vatAmount, totalAmount }`로 채워 주고, 합계에서 세액을 나눈 경우 `vatEstimated: true`입니다 ([evidence-amounts](../reference/rules/evidence-amounts.md))
 - 계정과목은 증빙 쪽 범위(`SALES`·`PURCHASE`)에서 선택 가능한 것만 받습니다 ([account-title-constraints](../reference/rules/account-title-constraints.md))
 

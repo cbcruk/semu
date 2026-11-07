@@ -22,7 +22,7 @@
 | 일용근로소득 | 날마다 고용되어 일당을 받는 근로자의 소득입니다. 하루 일당에서 15만원을 빼고 6%를 곱한 뒤 55%를 세액공제해 떼고, 4대보험은 기본으로 고용보험만 뺍니다 | 대장 행의 `DAILY` 소득 종류입니다. 추가 대장에도 넣을 수 있습니다 ([daily-worker-withholding](../reference/rules/daily-worker-withholding.md), [payroll.md](payroll.md#추가-대장과-근로소득-중복)) | |
 | 사업소득 원천징수 | 프리랜서처럼 고용되지 않은 개인에게 용역 대가를 줄 때 지급액의 3%(지방소득세 포함 3.3%)를 떼는 것입니다 | 대장 행의 `BUSINESS` 소득 종류입니다. 업종코드 40개는 지급명세서 서식의 표를 따릅니다 ([business-income-withholding](../reference/rules/business-income-withholding.md), [reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts)) | 소득세법 시행규칙 별지 제23호서식(2) ([business-income-withholding](../reference/rules/business-income-withholding.md#서버-이전-시-주의)) |
 | 기타소득 원천징수 | 강연료처럼 일시적인 소득에서 필요경비를 뺀 금액의 20%를 떼는 것입니다. 지급사유마다 법이 정한 의제 경비율(예: 60%)이 있고, 기타소득금액이 5만원 이하면 과세하지 않습니다(과세최저한) | 대장 행의 `OTHER` 소득 종류입니다. 지급사유 코드는 지급명세서 서식의 소득구분코드입니다 ([other-income-withholding](../reference/rules/other-income-withholding.md), [rule-decisions/payroll.md](rule-decisions/payroll.md#other-income-withholding)) | 소득세법 제129조, 같은 법 시행규칙 별지 제23호서식(4) ([payroll.md](payroll.md#검증된-규칙과-미확인-규칙), [other-income-withholding](../reference/rules/other-income-withholding.md#서버-이전-시-주의)) |
-| 중소기업 취업자 소득세 감면 | 중소기업에 취업한 청년 등의 근로소득세를 일정 기간 줄여 주는 제도입니다. 청년 90%, 그 외 70%, 과세기간 200만원 한도입니다 | 근로 행 입력의 감면율(`reduction.ratePpm`)입니다. 2026. 12. 31.까지 취업한 사람만 대상이라 2027 기준표 때 다시 확인합니다 ([payroll.md 열린 질문 9](payroll.md#열린-질문)) | 조세특례제한법 제30조제1항 ([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의)) |
+| 중소기업 취업자 소득세 감면 | 중소기업에 취업한 청년 등의 근로소득세를 일정 기간 줄여 주는 제도입니다. 청년 90%, 고령자·장애인·경력단절여성 70%, 과세기간 200만원 한도입니다 | 근로 행 입력의 감면율(`reduction.ratePpm`)이고, 감면 사유표는 [income-tax-reduction-reasons.ts](../../apps/api/src/modules/hr/tax-withholding/income-tax-reduction-reasons.ts)에 있습니다. 2026. 12. 31.까지 취업한 사람만 대상이라 2027 기준표 때 다시 확인합니다 ([payroll.md 열린 질문 9](payroll.md#열린-질문)) | 조세특례제한법 제30조제1항 ([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의)) |
 
 ## 4대보험
 
@@ -55,9 +55,9 @@
 | 용어 | 뜻 | 이 저장소에서 | 근거 |
 |---|---|---|---|
 | 퇴직급여 제도(퇴직금·DB·DC) | 퇴직금은 회사가 퇴직 때 직접 주는 방식, DB·DC는 퇴직연금입니다. 퇴직금 정산은 퇴직금 제도 직원만 대상입니다 | HR `retirementPlan.benefitType`입니다. HR에 아직 이 정보가 없어 급여는 언제나 퇴직금으로 봅니다 ([hr.md](hr.md#용어), [payroll.md](payroll.md#구현-상태)) | |
-| 퇴직금 | 1년 이상 일한 근로자가 퇴직할 때 받는 돈으로, 평균임금 30일분 × 재직일수 ÷ 365입니다 | `SeveranceSettlement`와 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)입니다 ([payroll.md](payroll.md#퇴직금-정산), [severance-pay](../reference/rules/severance-pay.md)) | |
+| 퇴직금 | 계속근로 1년 이상, 4주 평균 주 15시간 이상 일한 근로자가 퇴직할 때 받는 돈으로, 평균임금 30일분 × 재직일수 ÷ 365입니다 | `SeveranceSettlement`와 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)입니다. 엔진은 재직 1년 미만이면 0으로 계산하고, 주 15시간 요건은 판정하지 않습니다 ([severance-pay](../reference/rules/severance-pay.md#근거)의 스펙 4.11 인용, [payroll.md](payroll.md#퇴직금-정산), [severance-pay](../reference/rules/severance-pay.md)) | |
 | 평균임금 | 퇴직일 전 3개월 동안 받은 임금 총액을 그 기간 일수로 나눈 하루 임금입니다. 통상임금보다 낮으면 통상임금을 씁니다 | 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다 ([payroll.md](payroll.md#퇴직금-정산), [severance-pay](../reference/rules/severance-pay.md#로직)) | |
-| 퇴직소득세, 근속연수공제, 환산급여 | 퇴직금에 매기는 세금입니다. 근속연수공제를 빼고 연 단위로 환산(× 12 ÷ 근속연수)한 뒤 세율을 매겨 다시 근속연수만큼 되돌립니다 | 퇴직월 기준표의 `retirementIncomeTax`를 씁니다 ([severance-pay](../reference/rules/severance-pay.md)) | 소득세법 제48조제1항 ([severance-pay](../reference/rules/severance-pay.md#서버-이전-시-주의)) |
+| 퇴직소득세, 근속연수공제, 환산급여공제 | 퇴직금에 매기는 세금입니다. 근속연수(1년 미만 끝수는 올림)에 따른 근속연수공제를 빼고, 연 단위로 환산한 환산급여(`(퇴직소득 − 근속연수공제) × 12 ÷ 근속연수`)에서 환산급여공제를 뺀 뒤 기본세율을 매기고, `× 근속연수 ÷ 12`로 되돌려 10원 미만을 버립니다. 지방소득세는 그 10%입니다 | 퇴직월 기준표의 `retirementIncomeTax`(`serviceYearDeduction`, `convertedPayDeduction`)를 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)의 `retirementIncomeTax`가 씁니다 ([severance-pay](../reference/rules/severance-pay.md#로직), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) | 소득세법 제48조제1항제1호(근속연수공제)·제2호(환산급여공제) ([severance-pay](../reference/rules/severance-pay.md#서버-이전-시-주의), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
 | 퇴직금 지급일 | 퇴직금은 퇴직 뒤 14일 안에 주며, 퇴직월과 다른 달에 줄 수 있습니다. 원천세는 지급한 달에 셉니다 | 정산의 `paymentDate`가 속한 달의 원천세 A21로 셉니다(2026-11-07 결정). 이벤트에 싣는 것은 아직입니다 ([payroll.md](payroll.md#퇴직금-정산)) | |
 
 ## 원천세 신고
@@ -81,7 +81,7 @@
 | 간이과세자 | 일반과세자와 다른 방식으로 부가세를 내는 개인사업자 유형입니다. 1년이 과세기간이고 1–6월분은 예정부과(7월 25일), 확정 신고는 다음 해 1월 25일입니다 | 세무 설정 `vatTaxpayerType: SIMPLIFIED`(개인만)로 일정을 계산하지만, 설정 저장소가 없어 지금은 언제나 일반과세자입니다 ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations), [tax.md 열린 질문 6](tax.md#열린-질문)) | 부가가치세법 제66조 ①·③, 제67조 ① ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) |
 | 매출세액·매입세액·환급 | 부가세 납부세액은 매출 때 받은 세액에서 매입 때 낸 세액을 뺀 것입니다. 음수면 돌려받습니다(환급) | 예상 부가세는 수집한 증빙으로 이 차이를 계산하고, 매입은 공제로 분류된 것만 셉니다 ([estimated-vat](../reference/rules/estimated-vat.md), [tax.md](tax.md#예상-부가세)) | |
 | 매입매출장 | 과세기간의 매출·매입 거래를 모은 장부로, 부가세 신고의 바탕입니다 | 대리인이 파일로 올리는 신고 건 문서(`LEDGER`)이고 고객이 확인하거나 이의를 답니다. 수집한 증빙에서 자동으로 만들지는 않습니다 ([tax.md](tax.md#문서), [tax.md](tax.md#커맨드)) | |
-| 중간예납 | 법인세·종합소득세를 한 해 중간에 미리 내는 것입니다 | 법인은 신고 종류 `INTERIM`, 개인은 종합소득세의 `NOTICE`(11월 30일)입니다 ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) | 법인세법 제63조, 소득세법 제65조 ① (같은 문서) |
+| 중간예납 | 법인세·종합소득세를 한 해 중간에 미리 내는 것입니다 | 법인은 신고 종류 `INTERIM`, 개인은 종합소득세의 `NOTICE`(11월 30일)입니다 ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) | 법인세법 제63조, 소득세법 제65조 ① ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) |
 | 법인세·종합소득세 신고, 성실신고확인 | 법인세는 사업연도 종료 월 말일부터 3개월, 종합소득세는 다음 해 5월 31일이 기한이고, 성실신고확인 대상이면 한 달 늦습니다 | 세무 일정이 결산월과 `sincereFilingTarget`으로 계산합니다. 두 세목은 제출 자료 체크리스트가 없습니다 ([filing-obligations](../reference/rules/filing-obligations.md#로직), [tax.md 열린 질문 5](tax.md#열린-질문)) | |
 | 신고 기한 이월 | 기한이 토요일·일요일·공휴일·근로자의 날이면 다음 날로 미룹니다 | 공휴일표로 기한을 미룹니다 ([filing-deadline-rollover](../reference/rules/filing-deadline-rollover.md), [filing-deadline.ts](../../apps/api/src/modules/tax/calendar/filing-deadline.ts)) | 국세기본법 제5조 ([filing-deadline-rollover](../reference/rules/filing-deadline-rollover.md)) |
 
@@ -90,7 +90,7 @@
 | 용어 | 뜻 | 이 저장소에서 | 근거 |
 |---|---|---|---|
 | 기장 | 회사의 거래를 장부에 적는 일입니다. 이 저장소에서 "세무 기장"은 세무 대리인이 장부와 신고를 맡는 상품을 뜻합니다 | 플랜 `TAXATION`, 서비스 계약 `BOOKKEEPING`입니다 ([identity-access.md](identity-access.md#용어), [billing.md](billing.md#용어)) | |
-| 증빙 | 거래가 있었음을 보여 주는 서류입니다. 세금계산서·현금영수증·카드 매출전표가 대표적입니다 | `Evidence`(`side`, `source`)이고 수집으로만 생깁니다 ([bookkeeping.md](bookkeeping.md#증빙)) | |
+| 증빙 | 거래가 있었음을 보여 주는 서류입니다. 세금계산서·현금영수증·카드 매출전표가 대표적입니다 | `Evidence`(`side`, `source`)입니다. 수집 반영과 세금계산서 발급(매출 `TAX_INVOICE` 증빙)으로 생기고, 직접 만들거나 지우는 엔드포인트는 없습니다 ([bookkeeping.md](bookkeeping.md#증빙), [bookkeeping.md](bookkeeping.md#거래명세서와-세금계산서-발급)) | |
 | 장부·증빙 보존 | 장부와 증거서류는 법정신고기한이 지난 날부터 5년간 보존해야 합니다 | 증빙·입출금·세금계산서·지로 납부에는 삭제 API가 없습니다 ([compliance.md](compliance.md#장부와-증빙-보존)) | 국세기본법 제85조의3 ([compliance.md](compliance.md#장부와-증빙-보존)) |
 | 거래명세서, 전자세금계산서와 수정세금계산서 | 거래명세서는 품목·수량·금액을 적어 상대에게 주는 서류이고, 세금계산서는 부가세 과세 거래에서 공급자가 발행해 국세청에 전송하는 계산서입니다. 발행한 세금계산서는 고치지 않고 수정세금계산서를 새로 발행합니다 | 거래명세서(`SalesTransaction`)를 홈택스로 발급(`POST /tax-invoices`)하면 승인번호로 매출 증빙을 바로 만들고 명세서는 잠깁니다. 수정세금계산서는 아직 없습니다 ([sales-statement-totals](../reference/rules/sales-statement-totals.md)) ([bookkeeping.md](bookkeeping.md#거래명세서와-세금계산서-발급), [compliance.md](compliance.md#장부와-증빙-보존)) | |
 | 계정과목과 자동분류 | 계정과목은 거래를 성격별로 묶는 이름(예: 매출, 복리후생비)이고, 자동분류는 규칙으로 계정과목을 채우는 일입니다 | 기본 체계 54행과 회사 하위 계정, 규칙의 `FILL_EMPTY`·`OVERWRITE` 적용입니다. 사람이 분류한 행은 규칙이 건너뜁니다 ([bookkeeping.md](bookkeeping.md#계정과목), [classification-apply-mode](../reference/rules/classification-apply-mode.md)) | |
