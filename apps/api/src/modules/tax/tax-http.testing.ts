@@ -1,5 +1,6 @@
 import { httpTestApp } from '../../shared/testing/http-test-app.ts'
 import type { HttpTestResponse } from '../../shared/testing/http-test-app.ts'
+import type { Id } from '../../shared/ids/ids.types.ts'
 import { testActor } from '../identity-access/testing.ts'
 import { taxMemoryLayer } from './tax.layer.ts'
 import type { TaxMemorySeed } from './tax.layer.ts'
@@ -7,10 +8,17 @@ import type { TaxMemorySeed } from './tax.layer.ts'
 /**
  * 테스트 토큰입니다. `client`는 고객 관리자, `agency`는 세무 대리인, `free`는 플랜이 없는 고객, `individual`은 개인사업자,
  * `viewer`는 신고 건 읽기만 하는 고객, `pendingTerms`는 세무 약관 재동의 전의 관리자, `demo`는 데모 관리자입니다.
+ * `otherAgency`는 다른 회사에 배정된 세무 대리인입니다. 배정되지 않은 회사의 회사 토큰은 발급되지 않으므로, 이 토큰이 그 대리인이
+ * 가질 수 있는 전부입니다.
  */
 export const TEST_TOKENS = {
   client: testActor(),
   agency: testActor({ kind: 'AGENCY' }),
+  otherAgency: testActor({
+    kind: 'AGENCY',
+    userId: 'usr_01JBQ000000000000000000009' as Id<'user'>,
+    companyId: 'cmp_01JBQ000000000000000000009' as Id<'company'>,
+  }),
   free: testActor({ plans: new Set() }),
   individual: testActor({ businessType: 'INDIVIDUAL' }),
   viewer: testActor({ permissions: new Set(['filing:read', 'action-card:read']) }),

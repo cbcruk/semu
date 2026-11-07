@@ -53,6 +53,12 @@ export interface FilingHistoryRecord {
   type: FilingHistoryType
   actorKind: 'CLIENT' | 'AGENCY' | 'SYSTEM'
   actorId: Id<'user'> | null
+  /**
+   * 대리인이 고객 몫의 일(고객 커맨드 대행, 제출 자료 응답·파일)을 했으면 `CLIENT`입니다. 그 밖에는 없습니다.
+   *
+   * 행위자(`actorKind`·`actorId`)는 언제나 실제로 요청한 사람입니다.
+   */
+  onBehalfOf?: 'CLIENT'
   fromStatus: FilingStatus | null
   toStatus: FilingStatus | null
   /** 사유·메시지·금액처럼 이력에 남길 입력입니다. */
