@@ -18,7 +18,8 @@ export type {
 /**
  * Tax가 내보내는 도메인 이벤트입니다.
  *
- * - `filing.status_changed`: 신고 건 상태가 바뀌었습니다. Payroll은 원천세가 `FILED`가 되면 그 지급월 급여대장을 잠급니다
+ * - `filing.status_changed`: 신고 건 상태가 바뀌었습니다. 지금은 소비자가 없습니다. Payroll의 급여대장 잠금은 이 이벤트가 아니라
+ *   `WithholdingFilingLock` 조회로 판정합니다
  */
 export interface FilingStatusChanged {
   type: 'filing.status_changed'

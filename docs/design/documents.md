@@ -246,13 +246,13 @@ GET /document-forms/{documentFormCode}/file
 
 ## 이벤트
 
-이름은 [documents-ports.ts](../../apps/api/src/modules/documents/shared/documents-ports.ts)의 `DocumentEvent`와 [events.md](events.md#이벤트-목록)를 따릅니다. 지금 내는 것은 세 개이고 소비자는 없습니다.
+이름은 [documents-ports.ts](../../apps/api/src/modules/documents/shared/documents-ports.ts)의 `DocumentEvent`와 [events.md](events.md#이벤트-목록)를 따릅니다. 지금 내는 것은 세 개이고 소비자는 없습니다. 알림(메일·알림톡)은 이벤트를 받지 않고 커맨드가 `DocumentNotifier`를 직접 부르므로, "받을 곳"은 이벤트 소비자가 생기면 받을 컨텍스트입니다.
 
-| 이벤트 | 낼 때 | 받는 곳 | 상태 |
+| 이벤트 | 낼 때 | 받을 곳(설계) | 상태 |
 |---|---|---|---|
-| `esign_request.sent` | `:send`, `:resend`에서 발송 성공 | 알림 | 구현(메모리) |
-| `esign_request.completed` | 서명자 `:complete` | HR(계약·보관함·신규 직원·사직 사유), 알림 | 구현(메모리), HR 소비 미구현 |
-| `esign_request.expired` | 스케줄러 만료 | 알림 | 미구현 |
+| `esign_request.sent` | `:send`, `:resend`에서 발송 성공 | 단말 | 구현(메모리), 소비자 없음 |
+| `esign_request.completed` | 서명자 `:complete` | HR(계약·보관함·신규 직원·사직 사유) | 구현(메모리), HR 소비 미구현 |
+| `esign_request.expired` | 스케줄러 만료 | 단말 | 미구현 |
 | `esign_request.canceled`, `esign_request.voided` | `:cancel`, `:void` | HR(무효화된 계약 표시는 [열린 질문](#열린-질문)) | 미구현 |
 | `certificate.issued` | 발급 | HR(보관함) | 구현(메모리), HR 소비 미구현 |
 | `certificate.sent` | 발송 성공 | | 미구현 |
