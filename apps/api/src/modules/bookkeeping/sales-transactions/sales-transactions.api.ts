@@ -1,7 +1,13 @@
 import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api'
 import { Page, PageQueryFields } from '../../../shared/http/pagination.ts'
-import { IdempotencyKeyRequired, PermissionDenied, VersionMismatch } from '../../../shared/problem/problem.ts'
+import {
+  ExternalOutcomeUnknown,
+  IdempotencyKeyInProgress,
+  IdempotencyKeyRequired,
+  PermissionDenied,
+  VersionMismatch,
+} from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
 import { SalesTransactionId, TaxInvoiceId } from '../common/ids.ts'
 import { CalendarDate, IdempotencyHeaders, IfMatchHeaders } from '../common/wire.ts'
@@ -80,7 +86,8 @@ export class SalesTransactionsApi extends HttpApiGroup.make('salesTransactions')
 /**
  * 세금계산서 발급 건입니다. `POST /tax-invoices`가 홈택스에 발급을 요청합니다.
  *
- * 외부 효과가 있어 `Idempotency-Key`가 필수이고, 같은 키의 재시도는 처음 결과를 돌려줍니다.
+ * 외부 효과가 있어 `Idempotency-Key`가 필수이고, 같은 키·같은 본문의 재시도는 처음 응답을 돌려받습니다. 발급 결과를 확인하지
+ * 못했으면 503 `EXTERNAL_OUTCOME_UNKNOWN`입니다(conventions.md 멱등성).
  */
 export class TaxInvoicesApi extends HttpApiGroup.make('taxInvoices')
   .add(
@@ -91,6 +98,8 @@ export class TaxInvoicesApi extends HttpApiGroup.make('taxInvoices')
       error: [
         IdempotencyKeyRequired,
         IdempotencyKeyReused,
+        IdempotencyKeyInProgress,
+        ExternalOutcomeUnknown,
         SalesTransactionNotFound,
         SalesStatementInvalid,
         SalesTransactionLocked,

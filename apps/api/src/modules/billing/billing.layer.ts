@@ -1,5 +1,6 @@
 import { Layer } from 'effect'
 import { TableFactory } from '../../shared/persistence/record-table.ts'
+import { BillingIdempotency } from './billing-idempotency.ts'
 import { demoMandates, demoPayments, demoServiceContracts, demoSubscriptions } from './billing-seed.ts'
 import { ConsultationRepository } from './consultations/consultation-repository.ts'
 import { ConsultationsHttpLive } from './consultations/consultations.http.ts'
@@ -35,7 +36,7 @@ export const BillingHttpLive = Layer.mergeAll(
 ).pipe(Layer.provide(ServicesLive))
 
 /**
- * Billing이 소유한 저장소와 CMS 출금 어댑터의 결정적인 가짜입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
+ * Billing이 소유한 저장소(`Idempotency-Key` 요청 기록 포함)와 CMS 출금 어댑터의 결정적인 가짜입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  *
  * Identity & Access의 `CompanyPlans` 포트도 여기서 구독 저장소로 구현해 넣습니다(`SubscriptionCompanyPlansLive`).
  * 공휴일(`PublicHolidays`)은 넣지 않습니다. `app.ts`가 공유 참조데이터의 어댑터로 채웁니다.
@@ -49,6 +50,7 @@ export const BillingStoreLive = SubscriptionCompanyPlansLive.pipe(
       ServiceContractRepository.layer(demoServiceContracts()),
       CmsGateway.layerFake,
       SubscriptionRepository.layer(demoSubscriptions()),
+      BillingIdempotency.layer,
     ),
   ),
 )

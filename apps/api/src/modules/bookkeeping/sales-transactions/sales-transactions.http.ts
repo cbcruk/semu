@@ -2,7 +2,6 @@ import { Effect, Layer } from 'effect'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from '../../../api.ts'
 import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
-import { IdempotencyKeyRequired } from '../../../shared/problem/problem.ts'
 import { requirePermission } from '../common/wire.ts'
 import { SalesTransactionService } from './sales-transaction-service.ts'
 
@@ -52,10 +51,12 @@ const TaxInvoicesHttpLive = HttpApiBuilder.group(
       issue: ({ headers, payload }) =>
         Effect.gen(function* () {
           const actor = yield* requirePermission('tax-invoice:issue')
-          const key = headers['idempotency-key']
-          if (key === undefined || key.trim() === '') return yield* new IdempotencyKeyRequired({})
-          const { invoice } = yield* sales.issue(actor.companyId, payload.salesTransactionId, key)
-          return invoice
+          return yield* sales.issue(
+            actor.companyId,
+            actor.userId,
+            payload.salesTransactionId,
+            headers['idempotency-key'],
+          )
         }),
       list: ({ query }) =>
         Effect.flatMap(requirePermission('tax-invoice:read'), (actor) =>

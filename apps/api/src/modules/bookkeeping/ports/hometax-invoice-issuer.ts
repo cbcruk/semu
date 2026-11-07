@@ -5,7 +5,12 @@ import { Context, Effect, Layer } from 'effect'
 export interface InvoiceIssueRequest {
   companyId: string
   salesTransactionId: string
-  /** 같은 키의 재시도는 같은 결과를 돌려줘야 합니다. */
+  /**
+   * 발급 요청의 멱등 참조입니다. 클라이언트의 `Idempotency-Key` 원문이 아니라 시도마다 만든 값이고, 결과를 확인하지 못한 발급을
+   * 같은 키로 다시 보내면 같은 값이 옵니다. 같은 값의 재시도는 다시 발급하지 않고 같은 결과를 돌려줘야 합니다. 중복 응답("이미 처리한 거래")을 거절로 돌려주면 안 됩니다. 원거래를 조회해 그 결과를 돌려주고, 조회하지 못하면 결함으로 끝냅니다.
+   * 거절은 확정 실패라 `Idempotency-Key`를 풀고, 다음 재시도가 새 참조로 같은 일을 한 번 더 하기 때문입니다. 참조는 UUID(36자)이고,
+   * 고정 길이 전문 필드에 맞추는 것(줄이거나 대응 표를 두는 것)은 어댑터의 몫입니다.
+   */
   idempotencyKey: string
   writeDate: string
   buyerBusinessNumber: string | null
@@ -31,31 +36,37 @@ export class HometaxInvoiceIssuer extends Context.Service<
 >()('semu/bookkeeping/HometaxInvoiceIssuer') {
   /**
    * 결정적인 가짜입니다. 공급받는 자 사업자번호가 {@link FAKE_REJECTED_BUYER_NUMBER}이면 거절하고, 아니면
-   * `<작성일>-41000000-<거래명세서 ID 해시 8자리>` 승인번호를 줍니다. 현행 가짜와 같습니다.
+   * `<작성일>-41000000-<거래명세서 ID 해시 8자리>` 승인번호를 줍니다. 현행 가짜와 같습니다. 참조(`idempotencyKey`)마다 처음 결과를
+   * 기억해, 같은 참조가 다시 오면 그 결과를 돌려줍니다.
    */
-  static readonly layerFake = Layer.succeed(
-    HometaxInvoiceIssuer,
-    HometaxInvoiceIssuer.of({
+  static readonly layerFake = Layer.sync(HometaxInvoiceIssuer, () => {
+    const results = new Map<string, InvoiceIssueResult>()
+    const decide = (request: InvoiceIssueRequest): InvoiceIssueResult => {
+      if (request.buyerBusinessNumber === FAKE_REJECTED_BUYER_NUMBER) {
+        return {
+          ok: false,
+          errorCode: 'BUYER_NOT_FOUND',
+          errorMessage: '공급받는 자의 사업자등록번호를 확인해 주세요.',
+        }
+      }
+      const hash = createHash('sha256').update(request.salesTransactionId).digest('hex').slice(0, 12)
+      const digits = (Number.parseInt(hash, 16) % 100_000_000).toString().padStart(8, '0')
+      return {
+        ok: true,
+        approvalNumber: `${request.writeDate.replaceAll('-', '')}-41000000-${digits}`,
+        issuedAt: `${request.writeDate}T09:00:00+09:00`,
+      }
+    }
+    return HometaxInvoiceIssuer.of({
       issue: (request) =>
         Effect.sync(() => {
-          if (request.buyerBusinessNumber === FAKE_REJECTED_BUYER_NUMBER) {
-            return {
-              ok: false,
-              errorCode: 'BUYER_NOT_FOUND',
-              errorMessage: '공급받는 자의 사업자등록번호를 확인해 주세요.',
-            }
-          }
-          const hash = createHash('sha256').update(request.salesTransactionId).digest('hex').slice(0, 12)
-          const digits = (Number.parseInt(hash, 16) % 100_000_000).toString().padStart(8, '0')
-          return {
-            ok: true,
-            approvalNumber: `${request.writeDate.replaceAll('-', '')}-41000000-${digits}`,
-            issuedAt: `${request.writeDate}T09:00:00+09:00`,
-          }
+          const result = results.get(request.idempotencyKey) ?? decide(request)
+          results.set(request.idempotencyKey, result)
+          return result
         }),
       fetchDetail: () => Effect.succeed({ found: true }),
-    }),
-  )
+    })
+  })
 }
 
 /** 가짜 발급기가 거절하는 공급받는 자 사업자번호입니다. 실패 경로 테스트에 씁니다. */

@@ -2,7 +2,6 @@ import { Effect } from 'effect'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from '../../../api.ts'
 import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
-import { IdempotencyKeyRequired } from '../../../shared/problem/problem.ts'
 import { requirePermission } from '../common/wire.ts'
 import { GiroService } from './giro-service.ts'
 
@@ -46,9 +45,9 @@ export const GirosHttpLive = HttpApiBuilder.group(
       pay: ({ params, headers, payload }) =>
         Effect.gen(function* () {
           const actor = yield* requirePermission('giro:pay')
-          const key = headers['idempotency-key']
-          if (key === undefined || key.trim() === '') return yield* new IdempotencyKeyRequired({})
-          return withEtag(yield* giros.pay(actor.companyId, actor.userId, params.giroId, key, payload))
+          return withEtag(
+            yield* giros.pay(actor.companyId, actor.userId, params.giroId, headers['idempotency-key'], payload),
+          )
         }),
     })
   }),

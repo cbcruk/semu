@@ -1,4 +1,5 @@
 import { Context, Layer } from 'effect'
+import { makeIdempotencyStore, type IdempotencyStore } from '../../../shared/persistence/idempotency-store.ts'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { AccountTitleRecord } from '../account-titles/account-title.types.ts'
 import { SYSTEM_ACCOUNT_TITLES } from '../account-titles/system-account-titles.ts'
@@ -183,7 +184,7 @@ export class GiroRepository extends Context.Service<GiroRepository, Table<GiroRe
     GiroRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
-/** 지로 납부 시도 저장소입니다. ID가 멱등 키입니다. */
+/** 지로 납부 시도 저장소입니다. ID는 납부 요청의 멱등 참조입니다. */
 export class GiroPaymentRepository extends Context.Service<GiroPaymentRepository, Table<GiroPaymentRecord>>()(
   'semu/bookkeeping/GiroPaymentRepository',
 ) {
@@ -194,6 +195,14 @@ export class GiroPaymentRepository extends Context.Service<GiroPaymentRepository
   /** `seed`로 시작하는 메모리 저장소입니다. */
   static readonly layerMemory = (seed: ReadonlyArray<GiroPaymentRecord> = []) =>
     GiroPaymentRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
+}
+
+/** 지로 납부와 세금계산서 발행의 `Idempotency-Key` 요청 기록입니다. 두 엔드포인트가 한 표를 씁니다. */
+export class BookkeepingIdempotency extends Context.Service<BookkeepingIdempotency, IdempotencyStore>()(
+  'semu/bookkeeping/BookkeepingIdempotency',
+) {
+  /** `bookkeeping_idempotency_keys` 표에 둡니다. */
+  static readonly layer = Layer.effect(BookkeepingIdempotency, makeIdempotencyStore('bookkeeping_idempotency_keys'))
 }
 
 /** 저장소 전체입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다. 시드 없이 비어 있고, 계정과목만 기본 체계를 봅니다. */
@@ -211,6 +220,7 @@ export const BookkeepingRepositoriesLive = Layer.mergeAll(
   TaxInvoiceRepository.layer(),
   GiroRepository.layer(),
   GiroPaymentRepository.layer(),
+  BookkeepingIdempotency.layer,
 )
 
 /** {@link BookkeepingRepositoriesLive}를 메모리 표로 채웁니다. */

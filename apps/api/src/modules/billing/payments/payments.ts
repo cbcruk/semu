@@ -2,12 +2,19 @@ import { Clock, Context, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import { paginate } from '../../../shared/http/pagination.ts'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
+import { runIdempotent } from '../../../shared/http/idempotency.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
-import type { VersionMismatch } from '../../../shared/problem/problem.ts'
+import type {
+  IdempotencyKeyInProgress,
+  IdempotencyKeyRequired,
+  IdempotencyKeyReused,
+  VersionMismatch,
+} from '../../../shared/problem/problem.ts'
 import { addDays } from '../../../shared/time/calendar.ts'
 import { hasPermission } from '../../identity-access/actor.ts'
 import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { nowIso, today } from '../billing-access.ts'
+import { BillingIdempotency } from '../billing-idempotency.ts'
 import { BillingMandateRepository } from '../mandates/billing-mandate-repository.ts'
 import type { BillingMandateRecord } from '../mandates/billing-mandate.ts'
 import { SubscriptionRepository } from '../subscriptions/subscription-repository.ts'
@@ -61,6 +68,8 @@ function pageKey(row: PaymentRecord): string {
   return `${String(date).padStart(8, '0')}:${String(999_999_999 - row.number).padStart(9, '0')}`
 }
 
+type IdempotencyProblem = IdempotencyKeyRequired | IdempotencyKeyReused | IdempotencyKeyInProgress
+
 /** CMS 결과 파일 한 줄입니다. */
 export interface WithdrawalResult {
   succeeded: boolean
@@ -77,16 +86,24 @@ export class Payments extends Context.Service<
   {
     list(actor: Actor, query: PageQuery & { status?: PaymentStatus }): Effect.Effect<PageOf<Payment>>
     get(actor: Actor, paymentId: PaymentId): Effect.Effect<Payment, PaymentNotFound>
+    /**
+     * 실패한 결제를 다시 출금하게 합니다. `Idempotency-Key`는 회사·행위자마다 따로이고, 같은 키·같은 결제·같은 본문으로 24시간 안에 다시
+     * 오면 처음 응답을 돌려줍니다(`If-Match`는 다시 보지 않습니다). 실패한 요청은 키를 남기지 않습니다.
+     */
     retry(
       actor: Actor,
       paymentId: PaymentId,
-      options: { retryOn?: string; expectedVersion?: number | undefined },
-    ): Effect.Effect<Payment, PaymentNotFound | PaymentTransitionInvalid | RetryDateInvalid | VersionMismatch>
+      options: { retryOn?: string; expectedVersion?: number | undefined; idempotencyKey: string | undefined },
+    ): Effect.Effect<
+      Payment,
+      PaymentNotFound | PaymentTransitionInvalid | RetryDateInvalid | VersionMismatch | IdempotencyProblem
+    >
+    /** 완료된 결제를 환불합니다. `Idempotency-Key`는 {@link retry}와 같습니다. */
     refund(
       actor: Actor,
       paymentId: PaymentId,
-      options: { expectedVersion?: number | undefined },
-    ): Effect.Effect<Payment, PaymentNotFound | PaymentTransitionInvalid | VersionMismatch>
+      options: { expectedVersion?: number | undefined; idempotencyKey: string | undefined },
+    ): Effect.Effect<Payment, PaymentNotFound | PaymentTransitionInvalid | VersionMismatch | IdempotencyProblem>
     /** 그달 결제 예정을 만듭니다. 이미 있는 구독·출금일은 건너뛰고 새로 만든 결제를 돌려줍니다. */
     scheduleMonth(month: string): Effect.Effect<PaymentRecord[]>
     /** CMS 결과를 반영합니다. 이미 반영된 결제(완료·실패)에 같은 결과가 다시 오면 그대로 둡니다. */
@@ -100,6 +117,7 @@ export class Payments extends Context.Service<
       const subscriptions = yield* SubscriptionRepository
       const mandates = yield* BillingMandateRepository
       const holidays = yield* PublicHolidays
+      const idempotency = yield* BillingIdempotency
 
       const mandateOf = (record: PaymentRecord) =>
         record.mandateId === undefined
@@ -134,27 +152,56 @@ export class Payments extends Context.Service<
         get: Effect.fn(function* (actor, paymentId) {
           return yield* view(yield* load(actor, paymentId), actor)
         }),
-        retry: Effect.fn(function* (actor, paymentId, options) {
-          const record = yield* load(actor, paymentId)
-          yield* checkVersion(record.version, options.expectedVersion)
-          const status = yield* transition(record, 'RETRY')
-          const date = yield* today
-          if (options.retryOn !== undefined && options.retryOn < date) return yield* new RetryDateInvalid({})
-          const calendar = yield* holidays.all()
-          const scheduledOn = nextBusinessDay(options.retryOn ?? addDays(date, 1), calendar)
-          const { failureReason: _, ...rest } = record
-          const updated: PaymentRecord = { ...rest, status, scheduledOn, version: record.version + 1 }
-          yield* payments.save(updated)
-          return yield* view(updated, actor)
-        }),
-        refund: Effect.fn(function* (actor, paymentId, options) {
-          const record = yield* load(actor, paymentId)
-          yield* checkVersion(record.version, options.expectedVersion)
-          const status = yield* transition(record, 'REFUND')
-          const updated: PaymentRecord = { ...record, status, refundedAt: yield* nowIso, version: record.version + 1 }
-          yield* payments.save(updated)
-          return yield* view(updated, actor)
-        }),
+        retry: (actor, paymentId, options) =>
+          runIdempotent(
+            {
+              store: idempotency,
+              companyId: actor.companyId,
+              actorUserId: actor.userId,
+              key: options.idempotencyKey,
+              operation: 'payment.retry',
+              request: { paymentId, retryOn: options.retryOn },
+            },
+            () =>
+              Effect.gen(function* () {
+                const record = yield* load(actor, paymentId)
+                yield* checkVersion(record.version, options.expectedVersion)
+                const status = yield* transition(record, 'RETRY')
+                const date = yield* today
+                if (options.retryOn !== undefined && options.retryOn < date) return yield* new RetryDateInvalid({})
+                const calendar = yield* holidays.all()
+                const scheduledOn = nextBusinessDay(options.retryOn ?? addDays(date, 1), calendar)
+                const { failureReason: _, ...rest } = record
+                const updated: PaymentRecord = { ...rest, status, scheduledOn, version: record.version + 1 }
+                yield* payments.save(updated)
+                return yield* view(updated, actor)
+              }),
+          ),
+        refund: (actor, paymentId, options) =>
+          runIdempotent(
+            {
+              store: idempotency,
+              companyId: actor.companyId,
+              actorUserId: actor.userId,
+              key: options.idempotencyKey,
+              operation: 'payment.refund',
+              request: { paymentId },
+            },
+            () =>
+              Effect.gen(function* () {
+                const record = yield* load(actor, paymentId)
+                yield* checkVersion(record.version, options.expectedVersion)
+                const status = yield* transition(record, 'REFUND')
+                const updated: PaymentRecord = {
+                  ...record,
+                  status,
+                  refundedAt: yield* nowIso,
+                  version: record.version + 1,
+                }
+                yield* payments.save(updated)
+                return yield* view(updated, actor)
+              }),
+          ),
         scheduleMonth: Effect.fn(function* (month) {
           const rows = yield* subscriptions.listAll()
           const existing = yield* payments.listAll()

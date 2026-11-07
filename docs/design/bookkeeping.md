@@ -168,7 +168,14 @@ stateDiagram-v2
 | POST | `/v1/tax-invoices/{taxInvoiceId}:sync` | `tax-invoice:read` | |
 
 - 합계 검증과 잠금: [sales-statement-totals](../reference/rules/sales-statement-totals.md)
-- 같은 `Idempotency-Key`는 같은 결과를 돌려주고, 다른 명세서에 쓰면 422 `IDEMPOTENCY_KEY_REUSED`입니다
+- `Idempotency-Key`는 [공통 규칙](conventions.md#멱등성)을 따릅니다. 키는 회사·행위자마다 따로이고 24시간 동안 기억합니다
+  - 같은 키·같은 명세서면 처음 응답(201)을 그대로 돌려줍니다. 그 뒤 `:sync`로 발급 건이 바뀌었어도 재생은 처음 응답입니다. 다른 명세서에 쓰면 422 `IDEMPOTENCY_KEY_REUSED`, 앞 요청이 처리 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`(메모리 저장소)입니다
+  - 홈택스가 거절하면 `FAILED` 발급 건은 남기고 키는 남기지 않습니다. 명세서를 고쳐 같은 키로 다시 보내면 새로 발급합니다(이전에는 같은 키가 거절을 재생했습니다)
+  - 발급 결과를 확인하지 못하면(연동 결함·시간 초과) 503 `EXTERNAL_OUTCOME_UNKNOWN`입니다. `ISSUING` 발급 건이 남아 명세서를 잠그므로(`SALES_TRANSACTION_LOCKED`, `lock: ISSUING`) 수정은 막힙니다
+  - 그 명세서로 오는 발행 요청은 사용자·키와 상관없이 `ISSUING` 발급 건에 저장한 참조로 홈택스에 다시 물어 `ISSUED`(증빙 포함)나 `FAILED`로 마치고, 그 결과를 응답합니다. 그래서 처음 요청한 사람이 돌아오지 않아도 명세서가 풀리고, 새 발급 건을 만들지 않으므로 두 번 발급되지 않습니다. 메모리 저장소에서 같은 발급 건을 지금 다른 요청이 홈택스에 보내는 중이면 409 `SALES_TRANSACTION_LOCKED`(`lock: ISSUING`)입니다
+  - 처음 키의 재시도는 자기 참조의 발급 건을 상태와 상관없이 찾습니다. 이미 다른 요청이 마쳤으면 그 결과(`ISSUED` 응답이나 422 `TAX_INVOICE_REJECTED`)를 받고, `ISSUED`로 저장한 뒤 증빙을 만들다 멈췄으면 빠진 매출 증빙을 만들어 마칩니다. 그 경우 다른 키의 요청은 `ISSUED` 잠금(409)을 받으므로, 증빙은 처음 키가 재시도할 때 생깁니다
+  - 결과를 모르는 기록(`UNCERTAIN`)은 24시간이 지나도 만료하지 않습니다([공통 규칙](conventions.md#멱등성)). 며칠 뒤 같은 키로 보내도 같은 참조로 이어 갑니다. `:sync`는 읽기 권한이라 발급을 마치지 않습니다
+  - 홈택스에는 클라이언트 키 대신 시도마다 만든 멱등 참조를 넘기고, 발급 건의 `idempotencyKey`에 그 참조를 둡니다(이 규칙 이전 행은 키 원문). 요청 기록은 `bookkeeping_idempotency_keys` 표(`BookkeepingIdempotency`)에 지로 납부와 함께 둡니다
 - 발급에 성공하면 승인번호를 수집 키로 매출 `TAX_INVOICE` 증빙을 바로 만들고 `salesTransactionId`로 잇습니다. 나중에 홈택스 수집이 같은 승인번호로 오면 그 증빙을 덮어씁니다
 
 ## 지로 고지서
@@ -206,7 +213,13 @@ stateDiagram-v2
 | POST | `/v1/giros/{giroId}:hide` | `giro:update` | 메모. `If-Match` |
 | POST | `/v1/giros/{giroId}:pay` | `giro:pay` | 출금 계좌·비밀번호·금액 + `Idempotency-Key`. 실패 422 `GIRO_PAYMENT_FAILED { resultCode }` |
 
-- 납부 멱등 키는 `giroId:Idempotency-Key`로 저장합니다. 같은 키로 다시 오면 처음 결과를 돌려줍니다
+- `Idempotency-Key`는 [공통 규칙](conventions.md#멱등성)을 따릅니다. 같은 키·같은 본문이면 처음 응답(과 같은 `ETag`)을 돌려주고 다시 출금하지 않습니다. 본문이 다르면 422 `IDEMPOTENCY_KEY_REUSED`, 앞 요청이 처리 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`(메모리 저장소)입니다
+  - 본문 지문은 고지서·은행·계좌 끝 4자리로 만듭니다. 비밀번호와 계좌번호 전체는 지문에도 남기지 않습니다
+  - 금융결제원이 거절하면 납부 시도(`FAILED`)와 고지서 이력(`PAYMENT_FAILED`)은 남기고 키는 남기지 않습니다. 비밀번호를 고쳐 같은 키로 다시 보내면 새로 납부를 요청합니다(이전에는 같은 키가 거절을 재생했습니다)
+  - 납부 결과를 확인하지 못하면 503 `EXTERNAL_OUTCOME_UNKNOWN`이고 고지서는 `TODO`로 남습니다. 같은 키·같은 본문의 재시도는 같은 멱등 참조로 금융결제원에 다시 물어 이중 출금 없이 마칩니다. 이 기록(`UNCERTAIN`)은 24시간이 지나도 만료하지 않으므로 며칠 뒤 같은 키로 보내도 새로 출금하지 않습니다
+  - **다른 키로 보내면 새 납부라 막지 못합니다.** 게이트웨이를 부르기 전에 `PENDING` 납부 시도를 저장해 막는 것은 [열린 질문](conventions.md#멱등성)입니다
+  - 결과를 모르는 납부를 이어 갈 때 고지서가 이미 `TODO`가 아니면(수동 완료·재수집) 409 `GIRO_TRANSITION_INVALID`이고 그 기록을 지웁니다
+  - 납부 게이트웨이에는 클라이언트 키 대신 시도마다 만든 멱등 참조를 넘기고, 납부 시도 ID도 그 참조입니다. 이 규칙 이전의 납부 시도(ID `<고지서>:<키>`)는 재생에 쓰지 않습니다. 그때 납부된 고지서는 `DONE`이라 같은 키가 와도 409 `GIRO_TRANSITION_INVALID`입니다
 - 계좌 비밀번호는 포트로 한 번 넘기고 저장하지 않습니다
 
 ## 실시간 보고서
@@ -267,8 +280,8 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `VatEstimateSource` | Tax | `current(companyId, businessType, today) → { period, estimatedTaxAmount, dueDate }` |
 | `LaborCostSource` | Payroll | `monthly(companyId, year) → LaborCostMonth[] { month, amounts, paidHeadcount, employedCount, joinedCount, leftCount }` |
 | `BusinessStatusLookup` | Integrations | `lookup(businessNumber) → { status: REGISTERED | SUSPENDED | CLOSED | UNKNOWN, taxationType, closedOn }` |
-| `HometaxInvoiceIssuer` | Integrations | `issue(request) → { ok, approvalNumber, issuedAt } | { ok: false, errorCode, errorMessage }`, `fetchDetail(companyId, approvalNumber)` |
-| `GiroPaymentGateway` | Integrations | `pay({ companyId, giroId, electronicPaymentNumber, taxKind, bankCode, accountNumber, accountPassword, amount, idempotencyKey }) → { ok, resultCode, resultMessage }` |
+| `HometaxInvoiceIssuer` | Integrations | `issue(request) → { ok, approvalNumber, issuedAt } | { ok: false, errorCode, errorMessage }`, `fetchDetail(companyId, approvalNumber)`. `request.idempotencyKey`는 시도마다 만든 멱등 참조이고, 같은 값의 재요청에는 다시 발급하지 않고 같은 결과를 돌려줘야 합니다 |
+| `GiroPaymentGateway` | Integrations | `pay({ companyId, giroId, electronicPaymentNumber, taxKind, bankCode, accountNumber, accountPassword, amount, idempotencyKey }) → { ok, resultCode, resultMessage }`. `idempotencyKey`는 시도마다 만든 멱등 참조이고, 같은 값의 재요청에는 다시 출금하지 않고 처음 결과를 돌려줘야 합니다 |
 | `AccountNumberCipher` | 공유(데이터 키) | `encrypt(field, plaintext)`, `decrypt(field, token)` (동기). `field`는 `companyAccount`·`partnerAccount`·`giroAccount`이고 필드마다 하위 키와 AAD가 달라 다른 필드로 옮긴 암호문은 열리지 않습니다. 서버는 `layerAesGcm`(AES-256-GCM, 서버 데이터 키에서 파생), 테스트는 `layerFake` |
 
 모두 `ports/`에 있고 `layerFake`가 있습니다. Bookkeeping만 시험할 때(`BookkeepingMemoryLive`)는 가짜를 쓰고, `app.ts`는 `src/wiring/bookkeeping-*.ts` 어댑터로 Integrations·Tax·Payroll에 연결합니다.
@@ -302,11 +315,13 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 | `SALES_TRANSACTION_NOT_FOUND`, `TAX_INVOICE_NOT_FOUND` | 404 | |
 | `SALES_STATEMENT_INVALID` | 422 | `problems[{ code, field }]` |
 | `SALES_TRANSACTION_LOCKED` | 409 | `lock: ISSUED | ISSUING` |
-| `TAX_INVOICE_REJECTED` | 422 | 홈택스 거절 |
-| `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키, 다른 요청 |
+| `TAX_INVOICE_REJECTED` | 422 | 홈택스 거절. 키는 남기지 않음 |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 키, 다른 요청(다른 명세서·고지서·계좌, 다른 엔드포인트) |
+| `IDEMPOTENCY_KEY_IN_PROGRESS` | 409 | 같은 키의 앞 요청이 아직 처리 중 (메모리 저장소) |
+| `EXTERNAL_OUTCOME_UNKNOWN` | 503 | 지로 납부·세금계산서 발급의 결과를 확인하지 못함. 같은 키·같은 본문으로 다시 보냄 |
 | `GIRO_NOT_FOUND` | 404 | |
 | `GIRO_TRANSITION_INVALID` | 409 | |
-| `GIRO_PAYMENT_FAILED` | 422 | 금융결제원 실패 |
+| `GIRO_PAYMENT_FAILED` | 422 | 금융결제원 실패. 키는 남기지 않음 |
 
 공유 문제(`VERSION_MISMATCH` 412, `IDEMPOTENCY_KEY_REQUIRED` 428, `VALIDATION_FAILED` 400, `PERMISSION_DENIED` 403, `ENTITLEMENT_REQUIRED` 403)는 `shared/http`의 것을 씁니다. 표의 `If-Match`는 선택이고, 보내면 검사합니다.
 
