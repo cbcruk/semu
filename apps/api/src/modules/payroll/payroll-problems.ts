@@ -168,3 +168,14 @@ export class SeveranceTransitionInvalid extends HttpApiError.Problem<SeveranceTr
   { type: problemType('SEVERANCE_TRANSITION_INVALID'), status: 409, title: 'Severance settlement cannot do this now' },
   { code: Schema.tag('SEVERANCE_TRANSITION_INVALID'), settlementStatus: Schema.String, action: Schema.String },
 ) {}
+
+/** 퇴직금 지급일이 마지막 근무일보다 앞섭니다. */
+export class SeverancePaymentDateInvalid extends HttpApiError.Problem<SeverancePaymentDateInvalid>()(
+  'SeverancePaymentDateInvalid',
+  {
+    type: problemType('SEVERANCE_PAYMENT_DATE_INVALID'),
+    status: 422,
+    title: 'Severance payment date is before the last work date',
+  },
+  { code: Schema.tag('SEVERANCE_PAYMENT_DATE_INVALID'), lastWorkDate: Schema.String },
+) {}

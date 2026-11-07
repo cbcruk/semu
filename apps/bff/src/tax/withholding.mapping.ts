@@ -8,6 +8,7 @@ import type {
   FilingSummary,
   PayrollIncomeType,
   PayrollLedger,
+  SeveranceSettlement,
 } from '../upstream.types.ts'
 
 /**
@@ -260,12 +261,14 @@ const LINES: ReadonlyArray<{ code: LineCode; label: string; incomeTypes: readonl
  *
  * - 대장은 지급일이 그 달인 것이고, 마감된(`CLOSED`) 대장의 행만 셉니다. 계산 결과가 없는 행은 0원으로 셉니다(급여대장 조각과 같음)
  * - 인원은 줄마다 직원 ID(없으면 이름) 기준으로 중복 없이 셉니다
- * - 퇴직소득 `A21`은 새 퇴직금 정산에 지급일이 없어 지급월로 묶을 수 없으므로 인원·금액이 `null`이고 합계에서 빠집니다
+ * - 퇴직소득 `A21`은 지급일(`paymentDate`)이 그 달인 완료(`COMPLETED`) 퇴직금 정산입니다(현행 `listCompletedSettlementsPaidBetween`).
+ *   인원은 직원 수, 총지급액·과세 대상은 퇴직금, 소득세는 퇴직소득세, 지방소득세는 그 지방소득세이고 합계에 들어갑니다
  */
 export function toLegacyWithholdingSummary(
   paymentMonth: string,
   ledgers: readonly PayrollLedger[],
   closed: readonly LedgerWithRows[],
+  severance: readonly SeveranceSettlement[],
   filing: FilingSummary | undefined,
 ): Record<string, unknown> {
   const rows = closed.flatMap(({ rows: of }) => of)
@@ -284,17 +287,8 @@ export function toLegacyWithholdingSummary(
       verified: false,
     }
   })
-  lines.splice(1, 0, {
-    code: 'A21',
-    label: '퇴직소득',
-    headcount: null,
-    total_paid: null,
-    taxable_paid: null,
-    income_tax: null,
-    local_income_tax: null,
-    verified: false,
-  })
-  const total = (key: string) => sum(lines.map((line) => (typeof line[key] === 'number' ? (line[key] as number) : 0)))
+  lines.splice(1, 0, retirementLine(paymentMonth, severance))
+  const total = (key: string) => sum(lines.map((line) => line[key] as number))
   const byId = (a: PayrollLedger, b: PayrollLedger) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
   return {
     payment_month: paymentMonth,
@@ -318,6 +312,30 @@ export function toLegacyWithholdingSummary(
       income_tax: total('income_tax'),
       local_income_tax: total('local_income_tax'),
     },
+    verified: false,
+  }
+}
+
+/**
+ * 퇴직소득 `A21` 줄입니다. 현행 요약처럼 총지급액과 과세 대상이 모두 퇴직금(`severancePay`)이고, 인원은 직원 수입니다.
+ * 새 API에서 지급월·상태로 거른 목록을 받지만, 그 달의 완료 정산만 세도록 여기서도 한 번 더 거릅니다.
+ */
+function retirementLine(
+  paymentMonth: string,
+  settlements: readonly SeveranceSettlement[],
+): Record<string, unknown> & { code: LineCode } {
+  const paid = settlements.filter(
+    (settlement) => settlement.status === 'COMPLETED' && settlement.paymentDate?.slice(0, 7) === paymentMonth,
+  )
+  const severancePay = sum(paid.map((settlement) => settlement.result.severancePay))
+  return {
+    code: 'A21',
+    label: '퇴직소득',
+    headcount: new Set(paid.map((settlement) => settlement.employeeId)).size,
+    total_paid: severancePay,
+    taxable_paid: severancePay,
+    income_tax: sum(paid.map((settlement) => settlement.result.retirementIncomeTax)),
+    local_income_tax: sum(paid.map((settlement) => settlement.result.localIncomeTax)),
     verified: false,
   }
 }

@@ -17,7 +17,7 @@ export const SeveranceSettlementsHttpLive = HttpApiBuilder.group(Api, 'severance
     const context = yield* Effect.context<SeveranceDeps>()
     const version = (headers: { readonly 'if-match'?: string }) => expectedVersion(headers['if-match'])
     return handlers
-      .handle('list', ({ query }) => listSettlements(query.status).pipe(Effect.provideContext(context)))
+      .handle('list', ({ query }) => listSettlements(query).pipe(Effect.provideContext(context)))
       .handle('create', ({ payload }) =>
         createSettlement(payload).pipe(Effect.map(withEtag), Effect.provideContext(context)),
       )
@@ -25,7 +25,7 @@ export const SeveranceSettlementsHttpLive = HttpApiBuilder.group(Api, 'severance
         getSettlement(params.settlementId).pipe(Effect.map(withEtag), Effect.provideContext(context)),
       )
       .handle('update', ({ params, payload, headers }) =>
-        updateSettlement(params.settlementId, payload.input, version(headers)).pipe(
+        updateSettlement(params.settlementId, payload, version(headers)).pipe(
           Effect.map(withEtag),
           Effect.provideContext(context),
         ),
