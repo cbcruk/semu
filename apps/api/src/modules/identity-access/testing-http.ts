@@ -13,7 +13,7 @@ export type TestResponse = HttpTestResponse
 
 /** 메모리 저장소와 데모 시드로 띄운 앱입니다. 테스트 하나가 상태를 공유하며 여러 요청을 보냅니다. */
 export interface TestApp {
-  /** 앱의 웹 핸들러입니다. 다른 앱(BFF)이 이 API를 프로세스 안에서 부를 때 씁니다. */
+  /** 앱의 웹 핸들러입니다. 테스트가 요청을 그대로 보낼 때 씁니다. */
   handler(request: Request): Promise<Response>
   request(method: string, path: string, options?: TestRequest): Promise<TestResponse>
   /** 데모 계정으로 로그인하고 access token과 refresh 쿠키를 돌려줍니다. */
