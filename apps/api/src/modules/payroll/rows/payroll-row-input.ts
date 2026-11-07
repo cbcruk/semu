@@ -110,7 +110,7 @@ export const DailyWorkerInput = Schema.Struct({
 export const BusinessIncomeInput = Schema.Struct({
   incomeType: Schema.Literal('BUSINESS'),
   payAmount: Won,
-  /** 업종코드입니다. 예: `940909` 기타자영업(프리랜서). */
+  /** 업종코드입니다. 예: `940909` 기타인적용역자(현행 화면의 "기타자영업(프리랜서)"). */
   businessIncomeCode: Schema.optionalKey(Schema.String),
   taxDeductionMode: Schema.optionalKey(TaxDeductionMode),
   /** 예술인·노무제공자 고용보험 대상인지입니다. */
@@ -122,7 +122,7 @@ export const BusinessIncomeInput = Schema.Struct({
 export const OtherIncomeInput = Schema.Struct({
   incomeType: Schema.Literal('OTHER'),
   payAmount: Won,
-  /** 지급사유 코드입니다. 없으면 `60`(필요경비 있는 기타소득, 60%)입니다. */
+  /** 지급사유 코드입니다. 없으면 `76`(강연료 등, 의제 필요경비 60%)입니다. */
   otherIncomeCode: Schema.optionalKey(Schema.String),
   /** 실제 필요경비입니다. 있으면 의제 경비율 대신 씁니다. */
   necessaryExpenseAmount: Schema.optionalKey(Won),

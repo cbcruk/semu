@@ -2,13 +2,15 @@ import type {
   InsuranceSetting,
   PayrollRowInput,
   PayrollRowResult,
+  PayrollWarning,
   PremiumMultipliers,
   WageIncomeTaxSetting,
 } from '../engine/engine.types.ts'
 import { calculatePayrollRow } from '../engine/payroll-row.ts'
 import type { PayrollRateTable } from '../engine/rate-table.types.ts'
 import {
-  BUSINESS_INCOME_CODES,
+  ARTWORK_CODE,
+  ARTWORK_FULL_RATE_LIMIT,
   DEFAULT_OTHER_INCOME_CODE,
   findOtherIncomeCode,
 } from '../rate-tables/reference-codes.ts'
@@ -128,14 +130,13 @@ export function engineInputOf(
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
     case 'BUSINESS': {
-      const detailType =
-        BUSINESS_INCOME_CODES.find((code) => code.code === input.businessIncomeCode)?.detailType ?? null
       return {
         incomeType: 'BUSINESS',
         attributionMonth,
         payAmount: input.payAmount,
         taxDeductionMode: input.taxDeductionMode ?? 'BEFORE_TAX',
-        employmentInsurance: { applicable: detailType !== null && input.employmentInsuranceApplicable === true },
+        // 고용보험 대상 여부는 업종코드가 아니라 계약으로 정해지므로 행의 표시만 봅니다(업종의 `detailType`은 화면 힌트).
+        employmentInsurance: { applicable: input.employmentInsuranceApplicable === true },
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
     }
@@ -187,8 +188,32 @@ export function calculateRow(
     deductionTotal: result.deductionTotal,
     netPay: result.netPay,
     breakdown: result.breakdown,
-    warnings: result.warnings,
+    warnings: [...result.warnings, ...rowInputWarnings(input)],
   }
+}
+
+/**
+ * 엔진이 아니라 행 입력(지급사유 코드)으로 정해지는 경고입니다.
+ *
+ * 서화·골동품(`64`)은 의제 경비 90%를 지급액 전체에 씁니다. 서식 주석은 1억원 초과분을 80%(보유 10년 이상이면 90%)로
+ * 하므로, 1억원을 넘는데 실제 경비를 넣지 않으면 경비를 많이 잡아 세금을 덜 뗄 수 있습니다.
+ */
+function rowInputWarnings(input: PayrollRowInputValue): PayrollWarning[] {
+  if (
+    input.incomeType === 'OTHER' &&
+    input.otherIncomeCode === ARTWORK_CODE &&
+    input.necessaryExpenseAmount === undefined &&
+    input.payAmount > ARTWORK_FULL_RATE_LIMIT
+  ) {
+    return [
+      {
+        code: 'ARTWORK_EXPENSE_RATE_SIMPLIFIED',
+        message:
+          '서화·골동품 양도가액이 1억원을 넘습니다. 초과분의 의제 경비는 80%(보유 10년 이상이면 90%)인데 90%로 계산했습니다. 실제 필요경비를 넣어 주세요.',
+      },
+    ]
+  }
+  return []
 }
 
 function withTaxesOf(result: PayrollRowResult, taxRun: PayrollRowResult): PayrollRowResult {

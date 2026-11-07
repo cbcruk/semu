@@ -65,18 +65,18 @@
 
 | 규칙 | 상태 | 근거 |
 |---|---|---|
-| [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율·상하한(2026-07 포함)·연금·건강 절사 확인, 장기요양 비율 반올림·고용·산재 절사 미확인 | 스펙 4.1, 법령·고시 원문 |
+| [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율·상하한(2026-07 포함)·연금·건강·장기요양 절사와 장기요양 비율 13.14% 확인, 고용·산재 절사는 학습용 가정 | 스펙 4.1, 법령·고시 원문 |
 | [simple-income-tax](../reference/rules/simple-income-tax.md) | 산식 계수·자녀 공제액(2026-03 개정) 확인, 공식 표와 차이는 D4로 유지 | 스펙 4.2, 소득세법·별표 2 |
 | [daily-worker-withholding](../reference/rules/daily-worker-withholding.md) | 확인 | 스펙 4.3 |
-| [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8% 확인, 역산·예술인 필요경비·업종코드 미확인 | 스펙 4.4, 보험료징수법 시행령 |
-| [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·과세최저한 확인, 지급사유 코드 미확인 | 스펙 4.5 |
+| [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8%·업종코드(별지 제23호서식) 확인, 역산은 추정, 예술인 필요경비는 학습용 가정(빼지 않음) | 스펙 4.4, 보험료징수법 시행령, 소득세법 시행규칙 |
+| [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·15%·과세최저한·지급사유 코드와 의제 경비율(별지 제23호서식) 확인 | 스펙 4.5, 소득세법 제129조, 소득세법 시행규칙 |
 | [non-taxable-limits](../reference/rules/non-taxable-limits.md) | 10종 한도 확인, 보육수당은 자녀 1명당 한도 × HR의 대상 자녀 수(모르면 1명 + 경고) | 스펙 4.6, 소득세법·시행령 |
 | [overtime-multipliers](../reference/rules/overtime-multipliers.md) | 확인 (배수는 회사 설정) | 스펙 4.8, 매뉴얼 |
-| [wage-proration](../reference/rules/wage-proration.md) | 식 확인, 역일·소정근로일 선택 미확인 | 스펙 4.10 |
+| [wage-proration](../reference/rules/wage-proration.md) | 식 확인, 역일 기본·소정근로일 선택(설계 결정) | 스펙 4.10 |
 | [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인(고용노동부고시 제2025-47호), 경고만 하는 것은 추정 | 스펙 4.7 |
 | [severance-pay](../reference/rules/severance-pay.md) | 식·퇴직소득 공제표 확인 | 스펙 4.11, 소득세법 제48조 |
 
-기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 남은 미확인 경로는 2026. 1~10월의 `longTermCare.ratioOfHealthPpm`(2026-11부터 확인), `employmentInsurance.premiumRoundingUnit`, `industrialAccident.*`, `wageIncomeTax.simpleTaxStrategy`(D4)입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
+기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 장기요양 비율은 2026-11-07에 2026. 1~10월도 보건복지부 보도자료로 확인했습니다. 남은 미확인 경로는 `employmentInsurance.premiumRoundingUnit`·`industrialAccident.premiumRoundingUnit`(10원 미만 절사는 학습용 가정), `industrialAccident.defaultEmployerRatePpm`(회사 입력), `wageIncomeTax.simpleTaxStrategy`(D4)입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
 
 ### 계산 결과
 
@@ -569,3 +569,6 @@ flowchart LR
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
 10. **기장 회사의 "급여대장 마감분".** 급여대장을 기장(`TAXATION`)에도 열었지만 원천세의 "급여대장 마감분" 자동 연계 항목은 급여 플랜 회사에만 넣습니다([접근 요건](#접근-요건)). 대장을 쓰는 기장 회사에도 넣으려면 "신고 기간에 대장이 있으면 마감 여부로, 없으면 `NOT_APPLICABLE`" 같은 규칙이 필요합니다. 지금 판정(`payrollLedgerResponse`)은 대장이 없으면 `PENDING`이라, 그대로 넣으면 대장을 쓰지 않는 기장 회사의 화면에 끝나지 않는 대기 항목이 남습니다(제출은 막지 않음). 기간 중에 대장이 생기거나 지워질 때 항목을 넣고 빼는 것도 함께 정합니다
 11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** 명세서는 HR 직원 이메일로만 보내는데, 일용·사업·기타소득 행은 직원 없이 이름만 둘 수 있어 그런 소득자의 명세서는 언제나 `NO_EMAIL`로 실패합니다. 현행 BPO는 대장 행에 저장한 주소로 사업·기타소득자에게도 보냈습니다. 명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지 정해야 합니다
+12. **고정 연장근로 초과분.** 지금은 담당자가 약정 시간을 넘은 연장 분만 행에 넣습니다. 행에 고정 연장 약정 분을 받아 `max(0, 실제 − 약정)`을 가산하려면 HR 급여계약의 고정수당 시간을 `PayrollEmployee`로 넘겨야 합니다(7번의 계약 지급항목과 함께, [규칙 결정](rule-decisions/payroll.md#overtime-multipliers) 1)
+13. **수습 감액과 최저임금 경고.** 급여 경고는 감액 없이 최저시급과 비교합니다. HR 포트가 수습 시작일과 감액 허용 여부(급여계약 검증 결과)를 주면, 그 달이 수습 3개월 안이고 허용된 경우에만 90%로 비교할 수 있습니다([규칙 결정](rule-decisions/payroll.md#minimum-wage-warning) 2)
+14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)

@@ -96,3 +96,65 @@ describe('childcare child count from the snapshot', () => {
     ])
   })
 })
+
+describe('calculateRow for other income codes (별지 제23호서식(4))', () => {
+  const march = context('2026-03', '2026-03')
+
+  it('uses 76 (강연료 등, 60% deemed expense) when the row has no code', () => {
+    const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000 }, null, march)
+
+    expect({ incomeTax: result.incomeTax, localIncomeTax: result.localIncomeTax }).toEqual({
+      incomeTax: 80_000,
+      localIncomeTax: 8_000,
+    })
+  })
+
+  it('recalculates a row saved with 60 at 0% expense, since 60 is 필요경비가 없는 기타소득', () => {
+    const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000, otherIncomeCode: '60' }, null, march)
+
+    expect(result.incomeTax).toBe(200_000)
+  })
+
+  it('applies the 60% deemed expense of code 72', () => {
+    const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000, otherIncomeCode: '72' }, null, march)
+
+    expect(result.incomeTax).toBe(80_000)
+  })
+
+  it('warns when an artwork sale over 100,000,000 uses the flat 90% expense', () => {
+    const over = calculateRow({ incomeType: 'OTHER', payAmount: 100_000_001, otherIncomeCode: '64' }, null, march)
+    const atLimit = calculateRow({ incomeType: 'OTHER', payAmount: 100_000_000, otherIncomeCode: '64' }, null, march)
+    const withActual = calculateRow(
+      { incomeType: 'OTHER', payAmount: 150_000_000, otherIncomeCode: '64', necessaryExpenseAmount: 125_000_000 },
+      null,
+      march,
+    )
+
+    expect(over.warnings.map((warning) => warning.code)).toEqual(['ARTWORK_EXPENSE_RATE_SIMPLIFIED'])
+    expect(atLimit.warnings).toEqual([])
+    expect(withActual.warnings).toEqual([])
+  })
+})
+
+describe('calculateRow for business income employment insurance', () => {
+  const march = context('2026-03', '2026-03')
+
+  it.each(['940923', '940921', '940924', '940925', '940100', '940909'])(
+    'follows the row flag for %s, not the code',
+    (code) => {
+      const flagged = calculateRow(
+        { incomeType: 'BUSINESS', payAmount: 1_000_000, businessIncomeCode: code, employmentInsuranceApplicable: true },
+        null,
+        march,
+      )
+      const unflagged = calculateRow(
+        { incomeType: 'BUSINESS', payAmount: 1_000_000, businessIncomeCode: code },
+        null,
+        march,
+      )
+
+      expect(flagged.employeeInsurance.employmentInsurance).toBe(8_000)
+      expect(unflagged.employeeInsurance.employmentInsurance).toBe(0)
+    },
+  )
+})

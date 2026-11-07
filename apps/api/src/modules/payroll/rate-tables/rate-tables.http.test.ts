@@ -20,7 +20,8 @@ describe('/rate-tables', () => {
       id: 'rtb_00000000000000000000202601',
       minimumWage: { hourly: 10_320, monthly: 2_156_880 },
     })
-    expect(response.body.items[0].unverifiedPaths).toContain('longTermCare.ratioOfHealthPpm')
+    expect(response.body.items[0].unverifiedPaths).toContain('employmentInsurance.premiumRoundingUnit')
+    expect(response.body.items[0].unverifiedPaths).not.toContain('longTermCare.ratioOfHealthPpm')
     expect(response.body.items[2]).toMatchObject({ nationalPension: { baseMin: 410_000, baseMax: 6_590_000 } })
     expect(response.body.items[2].unverifiedPaths).not.toContain('nationalPension.baseMax')
     expect(response.body.items[3].unverifiedPaths).not.toContain('longTermCare.ratioOfHealthPpm')
@@ -39,11 +40,25 @@ describe('/rate-tables', () => {
     expect(response.body).toMatchObject({ code: 'RATE_TABLE_NOT_FOUND', month: '2020-01' })
   })
 
-  it('lists other income codes with expense rates', async () => {
+  it('lists other income codes with expense rates from the statement form', async () => {
     const response = await app.request('GET', '/payroll-reference-codes?month=2026-03')
+    const other = (code: string) => response.body.otherIncome.find((entry: { code: string }) => entry.code === code)
 
     expect(response.status).toBe(200)
-    expect(response.body.otherIncome[0]).toMatchObject({ code: '60', expenseRatePpm: 600_000, taxRatePpm: 200_000 })
+    expect(other('60')).toMatchObject({ name: '필요경비가 없는 기타소득', expenseRatePpm: 0, verified: true })
+    expect(other('76')).toMatchObject({ expenseRatePpm: 600_000, taxRatePpm: 200_000 })
+    expect(other('64')).toMatchObject({ name: '서화·골동품 양도소득', expenseRatePpm: 900_000 })
+    expect(other('63')).toMatchObject({ taxRatePpm: 150_000 })
+  })
+
+  it('lists the 40 business income codes from the statement form', async () => {
+    const response = await app.request('GET', '/payroll-reference-codes?month=2026-03')
+
+    expect(response.body.businessIncome).toHaveLength(40)
+    expect(response.body.businessIncome.every((entry: { verified: boolean }) => entry.verified)).toBe(true)
+    expect(response.body.businessIncome).toContainEqual(
+      expect.objectContaining({ code: '940909', name: '기타인적용역자' }),
+    )
   })
 })
 
