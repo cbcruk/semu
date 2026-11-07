@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { isId, newId } from './ids.ts'
 
-describe('식별자 만들기', () => {
+describe('식별자 만들기(newId)', () => {
   it('ULID 앞에 엔터티 종류 접두어를 붙입니다', () => {
     expect(newId('employee')).toMatch(/^emp_[0-9A-HJKMNP-TV-Z]{26}$/)
   })
@@ -11,7 +11,7 @@ describe('식별자 만들기', () => {
   })
 })
 
-describe('식별자 판정', () => {
+describe('식별자 판정(isId)', () => {
   it('같은 종류의 식별자는 받아들입니다', () => {
     expect(isId('filing', newId('filing'))).toBe(true)
   })

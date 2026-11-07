@@ -152,7 +152,7 @@ describe('SQLite 저장소는 개인정보와 토큰을 암호문이나 해시�
   })
   const tempDatabase = () => join(mkdtempSync(join(tmpdir(), 'semu-sqlite-')), 'semu.sqlite')
 
-  it('HTTP로 저장한 주민등록번호가 저장된 행에 평문으로 남지 않습니다', async () => {
+  it('HTTP로 저장한 개인정보가 저장된 행에 평문으로 남지 않고, 같은 키로 다시 열면 원문을 꺼냅니다(200)', async () => {
     const filename = tempDatabase()
     const key = new Uint8Array(randomBytes(32))
     const app = sqliteApp(filename, key)
@@ -256,7 +256,7 @@ describe('SQLite 저장소는 개인정보와 토큰을 암호문이나 해시�
     expect(logged).not.toContain('홍길동')
   })
 
-  it('접근 토큰과 온보딩 토큰은 해시로만 저장하고 온보딩 토큰은 만료시킵니다', async () => {
+  it('접근 토큰과 온보딩 토큰은 해시로만 저장하고, 재시작한 앱은 만료된 온보딩 토큰을 거부합니다(401)', async () => {
     const filename = tempDatabase()
     const key = new Uint8Array(randomBytes(32))
     const app = sqliteApp(filename, key)

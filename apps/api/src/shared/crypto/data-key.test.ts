@@ -150,7 +150,7 @@ describe('키 파일', () => {
     expect(() => loadOrCreateKeyFile(path)).toThrow(/chmod 600/)
   })
 
-  it('만들지 말라고 하면 키 파일을 만들지 않습니다', () => {
+  it('만들지 말라고 하면 키 파일이 없을 때 만들지 않고 missing 오류로 실패합니다', () => {
     const path = join(tempDir(), 'semu.key')
 
     expect(() => loadOrCreateKeyFile(path, { create: false })).toThrow(/missing/)

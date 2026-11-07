@@ -254,7 +254,7 @@ describe('SQLite 작업 단위', () => {
       }),
     ))
 
-  it('시도 한도를 넘긴 이벤트는 dead로 표시해 재시도를 멈추고 로그를 한 번 남기며 다른 이벤트는 계속 전달합니다', () =>
+  it('시도 한도에 이른 이벤트는 dead로 표시해 재시도를 멈추고 로그를 한 번 남기며 다른 이벤트는 계속 전달합니다', () =>
     run(
       PersistenceSqliteLive(':memory:'),
       Effect.gen(function* () {
@@ -358,7 +358,7 @@ describe('SQLite 작업 단위', () => {
       }),
     ))
 
-  it('소비자가 실패하는 사이 dead가 된 이벤트에는 실패 횟수를 더하지 않습니다', () => {
+  it('소비자가 실패하는 사이 dead가 된 이벤트에는 시도 횟수를 더하지 않습니다', () => {
     const { hooks, layer } = sqliteWithTransactionHooks()
     return run(
       layer,
@@ -457,7 +457,7 @@ describe('SQLite 작업 단위', () => {
   } as const
 
   it.each(Object.entries(outboxBefore))(
-    '재시도 열이 빠진 outbox 표(%s)에 열을 더하고 대기 중인 이벤트를 유지합니다',
+    '재시도 열이 빠진 outbox 표(%s)에 열을 더하고 대기 중이던 이벤트를 전달합니다',
     (_name, before) =>
       Effect.runPromise(
         Effect.gen(function* () {
@@ -606,7 +606,7 @@ describe('SQLite 시드', () => {
       .all()
       .map((row) => row['id'])
 
-  it('시드 ID가 중복되면 실패하고 표에 시드도 표시도 남기지 않습니다', () => {
+  it('시드 ID가 중복되면 실패하고 표에 시드 행도 시드 기록도 남기지 않습니다', () => {
     const db = new DatabaseSync(':memory:')
     const duplicated = [...seed, { ...seed[0]!, amount: 9 }]
 
@@ -696,7 +696,7 @@ describe('SQLite 시드', () => {
     ).toEqual(['seeded:test_seeded'])
   })
 
-  it('시드가 없는 표는 표시하지 않아 나중에 더한 시드가 들어옵니다', () => {
+  it('시드가 없는 표는 시드 기록을 남기지 않아 나중에 더한 시드가 들어옵니다', () => {
     const db = new DatabaseSync(':memory:')
     makeSqliteRecordTable<Row>(db, 'test_seeded')
     expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'semu_meta'`).get()).toBeUndefined()
@@ -706,7 +706,7 @@ describe('SQLite 시드', () => {
     expect(ids(db)).toEqual(['r1', 'r2'])
   })
 
-  it('표시가 생기기 전부터 있던 표는 시드 없이 표시만 하고, 비워진 뒤에도 시드를 넣지 않습니다', () => {
+  it('시드 기록이 생기기 전부터 있던 표는 시드 없이 기록만 남기고, 비워진 뒤에도 시드를 넣지 않습니다', () => {
     const db = new DatabaseSync(':memory:')
     db.exec(`CREATE TABLE test_seeded (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT`)
     db.prepare(`INSERT INTO test_seeded (id, company_id, data) VALUES ('r9', NULL, ?)`).run(encodeRecord({ id: 'r9' }))

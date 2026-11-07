@@ -21,7 +21,7 @@ async function get(path: string): Promise<any> {
 describe('Integrations → Bookkeeping → Tax 연결', () => {
   let before: any
 
-  it('홈택스 수집 묶음을 장부의 증빙 원장에 넣습니다', async () => {
+  it('홈택스 수집 묶음을 Bookkeeping의 증빙 원장에 넣습니다', async () => {
     before = await get(`/v1/vat-estimates/current?on=${ON}`)
 
     const accepted = await app.request('POST', '/v1/scrap-requests', {
@@ -49,7 +49,7 @@ describe('Integrations → Bookkeeping → Tax 연결', () => {
     expect(after.outputTax - before.outputTax).toBe(910 + 1_819)
   })
 
-  it('장부 홈 카드에 세무의 예상 세액과 휴일로 미뤄진 기한을 보여 줍니다', async () => {
+  it('Bookkeeping 홈 카드에 Tax의 예상 세액·과세기간·신고 기한을 그대로 보여 줍니다', async () => {
     const estimate = await get(`/v1/vat-estimates/current?on=${ON}`)
     const home = await get(`/v1/reports/home-summary?date=${ON}`)
 

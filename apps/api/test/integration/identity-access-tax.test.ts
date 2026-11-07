@@ -27,7 +27,7 @@ describe('Identity & Access + Billing → Tax 연결', () => {
     ).toMatchObject({ dueDate: '2026-10-12', filingId: null })
   })
 
-  it('회사에 배정된 대리인 직원은 고객 대신 원천세를 제출하고, 배정되지 않은 회사로는 로그인하지 못합니다(404)', async () => {
+  it('회사에 배정된 대리인 직원은 원천세 신고 건의 자료를 고객 대신 제출하고, 배정되지 않은 회사로는 로그인하지 못합니다(404)', async () => {
     /** 데모 법인의 10월분 원천세입니다. 자료 요청 중(`REQUESTED`)입니다. */
     const october = '/v1/filings/fil_01JBQ0000000000000000000D1'
     const agent = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.corporation })

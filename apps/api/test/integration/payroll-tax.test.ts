@@ -134,7 +134,7 @@ describe('HR → Payroll 연결', () => {
 })
 
 describe('Payroll → Tax 연결', () => {
-  it('지급월의 급여대장이 모두 마감되면 원천세의 급여 자료 요건을 제출됨으로 표시합니다', async () => {
+  it('지급월의 급여대장이 모두 마감되면 원천세 신고 건의 제출 자료 항목인 급여대장 마감을 제출됨으로 표시합니다', async () => {
     expect(await payrollRequirement()).toBe('PENDING')
 
     const closed = await app.request('POST', `/v1/payroll-ledgers/${ledgerId}:close`, { token: owner })
@@ -144,7 +144,7 @@ describe('Payroll → Tax 연결', () => {
     expect(await payrollRequirement()).toBe('PROVIDED')
   })
 
-  it('급여대장을 다시 열면 요건을 대기로 되돌립니다', async () => {
+  it('급여대장을 다시 열면 그 제출 자료 항목을 대기로 되돌립니다', async () => {
     const reopened = await app.request('POST', `/v1/payroll-ledgers/${ledgerId}:reopen`, {
       token: owner,
       body: { reason: '상여 누락' },
@@ -184,7 +184,7 @@ describe('Tax → Payroll 연결', () => {
 })
 
 describe('Payroll → Bookkeeping 연결', () => {
-  it('급여의 인건비를 장부 보고서에 보여 줍니다', async () => {
+  it('Payroll의 인건비를 Bookkeeping 보고서에 보여 줍니다', async () => {
     const payroll = await (await app.request('GET', '/v1/labor-cost-reports/2026', { token: owner })).json()
     const bookkeeping = await (await app.request('GET', '/v1/reports/labor-cost?year=2026', { token: owner })).json()
     const payrollOctober = payroll.months.find((month: { month: string }) => month.month === '2026-10')
