@@ -8,11 +8,13 @@ import {
   EmployeeNotFound,
   RateTableNotFound,
   SeveranceNotApplicable,
+  SeverancePaymentDateInvalid,
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
 } from '../payroll-problems.ts'
-import { CreateSeveranceSettlement, SeveranceInputSchema, SeveranceSettlement } from './severance-settlement.ts'
+import { YearMonthString } from '../payroll-schema.ts'
+import { CreateSeveranceSettlement, SeveranceSettlement, UpdateSeveranceSettlement } from './severance-settlement.ts'
 
 const params = { settlementId: IdSchema('severanceSettlement') }
 const ifMatch = { 'if-match': Schema.optionalKey(Schema.String) }
@@ -23,6 +25,7 @@ const WRITE_ERRORS = [
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
   SeveranceNotApplicable,
+  SeverancePaymentDateInvalid,
   SeveranceSettlementExists,
   EmployeeNotFound,
   RateTableNotFound,
@@ -39,7 +42,11 @@ function command<const Name extends string, const Path extends `/severance-settl
 export class SeveranceSettlementsGroup extends HttpApiGroup.make('severance-settlements')
   .add(
     HttpApiEndpoint.get('list', '/severance-settlements', {
-      query: { status: Schema.optionalKey(Schema.Literals(['CALCULATED', 'COMPLETED', 'EXCLUDED'])) },
+      query: {
+        status: Schema.optionalKey(Schema.Literals(['CALCULATED', 'COMPLETED', 'EXCLUDED'])),
+        /** 지급일이 이 달인 정산만 줍니다. 지급일이 없는 정산은 빠집니다. */
+        paymentMonth: Schema.optionalKey(YearMonthString),
+      },
       success: Schema.Struct({ items: Schema.Array(SeveranceSettlement) }),
       error: ACCESS_ERRORS,
     }),
@@ -62,7 +69,7 @@ export class SeveranceSettlementsGroup extends HttpApiGroup.make('severance-sett
     HttpApiEndpoint.patch('update', '/severance-settlements/:settlementId', {
       params,
       headers: ifMatch,
-      payload: Schema.Struct({ input: SeveranceInputSchema }),
+      payload: UpdateSeveranceSettlement,
       success: WithEtag,
       error: WRITE_ERRORS,
     }),

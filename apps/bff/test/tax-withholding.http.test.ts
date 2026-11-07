@@ -22,6 +22,8 @@ const CLIENT_ITEMS = [
   'unreflected_bonus',
 ]
 const RETURN_FILE = 'fle_01JBQ00000000000000000RTN1'
+/** 데모 법인의 근로자 김세무입니다. */
+const KIM = 'emp_01JBQ00000000000000000D3M1'
 
 let harness: Harness
 let owner: LegacyClient
@@ -608,11 +610,11 @@ describe('withholding summary (급여 → 원천세)', () => {
         {
           code: 'A21',
           label: '퇴직소득',
-          headcount: null,
-          total_paid: null,
-          taxable_paid: null,
-          income_tax: null,
-          local_income_tax: null,
+          headcount: 0,
+          total_paid: 0,
+          taxable_paid: 0,
+          income_tax: 0,
+          local_income_tax: 0,
           verified: false,
         },
         expect.objectContaining({ code: 'A03', headcount: 0, total_paid: 0 }),
@@ -659,6 +661,60 @@ describe('withholding summary (급여 → 원천세)', () => {
     expect(body.totals.headcount).toBe(3)
   })
 
+  it('fills A21 from the completed severance settlements paid in the month and adds it to the totals', async () => {
+    const agent = await signedIn(harness, AGENT)
+    // 김세무가 10월 31일에 퇴직하고, 퇴직금은 11월 10일에 지급합니다.
+    const resigned = await owner.request('PUT', `${COMPANY}/employment/wage-employees/${KIM}/retirement-info/`, {
+      body: { leave_date: '2026-10-31', leaving_reason: '11', leaving_detail_reason: '11-1' },
+      headers: { 'if-match': '"1"' },
+    })
+    expect(resigned.status).toBe(200)
+    const { token } = await harness.api.signIn(AGENT, { companyId: DEMO_COMPANY_IDS.corporation })
+    const created = await harness.api.request('POST', '/v1/severance-settlements', {
+      token,
+      body: { employeeId: KIM, input: { threeMonthWages: 10_200_000 }, paymentDate: '2026-11-10' },
+    })
+    expect(created.status).toBe(201)
+    const settlement: any = await created.json()
+    expect(settlement.result.severancePay).toBeGreaterThan(0)
+    const a21 = async (month: string) =>
+      (await (await agent.request('GET', `${SUMMARY}/${month}/`)).json()).lines.find(
+        (line: { code: string }) => line.code === 'A21',
+      )
+
+    // 계산만 한 정산은 세지 않습니다(현행처럼 완료된 정산만).
+    expect(await a21('2026-11')).toMatchObject({ headcount: 0, total_paid: 0 })
+
+    const completed = await harness.api.request('POST', `/v1/severance-settlements/${settlement.id}:complete`, {
+      token,
+    })
+    expect(completed.status).toBe(200)
+    const { severancePay, retirementIncomeTax, localIncomeTax } = settlement.result
+    const november = await (await agent.request('GET', `${SUMMARY}/2026-11/`)).json()
+    expect(november.lines[1]).toEqual({
+      code: 'A21',
+      label: '퇴직소득',
+      headcount: 1,
+      total_paid: severancePay,
+      taxable_paid: severancePay,
+      income_tax: retirementIncomeTax,
+      local_income_tax: localIncomeTax,
+      verified: false,
+    })
+    // 11월에 마감한 대장이 없어도 퇴직소득은 합계에 들어갑니다.
+    expect(november).toMatchObject({
+      ledger_closed: false,
+      totals: {
+        headcount: 1,
+        total_paid: severancePay,
+        income_tax: retirementIncomeTax,
+        local_income_tax: localIncomeTax,
+      },
+    })
+    // 지급월이 아닌 퇴직월(10월)에는 들지 않습니다.
+    expect(await a21('2026-10')).toMatchObject({ headcount: 0, total_paid: 0 })
+  })
+
   it('falls back to no filing when the company has no taxation plan, like the legacy summary', async () => {
     const custom = makeHarness({
       intercept: (request, next) =>
@@ -689,8 +745,8 @@ describe('withholding summary (급여 → 원천세)', () => {
     }
   })
 
-  it('checks the actor again on every ledger and row call with the grant that sends it', async () => {
-    for (const target of ['/v1/payroll-ledgers', '/rows']) {
+  it('checks the actor again on every ledger, row and severance call with the grant that sends it', async () => {
+    for (const target of ['/v1/payroll-ledgers', '/rows', '/v1/severance-settlements']) {
       let armed = false
       let refused = false
       let resent = 0

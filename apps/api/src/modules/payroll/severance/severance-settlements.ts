@@ -11,6 +11,7 @@ import {
   EmployeeNotFound,
   type RateTableNotFound,
   SeveranceNotApplicable,
+  SeverancePaymentDateInvalid,
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
@@ -25,6 +26,7 @@ import {
   type SeveranceInputSchema,
   type SeveranceSettlement,
   severanceResponse,
+  type UpdateSeveranceSettlement,
 } from './severance-settlement.ts'
 import { SeveranceSettlementRepository } from './severance-settlement-repository.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
@@ -39,6 +41,7 @@ type SeveranceError =
   | SeveranceSettlementNotFound
   | SeveranceTransitionInvalid
   | SeveranceNotApplicable
+  | SeverancePaymentDateInvalid
   | SeveranceSettlementExists
   | EmployeeNotFound
   | RateTableNotFound
@@ -46,15 +49,44 @@ type Run<A, E = SeveranceError> = Effect.Effect<A, E, CurrentActor | SeveranceDe
 
 const PLANS = ['PAYROLL'] as const
 
-/** 퇴직금 정산 목록입니다. 마지막 근무일 순입니다. */
-export const listSettlements = (status: SeveranceStatus | undefined): Run<{ items: Response[] }, AccessDenied> =>
+/**
+ * 퇴직금 정산 목록입니다. 마지막 근무일 순입니다.
+ *
+ * `paymentMonth`(`YYYY-MM`)를 주면 지급일이 그 달인 정산만 줍니다. 원천세 퇴직소득(A21)은 `status=COMPLETED`와 함께 읽습니다.
+ * 지급일이 없는 정산(계산됨에서 아직 정하지 않았거나 지급일이 생기기 전에 완료한 정산)은 어느 달에도 들지 않습니다.
+ */
+export const listSettlements = (filter: {
+  readonly status?: SeveranceStatus
+  readonly paymentMonth?: string
+}): Run<{ items: Response[] }, AccessDenied> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'severance-settlement:read', plans: PLANS, requiresTerms: true })
     const records = yield* (yield* SeveranceSettlementRepository).list(actor.companyId)
     return {
-      items: records.filter((record) => status === undefined || record.status === status).map(severanceResponse),
+      items: records
+        .filter((record) => filter.status === undefined || record.status === filter.status)
+        .filter((record) => filter.paymentMonth === undefined || paymentMonthOf(record) === filter.paymentMonth)
+        .map(severanceResponse),
     }
   })
+
+/** 정산의 지급월(`YYYY-MM`)입니다. 지급일이 없으면 `undefined`입니다. */
+function paymentMonthOf(record: SeveranceSettlementRecord): string | undefined {
+  return record.paymentDate?.slice(0, 7)
+}
+
+/**
+ * 지급일이 마지막 근무일보다 앞서면 422입니다. 퇴직금은 퇴직으로 생기는 지급이라 퇴직 전에 줄 수 없습니다
+ * (중간정산은 아직 없음). 마지막 근무일 당일은 받습니다. 현행 `complete`가 지급일이 없으면 이 날로 채웠습니다.
+ */
+function checkPaymentDate(
+  lastWorkDate: string,
+  paymentDate: string | undefined,
+): Effect.Effect<void, SeverancePaymentDateInvalid> {
+  return paymentDate !== undefined && paymentDate < lastWorkDate
+    ? Effect.fail(new SeverancePaymentDateInvalid({ lastWorkDate }))
+    : Effect.void
+}
 
 /** 퇴직금 정산 하나입니다. */
 export const getSettlement = (
@@ -90,6 +122,7 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
         record.employeeId === employee.id && record.lastWorkDate === employee.leaveDate && record.status !== 'EXCLUDED',
     )
     if (existing !== undefined) return yield* new SeveranceSettlementExists({ settlementId: existing.id })
+    yield* checkPaymentDate(employee.leaveDate, payload.paymentDate)
     const calculated = yield* calculate(employee.joinDate, employee.leaveDate, payload.input)
     const record: SeveranceSettlementRecord = {
       id: newId('severanceSettlement'),
@@ -98,6 +131,7 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
       employeeName: employee.name,
       joinDate: employee.joinDate,
       lastWorkDate: employee.leaveDate,
+      ...(payload.paymentDate === undefined ? {} : { paymentDate: payload.paymentDate }),
       status: 'CALCULATED',
       input: { ...payload.input },
       ...calculated,
@@ -109,10 +143,13 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
     return severanceResponse(record)
   })
 
-/** 계산됨 상태에서 입력을 고치고 다시 계산합니다. */
+/**
+ * 계산됨 상태에서 입력·지급일을 고치고 다시 계산합니다. 빠진 필드는 그대로 두고, `paymentDate: null`은 지급일을 지웁니다.
+ * 완료한 정산의 지급일을 바꾸려면 먼저 `:reopen`합니다.
+ */
 export const updateSettlement = (
   id: Id<'severanceSettlement'>,
-  input: typeof SeveranceInputSchema.Type,
+  patch: typeof UpdateSeveranceSettlement.Type,
   expected: number | undefined,
 ): Run<Response> =>
   Effect.gen(function* () {
@@ -122,9 +159,14 @@ export const updateSettlement = (
     if (record.status !== 'CALCULATED') {
       return yield* new SeveranceTransitionInvalid({ settlementStatus: record.status, action: 'UPDATE' })
     }
+    const input = patch.input ?? record.input
+    const { paymentDate: _previous, ...rest } = record
+    const paymentDate = patch.paymentDate === undefined ? record.paymentDate : (patch.paymentDate ?? undefined)
+    yield* checkPaymentDate(record.lastWorkDate, paymentDate)
     const calculated = yield* calculate(record.joinDate, record.lastWorkDate, input)
     const next: SeveranceSettlementRecord = {
-      ...record,
+      ...rest,
+      ...(paymentDate === undefined ? {} : { paymentDate }),
       input: { ...input },
       ...calculated,
       version: record.version + 1,
@@ -157,6 +199,8 @@ export const transitionSettlement = (
     }
     const next: SeveranceSettlementRecord = {
       ...record,
+      // 현행 `complete`처럼 지급일이 없으면 마지막 근무일로 채웁니다. 그래서 완료된 정산은 모두 지급월이 있습니다.
+      ...(command === 'COMPLETE' && record.paymentDate === undefined ? { paymentDate: record.lastWorkDate } : {}),
       status: rule.to,
       version: record.version + 1,
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),

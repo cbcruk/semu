@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
-import { Won } from '../payroll-schema.ts'
+import { CalendarDate, Won } from '../payroll-schema.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
 
 /** 퇴직금 계산 입력입니다. 입사일·마지막 근무일은 HR에서 받습니다. */
@@ -21,6 +21,17 @@ export const SeveranceInputSchema = Schema.Struct({
 export const CreateSeveranceSettlement = Schema.Struct({
   employeeId: IdSchema('employee'),
   input: SeveranceInputSchema,
+  /** 퇴직금 지급일입니다. 없으면 완료할 때 마지막 근무일로 채웁니다. */
+  paymentDate: Schema.optionalKey(CalendarDate),
+})
+
+/**
+ * `PATCH /severance-settlements/{id}` 본문입니다. 빠진 필드는 그대로 둡니다.
+ * `paymentDate: null`은 지급일을 지웁니다(완료할 때 다시 마지막 근무일로 채움).
+ */
+export const UpdateSeveranceSettlement = Schema.Struct({
+  input: Schema.optionalKey(SeveranceInputSchema),
+  paymentDate: Schema.optionalKey(Schema.NullOr(CalendarDate)),
 })
 
 const Status = Schema.Literals(['CALCULATED', 'COMPLETED', 'EXCLUDED'])
@@ -32,6 +43,8 @@ export const SeveranceSettlement = Schema.Struct({
   employeeName: Schema.String,
   joinDate: Schema.String,
   lastWorkDate: Schema.String,
+  /** 퇴직금 지급일입니다. 원천세 퇴직소득(A21)의 지급월입니다. 아직 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
+  paymentDate: Schema.NullOr(Schema.String),
   status: Status,
   input: SeveranceInputSchema,
   result: Schema.Struct({
@@ -76,5 +89,5 @@ export function severanceActions(status: SeveranceStatus): Array<'UPDATE' | Seve
 
 /** 레코드를 응답으로 바꿉니다. */
 export function severanceResponse(record: SeveranceSettlementRecord): typeof SeveranceSettlement.Type {
-  return { ...record, allowedActions: severanceActions(record.status) }
+  return { ...record, paymentDate: record.paymentDate ?? null, allowedActions: severanceActions(record.status) }
 }

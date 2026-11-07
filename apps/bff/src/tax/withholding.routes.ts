@@ -8,7 +8,7 @@ import { json } from '../router.ts'
 import type { Route, SignedInContext } from '../router.ts'
 import { ensureAccess, readJson } from '../upstream.ts'
 import type { SessionGuard } from '../upstream.ts'
-import type { Filing, FilingHistoryEntry, FilingSummary, Page } from '../upstream.types.ts'
+import type { Filing, FilingHistoryEntry, FilingSummary, Page, SeveranceSettlement } from '../upstream.types.ts'
 import {
   filingCovering,
   legacyFilingOrder,
@@ -188,6 +188,24 @@ function requirementBody(raw: Record<string, unknown>): {
 }
 
 /**
+ * 지급일이 그 달인 완료 퇴직금 정산입니다. 원천세 요약의 퇴직소득(`A21`)이 씁니다(현행 `listCompletedSettlementsPaidBetween`).
+ *
+ * 새 목록은 페이지 없이 회사의 정산을 한 번에 주므로(퇴사자 수만큼) 한 번 부릅니다. 대장처럼 `PAYROLL` 플랜과 약관이 필요하고,
+ * 대장 읽기 뒤에 부르므로 플랜이 없는 회사는 그 전에 대장에서 같은 403을 받습니다.
+ */
+async function completedSeverance(
+  context: SignedInContext,
+  paymentMonth: string,
+  guard: SessionGuard,
+): Promise<SeveranceSettlement[]> {
+  const query = new URLSearchParams({ paymentMonth, status: 'COMPLETED' })
+  const page = await readJson<{ items: SeveranceSettlement[] }>(
+    await upstream(context, 'GET', `/v1/severance-settlements?${query}`, { guard }),
+  )
+  return page.items
+}
+
+/**
  * 현행 원천세 요약은 세무 대리인만 읽었습니다(현행 `withholding-summary`의 `actor !== 'agency'` → 403). 새 API에는 이 요약이
  * 없어 BFF가 대장·신고 건을 읽어 만드므로, 그 회사에서 대리인으로 행동하지 않는 세션은 BFF가 막습니다.
  *
@@ -209,7 +227,7 @@ const agencyOnly: SessionGuard = (session) =>
  * | `PUT tax/withholding-tax/:filingId/requirements/:code/` | `GET /v1/filings/{id}` + `PATCH …/requirements/{CODE}` |
  * | `POST tax/withholding-tax/:filingId/submit/`, `unsubmit/` | `GET /v1/filings/{id}` + `:submit`, `:unsubmit` |
  * | `POST tax/withholding-tax/:filingId/pay/` | `GET /v1/filings/{id}` + `:pay {paidOn}` |
- * | `GET payroll/withholding-summary/:paymentMonth` | `GET /v1/filings?taxType=WITHHOLDING_TAX` + `GET /v1/payroll-ledgers?paymentMonth=` + 마감 대장의 `…/rows` |
+ * | `GET payroll/withholding-summary/:paymentMonth` | `GET /v1/filings?taxType=WITHHOLDING_TAX` + `GET /v1/payroll-ledgers?paymentMonth=` + 마감 대장의 `…/rows` + `GET /v1/severance-settlements?paymentMonth=&status=COMPLETED` |
  */
 export const withholdingRoutes: readonly Route[] = [
   {
@@ -279,7 +297,8 @@ export const withholdingRoutes: readonly Route[] = [
         ledgers.filter((ledger) => ledger.status === 'CLOSED'),
         agencyOnly,
       )
-      return json(toLegacyWithholdingSummary(month, ledgers, closed, filingCovering(filings, month)))
+      const severance = await completedSeverance(context, month, agencyOnly)
+      return json(toLegacyWithholdingSummary(month, ledgers, closed, severance, filingCovering(filings, month)))
     },
   },
 ]

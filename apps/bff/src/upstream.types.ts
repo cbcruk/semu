@@ -358,6 +358,24 @@ export interface PayrollRow {
   updatedAt: string
 }
 
+/** `GET /v1/severance-settlements` 항목입니다. 원천세 요약(A21)이 쓰는 필드만 적습니다. */
+export interface SeveranceSettlement {
+  id: string
+  employeeId: string
+  employeeName: string
+  lastWorkDate: string
+  /** 퇴직금 지급일입니다. 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
+  paymentDate: string | null
+  status: 'CALCULATED' | 'COMPLETED' | 'EXCLUDED'
+  result: {
+    eligible: boolean
+    severancePay: number
+    retirementIncomeTax: number
+    localIncomeTax: number
+    netPay: number
+  }
+}
+
 /** 명세서 발송 결과 상태입니다. 보낸 적 없으면 `NOT_SENT`입니다. */
 export type PayslipDeliveryStatus = 'NOT_SENT' | 'SENT' | 'FAILED'
 
