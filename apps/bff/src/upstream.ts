@@ -23,8 +23,9 @@ export interface UpstreamOptions {
   authTimeoutMs?: number
   /**
    * 외부 효과를 요청 안에서 끝내는 발송(명세서 `:send`)의 제한 시간(ms)입니다. 기본 2분으로 일반 호출보다 깁니다.
-   * 새 API는 명세서마다 차례로 메일을 보내고 끝난 **뒤에** `Idempotency-Key`를 기억하므로, BFF가 먼저 시간 초과로 끝내면
-   * 사용자의 재시도가 처리 중인 발송과 겹쳐 메일이 두 번 나갈 수 있습니다. 그 창을 줄이려고 길게 둡니다.
+   * 새 API는 명세서마다 차례로 메일을 보냅니다. BFF가 먼저 시간 초과로 끝내면 새 API는 발송을 끝까지 하지만, 사용자는 결과를
+   * 모르고 다시 누릅니다. 그 재시도는 앞 발송을 기다리거나(SQLite 같은 프로세스) 5xx·409 `IDEMPOTENCY_KEY_IN_PROGRESS`를 받습니다.
+   * 실제 메일 연동에서 그런 일이 드물게 길게 둡니다.
    */
   sendTimeoutMs?: number
   /**
