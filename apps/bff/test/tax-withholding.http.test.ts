@@ -777,6 +777,30 @@ describe('withholding summary (급여 → 원천세)', () => {
     }
   })
 
+  it('switches to the path company before judging the actor on an invalid month', async () => {
+    const { harness: custom, client: agent, calls } = await watched(AGENT)
+    try {
+      // 세션은 법인에 묶여 있습니다. 개인 회사 경로면 그 회사로 전환한 grant로 보고, 업무 경로는 읽지 않습니다.
+      const other = await agent.request(
+        'GET',
+        `/api/company/${DEMO_COMPANY_IDS.individual}/payroll/withholding-summary/2026-13/`,
+      )
+      expect(other.status).toBe(404)
+      expect(await other.json()).toEqual({ detail: 'Payment month not found.', code: 'NOT_FOUND' })
+      expect(calls).toEqual(['POST /v1/auth/sessions:switch-company'])
+
+      // 담당하지 않는 회사는 전환이 거절되어 지급월을 보기 전에 회사 404입니다.
+      const unassigned = await agent.request(
+        'GET',
+        `/api/company/${DEMO_COMPANY_IDS.free}/payroll/withholding-summary/2026-13/`,
+      )
+      expect(unassigned.status).toBe(404)
+      expect(await unassigned.json()).toEqual({ detail: 'Company not found.', code: 'NOT_FOUND' })
+    } finally {
+      await custom.dispose()
+    }
+  })
+
   it('pins the current plan gap: a taxation-only company has no summary because ledgers need PAYROLL', async () => {
     const agent = await signedIn(harness, AGENT)
     const response = await agent.request(
