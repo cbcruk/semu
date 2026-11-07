@@ -7,7 +7,7 @@
 - **리소스는 영문 kebab-case 복수형입니다.** `/employees`, `/payroll-ledgers`, `/bank-transactions`
   - 현행 화면 이름이 드러난 경로(`/home/summary-cards`, `/employment/wage-employees/count-by-status`)는 리소스와 쿼리로 바꿉니다
 - **버전은 경로 맨 앞 하나만 둡니다.** `/v1/...`. 리소스 중간의 `v2`(`/integrations/v2/`, `/api/v2/company/:id/giros/:id/payment`)는 두지 않습니다
-- **회사 ID는 경로에 넣지 않습니다.** 액세스 토큰 하나가 회사 하나에 묶이고, 서버가 토큰에서 회사를 정합니다. 현행 `/api/company/:companyId/...` 접두와 nexus·sf 회사 ID 두 개를 없앱니다. 회사를 바꾸려면 `POST /auth/sessions:switch-company`로 토큰을 새로 받습니다 ([identity-access.md](identity-access.md#인증))
+- **회사 ID는 경로에 넣지 않습니다.** 액세스 토큰 하나가 회사 하나에 묶이고, 서버가 토큰에서 회사를 정합니다. 현행 `/api/company/:companyId/...` 접두와 nexus·sf 회사 ID 두 개를 없앱니다. 회사를 바꾸려면 `POST /auth/sessions:switch-company`로 토큰을 새로 받습니다 ([identity-access.md](identity-access.md#세션과-토큰))
   - 예외는 세무 대리인의 `/agency/*` 하나입니다. 회사에 묶이지 않은 대리인 범위 토큰으로만 부르고, 담당 회사를 가로지르는 읽기만 합니다. 회사를 고를 때는 `?companyId=` 쿼리로 거릅니다 ([agency-queue.md](agency-queue.md))
 - **중첩은 소유 관계일 때 한 단계만 둡니다.** `/employees/{employeeId}/leaves`는 목록·생성만 받고, 개별 휴직은 `/leaves/{leaveId}`로 다룹니다
 - **경로 변수 이름은 리소스 이름 + `Id`입니다.** `{employeeId}`, `{ledgerId}`. `:id`, `:cid`가 섞이지 않게 합니다
