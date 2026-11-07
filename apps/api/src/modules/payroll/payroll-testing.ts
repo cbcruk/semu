@@ -1,4 +1,4 @@
-import type { Layer } from 'effect'
+import { Clock, Effect, Layer } from 'effect'
 import { httpTestApp } from '../../shared/testing/http-test-app.ts'
 import type { HttpTestJson, HttpTestRequest } from '../../shared/testing/http-test-app.ts'
 import type { Actor } from '../identity-access/actor.types.ts'
@@ -37,4 +37,34 @@ export function payrollTestApp(
     defaultToken: CLIENT_TOKEN,
   })
   return { request: app.json, dispose: app.dispose }
+}
+
+/**
+ * `at`에서 시작해 실제 시간만큼 흐르는 시계입니다. 오늘 날짜에 따라 갈리는 규칙(추가 대장의 원천세 기한 등)을 벽시계와 떼어 놓습니다.
+ * 시각이 계속 흐르므로 시각으로 만드는 ID의 순서는 실제와 같습니다. `payrollTestApp`의 `layers`에 넘깁니다.
+ *
+ * @example
+ * ```ts
+ * payrollTestApp([clockAt('2026-04-01T00:00:00+09:00')])
+ * ```
+ */
+export function clockAt(at: string): Layer.Layer<any> {
+  const start = Date.parse(at)
+  const layer = Layer.effect(
+    Clock.Clock,
+    Effect.map(Clock.clockWith(Effect.succeed), (real): Clock.Clock => {
+      const offset = start - real.currentTimeMillisUnsafe()
+      const nanos = BigInt(offset) * 1_000_000n
+      return {
+        monotonicTimeNanosUnsafe: () => real.monotonicTimeNanosUnsafe(),
+        monotonicTimeNanos: real.monotonicTimeNanos,
+        sleep: (duration) => real.sleep(duration),
+        currentTimeMillisUnsafe: () => real.currentTimeMillisUnsafe() + offset,
+        currentTimeMillis: Effect.sync(() => real.currentTimeMillisUnsafe() + offset),
+        currentTimeNanosUnsafe: () => real.currentTimeNanosUnsafe() + nanos,
+        currentTimeNanos: Effect.sync(() => real.currentTimeNanosUnsafe() + nanos),
+      }
+    }),
+  )
+  return layer as Layer.Layer<unknown> as Layer.Layer<any>
 }
