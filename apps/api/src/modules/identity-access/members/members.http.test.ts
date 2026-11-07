@@ -11,8 +11,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('/v1/companies/current', () => {
-  it('reads and updates the company of the token with an ETag', async () => {
+describe('지금 회사(/v1/companies/current)', () => {
+  it('토큰의 회사를 읽고 ETag로 고칩니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const read = await app.request('GET', '/v1/companies/current', { token })
@@ -37,7 +37,7 @@ describe('/v1/companies/current', () => {
     expect(await updated.json()).toMatchObject({ industry: '소프트웨어 개발', name: '주식회사 세무' })
   })
 
-  it('lets a member read but not update the company', async () => {
+  it('일반 구성원은 회사 정보를 읽기만 하고 고치지 못합니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/companies/current', { token })).status).toBe(200)
@@ -47,8 +47,8 @@ describe('/v1/companies/current', () => {
   })
 })
 
-describe('POST /v1/companies', () => {
-  it('registers a company for a signed-in user, who can then switch to it', async () => {
+describe('회사 등록(POST /v1/companies)', () => {
+  it('로그인한 사용자가 회사를 등록하면 그 회사로 전환할 수 있습니다', async () => {
     const first = await app.signIn('owner@semu.example')
 
     const created = await app.request('POST', '/v1/companies', {
@@ -70,7 +70,7 @@ describe('POST /v1/companies', () => {
     expect(await switched.json()).toMatchObject({ company: { id: company.id, actorKind: 'CLIENT' } })
   })
 
-  it('rejects a business number with a wrong check digit', async () => {
+  it('검증번호가 틀린 사업자등록번호는 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/companies', {
@@ -82,7 +82,7 @@ describe('POST /v1/companies', () => {
     expect(await response.json()).toMatchObject({ code: 'BUSINESS_NUMBER_INVALID' })
   })
 
-  it('answers 401 without a token', async () => {
+  it('토큰이 없으면 401로 답합니다', async () => {
     const response = await app.request('POST', '/v1/companies', {
       body: { name: '회사', businessNumber: '1018600006', businessType: 'INDIVIDUAL' },
     })
@@ -91,8 +91,8 @@ describe('POST /v1/companies', () => {
   })
 })
 
-describe('/v1/users', () => {
-  it('lists the members of the current company only', async () => {
+describe('구성원(/v1/users)', () => {
+  it('지금 회사의 구성원만 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/users', { token })).json()
@@ -104,7 +104,7 @@ describe('/v1/users', () => {
     ])
   })
 
-  it('promotes a member to admin and revokes their current access token', async () => {
+  it('구성원을 관리자로 올리면 그 사람의 지금 access token을 폐기합니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const member = await app.signIn('member@semu.example')
 
@@ -121,7 +121,7 @@ describe('/v1/users', () => {
     expect(me.permissions).toEqual(['*'])
   })
 
-  it('protects the owner and the last admin', async () => {
+  it('소유자와 마지막 관리자는 강등하거나 내보낼 수 없습니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const demote = await app.request('POST', `/v1/users/${DEMO_USER_IDS.owner}:change-access`, {
@@ -135,7 +135,7 @@ describe('/v1/users', () => {
     expect(remove.status).toBe(409)
   })
 
-  it('removes a member, who then cannot reach the company', async () => {
+  it('내보낸 구성원은 그 회사에 더 접근하지 못합니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const member = await app.signIn('member@semu.example')
 
@@ -148,7 +148,7 @@ describe('/v1/users', () => {
     expect(again.body).toHaveProperty('onboardingToken')
   })
 
-  it('consumes the onboarding token once it has registered a company', async () => {
+  it('가입 토큰은 회사를 하나 등록하면 다시 쓸 수 없습니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     await app.request('DELETE', `/v1/users/${DEMO_USER_IDS.member}`, { token: owner.token })
     const onboarding = String((await app.signIn('member@semu.example')).body.onboardingToken)
@@ -162,22 +162,22 @@ describe('/v1/users', () => {
     expect((await register('101-86-00006')).status).toBe(401)
   })
 
-  it('does not let a member without the user-management permissions see or manage members', async () => {
+  it('구성원 관리 권한이 없는 구성원은 구성원을 보거나 관리할 수 없습니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/users', { token })).status).toBe(403)
     expect((await app.request('DELETE', `/v1/users/${DEMO_USER_IDS.owner}`, { token })).status).toBe(403)
   })
 
-  it('answers 404 for a user of another company', async () => {
+  it('다른 회사의 사용자면 404로 답합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     expect((await app.request('GET', `/v1/users/${DEMO_USER_IDS.sole}`, { token })).status).toBe(404)
   })
 })
 
-describe('/v1/roles', () => {
-  it('creates a role from grantable permissions and refuses admin-only ones', async () => {
+describe('권한 그룹(/v1/roles)', () => {
+  it('넣을 수 있는 권한으로 권한 그룹을 만들고 관리자 전용 권한은 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const refused = await app.request('POST', '/v1/roles', {
@@ -197,7 +197,7 @@ describe('/v1/roles', () => {
     expect(duplicate.status).toBe(409)
   })
 
-  it('updates a role and refreshes the permissions of its holders', async () => {
+  it('권한 그룹을 고치면 그 그룹을 가진 구성원의 권한도 새로 계산합니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const member = await app.signIn('member@semu.example')
     const { items } = await (await app.request('GET', '/v1/roles', { token: owner.token })).json()
@@ -214,7 +214,7 @@ describe('/v1/roles', () => {
     expect((await app.request('GET', '/v1/me', { token: member.token })).status).toBe(401)
   })
 
-  it('deletes a role and detaches it from members', async () => {
+  it('권한 그룹을 지우면 구성원에게서도 떼어 냅니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
     const { items } = await (await app.request('GET', '/v1/roles', { token })).json()
 
@@ -223,7 +223,7 @@ describe('/v1/roles', () => {
     expect(member.roleIds).toEqual([])
   })
 
-  it('lists templates and only grantable permissions', async () => {
+  it('그룹 템플릿과 넣을 수 있는 권한만 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const templates = await (await app.request('GET', '/v1/role-templates', { token })).json()

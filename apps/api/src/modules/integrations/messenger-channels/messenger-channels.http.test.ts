@@ -14,8 +14,8 @@ beforeEach(async () => {
 
 afterEach(() => app.dispose())
 
-describe('messenger channels', () => {
-  it('previews and connects a channel to the signed-in company, once', async () => {
+describe('상담 채널', () => {
+  it('채널을 미리 보고 로그인한 회사에 한 번만 연결합니다', async () => {
     const preview = await app.request('POST', '/v1/messenger-channels:preview', {
       token,
       body: { token: DEMO_CHANNEL_TOKENS.valid },
@@ -37,7 +37,7 @@ describe('messenger channels', () => {
     expect(list.items.map((item: { channelName: string }) => item.channelName)).toEqual(['#semu-tax', '세무상담'])
   })
 
-  it('answers each token failure with its own code', async () => {
+  it('토큰을 쓸 수 없는 이유마다 그 오류 코드로 답합니다', async () => {
     const codes = await Promise.all(
       ['unknown', DEMO_CHANNEL_TOKENS.used, DEMO_CHANNEL_TOKENS.expired].map(
         async (value) =>
@@ -53,8 +53,8 @@ describe('messenger channels', () => {
   })
 })
 
-describe('hometax delegations', () => {
-  it('lets a taxation customer agree to the pending delegation', async () => {
+describe('세무대리인 수임동의', () => {
+  it('세무 기장 고객은 대기 중인 수임에 동의할 수 있습니다', async () => {
     const sole = await app.signIn('sole@semu.example')
 
     const list = await (await app.request('GET', '/v1/hometax-delegations', { token: sole.token })).json()
@@ -78,7 +78,7 @@ describe('hometax delegations', () => {
     expect(twice.status).toBe(409)
   })
 
-  it('asks a free company to subscribe to TAXATION first', async () => {
+  it('무료 회사에는 먼저 TAXATION 플랜을 구독하라고 답합니다', async () => {
     const free = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', '/v1/hometax-delegations', { token: free.token })
@@ -88,8 +88,8 @@ describe('hometax delegations', () => {
   })
 })
 
-describe('business statuses', () => {
-  it('looks up a business number and rejects a malformed one', async () => {
+describe('사업자 상태', () => {
+  it('사업자등록번호로 상태를 조회하고 형식이 틀린 번호는 거절합니다', async () => {
     const active = await app.request('GET', '/v1/business-statuses/1238145600', { token })
     const closed = await app.request('GET', '/v1/business-statuses/1234567898', { token })
     const malformed = await app.request('GET', '/v1/business-statuses/123-45', { token })

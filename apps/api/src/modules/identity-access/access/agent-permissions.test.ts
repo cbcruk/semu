@@ -52,8 +52,8 @@ const CLIENT_WORK: Permission[] = [
   'payment:read',
 ]
 
-describe('agent permission set (D5)', () => {
-  it('lists client-work resources as wildcards and agent-only actions one by one', () => {
+describe('세무 대리인의 권한 집합 (D5)', () => {
+  it('고객 업무 리소스는 와일드카드로, 대리인 전용 동작은 하나씩 적습니다', () => {
     expect([...AGENT_PERMISSIONS].sort()).toMatchInlineSnapshot(`
       [
         "account-title:*",
@@ -113,17 +113,17 @@ describe('agent permission set (D5)', () => {
     `)
   })
 
-  it.each(MEMBER_MANAGEMENT_AND_ASSISTANT)('does not give an agent %s by default', (permission) => {
+  it.each(MEMBER_MANAGEMENT_AND_ASSISTANT)('대리인에게 %s 권한을 기본으로 주지 않습니다', (permission) => {
     expect(hasPermission(agent, permission)).toBe(false)
   })
 
-  it.each([...AGENT_ONLY, ...CLIENT_WORK])('gives an agent %s', (permission) => {
+  it.each([...AGENT_ONLY, ...CLIENT_WORK])('대리인에게 %s 권한을 줍니다', (permission) => {
     expect(hasPermission(agent, permission)).toBe(true)
   })
 })
 
-describe('agent-only permissions', () => {
-  it.each(AGENT_ONLY)('marks %s agent-only so no wildcard covers it', (permission) => {
+describe('대리인 전용 권한', () => {
+  it.each(AGENT_ONLY)('%s는 대리인 전용이라 어떤 와일드카드로도 덮이지 않습니다', (permission) => {
     const resource = permissionResource(permission)
 
     expect(isAgentOnly(permission)).toBe(true)
@@ -132,22 +132,22 @@ describe('agent-only permissions', () => {
     expect(isGrantable(permission)).toBe(false)
   })
 
-  it('still lets a role grant the rest of a resource that has an agent-only action', () => {
+  it('대리인 전용 동작이 있는 리소스라도 나머지 동작은 권한 그룹으로 줄 수 있습니다', () => {
     expect(isGrantable('filing:read')).toBe(true)
     expect(isGrantable('subscription:*')).toBe(true)
     expect(hasPermission({ permissions: new Set<GrantedPermission>(['filing:*']) }, 'filing:submit')).toBe(true)
   })
 })
 
-describe('non-agent users', () => {
-  it('keeps the admin wildcard, member management and the assistant included', () => {
+describe('대리인이 아닌 사용자', () => {
+  it('관리자는 와일드카드로 구성원 관리와 AI 비서를 그대로 가집니다', () => {
     expect([...admin.permissions]).toEqual(['*'])
     for (const permission of [...MEMBER_MANAGEMENT_AND_ASSISTANT, ...CLIENT_WORK]) {
       expect(hasPermission(admin, permission)).toBe(true)
     }
   })
 
-  it('keeps a member at the base permissions plus role permissions', () => {
+  it('일반 구성원은 기본 권한과 권한 그룹 권한만 가집니다', () => {
     const member = actorPermissions({ kind: 'MEMBER', access: 'MEMBER', rolePermissions: [['employee:*']] })
 
     expect(hasPermission({ permissions: member }, 'conversation:create')).toBe(true)
@@ -155,13 +155,13 @@ describe('non-agent users', () => {
     expect(hasPermission({ permissions: member }, 'member:read')).toBe(false)
   })
 
-  it('denies client admins agent commands as before', () => {
+  it('고객 관리자에게는 전처럼 대리인 전용 동작을 허용하지 않습니다', () => {
     expect(decideAccess(testActor(), { permission: 'subscription:manage' })?._tag).toBe('PermissionDenied')
     expect(decideAccess(testActor({ kind: 'AGENCY' }), { permission: 'subscription:manage' })).toBeUndefined()
   })
 })
 
-describe('both token scopes read the same table', () => {
+describe('두 토큰 범위가 같은 권한 표를 봄', () => {
   const layer = Layer.mergeAll(ActorDirectory.layer, AgentDirectory.layer).pipe(
     Layer.provideMerge(IdentityAccessMemoryLive),
     Layer.provide(CompanyPlans.layerMemory([[DEMO_COMPANY_IDS.corporation, ['TAXATION', 'PAYROLL']]])),
@@ -173,7 +173,7 @@ describe('both token scopes read the same table', () => {
     return { actor: Option.getOrThrow(company).actor, agentScope: Option.getOrThrow(agency) }
   }).pipe(Effect.provide(layer))
 
-  it('gives the company-scope agent actor and the agency-scope agent the same permissions', async () => {
+  it('회사 범위 대리인 행위자와 대리인 범위 대리인에게 같은 권한을 줍니다', async () => {
     const { actor, agentScope } = await Effect.runPromise(resolveBoth)
 
     expect(actor.kind).toBe('AGENCY')
@@ -182,7 +182,7 @@ describe('both token scopes read the same table', () => {
   })
 
   it.each([...MEMBER_MANAGEMENT_AND_ASSISTANT, ...AGENT_ONLY, ...CLIENT_WORK])(
-    'decides %s the same way in authorize and authorizeAgency',
+    '%s 권한을 authorize와 authorizeAgency가 같게 판정합니다',
     async (permission) => {
       const { actor, agentScope } = await Effect.runPromise(resolveBoth)
       const companyAllowed = decideAccess(actor, { permission }) === undefined

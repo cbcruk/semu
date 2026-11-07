@@ -16,8 +16,8 @@ interface Agreement {
   status: string
 }
 
-describe('terms', () => {
-  it('lists the current signup terms before sign-in', async () => {
+describe('약관', () => {
+  it('로그인 전에 현재 가입 약관을 보여 줍니다', async () => {
     const response = await app.request('GET', '/v1/terms?purpose=SIGNUP')
 
     expect(response.status).toBe(200)
@@ -25,7 +25,7 @@ describe('terms', () => {
     expect(items.map((t: { code: string }) => t.code)).toEqual(expect.arrayContaining(['SERVICE', 'PRIVACY']))
   })
 
-  it('shows tax terms only to a taxation company and clears the gate after agreeing', async () => {
+  it('세무 약관은 세무 기장 회사에만 보여 주고 동의하면 약관 게이트를 풉니다', async () => {
     const sole = await app.signIn('sole@semu.example')
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: sole.token })).json()
     const taxTerm = (items as Agreement[]).find((a) => a.term.code === 'TAX_SERVICE')
@@ -43,7 +43,7 @@ describe('terms', () => {
     expect(me.pendingTermCodes).toEqual([])
   })
 
-  it('refuses to record a declined required term', async () => {
+  it('필수 약관을 거절한 답은 기록하지 않습니다', async () => {
     const sole = await app.signIn('sole@semu.example')
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: sole.token })).json()
     const taxTerm = (items as Agreement[]).find((a) => a.term.code === 'TAX_SERVICE')
@@ -57,7 +57,7 @@ describe('terms', () => {
     expect(await response.json()).toMatchObject({ code: 'REQUIRED_TERM_DECLINED' })
   })
 
-  it('refuses an answer to an outdated term version', async () => {
+  it('지난 약관 버전에 대한 답은 거절합니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const outdatedId = demoTerms().find((t) => t.code === 'SERVICE' && t.version === '2025-07')?.id
 
@@ -69,7 +69,7 @@ describe('terms', () => {
     expect(response.status).toBe(409)
   })
 
-  it('does not show tax terms to a free company', async () => {
+  it('무료 회사에는 세무 약관을 보여 주지 않습니다', async () => {
     const owner = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
     const { items } = await (await app.request('GET', '/v1/me/term-agreements', { token: owner.token })).json()
 

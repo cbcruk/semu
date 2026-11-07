@@ -129,11 +129,11 @@ export type PermissionWildcard = `${PermissionResource}:*` | '*'
 export type GrantedPermission = Permission | PermissionWildcard
 
 /** 카탈로그의 모든 {@link GrantedPermission}입니다. 저장소·외부에서 온 문자열을 {@link isGrantedPermission}으로 거를 때 씁니다. */
-const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set<string>([
+const 카탈로그권한: ReadonlySet<string> = new Set<string>([
   '*',
-  ...Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) => [
-    `${resource}:*`,
-    ...entry.actions.map((action) => `${resource}:${action}`),
+  ...Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([리소스, 항목]) => [
+    `${리소스}:*`,
+    ...항목.actions.map((동작) => `${리소스}:${동작}`),
   ]),
 ])
 
@@ -147,7 +147,7 @@ const GRANTED_PERMISSIONS: ReadonlySet<string> = new Set<string>([
  * ```
  */
 export function isGrantedPermission(value: string): value is GrantedPermission {
-  return GRANTED_PERMISSIONS.has(value)
+  return 카탈로그권한.has(value)
 }
 
 /** 권한의 리소스입니다. `*`처럼 리소스가 없는 값은 받지 않습니다. */
@@ -204,13 +204,13 @@ export const AGENT_EXCLUDED_RESOURCES: ReadonlyArray<PermissionResource> = [
  */
 export const AGENT_PERMISSIONS: ReadonlyArray<GrantedPermission> = (
   Object.entries(PERMISSION_CATALOG) as Array<[PermissionResource, ResourcePermissions]>
-).flatMap(([resource, entry]): GrantedPermission[] =>
-  AGENT_EXCLUDED_RESOURCES.includes(resource)
+).flatMap(([리소스, 항목]): GrantedPermission[] =>
+  AGENT_EXCLUDED_RESOURCES.includes(리소스)
     ? []
     : [
-        `${resource}:*`,
+        `${리소스}:*`,
         // 카탈로그의 리소스·동작을 이어 붙인 값이라 카탈로그 권한입니다.
-        ...(entry.agentOnly ?? []).map((action) => `${resource}:${action}` as Permission),
+        ...(항목.agentOnly ?? []).map((동작) => `${리소스}:${동작}` as Permission),
       ],
 )
 
@@ -260,48 +260,48 @@ export const ROLE_TEMPLATES: ReadonlyArray<RoleTemplate> = [
  * 메뉴 노출은 클라이언트가 `/me`의 `permissions`로 정합니다.
  */
 export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>> = {
-  today: open(['action-card:read']),
-  ai_agent: open(['conversation:read', 'conversation:create', 'conversation:delete']),
-  grant_recommendation: open(['grant:read']),
-  document_form: open(['document-form:read']),
-  salary_calculator: open(['salary-calculation:create']),
-  realtime_profit_loss: menu(['realtime-report:read']),
-  realtime_cash: menu(['realtime-report:read']),
-  estimated_vat: menu(['estimated-vat:read']),
-  report_profit_loss: menu(['settlement-report:read'], ['TAXATION']),
-  settlement_reports_profit_loss_cost_details: menu(['settlement-report:read'], ['TAXATION']),
-  settlement_reports_profit_loss_labor_cost: menu(['labor-cost-report:read'], ['TAXATION']),
-  report_cash: menu(['settlement-report:read'], ['TAXATION']),
-  report_financial_position: menu(['settlement-report:read'], ['TAXATION']),
-  bookkeeping_sales_evidence: menu(['evidence:*']),
-  bookkeeping_purchase_evidence: menu(['evidence:*']),
-  bookkeeping_bank_transactions: menu(['bank-transaction:*']),
-  bookkeeping_bank_accounts: menu(['bank-account:*']),
-  bookkeeping_partners: menu(['partner:*']),
-  bookkeeping_sales_transactions: menu(['tax-invoice:*', 'sales-transaction:*']),
-  bookkeeping_tax_payment: menu(['giro:*']),
-  settings_accounting: menu(['account-title:*', 'classification-rule:*']),
-  employee_management: menu(['employee:*'], ['TAXATION']),
-  employment_employee: menu(['employee:*'], ['PAYROLL']),
-  employment_e_sign: menu(['esign-request:*'], ['PAYROLL']),
-  employment_certificate: menu(['certificate-issuance:*'], ['PAYROLL']),
-  settings_e_sign: menu(['esign-template:*', 'company-seal:*'], ['PAYROLL']),
-  payroll_settlement: menu(['payroll-ledger:*', 'payslip:*'], ['PAYROLL']),
-  payroll_management: menu(['payroll-ledger:*', 'payslip:*'], ['TAXATION']),
-  payroll_setting: menu(['payroll-setting:*'], ['PAYROLL']),
-  severance_pay_settlement: menu(['severance-settlement:*'], ['PAYROLL']),
-  tax_surtax: menu(['vat-filing:*'], ['TAXATION']),
-  tax_withholding: menu(['withholding-tax-filing:*'], ['TAXATION']),
-  tax_corporation: menu(['corporate-tax-filing:*'], ['TAXATION']),
-  tax_aggr_income: menu(['income-tax-filing:*'], ['TAXATION']),
-  company_management: menu(['company:read', 'company:update']),
-  user_management: menu(['member:read', 'role:read', 'invitation:read']),
-  integrate_tax: menu(['integration:*', 'scrap-request:*']),
-  integrate_transaction: menu(['integration:*', 'scrap-request:*']),
-  cert_management: menu(['certificate:*']),
-  external_services: menu(['external-service:*']),
-  service_payment: menu(['subscription:read', 'payment:read', 'billing-mandate:*']),
-  contract_consent: menu(['service-contract:read', 'company-document:*', 'hometax-delegation:*'], ['TAXATION']),
+  today: 열린메뉴(['action-card:read']),
+  ai_agent: 열린메뉴(['conversation:read', 'conversation:create', 'conversation:delete']),
+  grant_recommendation: 열린메뉴(['grant:read']),
+  document_form: 열린메뉴(['document-form:read']),
+  salary_calculator: 열린메뉴(['salary-calculation:create']),
+  realtime_profit_loss: 메뉴(['realtime-report:read']),
+  realtime_cash: 메뉴(['realtime-report:read']),
+  estimated_vat: 메뉴(['estimated-vat:read']),
+  report_profit_loss: 메뉴(['settlement-report:read'], ['TAXATION']),
+  settlement_reports_profit_loss_cost_details: 메뉴(['settlement-report:read'], ['TAXATION']),
+  settlement_reports_profit_loss_labor_cost: 메뉴(['labor-cost-report:read'], ['TAXATION']),
+  report_cash: 메뉴(['settlement-report:read'], ['TAXATION']),
+  report_financial_position: 메뉴(['settlement-report:read'], ['TAXATION']),
+  bookkeeping_sales_evidence: 메뉴(['evidence:*']),
+  bookkeeping_purchase_evidence: 메뉴(['evidence:*']),
+  bookkeeping_bank_transactions: 메뉴(['bank-transaction:*']),
+  bookkeeping_bank_accounts: 메뉴(['bank-account:*']),
+  bookkeeping_partners: 메뉴(['partner:*']),
+  bookkeeping_sales_transactions: 메뉴(['tax-invoice:*', 'sales-transaction:*']),
+  bookkeeping_tax_payment: 메뉴(['giro:*']),
+  settings_accounting: 메뉴(['account-title:*', 'classification-rule:*']),
+  employee_management: 메뉴(['employee:*'], ['TAXATION']),
+  employment_employee: 메뉴(['employee:*'], ['PAYROLL']),
+  employment_e_sign: 메뉴(['esign-request:*'], ['PAYROLL']),
+  employment_certificate: 메뉴(['certificate-issuance:*'], ['PAYROLL']),
+  settings_e_sign: 메뉴(['esign-template:*', 'company-seal:*'], ['PAYROLL']),
+  payroll_settlement: 메뉴(['payroll-ledger:*', 'payslip:*'], ['PAYROLL']),
+  payroll_management: 메뉴(['payroll-ledger:*', 'payslip:*'], ['TAXATION']),
+  payroll_setting: 메뉴(['payroll-setting:*'], ['PAYROLL']),
+  severance_pay_settlement: 메뉴(['severance-settlement:*'], ['PAYROLL']),
+  tax_surtax: 메뉴(['vat-filing:*'], ['TAXATION']),
+  tax_withholding: 메뉴(['withholding-tax-filing:*'], ['TAXATION']),
+  tax_corporation: 메뉴(['corporate-tax-filing:*'], ['TAXATION']),
+  tax_aggr_income: 메뉴(['income-tax-filing:*'], ['TAXATION']),
+  company_management: 메뉴(['company:read', 'company:update']),
+  user_management: 메뉴(['member:read', 'role:read', 'invitation:read']),
+  integrate_tax: 메뉴(['integration:*', 'scrap-request:*']),
+  integrate_transaction: 메뉴(['integration:*', 'scrap-request:*']),
+  cert_management: 메뉴(['certificate:*']),
+  external_services: 메뉴(['external-service:*']),
+  service_payment: 메뉴(['subscription:read', 'payment:read', 'billing-mandate:*']),
+  contract_consent: 메뉴(['service-contract:read', 'company-document:*', 'hometax-delegation:*'], ['TAXATION']),
 }
 
 /**
@@ -319,14 +319,14 @@ export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>
  * ```
  */
 export function isGrantable(permission: string): boolean {
-  const [resource, action, ...rest] = permission.split(':')
-  if (resource === undefined || action === undefined || rest.length > 0) return false
-  const entry = catalogEntry(resource)
-  if (entry === undefined) return false
-  const adminOnly: ReadonlyArray<string> = entry.adminOnly ?? []
-  if (action === '*') return adminOnly.length === 0
-  const agentOnly: ReadonlyArray<string> = entry.agentOnly ?? []
-  return entry.actions.includes(action) && !adminOnly.includes(action) && !agentOnly.includes(action)
+  const [리소스, 동작, ...rest] = permission.split(':')
+  if (리소스 === undefined || 동작 === undefined || rest.length > 0) return false
+  const 항목 = 카탈로그항목(리소스)
+  if (항목 === undefined) return false
+  const 관리자전용: ReadonlyArray<string> = 항목.adminOnly ?? []
+  if (동작 === '*') return 관리자전용.length === 0
+  const 대리인전용: ReadonlyArray<string> = 항목.agentOnly ?? []
+  return 항목.actions.includes(동작) && !관리자전용.includes(동작) && !대리인전용.includes(동작)
 }
 
 /**
@@ -341,26 +341,26 @@ export function isGrantable(permission: string): boolean {
  * ```
  */
 export function isAgentOnly(permission: string): boolean {
-  const [resource, action] = permission.split(':')
-  if (resource === undefined || action === undefined) return false
-  const agentOnly: ReadonlyArray<string> = catalogEntry(resource)?.agentOnly ?? []
-  return agentOnly.includes(action)
+  const [리소스, 동작] = permission.split(':')
+  if (리소스 === undefined || 동작 === undefined) return false
+  const 대리인전용: ReadonlyArray<string> = 카탈로그항목(리소스)?.agentOnly ?? []
+  return 대리인전용.includes(동작)
 }
 
 /** 권한이 속한 영역입니다. 카탈로그에 없는 리소스면 `undefined`입니다. */
 export function permissionArea(permission: string): PermissionArea | undefined {
-  return catalogEntry(permission.split(':')[0] ?? '')?.area
+  return 카탈로그항목(permission.split(':')[0] ?? '')?.area
 }
 
 /** 현행 메뉴 코드 목록을 재설계 권한으로 바꿉니다. 모르는 코드는 건너뛰고, 모두에게 열린 메뉴는 기본 권한이라 넣지 않습니다. */
 export function permissionsForLegacyMenus(codes: Iterable<string>): GrantedPermission[] {
-  const permissions = new Set<GrantedPermission>()
-  for (const code of codes) {
-    const mapping = LEGACY_MENU_PERMISSIONS[code]
-    if (mapping === undefined || mapping.openToEveryone) continue
-    for (const permission of mapping.permissions) permissions.add(permission)
+  const 권한집합 = new Set<GrantedPermission>()
+  for (const 메뉴코드 of codes) {
+    const 메뉴권한 = LEGACY_MENU_PERMISSIONS[메뉴코드]
+    if (메뉴권한 === undefined || 메뉴권한.openToEveryone) continue
+    for (const 권한 of 메뉴권한.permissions) 권한집합.add(권한)
   }
-  return [...permissions].sort()
+  return [...권한집합].sort()
 }
 
 /** 권한 그룹 화면에 보여 줄 권한 하나입니다. */
@@ -372,24 +372,27 @@ export interface GrantablePermission {
 
 /** 권한 그룹에 넣을 수 있는 권한 전체입니다. 카탈로그 순서를 따릅니다. */
 export function grantablePermissions(): GrantablePermission[] {
-  return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) =>
-    entry.actions
-      .map((action) => `${resource}:${action}` as Permission)
+  return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([리소스, 항목]) =>
+    항목.actions
+      .map((동작) => `${리소스}:${동작}` as Permission)
       .filter(isGrantable)
-      .map((permission) => ({ permission, area: entry.area, requiredPlans: entry.plans ?? [] })),
+      .map((권한) => ({ permission: 권한, area: 항목.area, requiredPlans: 항목.plans ?? [] })),
   )
 }
 
-function catalogEntry(resource: string): ResourcePermissions | undefined {
-  return Object.hasOwn(PERMISSION_CATALOG, resource)
-    ? (PERMISSION_CATALOG as Record<string, ResourcePermissions>)[resource]
+/** 리소스의 카탈로그 항목입니다. 카탈로그에 없는 리소스면 `undefined`입니다. */
+function 카탈로그항목(리소스: string): ResourcePermissions | undefined {
+  return Object.hasOwn(PERMISSION_CATALOG, 리소스)
+    ? (PERMISSION_CATALOG as Record<string, ResourcePermissions>)[리소스]
     : undefined
 }
 
-function menu(permissions: ReadonlyArray<GrantedPermission>, plans: ReadonlyArray<Plan> = []): LegacyMenuMapping {
-  return { permissions, plans, openToEveryone: false }
+/** 권한과 플랜으로 여는 현행 메뉴입니다. */
+function 메뉴(권한목록: ReadonlyArray<GrantedPermission>, 플랜목록: ReadonlyArray<Plan> = []): LegacyMenuMapping {
+  return { permissions: 권한목록, plans: 플랜목록, openToEveryone: false }
 }
 
-function open(permissions: ReadonlyArray<GrantedPermission>): LegacyMenuMapping {
-  return { permissions, plans: [], openToEveryone: true }
+/** 현행에서 `requiresPermission: false`였던, 모두에게 열린 메뉴입니다. */
+function 열린메뉴(권한목록: ReadonlyArray<GrantedPermission>): LegacyMenuMapping {
+  return { permissions: 권한목록, plans: [], openToEveryone: true }
 }

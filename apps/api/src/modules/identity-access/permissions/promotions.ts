@@ -3,7 +3,7 @@ import type { Plan } from '../actor.types.ts'
 /** 회사를 담당하는 세무 대리인의 종류입니다. 현행 sf `agency.type`입니다. */
 export type AgencyKind = 'HQ' | 'BRANCH'
 
-const ALL_PLANS: ReadonlyArray<Plan> = ['TAXATION', 'PAYROLL']
+const 모든플랜: ReadonlyArray<Plan> = ['TAXATION', 'PAYROLL']
 
 /**
  * 업셀 안내를 보여 줄 플랜입니다. `/me`의 `promotions`로 내려 클라이언트가 프로모션 메뉴를 그립니다.
@@ -19,8 +19,8 @@ const ALL_PLANS: ReadonlyArray<Plan> = ['TAXATION', 'PAYROLL']
  * ```
  */
 export function promotedPlans(input: { plans: ReadonlySet<Plan>; agencyKind?: AgencyKind | undefined }): Plan[] {
-  const missing = ALL_PLANS.filter((plan) => !input.plans.has(plan))
-  if (input.plans.size === 0) return missing
-  if (input.agencyKind === 'HQ') return missing.filter((plan) => plan === 'PAYROLL')
+  const 빠진플랜 = 모든플랜.filter((플랜) => !input.plans.has(플랜))
+  if (input.plans.size === 0) return 빠진플랜
+  if (input.agencyKind === 'HQ') return 빠진플랜.filter((플랜) => 플랜 === 'PAYROLL')
   return []
 }

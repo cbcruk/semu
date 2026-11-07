@@ -91,7 +91,7 @@ const CHANGED: Record<string, unknown> = {
   'client pg: value as-is, missing lastScrapping is falsy': true,
 }
 
-describe('scrap-retryable fixture', () => {
+describe('수집 재시도 가능 규칙 픽스처', () => {
   it.each(fixture.cases.map((testCase) => [testCase.name, testCase] as const))('%s', (name, testCase) => {
     expect(serverDecision(testCase)).toEqual(name in CHANGED ? CHANGED[name] : testCase.expected)
   })

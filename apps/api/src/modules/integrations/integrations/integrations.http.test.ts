@@ -14,8 +14,8 @@ beforeEach(async () => {
 
 afterEach(() => app.dispose())
 
-describe('GET /v1/integrations', () => {
-  it('lists the company links with limits and never returns secrets', async () => {
+describe('기관 연동 목록(GET /v1/integrations)', () => {
+  it('회사의 연동을 한도와 함께 보여 주고 비밀 값은 돌려주지 않습니다', async () => {
     const response = await app.request('GET', '/v1/integrations', { token })
 
     expect(response.status).toBe(200)
@@ -35,7 +35,7 @@ describe('GET /v1/integrations', () => {
     })
   })
 
-  it('lets a bookkeeping member read but not register', async () => {
+  it('경리 구성원은 연동을 읽기만 하고 등록하지 못합니다', async () => {
     const member = await app.signIn('member@semu.example')
 
     expect((await app.request('GET', '/v1/integrations', { token: member.token })).status).toBe(200)
@@ -47,7 +47,7 @@ describe('GET /v1/integrations', () => {
     expect(await denied.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'integration:create' })
   })
 
-  it('does not show another company link', async () => {
+  it('다른 회사의 연동은 보여 주지 않습니다', async () => {
     const other = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', `/v1/integrations/${DEMO_INTEGRATION_IDS.bank}`, { token: other.token })
@@ -56,8 +56,8 @@ describe('GET /v1/integrations', () => {
   })
 })
 
-describe('POST /v1/integrations', () => {
-  it('looks up card candidates, then registers only the chosen new ones', async () => {
+describe('기관 연동 등록(POST /v1/integrations)', () => {
+  it('카드 후보를 조회한 뒤 고른 새 카드만 등록합니다', async () => {
     const login = {
       type: 'CREDIT_CARD',
       authMethod: 'ID_PASSWORD',
@@ -89,7 +89,7 @@ describe('POST /v1/integrations', () => {
     expect(await again.json()).toMatchObject({ code: 'INTEGRATION_DUPLICATE', reason: 'NO_NEW_ITEMS' })
   })
 
-  it('registers a PG MID, masks the secret key and tells the IP to whitelist', async () => {
+  it('PG 상점아이디를 등록하면 비밀 키를 가리고 허용할 IP를 알려 줍니다', async () => {
     const response = await app.request('POST', '/v1/integrations', {
       token,
       body: {
@@ -111,7 +111,7 @@ describe('POST /v1/integrations', () => {
     expect(JSON.stringify(body)).not.toContain('mk-secret')
   })
 
-  it('answers the rule violations with their own codes', async () => {
+  it('규칙 위반마다 그 오류 코드로 답합니다', async () => {
     const toss = await app.request('POST', '/v1/integrations', {
       token,
       body: {
@@ -150,7 +150,7 @@ describe('POST /v1/integrations', () => {
     expect(await wrong.json()).toMatchObject({ code: 'INSTITUTION_CREDENTIAL_REJECTED', reason: 'INVALID_CREDENTIAL' })
   })
 
-  it('links hometax with the registered certificate so tax invoices can be issued', async () => {
+  it('등록한 인증서로 홈택스를 연동하면 세금계산서를 발행할 수 있습니다', async () => {
     const response = await app.request('POST', '/v1/integrations', {
       token,
       body: { type: 'HOMETAX', authMethod: 'CERTIFICATE', certificateId: DEMO_INTEGRATION_IDS.certificate },
@@ -166,8 +166,8 @@ describe('POST /v1/integrations', () => {
   })
 })
 
-describe('items, credentials and removal', () => {
-  it('fixes a card number, switches an account off and removes it', async () => {
+describe('연동 항목·자격 증명·삭제', () => {
+  it('카드 번호를 고치고 계좌를 끈 뒤 지웁니다', async () => {
     const path = `/v1/integrations/${DEMO_INTEGRATION_IDS.bank}/items/004-2`
 
     const off = await app.request('PATCH', path, { token, body: { isActive: false } })
@@ -181,7 +181,7 @@ describe('items, credentials and removal', () => {
     expect(after.version).toBe(3)
   })
 
-  it('replaces a password after checking it with the institution', async () => {
+  it('기관에서 확인한 뒤에 비밀번호를 바꿉니다', async () => {
     const path = `/v1/integrations/${DEMO_INTEGRATION_IDS.hometax}:replace-credentials`
 
     const rejected = await app.request('POST', path, { token, body: { password: 'wrong-again' } })
@@ -192,7 +192,7 @@ describe('items, credentials and removal', () => {
     expect((await replaced.json()).version).toBe(2)
   })
 
-  it('deletes a link', async () => {
+  it('연동을 지웁니다', async () => {
     const response = await app.request('DELETE', `/v1/integrations/${DEMO_INTEGRATION_IDS.hometax}`, { token })
 
     expect(response.status).toBe(204)
@@ -200,7 +200,7 @@ describe('items, credentials and removal', () => {
   })
 })
 
-describe('certificates', () => {
+describe('공동인증서', () => {
   const upload = {
     name: '주식회사 세무',
     oid: '1.2.410.200005.1.1.2',
@@ -212,7 +212,7 @@ describe('certificates', () => {
     signPassword: 'sign-1234',
   }
 
-  it('lists certificates with their derived status and the institutions they can link', async () => {
+  it('인증서를 파생한 상태와 연동할 수 있는 기관과 함께 보여 줍니다', async () => {
     const body = await (await app.request('GET', '/v1/certificates', { token })).json()
 
     expect(body.items).toEqual([
@@ -228,7 +228,7 @@ describe('certificates', () => {
     expect(JSON.stringify(body)).not.toContain(DEMO_SIGN_PASSWORD)
   })
 
-  it('registers a certificate of the company and refuses a second copy or another owner', async () => {
+  it('회사의 인증서를 등록하고 같은 인증서를 다시 등록하거나 다른 명의면 거절합니다', async () => {
     const created = await app.request('POST', '/v1/certificates', { token, body: upload })
     const duplicate = await app.request('POST', '/v1/certificates', { token, body: upload })
     const stranger = await app.request('POST', '/v1/certificates', {
@@ -255,7 +255,7 @@ describe('certificates', () => {
     expect(await badPassword.json()).toMatchObject({ code: 'CERTIFICATE_PASSWORD_INCORRECT' })
   })
 
-  it('checks the signing password and marks links UNREGISTERED once the certificate is deleted', async () => {
+  it('서명 비밀번호를 확인하고, 인증서를 지우면 그 연동을 UNREGISTERED로 표시합니다', async () => {
     const path = `/v1/certificates/${DEMO_INTEGRATION_IDS.certificate}`
     const linked = await (
       await app.request('POST', '/v1/integrations', {
@@ -280,7 +280,7 @@ describe('certificates', () => {
     })
   })
 
-  it('signs up to Internet Giro without keeping the Giro password', async () => {
+  it('인터넷지로 비밀번호는 보관하지 않고 인터넷지로에 가입합니다', async () => {
     const response = await app.request('POST', `/v1/certificates/${DEMO_INTEGRATION_IDS.certificate}:join-giro`, {
       token,
       body: {

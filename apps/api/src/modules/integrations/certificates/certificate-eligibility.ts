@@ -43,17 +43,17 @@ export function decideCertificateRegistration(
   certificate: CertificateFacts,
   today: string,
 ): CertificateRegistrationDecision {
-  const kind = CERTIFICATE_OIDS[certificate.oid]
-  if (kind === undefined) return { ok: false, rejection: { code: 'CERTIFICATE_OID_UNKNOWN', field: 'oid' } }
+  const 인증서분류 = CERTIFICATE_OIDS[certificate.oid]
+  if (인증서분류 === undefined) return { ok: false, rejection: { code: 'CERTIFICATE_OID_UNKNOWN', field: 'oid' } }
   if (certificate.expiresOn < today) {
     return { ok: false, rejection: { code: 'CERTIFICATE_EXPIRED', field: 'expiresOn' } }
   }
-  if (kind.ownerType === 'BUSINESS') {
-    const owner = (certificate.ownerBusinessNumber ?? '').replaceAll('-', '')
-    if (owner !== company.businessNumber) {
+  if (인증서분류.ownerType === 'BUSINESS') {
+    const 명의사업자번호 = (certificate.ownerBusinessNumber ?? '').replaceAll('-', '')
+    if (명의사업자번호 !== company.businessNumber) {
       return { ok: false, rejection: { code: 'CERTIFICATE_OWNER_MISMATCH', field: 'ownerBusinessNumber' } }
     }
-    return { ok: true, ...kind }
+    return { ok: true, ...인증서분류 }
   }
   if (company.businessType === 'CORPORATION') {
     return { ok: false, rejection: { code: 'CERTIFICATE_TYPE_NOT_ALLOWED', field: 'oid' } }
@@ -61,7 +61,7 @@ export function decideCertificateRegistration(
   if (!company.representativeNames.includes(certificate.ownerName ?? '')) {
     return { ok: false, rejection: { code: 'CERTIFICATE_OWNER_MISMATCH', field: 'ownerName' } }
   }
-  return { ok: true, ...kind }
+  return { ok: true, ...인증서분류 }
 }
 
 /**
@@ -78,8 +78,8 @@ export function isCertificateUsableFor(
   if (institution === 'HOMETAX') {
     return certificate.ownerType === 'BUSINESS' && (certificate.usage === 'GENERAL' || certificate.usage === 'ETAX')
   }
-  const owner = businessType === 'CORPORATION' ? 'BUSINESS' : 'PERSONAL'
-  return certificate.ownerType === owner && (certificate.usage === 'BANK' || certificate.usage === 'GENERAL')
+  const 받는명의 = businessType === 'CORPORATION' ? 'BUSINESS' : 'PERSONAL'
+  return certificate.ownerType === 받는명의 && (certificate.usage === 'BANK' || certificate.usage === 'GENERAL')
 }
 
 /** 인증서로 연동할 수 있는 기관 목록입니다. 연동 화면의 `가능`/`불가` 표시를 서버가 정합니다. */
@@ -87,9 +87,7 @@ export function usableInstitutions(
   businessType: CertificateCompany['businessType'],
   certificate: Pick<CertificateClass, 'ownerType' | 'usage'>,
 ): InstitutionType[] {
-  return [...CERTIFICATE_INSTITUTIONS].filter((institution) =>
-    isCertificateUsableFor(institution, businessType, certificate),
-  )
+  return [...CERTIFICATE_INSTITUTIONS].filter((기관) => isCertificateUsableFor(기관, businessType, certificate))
 }
 
 /**

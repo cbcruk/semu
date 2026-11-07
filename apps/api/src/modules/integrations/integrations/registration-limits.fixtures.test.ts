@@ -202,18 +202,18 @@ const PORTED: Record<string, () => [RegistrationRequest, ExistingLinks, Partial<
   ],
 }
 
-describe('integration-registration-limits fixture', () => {
+describe('기관 연동 등록 제한 규칙 픽스처', () => {
   it.each(Object.keys(PORTED))('%s', (name) => {
     const [input, existing, expected] = PORTED[name]!()
 
     expect(decideRegistration(input, existing)).toMatchObject(expected)
   })
 
-  it('keeps the legacy limit of 20 per type', () => {
+  it('현행처럼 기관 종류마다 20개까지 등록합니다', () => {
     expect(MAX_ITEMS_PER_TYPE).toBe(20)
   })
 
-  it('masks PG secret keys and keeps public ones', () => {
+  it('PG 비밀 키는 가리고 공개 키는 그대로 보여 줍니다', () => {
     const view = integrationView(
       {
         id: 'int_01JBQ000000000000000000099' as Id<'integration'>,
@@ -238,7 +238,7 @@ describe('integration-registration-limits fixture', () => {
     expect(view.keys).toEqual({ usrId: 'admin', merchantKey: '********' })
   })
 
-  it('ports every case', () => {
+  it('모든 케이스를 옮깁니다', () => {
     expect(fixture.cases.map((testCase) => testCase.name).sort()).toEqual(Object.keys(PORTED).sort())
   })
 })

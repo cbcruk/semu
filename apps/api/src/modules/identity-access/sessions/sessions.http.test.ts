@@ -12,8 +12,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('POST /v1/auth/sessions', () => {
-  it('signs in, sets an HttpOnly refresh cookie and binds the last-used or first company', async () => {
+describe('로그인(POST /v1/auth/sessions)', () => {
+  it('로그인하면 HttpOnly refresh 쿠키를 심고 마지막으로 쓴 회사, 없으면 처음 소속된 회사에 토큰을 묶습니다', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
       body: { email: 'OWNER@semu.example', password: DEMO_PASSWORD },
     })
@@ -38,7 +38,7 @@ describe('POST /v1/auth/sessions', () => {
     expect(body).not.toHaveProperty('refreshToken')
   })
 
-  it('answers the same 401 for an unknown email and a wrong password', async () => {
+  it('없는 이메일과 틀린 비밀번호에 같은 401로 답합니다', async () => {
     const unknown = await app.request('POST', '/v1/auth/sessions', {
       body: { email: 'nobody@x.example', password: 'abc12345' },
     })
@@ -51,7 +51,7 @@ describe('POST /v1/auth/sessions', () => {
     expect(await unknown.json()).toEqual(await wrong.json())
   })
 
-  it('locks the account after five wrong passwords, even for the right one', async () => {
+  it('비밀번호를 다섯 번 틀리면 계정을 잠가 맞는 비밀번호도 받지 않습니다', async () => {
     for (let attempt = 1; attempt <= 4; attempt += 1) {
       const response = await app.request('POST', '/v1/auth/sessions', {
         body: { email: 'member@semu.example', password: 'nope1234' },
@@ -69,7 +69,7 @@ describe('POST /v1/auth/sessions', () => {
     expect(await right.json()).toMatchObject({ code: 'ACCOUNT_LOCKED' })
   })
 
-  it('refuses a company the user cannot access without revealing whether it exists', async () => {
+  it('접근할 수 없는 회사는 있는지 없는지 드러내지 않고 거절합니다', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
       body: { email: 'owner@semu.example', password: DEMO_PASSWORD, companyId: DEMO_COMPANY_IDS.individual },
     })
@@ -79,8 +79,8 @@ describe('POST /v1/auth/sessions', () => {
   })
 })
 
-describe('GET /v1/me', () => {
-  it('returns the computed permissions, plans and switch targets of an admin', async () => {
+describe('내 정보(GET /v1/me)', () => {
+  it('관리자의 계산된 권한·플랜·전환할 수 있는 회사를 돌려줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/me', { token })
@@ -95,7 +95,7 @@ describe('GET /v1/me', () => {
     })
   })
 
-  it('gives a member the base permissions plus the union of their roles', async () => {
+  it('일반 구성원은 기본 권한에 권한 그룹들의 합집합을 더해 받습니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     const body = await (await app.request('GET', '/v1/me', { token })).json()
@@ -105,7 +105,7 @@ describe('GET /v1/me', () => {
     expect(body.permissions).not.toContain('member:update')
   })
 
-  it('treats assigned agency staff as AGENCY with the agent permission set, including the team of a manager', async () => {
+  it('배정된 대리인 담당자는 대리인 권한을 가진 AGENCY 행위자이고, 팀장은 팀원의 배정 회사도 봅니다', async () => {
     const agent = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
     const manager = await app.signIn('manager@agency.example')
 
@@ -118,7 +118,7 @@ describe('GET /v1/me', () => {
     )
   })
 
-  it('lists pending tax terms for a taxation customer who has not agreed yet', async () => {
+  it('아직 동의하지 않은 세무 기장 고객에게 동의할 세무 약관을 보여 줍니다', async () => {
     const { token } = await app.signIn('sole@semu.example')
 
     expect(await (await app.request('GET', '/v1/me', { token })).json()).toMatchObject({
@@ -126,7 +126,7 @@ describe('GET /v1/me', () => {
     })
   })
 
-  it('promotes every plan to a free company', async () => {
+  it('무료 회사에는 모든 플랜의 프로모션을 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     expect(await (await app.request('GET', '/v1/me', { token })).json()).toMatchObject({
@@ -135,13 +135,13 @@ describe('GET /v1/me', () => {
     })
   })
 
-  it('answers 401 without a token', async () => {
+  it('토큰이 없으면 401로 답합니다', async () => {
     expect((await app.request('GET', '/v1/me')).status).toBe(401)
   })
 })
 
-describe('refresh, switch and sign-out', () => {
-  it('rotates the refresh token and revokes the previous access token', async () => {
+describe('토큰 갱신·회사 전환·로그아웃', () => {
+  it('refresh token을 회전하고 이전 access token을 폐기합니다', async () => {
     const first = await app.signIn('owner@semu.example')
 
     const refreshed = await app.request('POST', '/v1/auth/sessions:refresh', { cookie: first.cookie })
@@ -153,7 +153,7 @@ describe('refresh, switch and sign-out', () => {
     expect((await app.request('GET', '/v1/me', { token: body.accessToken })).status).toBe(200)
   })
 
-  it('revokes the whole session when a rotated refresh token comes back', async () => {
+  it('이미 회전한 refresh token이 다시 오면 세션 전체를 폐기합니다', async () => {
     const first = await app.signIn('owner@semu.example')
     const rotated = await app.request('POST', '/v1/auth/sessions:refresh', { cookie: first.cookie })
     const latest = cookieOf(rotated)
@@ -166,7 +166,7 @@ describe('refresh, switch and sign-out', () => {
     expect(afterReplay.status).toBe(401)
   })
 
-  it('switches company with a new token bound to the new company', async () => {
+  it('회사를 전환하면 새 회사에 묶인 새 토큰을 줍니다', async () => {
     const first = await app.signIn('owner@semu.example')
 
     const switched = await app.request('POST', '/v1/auth/sessions:switch-company', {
@@ -182,7 +182,7 @@ describe('refresh, switch and sign-out', () => {
     expect((await app.request('GET', '/v1/me', { token: first.token })).status).toBe(401)
   })
 
-  it('remembers the last company for the next sign-in', async () => {
+  it('마지막으로 쓴 회사를 기억해 다음 로그인에 씁니다', async () => {
     const first = await app.signIn('owner@semu.example')
     await app.request('POST', '/v1/auth/sessions:switch-company', {
       cookie: first.cookie,
@@ -194,7 +194,7 @@ describe('refresh, switch and sign-out', () => {
     expect(again.body).toMatchObject({ company: { id: DEMO_COMPANY_IDS.free } })
   })
 
-  it('refuses to switch to a company outside the user', async () => {
+  it('사용자가 접근할 수 없는 회사로는 전환하지 않습니다', async () => {
     const first = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/auth/sessions:switch-company', {
@@ -205,7 +205,7 @@ describe('refresh, switch and sign-out', () => {
     expect(response.status).toBe(404)
   })
 
-  it('signs out, clears the cookie and kills both tokens', async () => {
+  it('로그아웃하면 쿠키를 지우고 두 토큰을 모두 무효로 합니다', async () => {
     const first = await app.signIn('owner@semu.example')
 
     const response = await app.request('DELETE', '/v1/auth/sessions/current', { cookie: first.cookie })
@@ -216,13 +216,13 @@ describe('refresh, switch and sign-out', () => {
     expect((await app.request('POST', '/v1/auth/sessions:refresh', { cookie: first.cookie })).status).toBe(401)
   })
 
-  it('answers 401 for a refresh without a cookie', async () => {
+  it('쿠키 없이 토큰을 갱신하면 401로 답합니다', async () => {
     expect((await app.request('POST', '/v1/auth/sessions:refresh')).status).toBe(401)
   })
 })
 
-describe('demo', () => {
-  it('signs in the read-only demo account without a password', async () => {
+describe('데모 계정', () => {
+  it('읽기 전용 데모 계정은 비밀번호 없이 로그인합니다', async () => {
     const response = await app.request('POST', '/v1/auth/sessions:demo')
 
     expect(response.status).toBe(200)
@@ -230,7 +230,7 @@ describe('demo', () => {
     expect(body).toMatchObject({ user: { isDemo: true }, company: { id: DEMO_COMPANY_IDS.demo } })
   })
 
-  it('does not let anyone sign in to the demo account with a password', async () => {
+  it('누구도 비밀번호로 데모 계정에 로그인할 수 없습니다', async () => {
     const response = await app.request('POST', '/v1/auth/sessions', {
       body: { email: 'demo@semu.example', password: DEMO_PASSWORD },
     })

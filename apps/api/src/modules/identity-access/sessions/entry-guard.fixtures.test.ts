@@ -52,7 +52,7 @@ function run(input: Record<string, unknown>): unknown {
   return { companyId: Number(chosen.company.id.slice(4)) }
 }
 
-describe('entry-guard-order fixtures', () => {
+describe('진입 가드 순서 규칙 픽스처', () => {
   for (const testCase of loadRuleCases('entry-guard-order')) {
     it.skipIf(testCase.input['check'] !== PORTED_CHECK)(testCase.name, () => {
       const expected = CHANGED[testCase.name] ?? testCase.expected

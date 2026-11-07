@@ -30,10 +30,9 @@ export type ActorAccess =
 export function actorPermissions(access: ActorAccess): ReadonlySet<GrantedPermission> {
   if (access.kind === 'AGENCY') return new Set<GrantedPermission>(AGENT_PERMISSIONS)
   if (access.access === 'ADMIN') return new Set<GrantedPermission>(['*'])
-  const permissions = new Set<GrantedPermission>(BASE_PERMISSIONS)
-  for (const role of access.rolePermissions) {
-    for (const permission of role)
-      if (isGrantedPermission(permission) && isGrantable(permission)) permissions.add(permission)
+  const 권한집합 = new Set<GrantedPermission>(BASE_PERMISSIONS)
+  for (const 권한그룹 of access.rolePermissions) {
+    for (const 권한 of 권한그룹) if (isGrantedPermission(권한) && isGrantable(권한)) 권한집합.add(권한)
   }
-  return permissions
+  return 권한집합
 }
