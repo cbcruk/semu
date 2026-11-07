@@ -923,19 +923,27 @@ describe('legacy authorization and plans', () => {
     }
   })
 
-  it('pins the current gap: a taxation-only company cannot open the cards because the new ledgers need PAYROLL', async () => {
-    // 현행 급여 관리는 기장(TAXATION) 메뉴였습니다. 새 대장은 PAYROLL만 받으므로 이 조각으로 갈아타기 전에 정해야 합니다.
-    const sole = harness.client()
-    await sole.login('sole@semu.example')
+  it('opens the cards to a taxation-only company, like the legacy payroll_management menu', async () => {
+    // 현행 급여 관리는 기장(TAXATION) 메뉴였습니다. 2026-11-07에 새 대장을 PAYROLL 또는 TAXATION에 열기로 정했습니다.
     const base = `/api/company/${DEMO_COMPANY_IDS.individual}/payroll`
 
-    const summary = await sole.request('GET', `${base}/card-summary/`)
-    const create = await sole.request('POST', `${base}/cards/`, { body: { attribution_month: '2026-09' } })
+    const summary = await client.request('GET', `${base}/card-summary/`)
+    const create = await client.request('POST', `${base}/cards/`, { body: { attribution_month: '2026-09' } })
 
-    for (const response of [summary, create]) {
-      expect(response.status).toBe(403)
-      expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', required_plans: ['PAYROLL'] })
-    }
+    expect(summary.status).toBe(200)
+    expect(create.status).toBe(201)
+    const card = await create.json()
+    expect((await client.request('GET', `${base}/cards/${card.id}/`)).status).toBe(200)
+  })
+
+  it('asks a taxation-only owner for the tax terms, which the plan lets them agree to', async () => {
+    const sole = harness.client()
+    await sole.login('sole@semu.example')
+
+    const response = await sole.request('GET', `/api/company/${DEMO_COMPANY_IDS.individual}/payroll/card-summary/`)
+
+    expect(response.status).toBe(403)
+    expect((await response.json()).code).toBe('TAX_TERMS_REQUIRED')
   })
 })
 

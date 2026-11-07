@@ -801,15 +801,21 @@ describe('withholding summary (급여 → 원천세)', () => {
     }
   })
 
-  it('pins the current plan gap: a taxation-only company has no summary because ledgers need PAYROLL', async () => {
+  it('gives a taxation-only company its summary, since ledgers open to TAXATION too', async () => {
     const agent = await signedIn(harness, AGENT)
-    const response = await agent.request(
-      'GET',
-      `/api/company/${DEMO_COMPANY_IDS.individual}/payroll/withholding-summary/2026-10/`,
-    )
+    const payroll = `/api/company/${DEMO_COMPANY_IDS.individual}/payroll`
+    const created = await agent.request('POST', `${payroll}/cards/`, { body: { attribution_month: '2026-10' } })
+    expect(created.status).toBe(201)
+    const card = await created.json()
 
-    expect(response.status).toBe(403)
-    expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', required_plans: ['PAYROLL'] })
+    const response = await agent.request('GET', `${payroll}/withholding-summary/2026-10/`)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      payment_month: '2026-10',
+      ledger_closed: false,
+      open_card_ids: [card.id],
+    })
   })
 
   it('stops reading an endless or repeating filing cursor', async () => {

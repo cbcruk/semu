@@ -13,6 +13,7 @@ import { authorize, type AccessDenied } from '../../identity-access/authorizatio
 import { paymentMonthOf } from '../ledgers/ledger-rules.ts'
 import { PayrollLedgerRepository } from '../ledgers/payroll-ledger-repository.ts'
 import type { PayrollLedgerRecord, PayrollRowRecord } from '../ledgers/payroll-ledger.types.ts'
+import { LEDGER_PLANS } from '../payroll-access.ts'
 import { PayslipNotFound, PayslipSendInterrupted } from '../payroll-problems.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayslipMailer } from '../ports/payslip-mailer.ts'
@@ -34,7 +35,7 @@ export const listPayslips = (query: {
   paymentMonth?: string
 }): Effect.Effect<{ items: PayslipResponse[] }, AccessDenied, CurrentActor | PayslipDeps> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payslip:read', plans: ['PAYROLL'], requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payslip:read', plans: LEDGER_PLANS, requiresTerms: true })
     const ledgers = (yield* (yield* PayrollLedgerRepository).list(actor.companyId)).filter(
       (ledger) =>
         ledger.status === 'CLOSED' &&
@@ -57,7 +58,7 @@ export const getPayslip = (
   id: Id<'payslip'>,
 ): Effect.Effect<PayslipResponse, AccessDenied | PayslipNotFound, CurrentActor | PayslipDeps> =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payslip:read', plans: ['PAYROLL'], requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payslip:read', plans: LEDGER_PLANS, requiresTerms: true })
     const found = yield* findClosed(actor.companyId, id)
     return payslipResponse(found.ledger, found.row, found.record)
   })
@@ -89,7 +90,7 @@ export const sendPayslips = (
   CurrentActor | PayslipDeps
 > =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'payslip:send', plans: ['PAYROLL'], requiresTerms: true })
+    const actor = yield* authorize({ permission: 'payslip:send', plans: LEDGER_PLANS, requiresTerms: true })
     if (idempotencyKey === undefined || idempotencyKey === '') return yield* new IdempotencyKeyRequired({})
     const repository = yield* PayslipRepository
     const id = payslipSendId(actor.companyId, actor.userId, idempotencyKey)
