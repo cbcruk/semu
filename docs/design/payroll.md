@@ -208,6 +208,7 @@ stateDiagram-v2
 | `:close` | `DRAFT`·`SUBMITTED` → `CLOSED` | 없음 | 고객·담당자 | `payroll-ledger:close` | 허용 |
 | `:reopen` | `CLOSED` → `SUBMITTED` | 고객·담당자 | 고객·담당자 | `payroll-ledger:close` | 막음 |
 
+- 현행은 확정·해제를 세무 대리인만 했고 고객은 `PERMISSION_DENIED`였습니다. 직접 운영의 `:close`·`:reopen`은 고객·담당자 모두 할 수 있게 바꿨습니다. 해제는 원천세(지급월 마감 이벤트, 신고 잠금 `WITHHOLDING_FILED`)와 이어지므로 고객에게 맡겨도 되는지는 권한(`payroll-ledger:close`)으로 회사마다 조정합니다
 - 전이표 하나([ledger-status.ts](../../apps/api/src/modules/payroll/ledgers/ledger-status.ts))를 서비스, `allowedActions`, 픽스처 테스트가 함께 봅니다. 규칙 문서는 [payroll-ledger-transitions](../reference/rules/payroll-ledger-transitions.md)입니다
 - 검사 순서는 권한 → 버전 → 상태·운영 방식·행위자(409 `PAYROLL_LEDGER_TRANSITION_INVALID`, `ledgerStatus`, `action`) → 신고 잠금(409 `WITHHOLDING_FILED`)입니다
 - **입력은 `DRAFT`에서 고객·담당자, `SUBMITTED`에서 담당자만 고칩니다.** 그 밖에는 409 `PAYROLL_LEDGER_READ_ONLY`입니다. 승인 대기 중에 고치려면 요청을 철회합니다
@@ -567,3 +568,4 @@ flowchart LR
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
 10. **기장 회사의 "급여대장 마감분".** 급여대장을 기장(`TAXATION`)에도 열었지만 원천세의 "급여대장 마감분" 자동 연계 항목은 급여 플랜 회사에만 넣습니다([접근 요건](#접근-요건)). 대장을 쓰는 기장 회사에도 넣으려면 "신고 기간에 대장이 있으면 마감 여부로, 없으면 `NOT_APPLICABLE`" 같은 규칙이 필요합니다. 지금 판정(`payrollLedgerResponse`)은 대장이 없으면 `PENDING`이라, 그대로 넣으면 대장을 쓰지 않는 기장 회사의 화면에 끝나지 않는 대기 항목이 남습니다(제출은 막지 않음). 기간 중에 대장이 생기거나 지워질 때 항목을 넣고 빼는 것도 함께 정합니다
+11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** 명세서는 HR 직원 이메일로만 보내는데, 일용·사업·기타소득 행은 직원 없이 이름만 둘 수 있어 그런 소득자의 명세서는 언제나 `NO_EMAIL`로 실패합니다. 현행 BPO는 대장 행에 저장한 주소로 사업·기타소득자에게도 보냈습니다. 명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지 정해야 합니다
