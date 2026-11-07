@@ -208,7 +208,7 @@ stateDiagram-v2
 | `:close` | `DRAFT`·`SUBMITTED` → `CLOSED` | 없음 | 고객·담당자 | `payroll-ledger:close` | 허용 |
 | `:reopen` | `CLOSED` → `SUBMITTED` | 고객·담당자 | 고객·담당자 | `payroll-ledger:close` | 막음 |
 
-- 현행은 확정·해제를 세무 대리인만 했고 고객은 `PERMISSION_DENIED`였습니다. 직접 운영의 `:close`·`:reopen`은 고객·담당자 모두 할 수 있게 바꿨습니다. 해제는 원천세(지급월 마감 이벤트, 신고 잠금 `WITHHOLDING_FILED`)와 이어지므로 고객에게 맡겨도 되는지는 권한(`payroll-ledger:close`)으로 회사마다 조정합니다
+- 현행은 확정·해제를 세무 대리인만 했고 고객은 `PERMISSION_DENIED`였습니다. 직접 운영의 `:close`·`:reopen`은 고객·담당자 모두 할 수 있게 바꿨습니다. 해제는 원천세(지급월 마감 이벤트, 신고 잠금 `WITHHOLDING_FILED`)와 이어지므로, 고객의 해제를 다시 막을지는 `payroll-ledger:close` 권한을 누구에게 줄지와 함께 남은 질문입니다
 - 전이표 하나([ledger-status.ts](../../apps/api/src/modules/payroll/ledgers/ledger-status.ts))를 서비스, `allowedActions`, 픽스처 테스트가 함께 봅니다. 규칙 문서는 [payroll-ledger-transitions](../reference/rules/payroll-ledger-transitions.md)입니다
 - 검사 순서는 권한 → 버전 → 상태·운영 방식·행위자(409 `PAYROLL_LEDGER_TRANSITION_INVALID`, `ledgerStatus`, `action`) → 신고 잠금(409 `WITHHOLDING_FILED`)입니다
 - **입력은 `DRAFT`에서 고객·담당자, `SUBMITTED`에서 담당자만 고칩니다.** 그 밖에는 409 `PAYROLL_LEDGER_READ_ONLY`입니다. 승인 대기 중에 고치려면 요청을 철회합니다
