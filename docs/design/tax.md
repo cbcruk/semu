@@ -39,6 +39,8 @@
 | 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatPreliminaryMode`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
 | 예상 부가세 | `VatEstimate` (`outputTax`, `inputTax`, `estimatedTax`) |
 
+**부가세 예정 기간(`vatPreliminaryMode`).** 개인 일반과세자와 직전 과세기간 공급가액이 1억 5천만 원 미만인 법인은 원칙적으로 예정고지(`NOTICE`)를 받습니다. 고지 금액은 직전 기 납부세액의 50%이고, 50만 원 미만이면 고지하지 않습니다. 휴업하거나 사업이 부진한 경우(직전 기 대비 1/3 미달), 또는 조기환급을 받으려는 경우에는 예정 신고를 선택할 수 있습니다. 회사를 만들 때 법인은 `FILING`, 개인은 `NOTICE`로 정하고, 신고 일정은 법인이 `FILING`일 때만 예정 신고 건을 만듭니다([filing-obligations.ts](../../apps/api/src/modules/tax/calendar/filing-obligations.ts)). 1억 5천만 원 기준과 개인의 예정 신고 선택은 반영하지 않았습니다(이전 설계 `tax-api-design.md` 5절, 커밋 `3c6f890`)
+
 ## 신고 건
 
 ### 리소스
