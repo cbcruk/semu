@@ -26,8 +26,8 @@ async function payrollRequirement(): Promise<string> {
     .response
 }
 
-describe('HR → Payroll', () => {
-  it('builds wage rows from employees registered in HR', async () => {
+describe('HR → Payroll 연결', () => {
+  it('HR에 등록한 직원으로 급여 행을 만듭니다', async () => {
     const hired = await app.request('POST', '/v1/employees', {
       token: owner,
       body: { kind: 'WAGE', name: '박급여', joinDate: '2026-01-05', email: 'pay@example.com' },
@@ -133,8 +133,8 @@ describe('HR → Payroll', () => {
   })
 })
 
-describe('Payroll → Tax', () => {
-  it('marks the withholding payroll requirement provided once every ledger of the pay month is closed', async () => {
+describe('Payroll → Tax 연결', () => {
+  it('지급월의 급여대장이 모두 마감되면 원천세의 급여 자료 요건을 제출됨으로 표시합니다', async () => {
     expect(await payrollRequirement()).toBe('PENDING')
 
     const closed = await app.request('POST', `/v1/payroll-ledgers/${ledgerId}:close`, { token: owner })
@@ -144,7 +144,7 @@ describe('Payroll → Tax', () => {
     expect(await payrollRequirement()).toBe('PROVIDED')
   })
 
-  it('puts the requirement back to pending when the ledger is reopened', async () => {
+  it('급여대장을 다시 열면 요건을 대기로 되돌립니다', async () => {
     const reopened = await app.request('POST', `/v1/payroll-ledgers/${ledgerId}:reopen`, {
       token: owner,
       body: { reason: '상여 누락' },
@@ -158,8 +158,8 @@ describe('Payroll → Tax', () => {
   })
 })
 
-describe('Tax → Payroll', () => {
-  it('refuses amount-changing ledger commands after the withholding filing is filed', async () => {
+describe('Tax → Payroll 연결', () => {
+  it('원천세를 신고한 뒤에는 금액을 바꾸는 급여대장 커맨드를 거부합니다(409)', async () => {
     for (const command of ['start-review', 'start-preparing']) {
       const response = await app.request('POST', `/v1/filings/${WITHHOLDING_2026_10}:${command}`, { token: agent })
       expect(response.status).toBe(200)
@@ -183,8 +183,8 @@ describe('Tax → Payroll', () => {
   })
 })
 
-describe('Payroll → Bookkeeping', () => {
-  it('shows the payroll labor cost in the bookkeeping report', async () => {
+describe('Payroll → Bookkeeping 연결', () => {
+  it('급여의 인건비를 장부 보고서에 보여 줍니다', async () => {
     const payroll = await (await app.request('GET', '/v1/labor-cost-reports/2026', { token: owner })).json()
     const bookkeeping = await (await app.request('GET', '/v1/reports/labor-cost?year=2026', { token: owner })).json()
     const payrollOctober = payroll.months.find((month: { month: string }) => month.month === '2026-10')

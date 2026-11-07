@@ -25,12 +25,12 @@ const sourceExists = (file: string) =>
 
 const files = readdirSync(FIXTURE_DIR).filter((file) => file.endsWith('.json'))
 
-describe('rule fixtures', () => {
-  it('exist', () => {
+describe('규칙 픽스처', () => {
+  it('픽스처 파일이 하나 이상 있습니다', () => {
     expect(files.length).toBeGreaterThan(0)
   })
 
-  it.each(files)('%s is well-formed and documented', (file) => {
+  it.each(files)('%s 픽스처는 형식이 맞고 출처·규칙 문서가 있습니다', (file) => {
     const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, file), 'utf8')) as RuleFixture
 
     expect(fixture.rule).toBe(file.replace(/\.json$/, ''))

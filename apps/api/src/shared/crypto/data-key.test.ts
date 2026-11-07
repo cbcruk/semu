@@ -23,8 +23,8 @@ const RRN = 'hr/registrationNumber/aes-256-gcm'
 const ACCOUNT = 'hr/accountNumber/aes-256-gcm'
 const tempDir = () => mkdtempSync(join(tmpdir(), 'semu-key-'))
 
-describe('encryptString / decryptString (AES-256-GCM)', () => {
-  it('round-trips with a fresh IV every time', () => {
+describe('문자열 암호화·복호화 (AES-256-GCM)', () => {
+  it('암호화할 때마다 새 IV를 쓰고, 복호화하면 원문으로 돌아옵니다', () => {
     const first = encryptString(key, RRN, '900101-1234567')
     const second = encryptString(key, RRN, '900101-1234567')
 
@@ -35,7 +35,7 @@ describe('encryptString / decryptString (AES-256-GCM)', () => {
     expect(decryptString(key, RRN, second)).toBe('900101-1234567')
   })
 
-  it('refuses a tampered ciphertext, tag or IV', () => {
+  it('변조된 암호문·인증 태그·IV는 복호화를 거부합니다', () => {
     const token = encryptString(key, ACCOUNT, '110123456789')
     const [version, iv, tag, ciphertext] = token.split(':') as [string, string, string, string]
     const flip = (part: string) => {
@@ -52,13 +52,13 @@ describe('encryptString / decryptString (AES-256-GCM)', () => {
     )
   })
 
-  it('binds the ciphertext to its purpose, so moving it to another field fails', () => {
+  it('암호문을 용도에 묶어 두므로 다른 필드로 옮기면 복호화에 실패합니다', () => {
     const token = encryptString(key, RRN, '900101-1234567')
 
     expect(() => decryptString(key, ACCOUNT, token)).toThrow(DecryptionFailed)
   })
 
-  it('refuses another key and an unknown format without leaking the plaintext', () => {
+  it('다른 키와 알 수 없는 형식은 원문을 드러내지 않고 거부합니다', () => {
     const token = encryptString(key, RRN, 'secret-value')
 
     expect(() => decryptString(new Uint8Array(randomBytes(32)), RRN, token)).toThrow(DecryptionFailed)
@@ -73,7 +73,7 @@ describe('encryptString / decryptString (AES-256-GCM)', () => {
   })
 })
 
-describe('DataKey', () => {
+describe('데이터 키', () => {
   const subkeys = (master: Uint8Array) =>
     Effect.runSync(
       Effect.map(DataKey, (dataKey) => ({
@@ -83,7 +83,7 @@ describe('DataKey', () => {
       })).pipe(Effect.provide(DataKey.layerFromKey(master))),
     )
 
-  it('derives a stable, separate 32-byte subkey per purpose', () => {
+  it('용도마다 서로 다르고 늘 같은 32바이트 하위 키를 파생합니다', () => {
     const derived = subkeys(key)
 
     expect(derived.a).toHaveLength(64)
@@ -93,7 +93,7 @@ describe('DataKey', () => {
     expect(subkeys(new Uint8Array(randomBytes(32))).a).not.toBe(derived.a)
   })
 
-  it('accepts only a strict base64 32-byte key', () => {
+  it('엄격한 base64로 인코딩한 32바이트 키만 받습니다', () => {
     const encoded = Buffer.from(key).toString('base64')
 
     expect(parseDataKey(encoded)).toEqual(key)
@@ -105,8 +105,8 @@ describe('DataKey', () => {
   })
 })
 
-describe('key file', () => {
-  it('creates the key file with mode 0600 once and reuses it', () => {
+describe('키 파일', () => {
+  it('키 파일을 권한 0600으로 한 번만 만들고 이후에는 재사용합니다', () => {
     const dir = tempDir()
     const path = join(dir, 'semu.key')
 
@@ -121,7 +121,7 @@ describe('key file', () => {
     expect(readdirSync(dir)).toEqual(['semu.key'])
   })
 
-  it('lets processes that start together agree on one key instead of failing with EEXIST', async () => {
+  it('함께 시작한 프로세스들이 EEXIST로 실패하지 않고 같은 키 하나를 씁니다', async () => {
     const path = join(tempDir(), 'semu.key')
     const module = new URL('./data-key.ts', import.meta.url).href
     const script =
@@ -142,7 +142,7 @@ describe('key file', () => {
     expect(readdirSync(join(path, '..'))).toEqual(['semu.key'])
   })
 
-  it('refuses a key file readable by group or others', () => {
+  it('그룹이나 다른 사용자가 읽을 수 있는 키 파일은 거부합니다', () => {
     const path = join(tempDir(), 'semu.key')
     loadOrCreateKeyFile(path)
     chmodSync(path, 0o644)
@@ -150,7 +150,7 @@ describe('key file', () => {
     expect(() => loadOrCreateKeyFile(path)).toThrow(/chmod 600/)
   })
 
-  it('does not create a key when asked not to', () => {
+  it('만들지 말라고 하면 키 파일을 만들지 않습니다', () => {
     const path = join(tempDir(), 'semu.key')
 
     expect(() => loadOrCreateKeyFile(path, { create: false })).toThrow(/missing/)
@@ -158,8 +158,8 @@ describe('key file', () => {
   })
 })
 
-describe('database key fingerprint', () => {
-  it('records the fingerprint once and refuses another key afterwards', () => {
+describe('데이터베이스 키 지문', () => {
+  it('지문을 한 번 기록하고 이후 다른 키는 거부합니다', () => {
     const filename = join(tempDir(), 'semu.sqlite')
     const other = new Uint8Array(randomBytes(32))
 
@@ -170,7 +170,7 @@ describe('database key fingerprint', () => {
     expect(databaseHasTables(filename)).toBe(true)
   })
 
-  it('stores a fingerprint that does not reveal the key', () => {
+  it('키를 드러내지 않는 지문을 저장합니다', () => {
     const filename = join(tempDir(), 'semu.sqlite')
     verifyDataKeyFingerprint(filename, key)
 
@@ -182,7 +182,7 @@ describe('database key fingerprint', () => {
     expect(stored).not.toContain(Buffer.from(key).toString('base64'))
   })
 
-  it('refuses a database that has data but no fingerprint, without recording the key', () => {
+  it('데이터는 있는데 지문이 없는 데이터베이스는 키를 기록하지 않고 거부합니다', () => {
     const filename = join(tempDir(), 'semu.sqlite')
     const db = new DatabaseSync(filename)
     db.exec('CREATE TABLE hr_employees (id TEXT PRIMARY KEY)')
@@ -196,7 +196,7 @@ describe('database key fingerprint', () => {
     expect(meta).toBeUndefined()
   })
 
-  it('accepts a missing or empty database and one opened with its recorded key', () => {
+  it('없거나 빈 데이터베이스와 기록된 키로 연 데이터베이스는 받아들입니다', () => {
     const missing = join(tempDir(), 'semu.sqlite')
     expect(() => refuseUnkeyedDatabase(missing)).not.toThrow()
 
@@ -212,7 +212,7 @@ describe('database key fingerprint', () => {
     expect(verifyDataKeyFingerprint(empty, key)).toBe('MATCHED')
   })
 
-  it('sees tables in an existing database', () => {
+  it('기존 데이터베이스에 표가 있으면 알아봅니다', () => {
     const filename = join(tempDir(), 'semu.sqlite')
     writeFileSync(filename, '')
     const db = new DatabaseSync(filename)
@@ -222,7 +222,7 @@ describe('database key fingerprint', () => {
     expect(databaseHasTables(filename)).toBe(true)
   })
 
-  it('waits for another server writing at startup instead of failing to read the database', async () => {
+  it('시작할 때 다른 서버가 쓰는 중이면 데이터베이스 읽기에 실패하지 않고 기다립니다', async () => {
     const filename = join(tempDir(), 'semu.sqlite')
     verifyDataKeyFingerprint(filename, key)
     // 다른 서버가 배타 잠금을 쥐고 쓰는 중입니다. 읽기 전용 연결도 잠금이 풀릴 때까지 기다려야 합니다.
@@ -236,7 +236,7 @@ describe('database key fingerprint', () => {
     expect(databaseHasTables(filename)).toBe(true)
   })
 
-  it('waits for another server recording its fingerprint and compares against it', async () => {
+  it('다른 서버가 지문을 기록하는 동안 기다렸다가 그 지문과 비교합니다', async () => {
     const filename = join(tempDir(), 'semu.sqlite')
     const db = new DatabaseSync(filename)
     db.exec(`CREATE TABLE semu_meta (name TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT`)

@@ -13,8 +13,8 @@ function violationsOf(input: unknown) {
   return toViolations(issue, 'body')
 }
 
-describe('toViolations', () => {
-  it('formats nested paths as JSON paths', () => {
+describe('요청 검증 위반 목록', () => {
+  it('중첩 경로를 JSON 경로로 나타냅니다', () => {
     expect(
       violationsOf({
         payments: [
@@ -28,14 +28,14 @@ describe('toViolations', () => {
     ])
   })
 
-  it('names missing and mistyped fields', () => {
+  it('빠진 필드와 형이 틀린 필드를 짚습니다', () => {
     expect(violationsOf({ memo: 3 })).toEqual([
       { field: 'payments', code: 'REQUIRED' },
       { field: 'memo', code: 'INVALID_TYPE' },
     ])
   })
 
-  it('uses the request part name when the whole value is wrong', () => {
+  it('값 전체가 틀리면 요청 부분 이름(body 등)을 필드로 씁니다', () => {
     expect(violationsOf('not an object')).toEqual([{ field: 'body', code: 'INVALID_TYPE' }])
   })
 })
