@@ -178,6 +178,13 @@ describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지�
     // 입력이 빠지면 그대로 둡니다.
     expect(moved.body).toMatchObject({ paymentDate: '2026-11-10', input: { threeMonthWages: 9_000_000 }, version: 2 })
 
+    // 지급일이 빠진 수정은 지급일을 그대로 둡니다.
+    const inputOnly = await dated.request('PATCH', `/severance-settlements/${id}`, {
+      body: { input: { threeMonthWages: 9_300_000 } },
+    })
+    expect(inputOnly.status).toBe(200)
+    expect(inputOnly.body).toMatchObject({ paymentDate: '2026-11-10', input: { threeMonthWages: 9_300_000 } })
+
     const early = await dated.request('PATCH', `/severance-settlements/${id}`, { body: { paymentDate: '2026-10-01' } })
     expect(early.status).toBe(422)
     expect(early.body.code).toBe('SEVERANCE_PAYMENT_DATE_INVALID')

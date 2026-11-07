@@ -190,8 +190,9 @@ function requirementBody(raw: Record<string, unknown>): {
 /**
  * 지급일이 그 달인 완료 퇴직금 정산입니다. 원천세 요약의 퇴직소득(`A21`)이 씁니다(현행 `listCompletedSettlementsPaidBetween`).
  *
- * 새 목록은 페이지 없이 회사의 정산을 한 번에 주므로(퇴사자 수만큼) 한 번 부릅니다. 대장처럼 `PAYROLL` 플랜과 약관이 필요하고,
- * 대장 읽기 뒤에 부르므로 플랜이 없는 회사는 그 전에 대장에서 같은 403을 받습니다.
+ * 새 목록은 페이지 없이 회사의 정산을 한 번에 주므로(퇴사자 수만큼) 한 번 부릅니다. 정산 읽기는 `PAYROLL` 플랜만 받으므로,
+ * 플랜이 없어 403 `ENTITLEMENT_REQUIRED`이면(기장만 쓰는 회사) 퇴직금 정산이 있을 수 없어 빈 목록으로 두고 `A21`은 0입니다.
+ * 신고 건 읽기의 `TAXATION` 대체와 같은 방식이고, 다른 거절(권한·약관 등)은 그대로 줍니다.
  */
 async function completedSeverance(
   context: SignedInContext,
@@ -199,10 +200,15 @@ async function completedSeverance(
   guard: SessionGuard,
 ): Promise<SeveranceSettlement[]> {
   const query = new URLSearchParams({ paymentMonth, status: 'COMPLETED' })
-  const page = await readJson<{ items: SeveranceSettlement[] }>(
-    await upstream(context, 'GET', `/v1/severance-settlements?${query}`, { guard }),
-  )
-  return page.items
+  try {
+    const page = await readJson<{ items: SeveranceSettlement[] }>(
+      await upstream(context, 'GET', `/v1/severance-settlements?${query}`, { guard }),
+    )
+    return page.items
+  } catch (error) {
+    if (error instanceof LegacyError && error.body.code === 'ENTITLEMENT_REQUIRED') return []
+    throw error
+  }
 }
 
 /**

@@ -715,6 +715,47 @@ describe('withholding summary (급여 → 원천세)', () => {
     expect(await a21('2026-10')).toMatchObject({ headcount: 0, total_paid: 0 })
   })
 
+  it('counts no retirement income when severance needs a plan the company lacks, and passes other refusals on', async () => {
+    const refusing = (body: Record<string, unknown>) =>
+      makeHarness({
+        intercept: (request, next) =>
+          request.method === 'GET' && new URL(request.url).pathname === '/v1/severance-settlements'
+            ? Promise.resolve(problem(403, body))
+            : next(request),
+      })
+    const custom = refusing({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['PAYROLL'] })
+    try {
+      const agent = await signedIn(custom, AGENT)
+      await closedCard(agent, '2026-10')
+      const response = await agent.request('GET', `${SUMMARY}/2026-10/`)
+      expect(response.status).toBe(200)
+      const body = await response.json()
+      expect(body.lines[1]).toEqual({
+        code: 'A21',
+        label: '퇴직소득',
+        headcount: 0,
+        total_paid: 0,
+        taxable_paid: 0,
+        income_tax: 0,
+        local_income_tax: 0,
+        verified: false,
+      })
+      expect(body.totals).toEqual({ headcount: 1, total_paid: 3_400_000, income_tax: 20_410, local_income_tax: 2_040 })
+    } finally {
+      await custom.dispose()
+    }
+
+    const denied = refusing({ code: 'PERMISSION_DENIED' })
+    try {
+      const agent = await signedIn(denied, AGENT)
+      const response = await agent.request('GET', `${SUMMARY}/2026-10/`)
+      expect(response.status).toBe(403)
+      expect((await response.json()).code).toBe('PERMISSION_DENIED')
+    } finally {
+      await denied.dispose()
+    }
+  })
+
   it('falls back to no filing when the company has no taxation plan, like the legacy summary', async () => {
     const custom = makeHarness({
       intercept: (request, next) =>

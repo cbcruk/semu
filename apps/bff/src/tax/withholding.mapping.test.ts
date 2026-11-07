@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { fromProblem } from '../legacy-error.ts'
-import type { FilingSummary } from '../upstream.types.ts'
+import type { FilingSummary, SeveranceSettlement } from '../upstream.types.ts'
 import {
   filingCovering,
   legacyFilingOrder,
@@ -9,6 +9,7 @@ import {
   requirementCodeOf,
   toLegacyFiling,
   toLegacyFilingError,
+  toLegacyWithholdingSummary,
 } from './withholding.mapping.ts'
 
 function filing(fields: Partial<FilingSummary> & Pick<FilingSummary, 'id'>): FilingSummary {
@@ -104,5 +105,58 @@ describe('filing errors', () => {
   it('leaves other errors as the shared mapping made them', () => {
     const error = fromProblem(403, { code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['TAXATION'] })
     expect(toLegacyFilingError(error)).toBe(error)
+  })
+})
+
+describe('withholding summary A21', () => {
+  function settlement(fields: Partial<SeveranceSettlement> & Pick<SeveranceSettlement, 'id' | 'employeeId'>) {
+    return {
+      employeeName: '김세무',
+      lastWorkDate: '2026-10-31',
+      paymentDate: '2026-11-10',
+      status: 'COMPLETED',
+      result: {
+        eligible: true,
+        severancePay: 1_000_000,
+        retirementIncomeTax: 10_000,
+        localIncomeTax: 1_000,
+        netPay: 989_000,
+      },
+      ...fields,
+    } satisfies SeveranceSettlement
+  }
+
+  it('counts an employee with two settlements once and only completed settlements paid in the month', () => {
+    const summary = toLegacyWithholdingSummary(
+      '2026-11',
+      [],
+      [],
+      [
+        settlement({ id: 'sev_1', employeeId: 'emp_A' }),
+        settlement({ id: 'sev_2', employeeId: 'emp_A', lastWorkDate: '2026-11-05', paymentDate: '2026-11-20' }),
+        settlement({ id: 'sev_3', employeeId: 'emp_B' }),
+        settlement({ id: 'sev_4', employeeId: 'emp_C', status: 'CALCULATED' }),
+        settlement({ id: 'sev_5', employeeId: 'emp_D', paymentDate: '2026-12-01' }),
+        settlement({ id: 'sev_6', employeeId: 'emp_E', paymentDate: null }),
+      ],
+      undefined,
+    )
+
+    expect((summary['lines'] as Array<{ code: string }>)[1]).toEqual({
+      code: 'A21',
+      label: '퇴직소득',
+      headcount: 2,
+      total_paid: 3_000_000,
+      taxable_paid: 3_000_000,
+      income_tax: 30_000,
+      local_income_tax: 3_000,
+      verified: false,
+    })
+    expect(summary['totals']).toEqual({
+      headcount: 2,
+      total_paid: 3_000_000,
+      income_tax: 30_000,
+      local_income_tax: 3_000,
+    })
   })
 })
