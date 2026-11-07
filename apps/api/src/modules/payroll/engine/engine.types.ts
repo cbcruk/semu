@@ -294,6 +294,7 @@ export type PayrollWarningCode =
   | 'CHILDCARE_CHILDREN_UNKNOWN'
   | 'CHILDCARE_CHILDREN_STALE'
   | 'DAILY_WORKER_SOCIAL_INSURANCE_REQUIRED'
+  | 'ARTWORK_EXPENSE_RATE_SIMPLIFIED'
 
 /** 계산 결과에 붙는 경고입니다. 저장을 막지 않습니다. */
 export interface PayrollWarning {

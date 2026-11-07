@@ -2,8 +2,9 @@ import type { ReferenceCode } from './reference-codes.types.ts'
 
 const FROM = '2024-01'
 
-// 코드 출처(아래에서 "서식"): 소득세법 시행규칙 별지 제23호서식 <개정 2026. 5. 22.>의 "거주자의 사업소득 지급명세서"
-// 작성방법 업종구분코드 표와 "거주자의 기타소득 지급명세서" 작성방법 소득구분코드 표.
+// 코드 출처(아래에서 "서식"): 소득세법 시행규칙 별지 제23호서식(2) "거주자의 사업소득 지급명세서" <개정 2026. 3. 20.>
+// 작성방법 업종구분코드 표와 별지 제23호서식(4) "거주자의 기타소득 지급명세서" <개정 2026. 3. 20.> 작성방법 소득구분코드 표.
+// 두 서식은 별지 제23호서식 묶음 파일(첫 서식(1)은 <개정 2026. 5. 22.>) 하나에 들어 있습니다.
 // https://www.law.go.kr/flDownload.do?gubun=&flSeq=164443773&bylClsCd=110202
 
 function other(code: string, name: string, expenseRatePpm: number | null, taxRatePpm = 200_000): ReferenceCode {
@@ -62,8 +63,9 @@ export const OTHER_INCOME_CODES: readonly ReferenceCode[] = [
 /**
  * 사업소득 업종코드입니다. 코드와 이름은 서식의 업종구분코드 표 40개입니다.
  *
- * `detailType`(예술인·노무제공자 고용보험 구분)은 서식에 없고 현행 화면의 구분을 옮긴 것입니다. 실제 대상 여부는
- * 업종이 아니라 계약으로 정해지므로 행에서 대상이라고 표시했을 때만 고용보험을 뺍니다.
+ * `detailType`(예술인·노무제공자 구분)은 서식에 없고 현행 화면의 구분을 옮긴 화면 힌트입니다(학습용 가정). 새로 넣은
+ * 코드는 원문으로 확인하지 못해 `null`로 둡니다. 고용보험 대상 여부는 업종이 아니라 계약으로 정해지므로 계산은
+ * `detailType`을 보지 않고 행의 `employmentInsuranceApplicable` 표시만 봅니다.
  */
 export const BUSINESS_INCOME_CODES: readonly ReferenceCode[] = [
   business('940100', '저술가', 'ARTIST'),
@@ -107,6 +109,12 @@ export const BUSINESS_INCOME_CODES: readonly ReferenceCode[] = [
   business('940929', '중고자동차판매원'),
   business('851101', '병의원'),
 ]
+
+/** 서화·골동품 양도소득 지급사유 코드입니다. */
+export const ARTWORK_CODE = '64'
+
+/** 서화·골동품 의제 경비 90%를 그대로 쓸 수 있는 양도가액 상한(1억원)입니다. 넘는 분은 서식상 80%(보유 10년 이상 90%)입니다. */
+export const ARTWORK_FULL_RATE_LIMIT = 100_000_000
 
 /**
  * 기본 기타소득 지급사유입니다. 현행 기본값은 "필요경비 있는 기타소득, 60%"를 `60`으로 불렀지만 서식의 60은
