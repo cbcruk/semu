@@ -288,7 +288,7 @@ class VatEvidenceQuery extends Context.Service<VatEvidenceQuery, {
 
 ### 인건비 (Payroll → Bookkeeping)
 
-마감된 급여대장만 Payroll이 월별로 집계해 `LaborCostSource`로 줍니다. Bookkeeping은 계산하지 않고 `/v1/reports/labor-cost`에 그대로 싣습니다. 재계산 중인 대장은 빠집니다.
+Payroll이 제출 이후(`DRAFT`가 아닌) 급여대장의 행을 귀속월별로 집계해 `LaborCostSource`로 줍니다. `SUBMITTED`·`PENDING_APPROVAL`도 들어가고 마감(`CLOSED`)까지 기다리지 않습니다([payroll.md](payroll.md#인건비), `countsAsCalculated`). 입력 중인(`DRAFT`) 대장은 빠집니다. Bookkeeping은 계산하지 않고 `/v1/reports/labor-cost`에 그대로 싣습니다.
 
 ## 오류 코드
 

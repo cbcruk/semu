@@ -40,7 +40,7 @@
 | Tax | 할 일 카드 `ActionCard` | `OPEN` `DONE` `SKIPPED_OVERDUE` | [tax.md](tax.md#할-일-카드) (신고 건 전이 → 카드 표) | [action-card-rules.ts](../../apps/api/src/modules/tax/action-cards/action-card-rules.ts) `filingCardEffects`, `completedCardStatus` | 신고 건 전이가 열고 닫음 |
 | HR | 4대보험 신고 `InsuranceFiling` | `PENDING` `DONE` `FAILED` `WITHDRAWN` | [hr.md](hr.md#4대보험-신고) | [insurance-filing.types.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filing.types.ts) | `PENDING` 생성과 `WITHDRAWN`만 구현, `:complete`·`:fail` 미구현 |
 | HR | 근로계약·급여계약 | `SCHEDULED` `ACTIVE` `EXPIRED` | [hr.md](hr.md#근로계약) | [work-contract-period.ts](../../apps/api/src/modules/hr/contracts/work-contract-period.ts) | 파생(계약 기간) |
-| HR | 휴직 `Leave` | `SCHEDULED` `ONGOING` `ENDED` | [hr.md](hr.md#휴직) | 없음 | 설계에만 있음 |
+| HR | 휴직 `Leave` | `SCHEDULED` `ONGOING` `ENDED` | [hr.md](hr.md#휴직) | 없음 | 미구현. 응답에 `status`가 없고 파생 함수도 없음. 직원의 `LEAVE`는 직원 상태 파생이 따로 계산 |
 | Bookkeeping | 세금계산서 발급 건 `TaxInvoice` | `ISSUING` `ISSUED` `FAILED` | [bookkeeping.md](bookkeeping.md#거래명세서와-세금계산서-발급) | [sales-transaction-service.ts](../../apps/api/src/modules/bookkeeping/sales-transactions/sales-transaction-service.ts) | 결과를 모르면 `ISSUING`으로 남아 명세서를 잠금 |
 | 공통 | 작업 `Job`(명세서 발송, 수집, 분류 적용) | `QUEUED` `RUNNING` `SUCCEEDED` `PARTIALLY_SUCCEEDED` `FAILED` `CANCELED` | [conventions.md](conventions.md#비동기-작업) | [job.types.ts](../../apps/api/src/shared/jobs/job.types.ts) | 공용 `GET /jobs/{id}`는 아직 없음 |
 
@@ -117,7 +117,7 @@ flowchart TD
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
 - **열린 질문.** 퇴직금 지급월을 원천세 A21로 센다고 정했지만(2026-11-07), 지급월 마감 이벤트에 퇴직소득을 실을지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
-- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. HR의 `RETIREMENT_COMPLETED` 가드(409)는 구현됐지만 상태를 채우는 구독이 없어 지금은 걸리지 않습니다([hr.md](hr.md#구현-상태)). 중간정산과 퇴직 후보 목록도 없습니다
+- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. HR의 `RETIREMENT_COMPLETED` 가드(409)는 구현됐지만 상태를 채우는 구독이 없어 지금은 걸리지 않습니다([hr.md](hr.md#구현-상태)). 상태 값도 HR(`IN_PROGRESS`·`COMPLETED`·`EXCLUDED`)과 Payroll(`CALCULATED`·`COMPLETED`·`EXCLUDED`)이 달라 매핑을 정해야 합니다([hr.md 열린 질문 10](hr.md#열린-질문), [payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지
 

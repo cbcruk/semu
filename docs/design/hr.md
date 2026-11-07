@@ -31,7 +31,7 @@
 | 퇴직(상실)사유 / 상세사유 | `leavingReasonCode` / `leavingDetailReasonCode` (고용보험 상실사유 코드 그대로) |
 | 퇴직금·퇴직연금 유형 | `retirementPlan.benefitType`: `SEVERANCE_PAY` / `DB` / `DC` |
 | 퇴직금 중간정산 | `retirementPlan.interimSettlement` |
-| 퇴직금 정산 상태 | `severanceSettlementStatus`: `IN_PROGRESS` / `COMPLETED` / `EXCLUDED` (Payroll이 알려 줌) |
+| 퇴직금 정산 상태 | `severanceSettlementStatus`: `IN_PROGRESS` / `COMPLETED` / `EXCLUDED`. Payroll 정산 상태(`CALCULATED` / `COMPLETED` / `EXCLUDED`)와 값이 다르고 둘을 잇는 이벤트가 없어 지금은 채워지지 않음([열린 질문 10](#열린-질문)) |
 | 휴직 / 복직 | `Leave` / `:return` |
 | 휴직사유: 출산전후휴가·육아휴직·질병·기타 | `reason`: `MATERNITY` / `PARENTAL` / `ILLNESS` / `OTHER` |
 | 근로계약 / 급여계약 | `WorkContract` / `PayrollContract` |
@@ -60,7 +60,7 @@ Employee
 ├─ joinDate, isRejoin
 ├─ retirementPlan: { benefitType, interimSettlement?: { date, reasonCode } }
 ├─ resignation?: { leaveDate, leavingReasonCode, leavingDetailReasonCode?, severanceAmount? }
-├─ severanceSettlementStatus? (Payroll 이벤트로 갱신)
+├─ severanceSettlementStatus? (Payroll 이벤트로 갱신할 예정, 미구현. 지금은 늘 비어 있음)
 ├─ paymentAccount?: { bankCode, accountNumber(암호문), accountHolder }   # DAILY·BUSINESS·OTHER만
 ├─ source: MANUAL | ESIGN | ERP_IMPORT
 ├─ status (파생, 저장 안 함), warnings[] (파생), allowedActions[]
@@ -127,8 +127,8 @@ POST   /employees:export                             X-Access-Reason 필수 → 
 - **등록 필수값은 이름, 주민등록번호(여권이면 여권번호 + 생년월일), 입사일입니다** (`WAGE`). 전자서명 완료로 생기는 직원만 주민등록번호 없이 만들어지고 `MISSING_REGISTRATION_NUMBER` 경고를 받습니다
 - **중복:** 같은 회사·같은 `kind`에 같은 주민등록번호(HMAC)가 있으면 409 `EMPLOYEE_DUPLICATE`(`duplicateEmployeeId`)입니다. `isRejoin: true`이고 겹치는 직원이 모두 `RESIGNED`면 허용합니다. 유일성은 저장소 제약 `(companyId, kind, registrationNumberHash, activeKey)`로 보장합니다
 - **마스킹 값 되돌려 보내기를 없앱니다.** `PATCH`에 `registrationNumber`가 없으면 그대로이고, 있으면 새 값입니다. `*`가 섞인 값은 400 `INVALID_VALUE`입니다
-- **퇴직은 커맨드입니다.** `:resign`이 퇴직일·사유를 기록하고 상실신고(`LOSS`)를 열고 `employee.resigned`를 냅니다. 퇴직금 유형·중간정산 같은 설정은 `PATCH`의 `retirementPlan`으로 저장합니다 ([retirement-validation](../reference/rules/retirement-validation.md))
-- **삭제 가드:** 퇴직금 정산이 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 급여대장에 들어간 직원도 막아야 하지만 그 사실은 Payroll이 알고 있어 [열린 질문](#열린-질문)에 둡니다
+- **퇴직은 커맨드입니다.** `:resign`이 퇴직일·사유를 기록하고 상실신고(`LOSS`)를 엽니다. `employee.resigned`를 내는 것은 미구현입니다([이벤트](#이벤트)). 퇴직금 유형·중간정산 같은 설정은 `PATCH`의 `retirementPlan`으로 저장합니다 ([retirement-validation](../reference/rules/retirement-validation.md))
+- **삭제 가드:** 퇴직금 정산이 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 가드는 구현됐지만 정산 상태를 채우는 경로가 없어 지금은 걸리지 않습니다([열린 질문 10](#열린-질문)). 급여대장에 들어간 직원도 막아야 하지만 그 사실은 Payroll이 알고 있어 [열린 질문](#열린-질문)에 둡니다
 - `allowedActions`: `UPDATE`, `DELETE`, `RESIGN`, `CANCEL_RESIGNATION`, `REGISTER_LEAVE`
 
 ## 유효일 하위 리소스
@@ -236,8 +236,10 @@ Leave
 ├─ startDate, endDate, expectedReturnDate, actualReturnDate?
 ├─ paid?: { allowance }, includeInServiceYears
 ├─ npsPaymentException, nhisNoticeDeferral
-└─ status (파생): SCHEDULED | ONGOING | ENDED
+└─ status (파생, 미구현): SCHEDULED | ONGOING | ENDED
 ```
+
+- 휴직 상태는 설계만 있습니다. 응답([leave.ts](../../apps/api/src/modules/hr/leaves/leave.ts) `Leave`)에 `status`가 없고, 날짜로 파생하는 함수도 없습니다. 직원의 재직 상태 `LEAVE`는 직원 상태 파생이 휴직 기간을 보고 따로 계산합니다([상태 파생](#상태-파생))
 
 ```
 GET    /employees/{employeeId}/leaves
@@ -261,7 +263,7 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 - 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`)
 - 고른 (상세)사유는 상실신고(`LOSS`)에 그대로 들어갑니다
-- 퇴직금 정산이 `COMPLETED`면 `:cancel-resignation`과 `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. 정산 상태는 Payroll의 `severance-settlement.status-changed` 이벤트로 받습니다
+- 퇴직금 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. 정산 상태를 Payroll에서 받는 길(이벤트 또는 조회)은 미구현이라 필드가 늘 비어 있고 가드는 걸리지 않습니다. 상태 값도 Payroll과 다릅니다([열린 질문 10](#열린-질문))
 - 퇴직 후 휴직 종료일은 퇴직일을 넘을 수 없습니다
 
 ## 4대보험 신고
@@ -343,24 +345,26 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `revealRegistrationNumber(companyId, employeeId, reason)` | 원문 주민등록번호 | 원천세 신고 파일 (열람 기록) |
 
 - 계좌 원문은 이체 파일을 만들 때만 `revealPaymentAccount(companyId, payrollContractId, reason)`로 받습니다
-- 현행 급여가 HR 테이블에 쓰던 `setSeveranceSettlementStatus`는 Payroll 이벤트(`severance-settlement.status-changed`)를 HR이 받는 것으로 바꿉니다
+- 현행 급여가 HR 테이블에 쓰던 `setSeveranceSettlementStatus`는 Payroll이 정산 상태 이벤트를 내고 HR이 받는 것으로 바꿀 계획입니다. 이벤트 이름·매핑은 정하지 않았고 미구현입니다([열린 질문 10](#열린-질문))
 
 ## 이벤트
 
-| 이벤트 | 낼 때 | 받는 곳 |
-|---|---|---|
-| `employee.registered` | `POST /employees`, 전자서명 완료로 신규 생성 | Payroll(급여대장 대상자), Assistant |
-| `employee.updated` | 인적 정보·배치 변경 | Payroll(미확정 급여대장 갱신) |
-| `employee.resigned` / `employee.resignation-canceled` | `:resign` / `:cancel-resignation` | Payroll(퇴직금 정산 시작·취소) |
-| `leave.registered` / `leave.changed` / `leave.returned` | 휴직 등록·수정·삭제·복직 | Payroll(일할 계산) |
-| `work-contract.changed` / `payroll-contract.changed` | 계약 생성·수정·삭제 | Payroll |
-| `insurance-filing.requested` | 신고가 열림 | 세무 대리인 할 일([tax.md](tax.md)) |
+**모두 미구현입니다.** HR은 지금 이벤트를 내지도 받지도 않습니다([구현 상태](#구현-상태)). 이름은 [events.md](events.md#이벤트-목록)의 이벤트 목록과 snake_case 규칙을 따릅니다. events.md 목록에 아직 없는 이벤트는 "목록에 없음"으로 표시했습니다.
+
+| 이벤트 | 낼 때 | 받는 곳 | events.md |
+|---|---|---|---|
+| `employee.joined` | `POST /employees`, 전자서명 완료로 신규 생성 | Payroll(급여대장 대상자), Assistant | 있음 |
+| `employee.updated` | 인적 정보·배치 변경 | Payroll(미확정 급여대장 갱신) | 목록에 없음 |
+| `employee.resigned` / `employee.resignation_canceled` | `:resign` / `:cancel-resignation` | Payroll(퇴직금 정산 시작·취소) | `resigned`만 있음 |
+| `leave.started` / `leave.changed` / `leave.ended` | 휴직 등록 / 수정·삭제 / 복직 | Payroll(일할 계산) | `started`·`ended`만 있음. 등록 때 낼지 시작일에 낼지는 정하지 않음 |
+| `work_contract.changed` / `payroll_contract.changed` | 계약 생성·수정·삭제 | Payroll | 목록에 없음 |
+| `insurance_filing.requested` | 신고가 열림 | 세무 대리인 할 일([tax.md](tax.md)) | 목록에 없음 |
 
 | 받는 이벤트 | 하는 일 |
 |---|---|
-| `esign.completed` (Documents) | 근로·연봉계약서면 근로계약(`origin: ESIGN`)과 급여계약을 만들고, 수신자가 직원이 아니면 `WAGE` 직원을 만들고, 완료본을 보관함에 넣고, 사직서면 퇴직 사유 초안을 남깁니다 (현행 R29) |
+| `esign_request.completed` (Documents) | 근로·연봉계약서면 근로계약(`origin: ESIGN`)과 급여계약을 만들고, 수신자가 직원이 아니면 `WAGE` 직원을 만들고, 완료본을 보관함에 넣고, 사직서면 퇴직 사유 초안을 남깁니다 (현행 R29) |
 | `certificate.issued` (Documents) | 증명서 PDF를 보관함에 넣습니다 |
-| `severance-settlement.status-changed` (Payroll) | `severanceSettlementStatus`를 갱신합니다 |
+| Payroll 정산 상태 이벤트 (이름 미정, Payroll도 내지 않음) | `severanceSettlementStatus`를 갱신합니다. 값 매핑은 [열린 질문 10](#열린-질문) |
 
 ## 오류 코드
 
@@ -445,7 +449,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 |---|---|
 | 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 13개 규칙 |
 | 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
-| 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)은 미구현 |
+| 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)과 휴직 파생 상태(`SCHEDULED`·`ONGOING`·`ENDED`)는 미구현 |
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
 | 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
 | 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수·보육수당 대상 자녀 수(선택)를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
@@ -454,7 +458,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 권장 가입 여부, 주민번호 원문(열람 기록). 4대보험 설정·인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
 | 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
 | 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
-| 퇴직 정보(급여 형태·중간정산), 퇴직금 정산 상태 구독 | 미구현. 정산 상태 필드(`severanceSettlementStatus`)와 삭제·퇴사 취소 가드만 있습니다 |
+| 퇴직 정보(급여 형태·중간정산), 퇴직금 정산 상태 구독 | 미구현. 정산 상태 필드(`severanceSettlementStatus`)와 삭제·퇴사·퇴사 취소 가드만 있고, 필드를 채우는 경로가 없어 가드는 걸리지 않습니다([열린 질문 10](#열린-질문)) |
 | 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기 | 미구현 |
 | 이벤트 발행·구독 (`esign_request.completed` 처리 포함) | 미구현. 이벤트 버스가 없습니다 |
 | 멱등성 키 재응답 | 미구현 |
@@ -470,3 +474,4 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 7. **ERP 이관 직원:** 현행 "임시저장"으로 들어오는 더존·세무사랑 직원은 `source: ERP_IMPORT` + `MISSING_REGISTRATION_NUMBER` 경고로 둡니다. 이관 작업의 형태(Job)는 [integrations.md](integrations.md)와 맞춰야 합니다
 8. **급여계약의 최저시급 출처:** 설계는 Payroll 기준표(`rateTable`)에서 계약 시작일 기준으로 읽지만, HR에서 Payroll로 가는 포트가 없어 지금은 HR 상수(2026년 10,320원)로 비교합니다. HR 포트(`MinimumWageSource`)와 `wiring/hr-payroll.ts` 어댑터를 둘지 정해야 합니다
 9. **기간제 예외 기간을 2년 계산에서 뺄지:** 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 계약 기간도 셉니다. 일반 18개월 → 예외 12개월 → 일반 2개월이면 전환으로 보지만, 예외 기간을 빼면 일반 사용기간이 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정해야 합니다([결정](rule-decisions/hr.md#indefinite-conversion-alert))
+10. **퇴직금 정산 상태 매핑:** HR `severanceSettlementStatus`는 `IN_PROGRESS`·`COMPLETED`·`EXCLUDED`([retirement.types.ts](../../apps/api/src/modules/hr/retirement/retirement.types.ts)), Payroll 정산은 `CALCULATED`·`COMPLETED`·`EXCLUDED`([severance-settlement.types.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.types.ts))입니다. Payroll은 정산 상태 이벤트를 내지 않고 HR은 구독하지 않으므로 HR 필드는 늘 비어 있고, 409 `RETIREMENT_COMPLETED` 가드는 지금 걸리지 않습니다. `CALCULATED` → `IN_PROGRESS`로 옮겨 적을지, HR이 상태를 저장하지 않고 Payroll에 조회 포트로 물을지, 한 직원의 정산이 여럿일 때 무엇을 볼지를 Payroll과 함께 정해야 합니다([payroll.md 열린 질문 16](payroll.md#열린-질문))

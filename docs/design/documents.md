@@ -89,7 +89,7 @@ stateDiagram-v2
 
 - **`PENDING`과 `IN_PROGRESS`의 경계는 본인확인 성공입니다.** 링크 열람만으로는 바뀌지 않습니다. 레거시 구현과 같습니다
 - **`IN_PROGRESS`도 취소할 수 있습니다.** 화면은 "서명 전"에만 버튼을 보였지만, 서명 중인 사람이 끝내지 않는 경우를 정리할 길이 필요합니다
-- **기한 만료는 스케줄러 작업이 처리합니다.** `dueDate` 다음날 00:00(회사 시간대)에 `EXPIRED`로 바꾸고 `esign.expired`를 냅니다. 조회는 상태를 바꾸지 않지만, 스케줄러가 늦어도 링크는 `dueDate`가 지났으면 닫힌 것으로 답합니다
+- **기한 만료는 스케줄러 작업이 처리합니다.** `dueDate` 다음날 00:00(회사 시간대)에 `EXPIRED`로 바꾸고 `esign_request.expired`를 냅니다(스케줄러와 이벤트 모두 미구현). 조회는 상태를 바꾸지 않지만, 스케줄러가 늦어도 링크는 `dueDate`가 지났으면 닫힌 것으로 답합니다
 - 기본 서명 기한은 발송일 + 16일입니다(매뉴얼 스크린샷 2026.06.23 → 07.09). 발송 시 과거 날짜는 422 `ESIGN_DUE_DATE_PAST`입니다
 
 ### 발송 검증
@@ -147,7 +147,7 @@ sequenceDiagram
   Note over D: PENDING → IN_PROGRESS
   W->>D: POST :complete
   D->>D: PDF 렌더(감사 추적 포함), COMPLETED
-  D-)H: esign.completed
+  D-)H: esign_request.completed (HR 소비는 미구현)
   H->>H: 근로·급여계약, 보관함, 신규 직원, 사직 사유 초안
 ```
 
@@ -155,7 +155,7 @@ sequenceDiagram
 - 틀릴 때마다 403 `IDENTITY_VERIFICATION_FAILED`(`remainingAttempts`)입니다
 - 닫힌 링크(`DRAFT`, `CANCELED`, `VOIDED`, `EXPIRED`, `SEND_FAILED`, 기한 경과)는 410 `ESIGN_LINK_CLOSED`(`status`)이고, 화면은 `status`로 취소·만료 화면을 고릅니다. 모르는 토큰은 404 `ESIGN_LINK_NOT_FOUND`입니다
 - 세션은 30분이고 서버는 토큰·세션의 SHA-256 해시만 저장합니다
-- **완료 처리는 한 트랜잭션입니다.** 모든 문서에 서명 이미지가 있는지, 사직서면 퇴직 사유가 유효한지 확인하고, PDF(감사 추적: 이벤트·IP·UA·문서 해시)를 만들어 저장하고 `COMPLETED`로 바꾸고 `esign.completed`를 outbox에 넣습니다. HR 후속처리는 이벤트로 합니다
+- **완료 처리는 한 트랜잭션입니다.** 모든 문서에 서명 이미지가 있는지, 사직서면 퇴직 사유가 유효한지 확인하고, PDF(감사 추적: 이벤트·IP·UA·문서 해시)를 만들어 저장하고 `COMPLETED`로 바꾸고 `esign_request.completed`를 냅니다. 설계는 outbox이지만 지금은 `DocumentEvents.layerMemory`의 메모리 목록에 쌓입니다. HR 후속처리는 이벤트로 할 계획이고 HR 소비자는 미구현입니다([hr.md](hr.md#이벤트))
 - 완료·만료 알림톡은 알림 수신자(최대 3명, 없으면 대표자)에게, 완료본 사본은 수신자 이메일로 보냅니다
 
 ## 템플릿·도장·알림 설정
@@ -242,18 +242,20 @@ GET /document-forms/{documentFormCode}/file
 | `DocumentNotifier` | 서명 요청·완료·만료 메일·알림톡, 증명서 링크 | 메모리 outbox, `@fail.invalid` 주소는 실패 |
 | `PdfRenderer` | 완료본, 증명서 | 결정적인 텍스트 PDF |
 | `SignerIdentityVerifier` | `:verify` | 이름 + 생년월일 비교 |
-| `DocumentEvents` | `esign.*`, `certificate.*` | 메모리 목록 |
+| `DocumentEvents` | `esign_request.*`, `certificate.*` | 메모리 목록 |
 
 ## 이벤트
 
-| 이벤트 | 낼 때 | 받는 곳 |
-|---|---|---|
-| `esign.sent` | `:send`, `:resend` 성공 | 알림 |
-| `esign.completed` | 서명자 `:complete` | HR(계약·보관함·신규 직원·사직 사유), 알림 |
-| `esign.expired` | 스케줄러 만료 | 알림 |
-| `esign.canceled`, `esign.voided` | `:cancel`, `:void` | HR(무효화된 계약 표시는 [열린 질문](#열린-질문)) |
-| `certificate.issued` | 발급 | HR(보관함) |
-| `certificate.sent` | 발송 성공 | |
+이름은 [documents-ports.ts](../../apps/api/src/modules/documents/shared/documents-ports.ts)의 `DocumentEvent`와 [events.md](events.md#이벤트-목록)를 따릅니다. 지금 내는 것은 세 개이고 소비자는 없습니다.
+
+| 이벤트 | 낼 때 | 받는 곳 | 상태 |
+|---|---|---|---|
+| `esign_request.sent` | `:send`, `:resend`에서 발송 성공 | 알림 | 구현(메모리) |
+| `esign_request.completed` | 서명자 `:complete` | HR(계약·보관함·신규 직원·사직 사유), 알림 | 구현(메모리), HR 소비 미구현 |
+| `esign_request.expired` | 스케줄러 만료 | 알림 | 미구현 |
+| `esign_request.canceled`, `esign_request.voided` | `:cancel`, `:void` | HR(무효화된 계약 표시는 [열린 질문](#열린-질문)) | 미구현 |
+| `certificate.issued` | 발급 | HR(보관함) | 구현(메모리), HR 소비 미구현 |
+| `certificate.sent` | 발송 성공 | | 미구현 |
 
 ## 오류 코드
 

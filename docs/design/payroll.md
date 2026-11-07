@@ -308,7 +308,7 @@ stateDiagram-v2
 GET /labor-cost-reports/{year}    → { year, hasData, months[12] { month, amounts{wage,daily,business,other}, total, employerInsurance, totalWithEmployerInsurance, headcount{…}, employment{employed,joined,left} }, totals, updatedAt }
 ```
 
-- 귀속월 기준으로, 제출 이후(`DRAFT`가 아닌) 대장의 행만 셉니다. 현행처럼 계산 확정 이후 금액만 보입니다
+- 귀속월 기준으로, 제출 이후(`DRAFT`가 아닌) 대장의 행만 셉니다. `SUBMITTED`·`PENDING_APPROVAL`·`CLOSED`가 모두 들어가고 마감(`CLOSED`)까지 기다리지 않습니다. 현행처럼 계산 확정 이후 금액만 보입니다([ledger-status.ts](../../apps/api/src/modules/payroll/ledgers/ledger-status.ts) `countsAsCalculated`)
 - 인원은 직원 ID(없으면 이름)로 중복 없이 셉니다. 재직·입사·퇴사 인원은 HR 포트에서 받습니다
 - 현행 화면은 경리(결산 보고서) 메뉴에 있지만 데이터 주인은 급여입니다 (P3). 급여는 이 경로와 함께 공개 서비스 `PayrollLaborCost.monthly(companyId, year)`를 내고, Bookkeeping의 결산 보고서와 엑셀 내보내기가 그것을 씁니다. 그래서 이 경로는 `PAYROLL`과 `TAXATION` 플랜 중 하나면 엽니다
 
@@ -329,17 +329,17 @@ flowchart LR
 | 포트(HR 구현) | `PayrollEmployeeDirectory` | `listWageEarners(companyId, { start, end })`, `find(companyId, employeeId, asOf) → Option`, `employmentTrend(companyId, month) → { employed, joined, left }` |
 | 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean` |
 | 포트(메일 구현) | `PayslipMailer` | `send({ payslipId, to, subject }) → { ok: true } \| { ok: false, reason: NO_EMAIL \| REJECTED }` |
-| 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 지금은 메모리 |
+| 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 앱은 [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)의 `PayrollEventsToTax`로 outbox 채널(`payroll_pay_month->tax`)에 씀. `layerMemory`는 Payroll만 시험할 때 쓰는 배열 |
 | 내보냄(이벤트) | `payroll_pay_month.closed` | `{ eventId, companyId, paymentMonth, ledgerIds[], withholding[] { incomeKind, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }, occurredAt }` |
-| 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, ledgerIds[], occurredAt }` |
+| 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, occurredAt }` |
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 
 - `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren { count, effectiveFrom } | null, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
 - `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수, 0–20)와 그 설정의 `effectiveFrom`이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`·`childcareChildrenEffectiveFrom`으로 들어갑니다. 엔진은 기준표의 보육수당 한도가 자녀 1명당(`perChild`)이면 월 비과세 한도를 20만원 × 이 값으로 잡습니다(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분). 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN`, 설정 연도가 귀속 연도와 다르면 값은 그대로 쓰고 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 법정 한도는 직원 한 명의 그달 유형별 합계이고 회사 한도는 항목마다 봅니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
-- 원천세 집계는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 싣습니다. 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax입니다
-- Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 같은 프로세스에서 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고, [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다
+- 원천세 집계(`withholding[]`)는 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)로 이벤트에 싣지만 **지금 Tax는 쓰지 않습니다.** [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)는 회사와 지급월만 넘기므로 Tax에 닿는 것은 "그 지급월이 바뀌었다"뿐입니다. 집계를 신고서 초안에 쓰고 신고서 코드(A01·A03·A25·A40)로 바꾸는 것은 Tax 몫으로 남은 미구현입니다([열린 질문 15](#열린-질문))
+- Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 outbox 채널 `payroll_pay_month->tax`로 받아 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고(SQLite는 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서, 실패하면 릴레이가 다시), [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`로 Tax 포트를 구현합니다
 - 다른 컨텍스트는 [payroll.public.ts](../../apps/api/src/modules/payroll/payroll.public.ts)만 가져옵니다. 급여는 HR·Tax 저장소를 읽지 않습니다
 
 ## 접근 요건
@@ -534,10 +534,10 @@ flowchart LR
 | 영역 | 상태 |
 |---|---|
 | 계산 엔진 (근로 3종·일용·사업·기타, 4대보험, 간이세액, 비과세, 가산수당, 일할, 최저임금, 퇴직금) | 구현 ([engine/](../../apps/api/src/modules/payroll/engine/)) |
-| 기준표 2026-01·2026-07, 참조 코드, 계산기 | 구현 (메모리) |
+| 기준표 2026-01·2026-03·2026-07·2026-11, 참조 코드, 계산기 | 구현 (메모리, [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
 | 급여 설정 | 구현 (메모리) |
-| 급여대장·행·재계산·전이 9개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
-| 지급월 마감 이벤트 | 구현. `PayrollEventPublisher.layerMemory`(아웃박스 없음) |
+| 급여대장·행·재계산·전이 8개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
+| 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 이벤트의 `withholding[]`은 Tax가 쓰지 않음 |
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
 | 퇴직금 정산 (퇴직) | 구현 (메모리) |
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary` | 구현 |
@@ -557,7 +557,7 @@ flowchart LR
    - `payroll_pay_month.closed`의 `withholding[]`과 Tax의 신고 건에는 아직 퇴직소득이 없습니다. 지급월 마감은 대장으로만 판정하므로, 퇴직금 완료·다시 열기도 그 달의 이벤트를 낼지(대장이 없는 달은?), 집계에 `RETIREMENT` 종류를 더할지 Tax와 정합니다
    - 신고된 지급월(`WITHHOLDING_FILED`)의 정산 완료·다시 열기·지급일 이동은 막지 않습니다. 대장처럼 `WithholdingFilingLock`으로 막을지 함께 정합니다
 3. **지급일 이동 잠금.** 지급일을 신고된 달로, 또는 신고된 달에서 옮기는 것을 모두 막습니다. 신고 정정과 함께 허용할지 정해야 합니다
-4. **명부 변동 알림.** 현행 `inquire-wage-employees-change`를 대장 `warnings`(`ROSTER_CHANGED`)로 줄지, HR 이벤트(`employee.joined`·`left`)를 받아 대장에 표시할지 정해야 합니다
+4. **명부 변동 알림.** 현행 `inquire-wage-employees-change`를 대장 `warnings`(`ROSTER_CHANGED`)로 줄지, HR 이벤트(`employee.joined`·`employee.resigned`, 미구현)를 받아 대장에 표시할지 정해야 합니다
 5. **상여 대장.** 근로소득이 있는 별도 대장은 지금 막습니다. 상여를 따로 지급하는 회사가 있으면 간이세액 특례(지급대상기간)와 함께 설계합니다
 6. **명세서 문구와 PDF.** 회사가 계산식 문구를 고치던 기능과 PDF 다운로드를 Documents의 렌더링으로 할지 정해야 합니다
 7. **공유 변경.**
@@ -572,3 +572,8 @@ flowchart LR
 12. **고정 연장근로 초과분.** 지금은 담당자가 약정 시간을 넘은 연장 분만 행에 넣습니다. 행에 고정 연장 약정 분을 받아 `max(0, 실제 − 약정)`을 가산하려면 HR 급여계약의 고정수당 시간을 `PayrollEmployee`로 넘겨야 합니다(7번의 계약 지급항목과 함께, [규칙 결정](rule-decisions/payroll.md#overtime-multipliers) 1)
 13. **수습 감액과 최저임금 경고.** 급여 경고는 감액 없이 최저시급과 비교합니다. HR 포트가 수습 시작일과 감액 허용 여부(급여계약 검증 결과)를 주면, 그 달이 수습 3개월 안이고 허용된 경우에만 90%로 비교할 수 있습니다([규칙 결정](rule-decisions/payroll.md#minimum-wage-warning) 2)
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)
+15. **원천세 집계의 소비.** `payroll_pay_month.closed`는 `withholding[]`을 싣지만 Tax는 회사·지급월만 받아 마감 수만 다시 셉니다([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). Tax가 집계를 신고서 초안에 쓸지, 쓴다면 이벤트로 받을지(outbox 재전달·순서 문제) `PayrollLedgerSummary`처럼 조회로 받을지, 소득 종류를 신고서 코드로 바꾸는 표를 어디 둘지 정해야 합니다. 쓰지 않기로 하면 이벤트에서 `withholding[]`을 빼는 것도 방법입니다
+16. **퇴직금 정산 상태를 HR에 알리기.** HR 직원의 `severanceSettlementStatus`는 `IN_PROGRESS`·`COMPLETED`·`EXCLUDED`이고 Payroll 정산은 `CALCULATED`·`COMPLETED`·`EXCLUDED`입니다. 둘을 잇는 이벤트도 HR이 받는 구독도 없어 HR 필드는 언제나 비어 있고, HR의 409 `RETIREMENT_COMPLETED` 가드(직원 삭제·퇴사 취소·다시 퇴사)는 지금 걸리지 않습니다([hr.md 열린 질문 10](hr.md#열린-질문)). 정할 것:
+    - 이벤트 이름과 모양. [events.md](events.md#이벤트-목록) 규칙대로면 `severance_settlement.status_changed`(또는 `.completed`·`.reopened`·`.excluded`·`.included`)이고 아직 목록에 없습니다
+    - 매핑. `CALCULATED` → `IN_PROGRESS`, 나머지는 같은 이름으로 보는 것이 자연스럽지만, 같은 직원에 정산이 여럿(재입사, 제외 후 새 정산)이면 HR 필드 하나에 무엇을 둘지 정해야 합니다
+    - 다른 길. HR이 상태를 저장하지 않고 삭제·퇴사 취소 때 Payroll에 묻는 포트(예: `SeveranceSettlementLookup`)를 두면 이벤트도 매핑도 필요 없습니다
