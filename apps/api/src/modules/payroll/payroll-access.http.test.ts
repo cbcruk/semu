@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Plan } from '../identity-access/actor.types.ts'
 import { TEST_COMPANY_ID, testActor } from '../identity-access/testing.ts'
-import { payrollTestApp } from './payroll-testing.ts'
+import { clockAt, payrollTestApp } from './payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from './payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from './ports/payroll-employee-directory.ts'
 import { PayrollSettingRepository } from './settings/payroll-setting-repository.ts'
@@ -9,17 +9,23 @@ import { PayrollSettingRepository } from './settings/payroll-setting-repository.
 /**
  * 급여대장·행·명세서·인건비 보고서는 `PAYROLL`이나 `TAXATION` 중 하나면 열고(2026-11-07 결정), 급여 설정·퇴직금·기준표·
  * 계산기는 현행 메뉴처럼 `PAYROLL`만 엽니다. 토큰마다 같은 회사의 다른 구독을 흉내 냅니다.
+ *
+ * 추가 대장은 원천세 기한이 가까우면 막히므로 시계를 {@link TODAY}에 두어, 벽시계와 상관없이 같은 결과를 냅니다.
  */
 const PLAN_CASES: ReadonlyArray<readonly [token: string, plans: ReadonlyArray<Plan>, attributionMonth: string]> = [
-  ['payroll-only', ['PAYROLL'], '2027-04'],
-  ['taxation-only', ['TAXATION'], '2027-05'],
-  ['both-plans', ['TAXATION', 'PAYROLL'], '2027-06'],
+  ['payroll-only', ['PAYROLL'], '2026-04'],
+  ['taxation-only', ['TAXATION'], '2026-05'],
+  ['both-plans', ['TAXATION', 'PAYROLL'], '2026-06'],
 ]
+
+/** 테스트의 오늘입니다. 위 귀속월의 원천세 기한보다 앞섭니다. */
+const TODAY = '2026-04-01T00:00:00+09:00'
 
 const app = payrollTestApp(
   [
     PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }]),
     PayrollSettingRepository.layerMemory([{ companyId: TEST_COMPANY_ID, setting: rateBasedSetting() }]),
+    clockAt(TODAY),
   ],
   [
     ...PLAN_CASES.map(([token, plans]) => [token, testActor({ plans: new Set(plans) })] as const),

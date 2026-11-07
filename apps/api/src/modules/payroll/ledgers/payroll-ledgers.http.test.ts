@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
-import { AGENCY_TOKEN, payrollTestApp } from '../payroll-testing.ts'
+import { AGENCY_TOKEN, clockAt, payrollTestApp } from '../payroll-testing.ts'
 import { PayrollEmployeeDirectory, type PayrollEmployee } from '../ports/payroll-employee-directory.ts'
 import { PayrollEventPublisher } from '../ports/payroll-events.ts'
 import type { PayrollEvent } from '../ports/payroll-events.types.ts'
@@ -53,6 +53,9 @@ const rateMethods = {
 
 const events: PayrollEvent[] = []
 
+/** 테스트의 오늘입니다. 추가 대장(2027-03)이 원천세 기한에 막히지 않도록 벽시계 대신 이 날짜에 둡니다. */
+const TODAY = '2026-11-07T00:00:00+09:00'
+
 const app = payrollTestApp(
   [
     PayrollEmployeeDirectory.layerMemory([
@@ -68,6 +71,7 @@ const app = payrollTestApp(
       { companyId: DIRECT_COMPANY_ID, setting: rateMethods },
     ]),
     PayrollEventPublisher.layerMemory(events),
+    clockAt(TODAY),
   ],
   [
     ['direct', testActor({ companyId: DIRECT_COMPANY_ID })],
