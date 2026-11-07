@@ -97,6 +97,11 @@
 - 결제 내역에는 급여 아웃소싱(`PAYROLL`)만 보입니다(`LISTED_PAYMENT_PLANS`, 2025-12 매뉴얼 기준). 목록에 없는 결제는 상세도 404입니다
 - `failureReason`: `INSUFFICIENT_BALANCE`, `ACCOUNT_CLOSED`, `MANDATE_NOT_REGISTERED`, `OTHER`
 - 재시도는 같은 결제를 `RETRYING`으로 바꾸고 `scheduledOn`을 새 출금일로 옮깁니다. 결제 번호는 그대로입니다
+- 재시도·환불은 `Idempotency-Key`가 필수이고 [공통 규칙](conventions.md#멱등성)을 따릅니다. 키는 회사·행위자(담당자)마다 따로이고 24시간 동안 기억합니다
+  - 같은 키·같은 결제·같은 본문이면 처음 응답(과 같은 `ETag`)을 돌려줍니다. `If-Match`는 다시 보지 않으므로, 첫 응답을 놓친 재시도가 412나 409(`PAYMENT_TRANSITION_INVALID`)를 받지 않습니다
+  - 본문(`retryOn`)이나 결제가 다르거나, 같은 키를 재시도와 환불에 함께 쓰면 422 `IDEMPOTENCY_KEY_REUSED`입니다. 앞 요청이 처리 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`(메모리 저장소)입니다
+  - 실패한 요청(404·409·412·422)은 키를 남기지 않아 같은 키로 고쳐 다시 보낼 수 있습니다. 둘 다 외부 기관을 부르지 않는 저장소 변경이라 결과를 모르는 경우가 없습니다
+  - 요청 기록은 `billing_idempotency_keys` 표(`BillingIdempotency`)에 두고 출금 계좌 등록과 함께 씁니다
 - 결제 1일 전 알림톡(`noticeDate`)은 알림 컨텍스트가 결제 예정을 보고 보냅니다 (미구현)
 
 ### 결제 수단 (CMS 출금 동의)
@@ -111,6 +116,10 @@
 
 - `payerNumber`는 예금주 생년월일 6자리 또는 사업자번호 10자리입니다. 계좌번호와 함께 저장하지 않습니다
 - 은행이 받아들이면 이전 `REGISTERED`는 `REVOKED`가 됩니다. 거절되면 `REJECTED`로 남기고 422 `MANDATE_REJECTED`(`reason`)입니다
+- `Idempotency-Key`는 [공통 규칙](conventions.md#멱등성)을 따릅니다. 같은 키·같은 본문이면 처음 응답(201, 같은 `id`)을 돌려주고 CMS를 다시 부르지 않습니다
+  - 본문 지문은 은행·예금주·가린 계좌번호(끝 4자리)로 만듭니다. 계좌번호 전체와 `payerNumber`는 지문에도 남기지 않습니다
+  - 거절되면 키를 남기지 않습니다. 같은 키로 계좌를 고쳐 보내면(또는 그대로 다시 보내도) CMS에 새로 등록을 요청하고, 거절 기록은 시도마다 남습니다
+  - CMS 응답을 확인하지 못하면(연동 결함·시간 초과) 503 `EXTERNAL_OUTCOME_UNKNOWN`입니다. 같은 키·같은 본문의 재시도는 같은 `requestId`로 CMS에 다시 물어 결과를 저장하므로 계좌가 두 번 등록되지 않습니다
 - 서면 동의서 업로드(`source: UPLOAD`, `PENDING`에서 시작)는 파일 업로드가 정해지면 붙입니다
 
 ### 서비스 계약
@@ -212,10 +221,10 @@ stateDiagram-v2
 | POST | `/subscriptions/{subscriptionId}:resume` | `subscription:manage` + 담당자 | – | `If-Match` |
 | GET | `/payments` | `payment:read` | – | 커서, `?status=` |
 | GET | `/payments/{paymentId}` | `payment:read` | – | `ETag` |
-| POST | `/payments/{paymentId}:retry` | `payment:retry` + 담당자 | – | `{retryOn?}`, `Idempotency-Key`, `If-Match` |
-| POST | `/payments/{paymentId}:refund` | `payment:refund` + 담당자 | – | `Idempotency-Key`, `If-Match` |
+| POST | `/payments/{paymentId}:retry` | `payment:retry` + 담당자 | – | `{retryOn?}`, `Idempotency-Key`(재생), `If-Match` |
+| POST | `/payments/{paymentId}:refund` | `payment:refund` + 담당자 | – | `Idempotency-Key`(재생), `If-Match` |
 | GET | `/billing-mandates` | `billing-mandate:read` | – | |
-| POST | `/billing-mandates` | `billing-mandate:create` | – | `Idempotency-Key` |
+| POST | `/billing-mandates` | `billing-mandate:create` | – | `Idempotency-Key`(재생) |
 | POST | `/consultations` | `consultation:create` | – | 기본 권한 |
 | GET | `/service-contracts` | `service-contract:read` | `TAXATION` | |
 | GET | `/service-contracts/{serviceContractId}` | `service-contract:read` | `TAXATION` | |
@@ -238,7 +247,10 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | `PAYMENT_NOT_FOUND` | 404 | 결제가 없거나 결제 내역에 보이지 않는 상품 |
 | `PAYMENT_TRANSITION_INVALID` | 409 | 재시도는 `FAILED`만, 환불은 `PAID`만 (`currentStatus`). 현행 `INVALID_TRANSITION` |
 | `RETRY_DATE_INVALID` | 422 | 재시도 출금일이 과거 |
-| `MANDATE_REJECTED` | 422 | 은행이 계좌를 거절 (`mandateId`, `reason`) |
+| `MANDATE_REJECTED` | 422 | 은행이 계좌를 거절 (`mandateId`, `reason`). 키는 남기지 않음 |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | 같은 `Idempotency-Key`를 다른 본문·결제·커맨드에 씀 |
+| `IDEMPOTENCY_KEY_IN_PROGRESS` | 409 | 같은 키의 앞 요청이 아직 처리 중 (메모리 저장소) |
+| `EXTERNAL_OUTCOME_UNKNOWN` | 503 | 출금 계좌 등록의 CMS 응답을 확인하지 못함. 같은 키·같은 본문으로 다시 보냄 |
 | `CONSULTATION_ALREADY_OPEN` | 409 | 같은 상품의 진행 중 문의가 있음 (`consultationId`) |
 | `PRODUCT_ALREADY_SUBSCRIBED` | 409 | 문의한 상품을 모두 이미 구독 중 (`products`) |
 | `SERVICE_CONTRACT_NOT_FOUND` | 404 | 계약이 없거나 다른 회사의 것 |
@@ -250,7 +262,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 포트 | 방향 | 모양 | 메모리 구현 |
 |---|---|---|---|
 | `CompanyPlans` (Identity & Access 선언) | Billing이 구현 | `plansOf(companyId): Effect<ReadonlySet<Plan>>` | `SubscriptionCompanyPlansLive` (구독 저장소에서 계산) |
-| `CmsGateway` | Billing 선언 | `registerAccount({bankCode, accountNumber, accountHolder, payerNumber}): Effect<{accepted: true, reference} \| {accepted: false, reason}>` | `layerFake`: 계좌번호가 `0000`으로 끝나면 `ACCOUNT_NOT_FOUND` |
+| `CmsGateway` | Billing 선언 | `registerAccount({requestId, bankCode, accountNumber, accountHolder, payerNumber}): Effect<{accepted: true, reference} \| {accepted: false, reason}>`. `requestId`는 멱등 참조로, 같은 값의 재요청에는 다시 등록하지 않고 처음 결과를 돌려줘야 함 | `layerFake`: 계좌번호가 `0000`으로 끝나면 `ACCOUNT_NOT_FOUND` |
 | `PublicHolidays` | Billing 선언 | `all(): Effect<ReadonlySet<string>>` | 2026년 공휴일·대체공휴일 |
 
 이벤트 (제안, 미구현):
@@ -307,7 +319,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 도입 문의(로그인) | 구현. 담당자 배정·알림톡 미구현 |
 | 서비스 계약 조회 | 구현. 계약 체결 흐름(#36-42) 미구현 |
 | 공개 리드(#25, 43, 44), 파트너 연결(#21-24) | 미구현 |
-| `Idempotency-Key` | 필수 검사만. 같은 키 재요청 재생은 공유 저장소가 필요해 미구현 |
+| `Idempotency-Key` | 구현, HTTP 테스트. 재시도·환불·출금 계좌 등록이 [공통 규칙](conventions.md#멱등성)을 따름(재생·본문 비교·처리 중 409·24시간·회사와 행위자 범위, 결과를 모르는 CMS 등록은 같은 `requestId`로 이어 감) |
 | 이벤트 발행 | 미구현 |
 
 ## 열린 질문
