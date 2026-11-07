@@ -11,7 +11,7 @@ export interface LeavingReason {
 export type RetirementBenefitType = 'SEVERANCE_PAY' | 'DB' | 'DC'
 
 /**
- * 퇴직금 정산 상태입니다. Payroll이 알려 줄 값이지만 그 이벤트·구독은 아직 없어 지금은 채워지지 않습니다.
+ * 퇴직금 정산 상태입니다. 설계상 Payroll이 알려 줄 값이지만 그 이벤트·구독은 아직 없어 지금은 채워지지 않습니다.
  * Payroll 정산 상태(`CALCULATED`·`COMPLETED`·`EXCLUDED`)와의 매핑도 정하지 않았습니다(docs/design/payroll.md 열린 질문 16).
  */
 export type SeveranceSettlementStatus = 'IN_PROGRESS' | 'COMPLETED' | 'EXCLUDED'
