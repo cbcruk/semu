@@ -57,7 +57,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Billing | `subscription.changed` | Identity & Access(플랜 반영, 토큰 폐기) | 설계. 지금은 `CompanyPlans` 조회로 반영되어 최대 액세스 토큰 수명(10분)만큼 늦음 |
 | Billing | `payment.scheduled`, `payment.failed`, `service_contract.signed` | 단말, 세무 대리인 알림 | 설계 |
 | Integrations | `scrap_request.completed` (`job.completed`) | 단말 | 설계. 수집 레코드 자체는 이벤트가 아니라 `ScrapedRecordIngestion` 호출로 넘김(아래) |
-| Tax | `filing.status_changed` | Payroll(원천세 `FILED` 이상이면 대장 잠금 판정은 조회로 함), 단말, 할 일 카드 | 구현(메모리 발행) |
+| Tax | `filing.status_changed` | 단말, 알림. Payroll은 받지 않고 대장 잠금을 `WithholdingFilingLock` 조회로 판정하며, 할 일 카드는 같은 요청 안에서 바뀜 | 구현(메모리 발행), 소비자 없음 |
 | HR | `employee.joined`, `employee.resigned`, `leave.started`, `leave.ended` | Payroll(명단 변경 경고), Documents | 설계 |
 | Documents | `esign_request.sent`, `esign_request.completed`, `certificate.issued` | HR(서명 완료 시 근로·급여계약과 문서 보관함 생성) | 발행 구현, HR 소비는 설계 |
 | Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened` | Tax(원천세 신고의 급여대장 항목 `provided` 판정) | 구현(outbox) |

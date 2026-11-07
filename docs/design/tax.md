@@ -282,12 +282,14 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 ```mermaid
 flowchart LR
-  PAY[Payroll] -- payroll_ledger.closed / reopened --> SYNC[Filings.syncPayrollLedger]
+  PAY[Payroll] -- payroll_pay_month.closed / reopened (outbox) --> SYNC[Filings.syncPayrollLedger]
   SYNC -- PayrollLedgers.summaryFor --> PAY
   BK[Bookkeeping] -- VatEvidence.sales / purchases --> VAT[VatEstimates]
-  TAX[Tax] -- filing.status_changed --> PAY
-  PAY -- WithholdingFilingLock.isFiled --> TAX
+  PAY -- WithholdingFilingLock.isFiled --> TAX[Tax]
+  TAX -. "filing.status_changed (메모리 로그, 소비자 없음)" .-> OUT[단말·알림]
 ```
+
+- 화살표는 부르는 쪽에서 불리는 쪽으로, 이벤트는 내는 쪽에서 받는 쪽으로 그렸습니다. Payroll은 `filing.status_changed`를 받지 않습니다. 급여대장 잠금은 커맨드마다 `WithholdingFilingLock.isFiled`로 Tax에 묻습니다([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `filing.status_changed`는 지금 `TaxEvents.layerMemory`에 쌓일 뿐이고 단말·알림 소비자는 설계입니다([events.md](events.md#이벤트-목록))
 
 | 방향 | 이름 | 형태 |
 |---|---|---|

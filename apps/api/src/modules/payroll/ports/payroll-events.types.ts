@@ -15,7 +15,8 @@ export interface WithholdingSummaryLine {
 
 /**
  * 한 지급월에 지급일이 있는 급여대장이 모두 `CLOSED`가 됐습니다. Tax는 원천세 신고 건의
- * "급여대장 마감" 자료를 제출됨으로 바꾸고 집계를 신고서 초안에 씁니다.
+ * "급여대장 마감" 자료를 제출됨으로 바꿉니다. `withholding`은 싣기만 하고 지금 Tax는 쓰지 않습니다
+ * (`wiring/payroll-tax.ts`가 회사와 지급월만 넘김). 신고서 초안에 쓰는 것은 미구현입니다.
  */
 export interface PayMonthClosed {
   type: 'payroll_pay_month.closed'
