@@ -214,6 +214,20 @@ describe('POST /payments/{id}:retry idempotency', () => {
 })
 
 describe('POST /payments/{id}:refund idempotency', () => {
+  it('rejects a refund that reuses a retry key on the same payment with the same body', async () => {
+    const { app } = setUp()
+
+    const retried = await retry(app, 'k-retry-then-refund')
+    const refunded = await app.json('POST', `/payments/${DEMO_PAYMENT_IDS.failed}:refund`, {
+      token: 'agent',
+      idempotencyKey: 'k-retry-then-refund',
+    })
+
+    expect(retried.status).toBe(200)
+    expect(refunded.status).toBe(422)
+    expect(refunded.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+  })
+
   it('replays the first refund', async () => {
     const { app } = setUp()
 

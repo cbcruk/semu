@@ -179,4 +179,38 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.withdrawn).toHaveLength(1)
     expect(gateway.calls).toEqual([gateway.withdrawn[0], gateway.withdrawn[0]])
   })
+
+  it('keeps an unconfirmed payment past 24 hours, so the same key never pays twice', async () => {
+    const { app, clock, gateway } = setUp()
+    gateway.dieAfterWithdrawing = true
+
+    const lost = await pay(app, 'k-pay-late')
+    clock.ms = DAY_MS + 60 * 60 * 1000
+    const resumed = await pay(app, 'k-pay-late')
+    const otherBody = await pay(app, 'k-pay-late', { ...PAYMENT, bankCode: '088' })
+
+    expect(lost.status).toBe(503)
+    expect(resumed.status).toBe(200)
+    expect(resumed.body).toMatchObject({ status: 'DONE', doneReason: 'PAID_IN_APP' })
+    expect(otherBody.status).toBe(422)
+    expect(gateway.withdrawn).toHaveLength(1)
+    expect(gateway.calls).toEqual([gateway.withdrawn[0], gateway.withdrawn[0]])
+  })
+
+  it('forgets an unconfirmed payment once its retry finds the bill already settled', async () => {
+    const { app, gateway } = setUp()
+    gateway.dieAfterWithdrawing = true
+
+    const lost = await pay(app, 'k-pay-settled')
+    await app.json('POST', `/giros/${VAT}:mark-paid`, { body: { memo: '은행에서 확인' } })
+    const resumed = await pay(app, 'k-pay-settled')
+    // 기록이 지워졌으면 본문이 달라도 422가 아니라 다시 처리해 고지서 상태(409)를 봅니다.
+    const otherBody = await pay(app, 'k-pay-settled', { ...PAYMENT, bankCode: '088' })
+
+    expect(lost.status).toBe(503)
+    expect(resumed.status).toBe(409)
+    expect(resumed.body).toMatchObject({ code: 'GIRO_TRANSITION_INVALID', currentStatus: 'DONE' })
+    expect(otherBody.status).toBe(409)
+    expect(otherBody.body).toMatchObject({ code: 'GIRO_TRANSITION_INVALID' })
+  })
 })

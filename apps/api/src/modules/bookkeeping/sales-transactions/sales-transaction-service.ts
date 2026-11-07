@@ -107,8 +107,11 @@ export class SalesTransactionService extends Context.Service<
      * 응답을 그대로 돌려줍니다. 다른 거래명세서면 422 `IDEMPOTENCY_KEY_REUSED`입니다.
      *
      * 홈택스가 거절하면 `FAILED` 발급 건은 남기고 키는 남기지 않아, 같은 키로 명세서를 고쳐 다시 보내면 새로 발급합니다. 발급 결과를
-     * 확인하지 못하면 503 `EXTERNAL_OUTCOME_UNKNOWN`이고 `ISSUING` 발급 건이 명세서를 잠급니다. 같은 키의 재시도는 그 발급 건을 같은
-     * 참조로 다시 홈택스에 물어 마칩니다.
+     * 확인하지 못하면 503 `EXTERNAL_OUTCOME_UNKNOWN`이고 `ISSUING` 발급 건이 명세서를 잠급니다.
+     *
+     * 결과를 모르는 발급 건은 누구의 발행 요청이든 마칩니다. 명세서에 `ISSUING` 발급 건이 있으면 요청한 사용자·키와 상관없이 그 건에
+     * 저장한 참조로 홈택스에 다시 물어 `ISSUED`나 `FAILED`로 마치고 그 결과를 응답합니다. 처음 키의 재시도는 참조로 자기 발급 건을 찾아
+     * 상태(`ISSUING`·`ISSUED`·`FAILED`)에 맞게 마칩니다. `ISSUED`로 저장한 뒤 멈췄으면 빠진 매출 증빙을 만듭니다.
      *
      * 발급에 성공하면 매출 세금계산서 증빙을 바로 만들고 거래명세서와 잇습니다. 이후 홈택스 수집이 같은 승인번호로 덮어씁니다.
      */
@@ -174,6 +177,78 @@ export class SalesTransactionService extends Context.Service<
         const lock = statementLock(rows)
         return lock === 'EDITABLE' ? Effect.void : Effect.fail(new SalesTransactionLocked({ lock }))
       }
+
+      /** 홈택스에 지금 보내고 있는 발급 참조입니다. 메모리 저장소에서 같은 발급 건을 두 요청이 함께 마치지 않게 합니다. */
+      const sending = new Set<string>()
+
+      const rejectedBy = (invoice: TaxInvoiceRecord) =>
+        new TaxInvoiceRejected({
+          taxInvoiceId: invoice.id,
+          errorCode: invoice.failure?.code ?? 'UNKNOWN',
+          errorMessage: invoice.failure?.message ?? '',
+        })
+
+      /** 발급 건의 매출 증빙을 만듭니다. 같은 승인번호의 증빙이 이미 있으면 그대로 둡니다. */
+      const ensureEvidence = (invoice: TaxInvoiceRecord, now: string) =>
+        Effect.gen(function* () {
+          const externalKey = invoice.approvalNumber ?? invoice.id
+          const rows = yield* evidence.list(invoice.companyId)
+          if (rows.some((row) => row.source === 'TAX_INVOICE' && row.externalKey === externalKey)) return
+          yield* evidence.save(issuedEvidence(invoice.statement, invoice, now))
+        })
+
+      /**
+       * 발급 건을 상태에 맞게 마칩니다. `ISSUING`이면 그 건의 참조로 홈택스에 물어 `ISSUED`(증빙 포함)나 `FAILED`로 바꾸고, 이미
+       * `ISSUED`면 증빙을 보장하고, `FAILED`면 그 거절을 돌려줍니다. 홈택스 호출과 결과 기록 중 결함은 503입니다.
+       */
+      const complete = (invoice: TaxInvoiceRecord) =>
+        Effect.gen(function* () {
+          const { now } = yield* nowAndToday
+          if (invoice.status === 'FAILED') return yield* rejectedBy(invoice)
+          if (invoice.status === 'ISSUED') {
+            yield* outcomeUnknownOnDefect('tax-invoice.issue', ensureEvidence(invoice, now))
+            return toTaxInvoice(invoice)
+          }
+          const reference = invoice.idempotencyKey
+          if (sending.has(reference)) return yield* new SalesTransactionLocked({ lock: 'ISSUING' })
+          sending.add(reference)
+          return yield* outcomeUnknownOnDefect(
+            'tax-invoice.issue',
+            Effect.gen(function* () {
+              const statement = invoice.statement
+              const result = yield* issuer.issue({
+                companyId: invoice.companyId,
+                salesTransactionId: invoice.salesTransactionId,
+                idempotencyKey: reference,
+                writeDate: statement.writeDate,
+                buyerBusinessNumber: statement.buyer.businessNumber,
+                statement,
+              })
+              if (!result.ok) {
+                const failed: TaxInvoiceRecord = {
+                  ...invoice,
+                  status: 'FAILED',
+                  failure: { code: result.errorCode, message: result.errorMessage },
+                  updatedAt: now,
+                }
+                yield* invoices.save(failed)
+                // 실패 응답(4xx)이어도 홈택스가 거절한 발행 시도는 남깁니다. 키는 남기지 않으므로 같은 키로 고쳐 다시 보낼 수 있습니다.
+                yield* keepChanges
+                return yield* rejectedBy(failed)
+              }
+              const issued: TaxInvoiceRecord = {
+                ...invoice,
+                status: 'ISSUED',
+                approvalNumber: result.approvalNumber,
+                issuedAt: result.issuedAt,
+                updatedAt: now,
+              }
+              yield* invoices.save(issued)
+              yield* evidence.save(issuedEvidence(statement, issued, now))
+              return toTaxInvoice(issued)
+            }),
+          ).pipe(Effect.ensuring(Effect.sync(() => sending.delete(reference))))
+        })
 
       return SalesTransactionService.of({
         list: Effect.fn('SalesTransactionService.list')(function* (companyId, filter, page) {
@@ -256,74 +331,39 @@ export class SalesTransactionService extends Context.Service<
             },
             (attempt) =>
               Effect.gen(function* () {
-                const { now } = yield* nowAndToday
-                // 결과를 모르는 앞 시도를 이어 가면 그 시도가 남긴 `ISSUING` 발급 건을 그대로 씁니다. 그 건이 명세서를 잠그고 있습니다.
-                const interrupted = attempt.resumed
+                // 결과를 모르는 앞 시도를 이어 가면 그 시도의 발급 건(참조가 같음)을 상태와 상관없이 찾아 마칩니다. 다른 요청이 먼저 마쳤을 수
+                // 있습니다.
+                const own = attempt.resumed
                   ? (yield* invoices.list(companyId)).find(
-                      (row) => row.idempotencyKey === attempt.reference && row.status === 'ISSUING',
+                      (row) =>
+                        row.idempotencyKey === attempt.reference && row.salesTransactionId === salesTransactionId,
                     )
                   : undefined
-                let pending: TaxInvoiceRecord
-                if (interrupted !== undefined) {
-                  pending = interrupted
-                } else {
-                  const statement = yield* find(companyId, salesTransactionId)
-                  yield* validate(statement)
-                  yield* ensureEditable(yield* invoicesOf(companyId, salesTransactionId))
-                  pending = {
-                    id: newId('taxInvoice'),
-                    companyId,
-                    salesTransactionId,
-                    idempotencyKey: attempt.reference,
-                    status: 'ISSUING',
-                    approvalNumber: null,
-                    issuedAt: null,
-                    detailSynced: false,
-                    failure: null,
-                    statement,
-                    createdAt: now,
-                    updatedAt: now,
-                  }
-                  yield* invoices.save(pending)
+                if (own !== undefined) return yield* complete(own)
+                const statement = yield* find(companyId, salesTransactionId)
+                const existing = yield* invoicesOf(companyId, salesTransactionId)
+                // 다른 사용자·키가 남긴 결과 모르는 발급 건도 그 건의 참조로 마칩니다. 처음 요청한 사람이 돌아오지 않아도 명세서가 풀립니다.
+                const stranded = existing.find((row) => row.status === 'ISSUING')
+                if (stranded !== undefined) return yield* complete(stranded)
+                yield* validate(statement)
+                yield* ensureEditable(existing)
+                const { now } = yield* nowAndToday
+                const pending: TaxInvoiceRecord = {
+                  id: newId('taxInvoice'),
+                  companyId,
+                  salesTransactionId,
+                  idempotencyKey: attempt.reference,
+                  status: 'ISSUING',
+                  approvalNumber: null,
+                  issuedAt: null,
+                  detailSynced: false,
+                  failure: null,
+                  statement,
+                  createdAt: now,
+                  updatedAt: now,
                 }
-                const statement = pending.statement
-                return yield* outcomeUnknownOnDefect(
-                  'tax-invoice.issue',
-                  Effect.gen(function* () {
-                    const result = yield* issuer.issue({
-                      companyId,
-                      salesTransactionId,
-                      idempotencyKey: attempt.reference,
-                      writeDate: statement.writeDate,
-                      buyerBusinessNumber: statement.buyer.businessNumber,
-                      statement,
-                    })
-                    if (!result.ok) {
-                      const failed: TaxInvoiceRecord = {
-                        ...pending,
-                        status: 'FAILED',
-                        failure: { code: result.errorCode, message: result.errorMessage },
-                      }
-                      yield* invoices.save(failed)
-                      // 실패 응답(4xx)이어도 홈택스가 거절한 발행 시도는 남깁니다. 키는 남기지 않으므로 같은 키로 고쳐 다시 보낼 수 있습니다.
-                      yield* keepChanges
-                      return yield* new TaxInvoiceRejected({
-                        taxInvoiceId: failed.id,
-                        errorCode: result.errorCode,
-                        errorMessage: result.errorMessage,
-                      })
-                    }
-                    const issued: TaxInvoiceRecord = {
-                      ...pending,
-                      status: 'ISSUED',
-                      approvalNumber: result.approvalNumber,
-                      issuedAt: result.issuedAt,
-                    }
-                    yield* invoices.save(issued)
-                    yield* evidence.save(issuedEvidence(statement, issued, now))
-                    return toTaxInvoice(issued)
-                  }),
-                )
+                yield* invoices.save(pending)
+                return yield* complete(pending)
               }),
           ),
 

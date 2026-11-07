@@ -10,7 +10,8 @@ import { TableFactory } from './record-table.ts'
  *   같은 `reference`로 외부 기관에 다시 물어 이어 갑니다
  * - `COMPLETED`: 끝났습니다. 같은 키·같은 본문이면 `response`를 그대로 돌려줍니다
  *
- * 실패로 끝난 요청(외부 기관의 거절 포함)은 기록을 남기지 않습니다. `createdAt`부터 24시간이 지나면 없는 것으로 봅니다.
+ * 실패로 끝난 요청(외부 기관의 거절 포함)은 기록을 남기지 않습니다. `COMPLETED`는 끝난 시각(`finishedAt`)부터 24시간이 지나면 없는 것으로
+ * 보고, `UNCERTAIN`은 결과를 받아 끝낼 때까지 만료하지 않습니다.
  */
 export interface IdempotencyRecord {
   id: string

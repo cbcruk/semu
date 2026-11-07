@@ -5,6 +5,7 @@ import { httpTestApp, type HttpTestApp } from '../../../shared/testing/http-test
 import { DAY_MS, shiftableClock } from '../../../shared/testing/shiftable-clock.ts'
 import { testActor } from '../../identity-access/testing.ts'
 import { BookkeepingPortFakesLive } from '../bookkeeping.layer.ts'
+import { EvidenceRepository } from '../common/repositories.ts'
 import {
   FAKE_REJECTED_BUYER_NUMBER,
   HometaxInvoiceIssuer,
@@ -62,6 +63,30 @@ function controlledIssuer(control: IssuerControl) {
   )
 }
 
+/**
+ * 증빙 저장소입니다. `dieOnSave`가 참이면 다음 저장 한 번이 결함으로 죽습니다. 발급 건을 `ISSUED`로 저장한 뒤 증빙을 만들다 멈춘 경우를
+ * 만듭니다. 이 테스트에서만 메모리 표를 씁니다.
+ */
+function flakyEvidence(control: { dieOnSave: boolean }) {
+  return Layer.effect(
+    EvidenceRepository,
+    Effect.map(
+      Effect.gen(function* () {
+        return yield* EvidenceRepository
+      }),
+      (inner) =>
+        EvidenceRepository.of({
+          ...inner,
+          save: (row) => {
+            if (!control.dieOnSave) return inner.save(row)
+            control.dieOnSave = false
+            return Effect.die(new Error('evidence store went away'))
+          },
+        }),
+    ),
+  ).pipe(Layer.provide(EvidenceRepository.layerMemory()))
+}
+
 const party = (businessNumber: string, companyName: string) => ({ businessNumber, companyName })
 
 const STATEMENT = {
@@ -97,6 +122,7 @@ interface Fixture {
   app: HttpTestApp
   clock: { ms: number }
   issuer: IssuerControl
+  evidence: { dieOnSave: boolean }
 }
 
 let fixture: Fixture | null = null
@@ -106,19 +132,25 @@ afterEach(async () => {
   fixture = null
 })
 
-function setUp(): Fixture {
+function setUp(options: { flakyEvidence?: boolean } = {}): Fixture {
   const clock = { ms: 0 }
   const issuer: IssuerControl = { calls: [], issued: [], delayMs: 0, dieAfterIssuing: false }
+  const evidence = { dieOnSave: false }
   const app = httpTestApp({
     tokens: [
       ['admin', testActor()],
       ['other', testActor({ userId: OTHER_USER_ID })],
     ],
-    layers: [BookkeepingPortFakesLive, controlledIssuer(issuer), shiftableClock(clock)],
+    layers: [
+      BookkeepingPortFakesLive,
+      controlledIssuer(issuer),
+      shiftableClock(clock),
+      ...(options.flakyEvidence === true ? [flakyEvidence(evidence)] : []),
+    ],
     basePath: '/v1',
     defaultToken: 'admin',
   })
-  fixture = { app, clock, issuer }
+  fixture = { app, clock, issuer, evidence }
   return fixture
 }
 
@@ -234,5 +266,70 @@ describe('POST /tax-invoices idempotency', () => {
     expect(listed.body.items).toEqual([resumed.body])
     expect(issuer.issued).toHaveLength(1)
     expect(issuer.calls).toEqual([issuer.issued[0], issuer.issued[0]])
+  })
+
+  it('keeps an unconfirmed issue past 24 hours and finishes it with the same reference', async () => {
+    const { app, clock, issuer } = setUp()
+    const statement = await create(app)
+    issuer.dieAfterIssuing = true
+
+    const lost = await issue(app, 'k-issue-late', statement)
+    clock.ms = DAY_MS + 60 * 60 * 1000
+    const resumed = await issue(app, 'k-issue-late', statement)
+    const replay = await issue(app, 'k-issue-late', statement)
+
+    expect(lost.status).toBe(503)
+    expect(resumed.status).toBe(201)
+    expect(resumed.body).toMatchObject({ status: 'ISSUED' })
+    expect(replay.body).toEqual(resumed.body)
+    expect(issuer.issued).toHaveLength(1)
+    expect(issuer.calls).toEqual([issuer.issued[0], issuer.issued[0]])
+  })
+
+  it('lets another user with another key finish an unconfirmed issue instead of locking the statement', async () => {
+    const { app, issuer } = setUp()
+    const statement = await create(app)
+    issuer.dieAfterIssuing = true
+
+    const lost = await issue(app, 'k-issue-mine', statement)
+    const theirs = await issue(app, 'k-issue-theirs', statement, 'other')
+    const mine = await issue(app, 'k-issue-mine', statement)
+    const listed = await app.json('GET', `/tax-invoices?salesTransactionId=${statement}`)
+    const evidence = await app.json('GET', '/evidence?side=SALES&source=TAX_INVOICE')
+
+    expect(lost.status).toBe(503)
+    expect(theirs.status).toBe(201)
+    expect(theirs.body).toMatchObject({ status: 'ISSUED' })
+    expect(mine.status).toBe(201)
+    expect(mine.body).toEqual(theirs.body)
+    expect(listed.body.items).toEqual([theirs.body])
+    expect(issuer.issued).toHaveLength(1)
+    expect(new Set(issuer.calls).size).toBe(1)
+    const rows = evidence.body.items.filter(
+      (row: { salesTransactionId: string | null }) => row.salesTransactionId === statement,
+    )
+    expect(rows).toHaveLength(1)
+  })
+
+  it('creates the missing evidence when the issue stopped after the invoice was saved as issued', async () => {
+    const { app, issuer, evidence } = setUp({ flakyEvidence: true })
+    const statement = await create(app)
+    evidence.dieOnSave = true
+
+    const lost = await issue(app, 'k-issue-evidence', statement)
+    const saved = await app.json('GET', `/tax-invoices?salesTransactionId=${statement}`)
+    const before = await app.json('GET', '/evidence?side=SALES&source=TAX_INVOICE')
+    const resumed = await issue(app, 'k-issue-evidence', statement)
+    const after = await app.json('GET', '/evidence?side=SALES&source=TAX_INVOICE')
+
+    const ofStatement = (body: { items: Array<{ salesTransactionId: string | null }> }) =>
+      body.items.filter((row) => row.salesTransactionId === statement)
+    expect(lost.status).toBe(503)
+    expect(saved.body.items).toEqual([expect.objectContaining({ status: 'ISSUED' })])
+    expect(ofStatement(before.body)).toHaveLength(0)
+    expect(resumed.status).toBe(201)
+    expect(resumed.body).toEqual(saved.body.items[0])
+    expect(ofStatement(after.body)).toHaveLength(1)
+    expect(issuer.issued).toHaveLength(1)
   })
 })
