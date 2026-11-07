@@ -26,6 +26,6 @@ export function isOrganizationNameTaken(
   existing: ReadonlyArray<{ id: string; name: string }>,
   selfId?: string,
 ): boolean {
-  const key = organizationNameKey(name)
-  return existing.some((unit) => unit.id !== selfId && organizationNameKey(unit.name) === key)
+  const 비교할이름 = organizationNameKey(name)
+  return existing.some((unit) => unit.id !== selfId && organizationNameKey(unit.name) === 비교할이름)
 }

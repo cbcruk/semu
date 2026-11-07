@@ -30,7 +30,7 @@ describeRuleFixture(
   CHANGED,
 )
 
-describe('foreigner employment insurance', () => {
+describe('외국인 고용보험', () => {
   const foreigner = (visaCode: string): EligibilityFacts => ({
     isForeigner: true,
     isRepresentativeOrExecutive: false,
@@ -38,25 +38,25 @@ describe('foreigner employment insurance', () => {
     visaCode,
   })
 
-  it('keeps an intra-company transferee enrolled and asks to check reciprocity', () => {
+  it('주재(D-7)는 가입을 유지하고 본국 상호주의 확인을 안내합니다', () => {
     const result = determineEligibility(foreigner('D-7'), DEFAULT_ENROLLMENT, '2026-06-01')
     expect(result.messages).toEqual(['EI_FOREIGNER_RECIPROCITY_CHECK'])
     expect(result.recommended.ei).toEqual({ enrolled: true })
   })
 
-  it('offers opt-in to a working holiday maker', () => {
+  it('관광취업(H-1)에는 신청 가입을 안내합니다', () => {
     const result = determineEligibility(foreigner('H-1'), DEFAULT_ENROLLMENT, '2026-06-01')
     expect(result.messages).toEqual(['EI_FOREIGNER_OPTIONAL'])
     expect(result.recommended.ei).toEqual({ enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' })
   })
 
-  it('leaves out a status that cannot opt in without guidance', () => {
+  it('신청할 수 없는 체류자격은 안내 없이 제외합니다', () => {
     const result = determineEligibility(foreigner('D-4'), DEFAULT_ENROLLMENT, '2026-06-01')
     expect(result.messages).toEqual([])
     expect(result.recommended.ei).toEqual({ enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' })
   })
 
-  it('leaves an overseas Korean out until they apply', () => {
+  it('재외동포(F-4)는 신청 전까지 제외합니다', () => {
     const result = determineEligibility(foreigner('F-4'), DEFAULT_ENROLLMENT, '2026-06-01')
     expect(result.messages).toEqual(['EI_FOREIGNER_OPTIONAL'])
     expect(result.recommended.ei).toEqual({ enrolled: false, exclusionReason: 'EXEMPT_FOREIGNER' })

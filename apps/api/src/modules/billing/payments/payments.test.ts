@@ -38,8 +38,8 @@ const layer = Payments.layer.pipe(
 const run = <A>(effect: Effect.Effect<A, never, Payments | PaymentRepository>): Promise<A> =>
   Effect.runPromise(Effect.provide(effect, layer))
 
-describe('Payments.scheduleMonth', () => {
-  it('creates one payment per billable subscription on the shifted billing day, once', async () => {
+describe('그달 결제 예정 만들기', () => {
+  it('청구할 구독마다 영업일로 미룬 출금일에 결제를 한 번만 만듭니다', async () => {
     const [first, second] = await run(
       Effect.gen(function* () {
         const payments = yield* Payments
@@ -57,15 +57,15 @@ describe('Payments.scheduleMonth', () => {
     expect(second).toEqual([])
   })
 
-  it('does not schedule a month already scheduled in the seed', async () => {
+  it('시드에 이미 예정된 달은 다시 만들지 않습니다', async () => {
     const created = await run(Effect.flatMap(Payments, (payments) => payments.scheduleMonth('2026-11')))
 
     expect(created.some((row) => row.subscriptionId === demoPayments()[0]?.subscriptionId)).toBe(false)
   })
 })
 
-describe('Payments.recordWithdrawal', () => {
-  it('settles a scheduled payment and ignores a repeated result', async () => {
+describe('출금 결과 반영', () => {
+  it('예정 결제를 완료하고 같은 결과가 다시 오면 무시합니다', async () => {
     const [paid, repeated] = await run(
       Effect.gen(function* () {
         const payments = yield* Payments
@@ -79,7 +79,7 @@ describe('Payments.recordWithdrawal', () => {
     expect(Option.getOrThrow(repeated)).toMatchObject({ status: 'PAID', version: 2 })
   })
 
-  it('records the failure reason', async () => {
+  it('실패 사유를 기록합니다', async () => {
     const failed = await run(
       Effect.flatMap(Payments, (payments) =>
         payments.recordWithdrawal(DEMO_PAYMENT_IDS.scheduled, { succeeded: false, failureReason: 'ACCOUNT_CLOSED' }),

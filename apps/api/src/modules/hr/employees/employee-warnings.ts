@@ -20,12 +20,12 @@ export function employeeWarnings(
 ): EmployeeWarningCode[] {
   const warnings: EmployeeWarningCode[] = []
   if (input.kind === 'WAGE' && !input.hasRegistrationNumber) warnings.push('MISSING_REGISTRATION_NUMBER')
-  const current = currentWorkContract(input.contracts, asOf)
-  const end = current?.endDate
-  if (input.status !== 'RESIGNED' && current?.contractType === 'FIXED_TERM' && end !== undefined) {
-    if (end < asOf) {
-      if (!isFollowedByLaterContract(current, input.contracts)) warnings.push('CONTRACT_EXPIRED')
-    } else if (end <= addDays(asOf, warningDays)) {
+  const 현재계약 = currentWorkContract(input.contracts, asOf)
+  const 계약종료일 = 현재계약?.endDate
+  if (input.status !== 'RESIGNED' && 현재계약?.contractType === 'FIXED_TERM' && 계약종료일 !== undefined) {
+    if (계약종료일 < asOf) {
+      if (!isFollowedByLaterContract(현재계약, input.contracts)) warnings.push('CONTRACT_EXPIRED')
+    } else if (계약종료일 <= addDays(asOf, warningDays)) {
       warnings.push('CONTRACT_EXPIRING_SOON')
     }
   }

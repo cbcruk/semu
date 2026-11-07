@@ -57,9 +57,9 @@ export const LEAVING_REASONS: ReadonlyArray<LeavingReason> = [
 
 /** 사유 코드가 있고, 상세 사유가 주어졌으면 그 사유에 속하는지입니다. */
 export function isValidLeavingReason(reasonCode: string, detailCode: string | undefined): boolean {
-  const parent = LEAVING_REASONS.find((candidate) => candidate.code === reasonCode)
-  if (parent === undefined) return false
-  return detailCode === undefined || parent.details.some((candidate) => candidate.code === detailCode)
+  const 상실사유 = LEAVING_REASONS.find((candidate) => candidate.code === reasonCode)
+  if (상실사유 === undefined) return false
+  return detailCode === undefined || 상실사유.details.some((candidate) => candidate.code === detailCode)
 }
 
 /** 퇴직금 중간정산 사유입니다(근로자퇴직급여 보장법 시행령 제3조). */

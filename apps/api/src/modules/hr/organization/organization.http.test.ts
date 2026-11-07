@@ -11,8 +11,8 @@ afterEach(async () => {
   await app.dispose()
 })
 
-describe('departments', () => {
-  it('creates, renames and lists in order', async () => {
+describe('부서·직위', () => {
+  it('만들고 이름을 바꾸고 순서대로 보여 줍니다', async () => {
     const first = await app.json('POST', '/departments', { body: { name: '개발팀' } })
     const second = await app.json('POST', '/departments', { body: { name: '경영지원팀' } })
 
@@ -30,7 +30,7 @@ describe('departments', () => {
     expect(list.body.items.map((unit: { name: string }) => unit.name)).toEqual(['플랫폼팀', '경영지원팀'])
   })
 
-  it('rejects a duplicate name after trimming', async () => {
+  it('앞뒤 공백을 뺀 이름이 겹치면 거부합니다', async () => {
     await app.json('POST', '/departments', { body: { name: '개발팀' } })
     const duplicate = await app.json('POST', '/departments', { body: { name: ' 개발팀 ' } })
 
@@ -38,7 +38,7 @@ describe('departments', () => {
     expect(duplicate.body).toMatchObject({ code: 'ORGANIZATION_NAME_TAKEN' })
   })
 
-  it('reorders with every id once', async () => {
+  it('모든 ID를 한 번씩 받아 순서를 바꿉니다', async () => {
     const a = await app.json('POST', '/positions', { body: { name: '사원' } })
     const b = await app.json('POST', '/positions', { body: { name: '대리' } })
 
@@ -49,7 +49,7 @@ describe('departments', () => {
     expect(partial.status).toBe(422)
   })
 
-  it('needs a plan', async () => {
+  it('플랜이 있어야 합니다', async () => {
     const response = await app.json('GET', '/departments', { token: 'no-plan' })
 
     expect(response.status).toBe(403)

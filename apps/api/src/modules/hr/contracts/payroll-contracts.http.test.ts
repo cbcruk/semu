@@ -27,8 +27,8 @@ const contract = {
   account: { bankCode: '004', accountNumber: '123-456-789012', accountHolder: '홍길동' },
 }
 
-describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
-  it('derives the base salary and masks the account number', async () => {
+describe('급여계약 등록(POST /v1/employees/{employeeId}/payroll-contracts)', () => {
+  it('기본급을 계산하고 계좌번호를 가립니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
 
@@ -49,7 +49,7 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
     expect(list.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id])
   })
 
-  it('saves a contract below the minimum wage with a warning', async () => {
+  it('최저임금에 못 미치는 계약도 경고와 함께 저장합니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, {
       body: { startDate: '2026-01-02', wageType: 'HOURLY', amount: 10_000, monthlyWorkHours: 209 },
@@ -59,7 +59,7 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
     expect(created.body).toMatchObject({ derived: { baseSalary: 2_090_000 }, warnings: ['BELOW_MINIMUM_WAGE'] })
   })
 
-  it('takes the probation pay rate from the work contract in force', async () => {
+  it('수습 지급률은 유효한 근로계약에서 가져옵니다', async () => {
     const employeeId = await hire()
     await app.json('POST', `/employees/${employeeId}/work-contracts`, {
       body: { contractType: 'PERMANENT', startDate: '2026-01-02', probation: { months: 3, payRatePpm: 900_000 } },
@@ -71,7 +71,7 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
     expect(created.body.derived.probationHourlyWage).toBe(12918.66)
   })
 
-  it('refuses employees that are not wage earners', async () => {
+  it('근로소득자가 아닌 직원은 거절합니다', async () => {
     const employeeId = await hire('BUSINESS')
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
 
@@ -79,7 +79,7 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
     expect(created.body).toMatchObject({ code: 'EMPLOYEE_KIND_NOT_SUPPORTED', kind: 'BUSINESS' })
   })
 
-  it('rejects an end date before the start', async () => {
+  it('시작일보다 앞선 종료일을 거부합니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, {
       body: { ...contract, endDate: '2025-12-31' },
@@ -92,7 +92,7 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
     })
   })
 
-  it('returns 404 for an unknown employee', async () => {
+  it('없는 직원이면 404입니다', async () => {
     const created = await app.json('POST', '/employees/emp_01JBQ0000000000000000000ZZ/payroll-contracts', {
       body: contract,
     })
@@ -101,8 +101,8 @@ describe('POST /v1/employees/{employeeId}/payroll-contracts', () => {
   })
 })
 
-describe('/v1/payroll-contracts/{payrollContractId}', () => {
-  it('gets with an ETag, replaces with If-Match and deletes', async () => {
+describe('급여계약(/v1/payroll-contracts/{payrollContractId})', () => {
+  it('ETag와 함께 조회하고 If-Match로 바꾸고 삭제합니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
     const path = `/payroll-contracts/${created.body.id}`
@@ -128,7 +128,7 @@ describe('/v1/payroll-contracts/{payrollContractId}', () => {
     expect((await app.json('GET', path)).body).toMatchObject({ code: 'PAYROLL_CONTRACT_NOT_FOUND' })
   })
 
-  it('reveals the account number with a reason and the permission', async () => {
+  it('사유와 권한이 있으면 계좌번호 전체를 보여 줍니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
     const path = `/payroll-contracts/${created.body.id}/account-number`
@@ -142,7 +142,7 @@ describe('/v1/payroll-contracts/{payrollContractId}', () => {
     expect(denied.body).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'employee:reveal-account' })
   })
 
-  it('lets a viewer read but not write', async () => {
+  it('조회 권한만 있으면 읽을 수만 있고 쓸 수 없습니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
 

@@ -1,8 +1,8 @@
 import { isCalendarDate } from '../../../shared/time/date-format.ts'
 import type { IdentityNumberType } from './identity-number.types.ts'
 
-const RRN_PATTERN = /^\d{6}-?\d{7}$/
-const PASSPORT_PATTERN = /^[A-Z0-9]{5,20}$/
+const 등록번호형식 = /^\d{6}-?\d{7}$/
+const 여권번호형식 = /^[A-Z0-9]{5,20}$/
 
 /**
  * 주민등록번호·외국인등록번호·여권번호를 저장·해시할 형태로 바꿉니다.
@@ -14,9 +14,9 @@ export function normalizeIdentityNumber(value: string, type: IdentityNumberType)
   const trimmed = value.trim()
   if (type === 'PASSPORT') {
     const upper = trimmed.toUpperCase()
-    return PASSPORT_PATTERN.test(upper) ? upper : null
+    return 여권번호형식.test(upper) ? upper : null
   }
-  if (!RRN_PATTERN.test(trimmed)) return null
+  if (!등록번호형식.test(trimmed)) return null
   const digits = trimmed.replace('-', '')
   return birthDateFromRegistrationNumber(digits) === null ? null : digits
 }
@@ -34,10 +34,10 @@ export function normalizeIdentityNumber(value: string, type: IdentityNumberType)
 export function birthDateFromRegistrationNumber(value: string): string | null {
   const digits = value.replace('-', '')
   if (!/^\d{13}$/.test(digits)) return null
-  const centuryDigit = Number(digits[6])
-  const century = [1, 2, 5, 6].includes(centuryDigit) ? 1900 : [3, 4, 7, 8].includes(centuryDigit) ? 2000 : 1800
-  const date = `${century + Number(digits.slice(0, 2))}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
-  return isCalendarDate(date) ? date : null
+  const 성별자리 = Number(digits[6])
+  const 출생세기 = [1, 2, 5, 6].includes(성별자리) ? 1900 : [3, 4, 7, 8].includes(성별자리) ? 2000 : 1800
+  const 생년월일 = `${출생세기 + Number(digits.slice(0, 2))}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
+  return isCalendarDate(생년월일) ? 생년월일 : null
 }
 
 /** 응답용 마스킹입니다. 등록번호는 `900101-1******`, 여권은 끝 3자리만 보입니다. */

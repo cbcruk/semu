@@ -10,7 +10,8 @@ import type {
 /** 감액한 최저임금을 적용할 수 있는 수습 개월 수입니다(최저임금법 제5조 ②: 수습 시작일부터 3개월 이내). */
 export const REDUCED_MINIMUM_WAGE_PROBATION_MONTHS = 3
 
-const OFF: FixedAllowanceInput = { enabled: false, hours: 0, amount: 0 }
+/** 입력에서 빠진 고정수당을 채우는 값입니다. 끈(`enabled: false`) 고정수당이라는 뜻으로 지은 이름입니다. */
+const 미사용고정수당: FixedAllowanceInput = { enabled: false, hours: 0, amount: 0 }
 
 /**
  * 급여계약을 검사하고 파생 금액(`docs/reference/rules/payroll-contract-wage.md`)을 계산합니다.
@@ -36,14 +37,14 @@ export function evaluatePayrollContract(
     probationMonths?: number | undefined
   },
 ): PayrollContractEvaluation {
-  const fixed = terms.fixedAllowances ?? {}
+  const 고정수당입력 = terms.fixedAllowances ?? {}
   const fixedAllowances: Record<FixedAllowanceKind, FixedAllowanceInput> = {
-    overtime: fixed.overtime ?? OFF,
-    night: fixed.night ?? OFF,
-    holiday: fixed.holiday ?? OFF,
-    holidayOvertime: fixed.holidayOvertime ?? OFF,
+    overtime: 고정수당입력.overtime ?? 미사용고정수당,
+    night: 고정수당입력.night ?? 미사용고정수당,
+    holiday: 고정수당입력.holiday ?? 미사용고정수당,
+    holidayOvertime: 고정수당입력.holidayOvertime ?? 미사용고정수당,
   }
-  const result = calculateWage({
+  const 파생금액 = calculateWage({
     wageType: terms.wageType,
     amount: terms.amount,
     monthlyWorkHours: terms.monthlyWorkHours,
@@ -59,19 +60,19 @@ export function evaluatePayrollContract(
   if (terms.endDate !== undefined && terms.endDate < terms.startDate) {
     violations.push({ field: 'endDate', code: 'END_BEFORE_START' })
   }
-  if (result.baseSalary < 0) violations.push({ field: 'amount', code: 'BASE_SALARY_NEGATIVE' })
-  const warnings: PayrollContractWarning[] = result.isBelowMinimumWage ? ['BELOW_MINIMUM_WAGE'] : []
-  const rate = context.probationPayRatePpm
+  if (파생금액.baseSalary < 0) violations.push({ field: 'amount', code: 'BASE_SALARY_NEGATIVE' })
+  const warnings: PayrollContractWarning[] = 파생금액.isBelowMinimumWage ? ['BELOW_MINIMUM_WAGE'] : []
+  const 수습지급률 = context.probationPayRatePpm
   if (
-    rate !== undefined &&
+    수습지급률 !== undefined &&
     (context.probationMonths ?? 0) > REDUCED_MINIMUM_WAGE_PROBATION_MONTHS &&
-    (result.minimumWageHourly * rate) / 1_000_000 < context.minimumHourlyWage
+    (파생금액.minimumWageHourly * 수습지급률) / 1_000_000 < context.minimumHourlyWage
   ) {
     warnings.push('PROBATION_BELOW_MINIMUM_WAGE')
   }
   return {
     violations,
-    derived: { ...result, statutoryMinimumHourlyWage: context.minimumHourlyWage },
+    derived: { ...파생금액, statutoryMinimumHourlyWage: context.minimumHourlyWage },
     warnings,
   }
 }

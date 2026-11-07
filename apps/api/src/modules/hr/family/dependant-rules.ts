@@ -13,13 +13,13 @@ export function countDependants(
   members: ReadonlyArray<{ relation: FamilyRelation; birthDate: string; yearEndTarget: boolean }>,
   asOf: string,
 ): DependantCounts {
-  const year = Number(asOf.slice(0, 4))
-  const targets = members.filter((member) => member.yearEndTarget && member.birthDate <= asOf)
-  const children = targets.filter((member) => {
-    const age = year - Number(member.birthDate.slice(0, 4))
-    return member.relation === 'CHILD' && age >= 8 && age <= 20
+  const 기준연도 = Number(asOf.slice(0, 4))
+  const 공제대상가족 = members.filter((member) => member.yearEndTarget && member.birthDate <= asOf)
+  const 자녀8세이상20세이하 = 공제대상가족.filter((member) => {
+    const 연나이 = 기준연도 - Number(member.birthDate.slice(0, 4))
+    return member.relation === 'CHILD' && 연나이 >= 8 && 연나이 <= 20
   })
-  return { dependantsCount: 1 + targets.length, childrenAged8To20Count: children.length }
+  return { dependantsCount: 1 + 공제대상가족.length, childrenAged8To20Count: 자녀8세이상20세이하.length }
 }
 
 /**
@@ -32,7 +32,7 @@ export function countDependants(
  * 태어나지 않았으면 대상이 아닙니다.
  */
 export function canBeTaxFreeTarget(member: { relation: FamilyRelation; birthDate: string }, asOf: string): boolean {
-  const isChild = member.relation === 'CHILD'
-  const ageByYear = Number(asOf.slice(0, 4)) - Number(member.birthDate.slice(0, 4))
-  return isChild && member.birthDate <= asOf && ageByYear <= TAX_FREE_CHILD_MAX_AGE
+  const 자녀인가 = member.relation === 'CHILD'
+  const 연나이 = Number(asOf.slice(0, 4)) - Number(member.birthDate.slice(0, 4))
+  return 자녀인가 && member.birthDate <= asOf && 연나이 <= TAX_FREE_CHILD_MAX_AGE
 }

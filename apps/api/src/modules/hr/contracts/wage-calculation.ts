@@ -8,7 +8,7 @@ import type { FixedAllowanceKind, WageInput, WageResult } from './wage-calculati
  */
 export const MINIMUM_HOURLY_WAGE_2026 = 10_320
 
-const FIXED_KINDS: ReadonlyArray<FixedAllowanceKind> = ['overtime', 'night', 'holiday', 'holidayOvertime']
+const 고정수당종류: ReadonlyArray<FixedAllowanceKind> = ['overtime', 'night', 'holiday', 'holidayOvertime']
 
 /**
  * 고정 수당 1시간에 곱하는 통상시급 배율입니다.
@@ -37,56 +37,56 @@ export const FIXED_ALLOWANCE_MULTIPLIER: Record<FixedAllowanceKind, number> = {
  * ```
  */
 export function calculateWage(input: WageInput): WageResult {
-  const enabled = input.paymentItems.filter((item) => item.enabled)
-  const itemsTotal = sum(enabled.map((item) => item.amount))
-  const ordinaryItems = sum(enabled.filter((item) => item.ordinaryWage !== false).map((item) => item.amount))
-  const minimumWageItems = sum(
-    enabled.filter((item) => item.countsTowardMinimumWage !== false).map((item) => item.amount),
+  const 켜진지급항목 = input.paymentItems.filter((item) => item.enabled)
+  const 지급항목합계 = sum(켜진지급항목.map((item) => item.amount))
+  const 통상임금항목합계 = sum(켜진지급항목.filter((item) => item.ordinaryWage !== false).map((item) => item.amount))
+  const 최저임금산입항목합계 = sum(
+    켜진지급항목.filter((item) => item.countsTowardMinimumWage !== false).map((item) => item.amount),
   )
-  const bonusMonthly = input.bonus?.inOrdinaryWage === true ? input.bonus.amount / 12 : 0
-  const hours = input.monthlyWorkHours
-  const fixed: Record<FixedAllowanceKind, number> = { overtime: 0, night: 0, holiday: 0, holidayOvertime: 0 }
+  const 월상여 = input.bonus?.inOrdinaryWage === true ? input.bonus.amount / 12 : 0
+  const 월소정근로시간 = input.monthlyWorkHours
+  const 고정수당: Record<FixedAllowanceKind, number> = { overtime: 0, night: 0, holiday: 0, holidayOvertime: 0 }
   let baseSalary: number
-  let ordinaryHourly: number
+  let 통상시급: number
   if (input.wageType === 'MONTHLY') {
     if (input.fixedAllowanceAutoCalc) {
-      const weightedHours = sum(
-        FIXED_KINDS.map((kind) =>
+      const 가산율적용고정시간 = sum(
+        고정수당종류.map((kind) =>
           input.fixedAllowances[kind].enabled
             ? input.fixedAllowances[kind].hours * FIXED_ALLOWANCE_MULTIPLIER[kind]
             : 0,
         ),
       )
-      ordinaryHourly = (input.amount - itemsTotal + ordinaryItems + bonusMonthly) / (hours + weightedHours)
-      for (const kind of FIXED_KINDS) {
-        const allowance = input.fixedAllowances[kind]
-        if (allowance.enabled)
-          fixed[kind] = Math.round(ordinaryHourly * allowance.hours * FIXED_ALLOWANCE_MULTIPLIER[kind])
+      통상시급 = (input.amount - 지급항목합계 + 통상임금항목합계 + 월상여) / (월소정근로시간 + 가산율적용고정시간)
+      for (const kind of 고정수당종류) {
+        const 고정수당설정 = input.fixedAllowances[kind]
+        if (고정수당설정.enabled)
+          고정수당[kind] = Math.round(통상시급 * 고정수당설정.hours * FIXED_ALLOWANCE_MULTIPLIER[kind])
       }
-      baseSalary = input.amount - itemsTotal - sum(Object.values(fixed))
+      baseSalary = input.amount - 지급항목합계 - sum(Object.values(고정수당))
     } else {
-      for (const kind of FIXED_KINDS)
-        if (input.fixedAllowances[kind].enabled) fixed[kind] = input.fixedAllowances[kind].amount
-      baseSalary = input.amount - itemsTotal - sum(Object.values(fixed))
-      ordinaryHourly = (baseSalary + ordinaryItems + bonusMonthly) / hours
+      for (const kind of 고정수당종류)
+        if (input.fixedAllowances[kind].enabled) 고정수당[kind] = input.fixedAllowances[kind].amount
+      baseSalary = input.amount - 지급항목합계 - sum(Object.values(고정수당))
+      통상시급 = (baseSalary + 통상임금항목합계 + 월상여) / 월소정근로시간
     }
   } else {
-    const hourly = input.wageType === 'HOURLY' ? input.amount : input.amount / (input.dailyWorkHours ?? 8)
-    baseSalary = Math.round(hourly * hours)
-    ordinaryHourly = hourly + (ordinaryItems + bonusMonthly) / hours
+    const 시급 = input.wageType === 'HOURLY' ? input.amount : input.amount / (input.dailyWorkHours ?? 8)
+    baseSalary = Math.round(시급 * 월소정근로시간)
+    통상시급 = 시급 + (통상임금항목합계 + 월상여) / 월소정근로시간
   }
-  const baseHourly = baseSalary / hours
-  const minimumWageHourly = (baseSalary + minimumWageItems) / hours
+  const 기준시급 = baseSalary / 월소정근로시간
+  const 최저임금시급 = (baseSalary + 최저임금산입항목합계) / 월소정근로시간
   return {
     baseSalary,
-    baseHourlyWage: round2(baseHourly),
-    ordinaryHourlyWage: round2(ordinaryHourly),
+    baseHourlyWage: round2(기준시급),
+    ordinaryHourlyWage: round2(통상시급),
     ...(input.probationPayRatePpm === undefined
       ? {}
-      : { probationHourlyWage: round2((baseHourly * input.probationPayRatePpm) / 1_000_000) }),
-    fixedAllowanceAmounts: fixed,
-    minimumWageHourly: round2(minimumWageHourly),
-    isBelowMinimumWage: minimumWageHourly < input.minimumHourlyWage,
+      : { probationHourlyWage: round2((기준시급 * input.probationPayRatePpm) / 1_000_000) }),
+    fixedAllowanceAmounts: 고정수당,
+    minimumWageHourly: round2(최저임금시급),
+    isBelowMinimumWage: 최저임금시급 < input.minimumHourlyWage,
   }
 }
 

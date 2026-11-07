@@ -12,8 +12,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('GET /v1/payments', () => {
-  it('lists payroll outsourcing payments newest first with a masked account', async () => {
+describe('결제 내역(GET /v1/payments)', () => {
+  it('급여 아웃소싱 결제를 최신순으로 계좌번호를 가려 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/payments', { token })
@@ -32,7 +32,7 @@ describe('GET /v1/payments', () => {
     expect(JSON.stringify(items)).not.toContain('TAXATION')
   })
 
-  it('pages with a cursor and filters by status', async () => {
+  it('커서로 페이지를 나누고 상태로 거릅니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const first = await (await app.request('GET', '/v1/payments?limit=2', { token })).json()
@@ -45,13 +45,13 @@ describe('GET /v1/payments', () => {
     expect(failed.items).toEqual([expect.objectContaining({ failureReason: 'INSUFFICIENT_BALANCE' })])
   })
 
-  it('hides a payment of a product not shown in the list', async () => {
+  it('결제 내역에 보여 주지 않는 상품의 결제는 숨깁니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     expect((await app.request('GET', `/v1/payments/${DEMO_PAYMENT_IDS.tax}`, { token })).status).toBe(404)
   })
 
-  it('needs payment:read', async () => {
+  it('payment:read 권한이 있어야 합니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     const response = await app.request('GET', '/v1/payments', { token })
@@ -61,8 +61,8 @@ describe('GET /v1/payments', () => {
   })
 })
 
-describe('agency payment commands', () => {
-  it('retries a failed payment on the next business day', async () => {
+describe('담당자의 결제 커맨드', () => {
+  it('실패한 결제를 다음 영업일에 재시도합니다', async () => {
     const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.corporation })
 
     const response = await app.request('POST', `/v1/payments/${DEMO_PAYMENT_IDS.failed}:retry`, {
@@ -77,7 +77,7 @@ describe('agency payment commands', () => {
     expect(body).not.toHaveProperty('failureReason')
   })
 
-  it('requires an idempotency key and rejects retrying a scheduled payment', async () => {
+  it('멱등 키를 요구하고 예정 결제의 재시도는 거부합니다', async () => {
     const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.corporation })
 
     const missingKey = await app.request('POST', `/v1/payments/${DEMO_PAYMENT_IDS.failed}:retry`, { token, body: {} })
@@ -92,7 +92,7 @@ describe('agency payment commands', () => {
     expect(await scheduled.json()).toMatchObject({ code: 'PAYMENT_TRANSITION_INVALID', currentStatus: 'SCHEDULED' })
   })
 
-  it('refunds a paid payment', async () => {
+  it('완료된 결제를 환불합니다', async () => {
     const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.corporation })
 
     const response = await app.request('POST', `/v1/payments/${DEMO_PAYMENT_IDS.paid}:refund`, {
@@ -103,7 +103,7 @@ describe('agency payment commands', () => {
     expect(await response.json()).toMatchObject({ status: 'REFUNDED', refundedAt: expect.any(String) })
   })
 
-  it('does not let a client admin retry', async () => {
+  it('고객사 관리자는 재시도할 수 없습니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', `/v1/payments/${DEMO_PAYMENT_IDS.failed}:retry`, {
