@@ -87,3 +87,5 @@ flowchart LR
 | [compliance.md](compliance.md) | 세법·개인정보 법적 요구가 설계에 주는 제약 |
 | [review.md](review.md) | 설계 검토: 현행 대비 매핑, 위험, 결정 필요 사항 |
 | [rule-decisions/](rule-decisions/README.md) | 현행 클라이언트 규칙의 열린 질문에 대한 서버 결정 (컨텍스트별) |
+| [glossary.md](glossary.md) | 학습용 업무 개념 용어집: 원천징수·4대보험·근로조건·퇴직금·신고·증빙의 뜻과 모델링 위치 |
+| [lifecycles.md](lifecycles.md) | 상태 전이 지도: 상태 다이어그램 색인과 컨텍스트를 가로지르는 업무 흐름 |
