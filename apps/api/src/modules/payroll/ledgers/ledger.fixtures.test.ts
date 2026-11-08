@@ -7,7 +7,7 @@ import type { LedgerStatus, LedgerTransition, LedgerTransitionContext } from './
 import { isPayMonthClosed } from './pay-month.ts'
 import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
-describe('rule fixture: payroll-ledger-transitions', () => {
+describe('규칙 픽스처: payroll-ledger-transitions', () => {
   type Input = LedgerTransitionContext & { transition: LedgerTransition }
   it.each(loadRuleCases<Input, Record<string, unknown>>('payroll-ledger-transitions'))(
     '$name',
@@ -18,7 +18,7 @@ describe('rule fixture: payroll-ledger-transitions', () => {
   )
 })
 
-describe('rule fixture: additional-payroll-ledger', () => {
+describe('규칙 픽스처: additional-payroll-ledger', () => {
   type Input = {
     attributionMonth: string
     paymentDate: string
@@ -34,7 +34,7 @@ describe('rule fixture: additional-payroll-ledger', () => {
   )
 })
 
-describe('rule fixture: duplicate-wage-income', () => {
+describe('규칙 픽스처: duplicate-wage-income', () => {
   type Input = {
     ledgerKind: 'REGULAR' | 'ADDITIONAL'
     existing: WageRowRef[]
@@ -51,7 +51,7 @@ describe('rule fixture: duplicate-wage-income', () => {
   })
 })
 
-describe('rule fixture: withholding-ledger-closed', () => {
+describe('규칙 픽스처: withholding-ledger-closed', () => {
   type Input = { paymentMonth: string; ledgers: { paymentDate: string; status: LedgerStatus }[] }
   it.each(loadRuleCases<Input, { closed: boolean }>('withholding-ledger-closed'))('$name', ({ input, expected }) => {
     const ledgers = input.ledgers.map(

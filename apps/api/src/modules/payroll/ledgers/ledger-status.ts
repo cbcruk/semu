@@ -9,7 +9,7 @@ import type {
   LedgerWorkflow,
 } from './ledger-status.types.ts'
 
-const BOTH: readonly ActorKind[] = ['CLIENT', 'AGENCY']
+const 고객사와대리인: readonly ActorKind[] = ['CLIENT', 'AGENCY']
 
 /**
  * 급여대장 전이표입니다. 상태를 바꾸는 규칙은 여기 한 곳에만 있습니다.
@@ -21,13 +21,13 @@ export const LEDGER_TRANSITIONS = {
   SUBMIT: {
     from: ['DRAFT'],
     to: 'SUBMITTED',
-    actors: { CLIENT_APPROVAL: BOTH, DIRECT_CLOSE: BOTH },
+    actors: { CLIENT_APPROVAL: 고객사와대리인, DIRECT_CLOSE: 고객사와대리인 },
     locksOnFiledWithholding: true,
   },
   RETURN_TO_DRAFT: {
     from: ['SUBMITTED'],
     to: 'DRAFT',
-    actors: { CLIENT_APPROVAL: ['AGENCY'], DIRECT_CLOSE: BOTH },
+    actors: { CLIENT_APPROVAL: ['AGENCY'], DIRECT_CLOSE: 고객사와대리인 },
     locksOnFiledWithholding: true,
   },
   REQUEST_APPROVAL: {
@@ -57,20 +57,20 @@ export const LEDGER_TRANSITIONS = {
   CLOSE: {
     from: ['DRAFT', 'SUBMITTED'],
     to: 'CLOSED',
-    actors: { DIRECT_CLOSE: BOTH },
+    actors: { DIRECT_CLOSE: 고객사와대리인 },
     locksOnFiledWithholding: false,
   },
   REOPEN: {
     from: ['CLOSED'],
     to: 'SUBMITTED',
-    actors: { CLIENT_APPROVAL: BOTH, DIRECT_CLOSE: BOTH },
+    actors: { CLIENT_APPROVAL: 고객사와대리인, DIRECT_CLOSE: 고객사와대리인 },
     locksOnFiledWithholding: true,
   },
 } as const satisfies Record<LedgerTransition, LedgerTransitionRule>
 
 /** 상태별로 입력(행 추가·수정·삭제, 대장 머리 수정)을 고칠 수 있는 행위자입니다. */
 export const INPUT_EDITORS: Readonly<Record<LedgerStatus, readonly ActorKind[]>> = {
-  DRAFT: BOTH,
+  DRAFT: 고객사와대리인,
   SUBMITTED: ['AGENCY'],
   PENDING_APPROVAL: [],
   CLOSED: [],
@@ -90,13 +90,13 @@ export function decideTransition(
   transition: LedgerTransition,
   context: LedgerTransitionContext,
 ): LedgerTransitionDecision {
-  const rule: LedgerTransitionRule = LEDGER_TRANSITIONS[transition]
-  const actors = rule.actors[context.workflow] ?? []
-  if (!rule.from.includes(context.status) || !actors.includes(context.actor)) {
+  const 전이규칙: LedgerTransitionRule = LEDGER_TRANSITIONS[transition]
+  const 허용행위자 = 전이규칙.actors[context.workflow] ?? []
+  if (!전이규칙.from.includes(context.status) || !허용행위자.includes(context.actor)) {
     return { ok: false, reason: 'TRANSITION_INVALID' }
   }
-  if (rule.locksOnFiledWithholding && context.withholdingFiled) return { ok: false, reason: 'WITHHOLDING_FILED' }
-  return { ok: true, to: rule.to }
+  if (전이규칙.locksOnFiledWithholding && context.withholdingFiled) return { ok: false, reason: 'WITHHOLDING_FILED' }
+  return { ok: true, to: 전이규칙.to }
 }
 
 /** 지금 상태에서 행위자가 입력을 고칠 수 있는지입니다. 신고 잠금은 따로 봅니다. */
@@ -123,15 +123,15 @@ export function countsAsCalculated(status: LedgerStatus): boolean {
  * 원천세 신고가 끝난 지급월이면 금액이 바뀌는 동작은 빠집니다.
  */
 export function allowedActions(context: LedgerTransitionContext): LedgerAction[] {
-  const actions: LedgerAction[] = []
+  const 가능동작: LedgerAction[] = []
   for (const transition of Object.keys(LEDGER_TRANSITIONS) as LedgerTransition[]) {
-    if (decideTransition(transition, context).ok) actions.push(transition)
+    if (decideTransition(transition, context).ok) 가능동작.push(transition)
   }
   if (canEditInput(context.status, context.actor) && !context.withholdingFiled) {
-    actions.push('EDIT_ROWS', 'RECALCULATE')
-    if (context.status === 'DRAFT') actions.push('DELETE')
+    가능동작.push('EDIT_ROWS', 'RECALCULATE')
+    if (context.status === 'DRAFT') 가능동작.push('DELETE')
   }
-  return actions
+  return 가능동작
 }
 
 /** 운영 방식에서 쓰이는 전이 목록입니다. 문서와 테스트에 씁니다. */

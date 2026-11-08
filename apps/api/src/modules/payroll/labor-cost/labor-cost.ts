@@ -4,7 +4,7 @@ import type { PayrollLedgerRecord } from '../ledgers/payroll-ledger.types.ts'
 import type { WithholdingIncomeKind } from '../ports/payroll-events.types.ts'
 import type { AmountsByKind, LaborCostMonth, LaborCostReport, LaborCostRow } from './labor-cost.types.ts'
 
-const KEY: Record<WithholdingIncomeKind, keyof AmountsByKind> = {
+const 소득구분키: Record<WithholdingIncomeKind, keyof AmountsByKind> = {
   WAGE: 'wage',
   DAILY: 'daily',
   BUSINESS: 'business',
@@ -46,8 +46,8 @@ export function buildLaborCost(
   year: number,
   employment: ReadonlyMap<string, { employed: number; joined: number; left: number }>,
 ): LaborCostReport {
-  const zero = (): AmountsByKind => ({ wage: 0, daily: 0, business: 0, other: 0 })
-  const yearPeople = {
+  const 빈금액 = (): AmountsByKind => ({ wage: 0, daily: 0, business: 0, other: 0 })
+  const 연간소득자 = {
     wage: new Set<string>(),
     daily: new Set<string>(),
     business: new Set<string>(),
@@ -55,8 +55,8 @@ export function buildLaborCost(
   }
   const months: LaborCostMonth[] = Array.from({ length: 12 }, (_, index) => {
     const month = `${year}-${String(index + 1).padStart(2, '0')}`
-    const amounts = zero()
-    const people = {
+    const amounts = 빈금액()
+    const 월소득자 = {
       wage: new Set<string>(),
       daily: new Set<string>(),
       business: new Set<string>(),
@@ -64,11 +64,11 @@ export function buildLaborCost(
     }
     let employerInsurance = 0
     for (const row of rows.filter((candidate) => candidate.attributionMonth === month)) {
-      const key = KEY[row.incomeKind]
-      amounts[key] += row.grossPay
+      const 금액키 = 소득구분키[row.incomeKind]
+      amounts[금액키] += row.grossPay
       employerInsurance += row.employerInsurance
-      people[key].add(row.payeeKey)
-      yearPeople[key].add(row.payeeKey)
+      월소득자[금액키].add(row.payeeKey)
+      연간소득자[금액키].add(row.payeeKey)
     }
     const total = amounts.wage + amounts.daily + amounts.business + amounts.other
     return {
@@ -78,15 +78,15 @@ export function buildLaborCost(
       employerInsurance,
       totalWithEmployerInsurance: total + employerInsurance,
       headcount: {
-        wage: people.wage.size,
-        daily: people.daily.size,
-        business: people.business.size,
-        other: people.other.size,
+        wage: 월소득자.wage.size,
+        daily: 월소득자.daily.size,
+        business: 월소득자.business.size,
+        other: 월소득자.other.size,
       },
       employment: employment.get(month) ?? { employed: 0, joined: 0, left: 0 },
     }
   })
-  const sumOf = (pick: (month: LaborCostMonth) => number) => months.reduce((sum, month) => sum + pick(month), 0)
+  const 연합계 = (pick: (month: LaborCostMonth) => number) => months.reduce((sum, month) => sum + pick(month), 0)
   const updatedAt = rows.reduce<string | null>(
     (latest, row) =>
       row.calculatedAt !== null && (latest === null || row.calculatedAt > latest) ? row.calculatedAt : latest,
@@ -98,19 +98,19 @@ export function buildLaborCost(
     months,
     totals: {
       amounts: {
-        wage: sumOf((month) => month.amounts.wage),
-        daily: sumOf((month) => month.amounts.daily),
-        business: sumOf((month) => month.amounts.business),
-        other: sumOf((month) => month.amounts.other),
+        wage: 연합계((month) => month.amounts.wage),
+        daily: 연합계((month) => month.amounts.daily),
+        business: 연합계((month) => month.amounts.business),
+        other: 연합계((month) => month.amounts.other),
       },
-      total: sumOf((month) => month.total),
-      employerInsurance: sumOf((month) => month.employerInsurance),
-      totalWithEmployerInsurance: sumOf((month) => month.totalWithEmployerInsurance),
+      total: 연합계((month) => month.total),
+      employerInsurance: 연합계((month) => month.employerInsurance),
+      totalWithEmployerInsurance: 연합계((month) => month.totalWithEmployerInsurance),
       headcount: {
-        wage: yearPeople.wage.size,
-        daily: yearPeople.daily.size,
-        business: yearPeople.business.size,
-        other: yearPeople.other.size,
+        wage: 연간소득자.wage.size,
+        daily: 연간소득자.daily.size,
+        business: 연간소득자.business.size,
+        other: 연간소득자.other.size,
       },
     },
     updatedAt,

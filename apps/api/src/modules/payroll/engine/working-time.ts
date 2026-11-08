@@ -47,9 +47,9 @@ export function weeklyRestMinutes(
   options: { method?: WeeklyRestMethod; workDaysPerWeek?: number } = {},
 ): number {
   if (weeklyMinutes < 15 * 60) return 0
-  const raw =
+  const 상한전주휴분 =
     options.method === 'PER_DAY' ? weeklyMinutes / Math.max(1, options.workDaysPerWeek ?? 5) : weeklyMinutes / 5
-  return Math.round(Math.min(8 * 60, raw))
+  return Math.round(Math.min(8 * 60, 상한전주휴분))
 }
 
 /**
@@ -101,8 +101,8 @@ export function payForMinutes(rate: WageRate, minutes: number): number {
  */
 export function prorate(amount: number, proration: ProrationInput): number {
   if (proration.totalDays <= 0) return amount
-  const days = Math.min(Math.max(0, proration.payableDays), proration.totalDays)
-  return mulDiv(amount, days, proration.totalDays)
+  const 지급일수 = Math.min(Math.max(0, proration.payableDays), proration.totalDays)
+  return mulDiv(amount, 지급일수, proration.totalDays)
 }
 
 /** 시급제·일급제의 주휴수당입니다. `통상시급 × 1일 주휴시간 × 개근 주 수`입니다. */

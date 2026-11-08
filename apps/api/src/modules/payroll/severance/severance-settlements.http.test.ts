@@ -30,7 +30,7 @@ afterAll(() => app.dispose())
 describe('/severance-settlements', () => {
   let settlementId = ''
 
-  it('calculates severance pay with the legacy-verified amounts', async () => {
+  it('퇴직금을 현행 서비스로 확인한 금액대로 계산합니다', async () => {
     const response = await app.request('POST', '/severance-settlements', {
       body: { employeeId: LEAVER, input: { threeMonthWages: 9_000_000 } },
     })
@@ -53,7 +53,7 @@ describe('/severance-settlements', () => {
     settlementId = response.body.id
   })
 
-  it('refuses a second settlement for the same leave', async () => {
+  it('같은 퇴사에 두 번째 정산은 거절합니다', async () => {
     const response = await app.request('POST', '/severance-settlements', {
       body: { employeeId: LEAVER, input: { threeMonthWages: 9_000_000 } },
     })
@@ -62,7 +62,7 @@ describe('/severance-settlements', () => {
     expect(response.body).toMatchObject({ code: 'SEVERANCE_SETTLEMENT_EXISTS', settlementId })
   })
 
-  it('refuses employees who have not left or are on a pension plan', async () => {
+  it('퇴사하지 않았거나 퇴직연금에 가입한 직원은 거절합니다', async () => {
     const stayer = await app.request('POST', '/severance-settlements', {
       body: { employeeId: STAYER, input: { threeMonthWages: 9_000_000 } },
     })
@@ -74,7 +74,7 @@ describe('/severance-settlements', () => {
     expect(pension.body).toMatchObject({ code: 'SEVERANCE_NOT_APPLICABLE', reason: 'NOT_SEVERANCE_PAY_PLAN' })
   })
 
-  it('completes and then refuses input changes until reopened', async () => {
+  it('완료하면 다시 열 때까지 입력 변경을 거절합니다', async () => {
     const completed = await app.request('POST', `/severance-settlements/${settlementId}:complete`, {
       headers: { 'if-match': '"1"' },
     })
@@ -92,7 +92,7 @@ describe('/severance-settlements', () => {
   })
 })
 
-describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지급월)', () => {
+describe('/severance-settlements 지급일 (원천세 퇴직소득 A21의 지급월)', () => {
   const OCTOBER_LEAVER = 'emp_01JBQ000000000000000000021' as Id<'employee'>
   const NOVEMBER_LEAVER = 'emp_01JBQ000000000000000000022' as Id<'employee'>
   const EARLY_LEAVER = 'emp_01JBQ000000000000000000023' as Id<'employee'>
@@ -150,7 +150,7 @@ describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지�
   const dates = (body: { items: Array<{ paymentDate: string | null }> }) =>
     body.items.map((item) => item.paymentDate).sort()
 
-  it('refuses a payment date before the last work date or not a real date', async () => {
+  it('마지막 근무일보다 앞서거나 없는 날짜인 지급일은 거절합니다', async () => {
     const early = await create(EARLY_LEAVER, '2026-10-30')
     expect(early.status).toBe(422)
     expect(early.body).toMatchObject({ code: 'SEVERANCE_PAYMENT_DATE_INVALID', lastWorkDate: '2026-10-31' })
@@ -164,7 +164,7 @@ describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지�
     expect(sameDay.body.paymentDate).toBe('2026-10-31')
   })
 
-  it('stores the payment date, changes or clears it while calculated, and fills the last work date on completion', async () => {
+  it('지급일을 저장하고 계산 상태에서는 바꾸거나 지울 수 있으며 완료할 때 마지막 근무일로 채웁니다', async () => {
     const created = await create(OCTOBER_LEAVER)
     expect(created.status).toBe(201)
     expect(created.body.paymentDate).toBeNull()
@@ -205,7 +205,7 @@ describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지�
     expect(again.body).toMatchObject({ status: 'COMPLETED', paymentDate: '2026-11-10' })
   })
 
-  it('lists by payment month together with the state, leaving out settlements without a payment date', async () => {
+  it('지급월과 상태로 목록을 보여 주고 지급일이 없는 정산은 뺍니다', async () => {
     const calculated = await create(NOVEMBER_LEAVER, '2026-11-25')
     expect(calculated.status).toBe(201)
 
@@ -226,7 +226,7 @@ describe('/severance-settlements paymentDate (원천세 퇴직소득 A21의 지�
     expect(invalid.status).toBe(400)
   })
 
-  it('keeps reading a settlement saved before paymentDate and leaves it out of every payment month', async () => {
+  it('paymentDate 도입 전에 저장한 정산도 읽되 어느 지급월 목록에도 넣지 않습니다', async () => {
     const read = await dated.request('GET', `/severance-settlements/${LEGACY_ID}`)
     expect(read.status).toBe(200)
     expect(read.body).toMatchObject({ status: 'COMPLETED', paymentDate: null, allowedActions: ['REOPEN'] })

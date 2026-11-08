@@ -13,7 +13,7 @@ const app = payrollTestApp(
 afterAll(() => app.dispose())
 
 describe('/payroll-settings', () => {
-  it('starts from the legacy defaults', async () => {
+  it('현행 서비스의 기본값에서 시작합니다', async () => {
     const response = await app.request('GET', '/payroll-settings')
 
     expect(response.status).toBe(200)
@@ -28,7 +28,7 @@ describe('/payroll-settings', () => {
     })
   })
 
-  it('resets multipliers when the company size changes', async () => {
+  it('사업장 규모가 바뀌면 수당 지급배수를 기본값으로 되돌립니다', async () => {
     const response = await app.request('PATCH', '/payroll-settings', {
       headers: { 'if-match': '"0"' },
       body: { underFiveEmployees: true, paymentMonth: 'NEXT' },
@@ -44,7 +44,7 @@ describe('/payroll-settings', () => {
     })
   })
 
-  it('rejects a stale version', async () => {
+  it('오래된 버전은 거절합니다', async () => {
     const response = await app.request('PATCH', '/payroll-settings', {
       headers: { 'if-match': '"0"' },
       body: { paymentDay: 10 },
@@ -54,14 +54,14 @@ describe('/payroll-settings', () => {
     expect(response.body).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 1 })
   })
 
-  it('needs the payroll plan', async () => {
+  it('급여 요금제가 있어야 합니다', async () => {
     const response = await app.request('GET', '/payroll-settings', { token: 'no-plan' })
 
     expect(response.status).toBe(403)
     expect(response.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['PAYROLL'] })
   })
 
-  it('needs a separate permission to change the workflow', async () => {
+  it('운영 방식을 바꾸려면 별도 권한이 있어야 합니다', async () => {
     const response = await app.request('PATCH', '/payroll-settings', {
       token: 'reader',
       body: { workflow: 'CLIENT_APPROVAL' },

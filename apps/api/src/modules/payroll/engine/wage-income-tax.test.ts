@@ -19,7 +19,7 @@ const ONE_DEPENDANT = {
 } as const
 
 describe('annualSimpleTaxSteps', () => {
-  it('follows the annual formula step by step for 3,000,000 won and one dependant', () => {
+  it('월 3,000,000원·공제대상가족 1명은 연간 산식을 단계별로 따릅니다', () => {
     expect(annualSimpleTaxSteps(3_000_000, 1, rates)).toEqual({
       annualPay: 36_000_000,
       earnedIncomeDeduction: 10_650_000,
@@ -47,7 +47,7 @@ describe('calculateWageIncomeTax', () => {
     local: number
   }[] = [
     {
-      label: 'exact 3,000,000: 709,000 ÷ 12 = 59,083 → 59,080; local 5,908 → 5,900',
+      label: '정확히 3,000,000: 709,000 ÷ 12 = 59,083 → 59,080, 지방소득세 5,908 → 5,900',
       pay: 3_000_000,
       dependants: 1,
       children: 0,
@@ -57,7 +57,7 @@ describe('calculateWageIncomeTax', () => {
       local: 5_900,
     },
     {
-      label: 'midpoint 3,000,000 (row 3,000,000–3,020,000 → 3,010,000): 724,585 ÷ 12 = 60,382 → 60,380',
+      label: '구간 중간값 3,000,000 (3,000,000–3,020,000 구간 → 3,010,000): 724,585 ÷ 12 = 60,382 → 60,380',
       pay: 3_000_000,
       dependants: 1,
       children: 0,
@@ -67,7 +67,7 @@ describe('calculateWageIncomeTax', () => {
       local: 6_030,
     },
     {
-      label: 'exact 3,000,000 at 80%: 59,080 × 80% = 47,264 → 47,260',
+      label: '정확히 3,000,000, 80% 선택: 59,080 × 80% = 47,264 → 47,260',
       pay: 3_000_000,
       dependants: 1,
       children: 0,
@@ -77,7 +77,7 @@ describe('calculateWageIncomeTax', () => {
       local: 4_720,
     },
     {
-      label: 'exact 3,000,000 at 120%: 59,080 × 120% = 70,896 → 70,890',
+      label: '정확히 3,000,000, 120% 선택: 59,080 × 120% = 70,896 → 70,890',
       pay: 3_000_000,
       dependants: 1,
       children: 0,
@@ -87,7 +87,7 @@ describe('calculateWageIncomeTax', () => {
       local: 7_080,
     },
     {
-      label: 'exact 3,000,000, two dependants, one child: 42,187 → 42,180 − 12,500 = 29,680',
+      label: '정확히 3,000,000, 공제대상가족 2명·자녀 1명: 42,187 → 42,180 − 12,500 = 29,680',
       pay: 3_000_000,
       dependants: 2,
       children: 1,
@@ -97,7 +97,7 @@ describe('calculateWageIncomeTax', () => {
       local: 2_960,
     },
     {
-      label: 'below the first table row (770,000) nothing is withheld',
+      label: '간이세액표 첫 구간(770,000) 미만이면 원천징수하지 않음',
       pay: 700_000,
       dependants: 1,
       children: 0,
@@ -118,7 +118,7 @@ describe('calculateWageIncomeTax', () => {
     expect([result.incomeTax, result.localIncomeTax]).toEqual([tax, local])
   })
 
-  it('adds the over-10,000,000 formula on top of the tax at 10,000,000', () => {
+  it('10,000,000원 초과분은 10,000,000원의 세액에 초과 산식을 더합니다', () => {
     const atThreshold = EXACT_FORMULA.monthlyTax(
       { monthlyTaxablePay: 10_000_000, dependants: 1, childrenAged8To20: 0 },
       rates,
@@ -131,7 +131,7 @@ describe('calculateWageIncomeTax', () => {
     expect(above - atThreshold).toBe(25_000 + 2_000_000 * 0.343)
   })
 
-  it('honours manual input and none', () => {
+  it('직접 입력과 미적용을 따릅니다', () => {
     const manual = calculateWageIncomeTax(
       3_000_000,
       { ...ONE_DEPENDANT, method: 'MANUAL', manualAmount: 50_000 },
@@ -145,7 +145,7 @@ describe('calculateWageIncomeTax', () => {
     ).toBe(0)
   })
 
-  it('applies the 중소기업 감면 before the withholding ratio, capped by the remaining limit', () => {
+  it('중소기업 감면을 원천징수 비율보다 먼저, 남은 한도 안에서 적용합니다', () => {
     const reduced = calculateWageIncomeTax(
       3_000_000,
       { ...ONE_DEPENDANT, reduction: { ratePpm: 900_000, remainingAnnualLimit: 10_000 } },
@@ -157,8 +157,8 @@ describe('calculateWageIncomeTax', () => {
   })
 })
 
-describe('simple tax tables', () => {
-  it('lets an official table replace the formula', () => {
+describe('간이세액표', () => {
+  it('공식 간이세액표가 있으면 산식 대신 씁니다', () => {
     const strategy = lookupSimpleTaxTable(
       [{ min: 3_000_000, max: 3_020_000, taxes: [74_350, 56_850] }],
       MIDPOINT_FORMULA,
@@ -176,7 +176,7 @@ describe('simple tax tables', () => {
     )
   })
 
-  it('generates rows with the official band widths and non-increasing tax by dependants', () => {
+  it('공식 구간 너비로 행을 만들고 공제대상가족이 늘면 세액이 늘지 않습니다', () => {
     const rows = generateSimpleTaxTable(rates)
     const row = rows.find((candidate) => candidate.min === 3_000_000)
 

@@ -28,7 +28,7 @@ const ONE_DEPENDANT: WageIncomeTaxSetting = {
   withholdingRatePpm: 1_000_000,
 }
 
-describe('rule fixture: social-insurance-premiums', () => {
+describe('규칙 픽스처: social-insurance-premiums', () => {
   it.each(loadRuleCases<{ insurablePay: number }, Record<string, number>>('social-insurance-premiums'))(
     '$name',
     ({ input, expected }) => {
@@ -38,7 +38,7 @@ describe('rule fixture: social-insurance-premiums', () => {
   )
 })
 
-describe('rule fixture: simple-income-tax', () => {
+describe('규칙 픽스처: simple-income-tax', () => {
   type Input = {
     monthlyTaxablePay: number
     dependants: number
@@ -65,7 +65,7 @@ describe('rule fixture: simple-income-tax', () => {
   )
 })
 
-describe('rule fixture: daily-worker-withholding', () => {
+describe('규칙 픽스처: daily-worker-withholding', () => {
   it.each(loadRuleCases<{ payAmount: number; workDays: number }, Record<string, number>>('daily-worker-withholding'))(
     '$name',
     ({ input, expected }) => {
@@ -83,7 +83,7 @@ describe('rule fixture: daily-worker-withholding', () => {
   )
 })
 
-describe('rule fixture: business-income-withholding', () => {
+describe('규칙 픽스처: business-income-withholding', () => {
   type Input = { payAmount: number; taxDeductionMode?: 'BEFORE_TAX' | 'AFTER_TAX'; artistEmploymentInsurance?: boolean }
   it.each(loadRuleCases<Input, Record<string, number>>('business-income-withholding'))(
     '$name',
@@ -109,7 +109,7 @@ describe('rule fixture: business-income-withholding', () => {
   )
 })
 
-describe('rule fixture: other-income-withholding', () => {
+describe('규칙 픽스처: other-income-withholding', () => {
   it.each(
     loadRuleCases<{ payAmount: number; expenseRatePpm: number }, Record<string, number>>('other-income-withholding'),
   )('$name', ({ input, expected }) => {
@@ -126,7 +126,7 @@ describe('rule fixture: other-income-withholding', () => {
   })
 })
 
-describe('rule fixture: non-taxable-limits', () => {
+describe('규칙 픽스처: non-taxable-limits', () => {
   type Input = { category: NonTaxableCategory; amount: number; companyNonTaxableLimit?: number }
   it.each(loadRuleCases<Input, { nonTaxableAmount: number; taxableAmount: number }>('non-taxable-limits'))(
     '$name',
@@ -150,7 +150,7 @@ describe('rule fixture: non-taxable-limits', () => {
   )
 })
 
-describe('rule fixture: overtime-multipliers', () => {
+describe('규칙 픽스처: overtime-multipliers', () => {
   type Input = Record<string, unknown> & { multipliers: 'FIVE_OR_MORE' | 'UNDER_FIVE' }
   it.each(
     loadRuleCases<Input, { payments: Record<string, number>; grossPay: number; employmentInsurance?: number }>(
@@ -176,7 +176,7 @@ describe('rule fixture: overtime-multipliers', () => {
   })
 })
 
-describe('rule fixture: wage-proration', () => {
+describe('규칙 픽스처: wage-proration', () => {
   type Input = { amount: number; payableDays: number; totalDays: number }
   it.each(loadRuleCases<Input, { amount: number }>('wage-proration'))('$name', ({ input, expected }) => {
     expect(
@@ -185,7 +185,7 @@ describe('rule fixture: wage-proration', () => {
   })
 })
 
-describe('rule fixture: minimum-wage-warning', () => {
+describe('규칙 픽스처: minimum-wage-warning', () => {
   it.each(loadRuleCases<{ basePay: number }, { warnings: string[] }>('minimum-wage-warning'))(
     '$name',
     ({ input, expected }) => {
@@ -207,7 +207,7 @@ describe('rule fixture: minimum-wage-warning', () => {
   )
 })
 
-describe('rule fixture: severance-pay', () => {
+describe('규칙 픽스처: severance-pay', () => {
   it.each(loadRuleCases<SeveranceInput, Record<string, unknown>>('severance-pay'))('$name', ({ input, expected }) => {
     expect(calculateSeverancePay(input, rates)).toMatchObject(expected)
   })

@@ -6,7 +6,7 @@ const app = payrollTestApp()
 afterAll(() => app.dispose())
 
 describe('/rate-tables', () => {
-  it('lists the built-in tables with unverified paths', async () => {
+  it('내장 기준표를 미확인 값 경로와 함께 보여 줍니다', async () => {
     const response = await app.request('GET', '/rate-tables')
 
     expect(response.status).toBe(200)
@@ -27,20 +27,20 @@ describe('/rate-tables', () => {
     expect(response.body.items[3].unverifiedPaths).not.toContain('longTermCare.ratioOfHealthPpm')
   })
 
-  it('resolves the table in force in a month', async () => {
+  it('그달 시행 중인 기준표를 고릅니다', async () => {
     const response = await app.request('GET', '/rate-tables?month=2026-09')
 
     expect(response.body.items.map((item: { effectiveFrom: string }) => item.effectiveFrom)).toEqual(['2026-07'])
   })
 
-  it('answers 422 for a month before every table', async () => {
+  it('모든 기준표보다 앞선 달이면 422로 답합니다', async () => {
     const response = await app.request('GET', '/rate-tables?month=2020-01')
 
     expect(response.status).toBe(422)
     expect(response.body).toMatchObject({ code: 'RATE_TABLE_NOT_FOUND', month: '2020-01' })
   })
 
-  it('lists other income codes with expense rates from the statement form', async () => {
+  it('지급명세서 서식의 기타소득 코드를 필요경비율과 함께 보여 줍니다', async () => {
     const response = await app.request('GET', '/payroll-reference-codes?month=2026-03')
     const other = (code: string) => response.body.otherIncome.find((entry: { code: string }) => entry.code === code)
 
@@ -51,7 +51,7 @@ describe('/rate-tables', () => {
     expect(other('63')).toMatchObject({ taxRatePpm: 150_000 })
   })
 
-  it('lists the 40 business income codes from the statement form', async () => {
+  it('지급명세서 서식의 사업소득 코드 40개를 보여 줍니다', async () => {
     const response = await app.request('GET', '/payroll-reference-codes?month=2026-03')
 
     expect(response.body.businessIncome).toHaveLength(40)
@@ -63,7 +63,7 @@ describe('/rate-tables', () => {
 })
 
 describe('/payroll-calculator:simulate', () => {
-  it('calculates a monthly wage row with the legacy-verified amounts', async () => {
+  it('월급제 근로소득 행을 현행 서비스로 확인한 금액대로 계산합니다', async () => {
     const response = await app.request('POST', '/payroll-calculator:simulate', {
       body: {
         attributionMonth: '2026-03',
@@ -91,7 +91,7 @@ describe('/payroll-calculator:simulate', () => {
     })
   })
 
-  it('applies the childcare limit per child and bounds the child count', async () => {
+  it('보육수당 한도를 자녀 1명당 적용하고 자녀 수의 범위를 제한합니다', async () => {
     const employee = {
       dependants: 1,
       childrenAged8To20: 0,
@@ -119,7 +119,7 @@ describe('/payroll-calculator:simulate', () => {
     expect((await simulate(-1)).status).toBe(400)
   })
 
-  it('grosses up a business payment from the net amount', async () => {
+  it('사업소득 지급액을 실지급액에서 역산합니다', async () => {
     const response = await app.request('POST', '/payroll-calculator:simulate', {
       body: {
         attributionMonth: '2026-03',

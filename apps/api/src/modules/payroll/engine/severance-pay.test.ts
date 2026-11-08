@@ -5,7 +5,7 @@ import { addMonthsToDate, averageWagePeriodDays, calculateSeverancePay } from '.
 const rates = RATES_2026_01
 
 describe('calculateSeverancePay', () => {
-  it('pays 30 days of average wage per year of service and withholds retirement income tax', () => {
+  it('계속근로 1년마다 평균임금 30일분을 주고 퇴직소득세를 원천징수합니다', () => {
     const result = calculateSeverancePay(
       { joinDate: '2024-01-01', lastWorkDate: '2026-10-31', threeMonthWages: 9_000_000 },
       rates,
@@ -22,7 +22,7 @@ describe('calculateSeverancePay', () => {
     })
   })
 
-  it('uses the ordinary daily wage when it is higher', () => {
+  it('통상임금 일액이 더 많으면 그것을 평균임금으로 씁니다', () => {
     const result = calculateSeverancePay(
       { joinDate: '2025-01-01', lastWorkDate: '2025-12-31', threeMonthWages: 6_000_000, ordinaryDailyWage: 100_000 },
       rates,
@@ -31,7 +31,7 @@ describe('calculateSeverancePay', () => {
     expect(result).toMatchObject({ usedOrdinaryWage: true, serviceDays: 365, severancePay: 3_000_000 })
   })
 
-  it('refuses service under a year', () => {
+  it('계속근로 1년 미만이면 거절합니다', () => {
     const result = calculateSeverancePay(
       { joinDate: '2025-01-02', lastWorkDate: '2025-12-31', threeMonthWages: 9_000_000 },
       rates,
@@ -42,11 +42,11 @@ describe('calculateSeverancePay', () => {
 })
 
 describe('averageWagePeriodDays', () => {
-  it('counts the three calendar months before the day after the last work day', () => {
+  it('마지막 근무일 다음 날 이전 3개월의 역일수를 셉니다', () => {
     expect(averageWagePeriodDays('2026-10-31')).toBe(92)
   })
 
-  it('clamps to the last day of a shorter month', () => {
+  it('짧은 달이면 그달 말일로 맞춥니다', () => {
     expect(addMonthsToDate('2026-05-31', -3)).toBe('2026-02-28')
   })
 })

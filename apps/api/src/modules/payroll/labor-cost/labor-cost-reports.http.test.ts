@@ -29,7 +29,7 @@ beforeAll(async () => {
 })
 
 describe('/labor-cost-reports', () => {
-  it('sums submitted ledgers by attribution month and skips drafts', async () => {
+  it('제출한 급여대장을 귀속월별로 합하고 입력가능 대장은 뺍니다', async () => {
     const response = await app.request('GET', '/labor-cost-reports/2026')
 
     expect(response.status).toBe(200)
@@ -44,13 +44,13 @@ describe('/labor-cost-reports', () => {
     expect(response.body.months[4].total).toBe(0)
   })
 
-  it('adds the HR employment trend', async () => {
+  it('인사의 고용 추이를 함께 보여 줍니다', async () => {
     const response = await app.request('GET', '/labor-cost-reports/2026')
 
     expect(response.body.months[3].employment).toEqual({ employed: 2, joined: 1, left: 0 })
   })
 
-  it('is open to taxation-only companies', async () => {
+  it('세무 요금제만 있는 회사에도 엽니다', async () => {
     const response = await app.request('GET', '/labor-cost-reports/2026', { token: 'tax-only' })
 
     expect(response.status).toBe(200)

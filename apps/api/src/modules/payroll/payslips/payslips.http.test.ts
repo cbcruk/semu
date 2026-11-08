@@ -23,13 +23,13 @@ beforeAll(async () => {
 })
 
 describe('/payslips', () => {
-  it('shows nothing until the ledger is closed', async () => {
+  it('급여대장을 마감하기 전에는 아무것도 보여 주지 않습니다', async () => {
     const response = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
 
     expect(response.body.items).toEqual([])
   })
 
-  it('lists one payslip per row of a closed ledger', async () => {
+  it('마감한 급여대장의 행마다 급여명세서를 하나씩 보여 줍니다', async () => {
     await app.request('POST', `/payroll-ledgers/${ledgerId}:close`)
     const response = await app.request('GET', '/payslips?paymentMonth=2026-03')
 
@@ -44,7 +44,7 @@ describe('/payslips', () => {
     })
   })
 
-  it('requires an Idempotency-Key to send', async () => {
+  it('보내려면 Idempotency-Key가 있어야 합니다', async () => {
     const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
     const response = await app.request('POST', '/payslips:send', {
       body: { payslipIds: list.body.items.map((item: { id: string }) => item.id) },
@@ -54,7 +54,7 @@ describe('/payslips', () => {
     expect(response.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' })
   })
 
-  it('sends by email and fails payees without an address', async () => {
+  it('이메일로 보내고 주소가 없는 수령인은 실패로 둡니다', async () => {
     const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
     const ids = list.body.items.map((item: { id: string }) => item.id)
     const first = await app.request('POST', '/payslips:send', {
@@ -83,7 +83,7 @@ describe('/payslips', () => {
     expect(detail.body.delivery).toMatchObject({ status: 'SENT', attempts: 1 })
   })
 
-  it('keeps the ledger closed after sending', async () => {
+  it('보낸 뒤에도 급여대장은 마감 상태입니다', async () => {
     const response = await app.request('GET', `/payroll-ledgers/${ledgerId}`)
 
     expect(response.body.status).toBe('CLOSED')

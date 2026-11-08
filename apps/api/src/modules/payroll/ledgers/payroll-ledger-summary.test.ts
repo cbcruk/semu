@@ -8,7 +8,7 @@ function ledger(paymentDate: string, status: LedgerStatus): PayrollLedgerRecord 
 }
 
 describe('countLedgersPaidBetween', () => {
-  it('counts ledgers paid inside the range, both ends included', () => {
+  it('기간 안에 지급한 급여대장을 셉니다(시작일·종료일 포함)', () => {
     const ledgers = [
       ledger('2026-02-01', 'CLOSED'),
       ledger('2026-02-25', 'PENDING_APPROVAL'),
@@ -18,7 +18,7 @@ describe('countLedgersPaidBetween', () => {
     expect(countLedgersPaidBetween(ledgers, '2026-02-01', '2026-02-28')).toEqual({ ledgerCount: 3, closedCount: 2 })
   })
 
-  it('is empty when nothing is paid in the range', () => {
+  it('기간 안에 지급한 대장이 없으면 비어 있습니다', () => {
     expect(countLedgersPaidBetween([ledger('2026-01-25', 'CLOSED')], '2026-02-01', '2026-02-28')).toEqual({
       ledgerCount: 0,
       closedCount: 0,

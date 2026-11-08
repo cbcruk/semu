@@ -113,8 +113,8 @@ function send(app: PayrollTestApp, key: string, payslipIds: string[], token?: st
   return app.request('POST', '/payslips:send', { idempotencyKey: key, body: { payslipIds }, token })
 }
 
-describe('POST /payslips:send idempotency', () => {
-  it('sends once when the same key arrives while the first request is still sending', async () => {
+describe('POST /payslips:send 멱등성', () => {
+  it('첫 요청이 보내는 중에 같은 키가 오면 한 번만 보냅니다', async () => {
     const { app, mailer, withEmail } = await setUp()
     mailer.delayMs = 50
 
@@ -133,7 +133,7 @@ describe('POST /payslips:send idempotency', () => {
     }
   })
 
-  it('rejects the same key with a different body and does not replay the first job', async () => {
+  it('같은 키에 본문이 다르면 거절하고 첫 작업을 재생하지 않습니다', async () => {
     const { app, mailer, withEmail, withoutEmail } = await setUp()
 
     const first = await send(app, 'k-body', [withEmail])
@@ -145,7 +145,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(mailer.sent).toEqual([withEmail])
   })
 
-  it('replays within 24 hours and treats the key as new after that', async () => {
+  it('24시간 안에는 재생하고 그 뒤에는 새 키로 봅니다', async () => {
     const { app, mailer, clock, withEmail } = await setUp()
 
     const first = await send(app, 'k-ttl', [withEmail])
@@ -160,7 +160,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(mailer.sent).toEqual([withEmail, withEmail])
   })
 
-  it('does not re-send payslips already sent when a retry follows a failure midway', async () => {
+  it('중간에 실패한 뒤 다시 시도해도 이미 보낸 급여명세서는 다시 보내지 않습니다', async () => {
     const { app, mailer, withEmail, withoutEmail } = await setUp()
     mailer.dieOnCall = 2
 
@@ -184,7 +184,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(detail.body.delivery).toMatchObject({ status: 'SENT', attempts: 1 })
   })
 
-  it('does not re-send when something other than the mailer crashes after a mail went out', async () => {
+  it('메일을 보낸 뒤 메일 발송 외의 곳에서 실패해도 다시 보내지 않습니다', async () => {
     const { app, mailer, directory, withEmail, withoutEmail } = await setUp()
     // 사업소득자(주소 없음)는 HR을 조회하지 않고, 직원은 조회합니다. 첫 건을 보낸 뒤 HR 조회가 죽습니다.
     directory.dieOnFind = true
@@ -200,7 +200,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(detail.body.delivery).toMatchObject({ status: 'FAILED', attempts: 1 })
   })
 
-  it('finishes a started send even if the client disconnects, so a retry replays it', async () => {
+  it('클라이언트 연결이 끊겨도 시작한 발송을 마치고 다시 시도하면 재생합니다', async () => {
     const { app, mailer, withEmail, withoutEmail } = await setUp()
     mailer.ackDelayMs = 100
     const disconnect = new AbortController()
@@ -224,7 +224,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(retried.body).toMatchObject({ status: 'PARTIALLY_SUCCEEDED' })
   })
 
-  it('does not hold the key when the request fails before sending anything', async () => {
+  it('아무것도 보내기 전에 실패한 요청은 키를 잡아 두지 않습니다', async () => {
     const { app, mailer, withEmail } = await setUp()
 
     const missing = await send(app, 'k-missing', ['psl_01JBQ000000000000000000099'])
@@ -235,7 +235,7 @@ describe('POST /payslips:send idempotency', () => {
     expect(mailer.sent).toEqual([withEmail])
   })
 
-  it('scopes keys to the actor, not only the company', async () => {
+  it('키는 회사뿐 아니라 요청한 사용자마다 따로 봅니다', async () => {
     const { app, mailer, withEmail } = await setUp()
 
     const mine = await send(app, 'k-scope', [withEmail])
