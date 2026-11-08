@@ -6,10 +6,13 @@ import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import type { Actor } from '../actor.types.ts'
 import { AuditLog } from '../audit/audit-log.ts'
 import { MembershipRepository } from '../members/membership-repository.ts'
+import { describeDefect } from '../../../shared/problem/defect-log.ts'
 import { normalizeBusinessNumber } from './business-number.ts'
+import { BusinessStatusCheck } from './business-status-check.ts'
 import { CompanyRepository } from './company-repository.ts'
-import { BusinessNumberInvalid, CompanyAlreadyRegistered } from './company.ts'
+import { BusinessClosed, BusinessNumberInvalid, CompanyAlreadyRegistered } from './company.ts'
 import type { Company, CompanyPatch, CompanyRegistration } from './company.ts'
+import { isRegistrationBlocked } from './registration-business-status.ts'
 
 /** 지금 회사(테넌트) 조회·수정과 새 회사 등록입니다. */
 export class Companies extends Context.Service<
@@ -25,12 +28,13 @@ export class Companies extends Context.Service<
     /**
      * 회사를 등록하고 등록한 사용자를 소유자(관리자)로 넣습니다. 그 회사의 토큰은 `:switch-company`로 받습니다.
      *
-     * 사업자등록번호 검증 숫자가 틀리면 422, 이미 등록된 번호면 409입니다.
+     * 사업자등록번호 검증 숫자가 틀리면 422, 이미 등록된 번호면 409입니다. 그다음 사업자 상태를 조회해 폐업이면 422
+     * `BUSINESS_CLOSED`입니다. 휴업·알 수 없음·조회 실패는 등록합니다.
      */
     register(
       userId: Id<'user'>,
       registration: CompanyRegistration,
-    ): Effect.Effect<Company, BusinessNumberInvalid | CompanyAlreadyRegistered>
+    ): Effect.Effect<Company, BusinessNumberInvalid | CompanyAlreadyRegistered | BusinessClosed>
   }
 >()('semu/identity-access/Companies') {
   static readonly layer = Layer.effect(
@@ -39,6 +43,17 @@ export class Companies extends Context.Service<
       const companies = yield* CompanyRepository
       const memberships = yield* MembershipRepository
       const audit = yield* AuditLog
+      const businessStatuses = yield* BusinessStatusCheck
+
+      /** 조회 실패(결함)는 로그만 남기고 `undefined`로 넘깁니다. 외부 API 장애가 가입을 막지 않게 합니다. */
+      const businessStatusOf = (businessNumber: string) =>
+        businessStatuses
+          .statusOf(businessNumber)
+          .pipe(
+            Effect.catchDefect((defect) =>
+              Effect.logWarning('Business status lookup failed', describeDefect(defect)).pipe(Effect.as(undefined)),
+            ),
+          )
 
       const current = Effect.fn('Companies.current')(function* (actor: Actor) {
         return yield* companies.findById(actor.companyId).pipe(Effect.flatMap(Effect.fromOption), Effect.orDie)
@@ -73,6 +88,7 @@ export class Companies extends Context.Service<
         if (Option.isSome(yield* companies.findByBusinessNumber(businessNumber))) {
           return yield* new CompanyAlreadyRegistered({})
         }
+        if (isRegistrationBlocked(yield* businessStatusOf(businessNumber))) return yield* new BusinessClosed({})
         const now = yield* Clock.currentTimeMillis
         const nowIso = new Date(now).toISOString()
         const company: Company = {

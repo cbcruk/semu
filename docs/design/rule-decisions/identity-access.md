@@ -111,7 +111,7 @@
 |---|---|---|---|
 | 1 | 클라이언트 검증과 같은 알고리즘인가 | **따름:** 현행 서버의 가중치(1,3,7,1,3,7,1,3,5 + ⌊9번째×5/10⌋)를 씁니다 | 국세청 공개 규칙과 같습니다 |
 | 2 | 모두 0 같은 퇴화 번호 | **따름:** 검증 숫자만 봅니다. 실재 여부는 사업자 상태조회가 맡습니다 | 형식 검사와 실재 검사를 나눕니다 |
-| 3 | 가입 때 국세청 상태조회를 부를까 | **따름:** 회사 등록 전에 사업자 상태조회를 부르고 폐업이면 막습니다. 휴업·조회 실패·알 수 없음은 등록을 허용합니다. 아직 구현하지 않아 지금은 부르지 않습니다([열린 질문 10](../identity-access.md#열린-질문)) | 설계 결정(2026-11-07). 재설계 전 구현은 등록 때 `businessStatus.lookup`을 부르고 `closed`만 막았습니다(`apps/api/legacy/src/modules/platform/accounts/accounts.service.ts` `registerCompanyForUser`). 외부 API 장애가 가입을 막지 않게 실패는 허용합니다. 구현에는 Identity & Access 포트와 Integrations `BusinessStatusClient`를 잇는 배선이 필요합니다 |
+| 3 | 가입 때 국세청 상태조회를 부를까 | **따름:** 회사 등록 전에 사업자 상태조회를 부르고 폐업이면 막습니다. 휴업·조회 실패·알 수 없음은 등록을 허용합니다. 막을 때는 422 `BUSINESS_CLOSED`입니다(2026-11-08 구현, [열린 질문 10](../identity-access.md#열린-질문)) | 설계 결정(2026-11-07). 재설계 전 구현은 등록 때 `businessStatus.lookup`을 부르고 `closed`만 막았습니다(`apps/api/legacy/src/modules/platform/accounts/accounts.service.ts` `registerCompanyForUser`). 외부 API 장애가 가입을 막지 않게 실패는 허용합니다. Identity & Access `BusinessStatusCheck` 포트를 `wiring/identity-access-integrations.ts`가 Integrations `BusinessStatusClient`로 구현합니다 |
 | 4 | 법인등록번호 검증 공식(가중치 1,2) | **바꿈:** 검증 숫자를 보지 않고 13자리 숫자인지만 봅니다 | 2025-01-31부터 부여하는 법인등록번호는 등기관서 4 + 법인종류 2 + 일련번호 7자리이고 오류검색번호가 없습니다(제2조 ⑤ 삭제). 그 전 번호만 마지막 자리가 오류검색번호라 번호만으로 형식을 가를 수 없습니다([법인 및 재외국민의 부동산등기용등록번호 부여에 관한 규칙 제2조 ①, 대법원규칙 제3173호 부칙](https://www.law.go.kr/법령/법인및재외국민의부동산등기용등록번호부여에관한규칙)) |
 
 **바뀌는 케이스:** `corporate number with a wrong check digit` → 통과(질문 4).
