@@ -58,7 +58,7 @@
 | 퇴직금 | 계속근로 1년 이상, 4주 평균 주 15시간 이상 일한 근로자가 퇴직할 때 받는 돈으로, 평균임금 30일분 × 재직일수 ÷ 365입니다 | `SeveranceSettlement`와 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)입니다. 엔진은 재직 1년 미만이면 0으로 계산하고, 주 15시간 요건은 판정하지 않습니다 ([severance-pay](../reference/rules/severance-pay.md#근거)의 스펙 4.11 인용, [payroll.md](payroll.md#퇴직금-정산)) | |
 | 평균임금 | 퇴직일 전 3개월 동안 받은 임금 총액을 그 기간 일수로 나눈 하루 임금입니다. 통상임금보다 낮으면 통상임금을 씁니다 | 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다 ([payroll.md](payroll.md#퇴직금-정산), [severance-pay](../reference/rules/severance-pay.md#로직)) | |
 | 퇴직소득세, 근속연수공제, 환산급여공제 | 퇴직금에 매기는 세금입니다. 근속연수(1년 미만 끝수는 올림)에 따른 근속연수공제를 빼고, 연 단위로 환산한 환산급여(`(퇴직소득 − 근속연수공제) × 12 ÷ 근속연수`)에서 환산급여공제를 뺀 뒤 기본세율을 매기고, `× 근속연수 ÷ 12`로 되돌려 10원 미만을 버립니다. 지방소득세는 그 10%입니다 | 퇴직월 기준표의 `retirementIncomeTax`(`serviceYearDeduction`, `convertedPayDeduction`)를 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)의 `retirementIncomeTax`가 씁니다 ([severance-pay](../reference/rules/severance-pay.md#로직), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) | 소득세법 제48조제1항제1호(근속연수공제)·제2호(환산급여공제) ([severance-pay](../reference/rules/severance-pay.md#서버-이전-시-주의), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
-| 퇴직금 지급일 | 퇴직금은 퇴직 뒤 14일 안에 주며, 퇴직월과 다른 달에 줄 수 있습니다. 원천세는 지급한 달에 셉니다 | 정산의 `paymentDate`가 속한 달의 원천세 A21로 셉니다(2026-11-07 결정). 이벤트에 싣는 것은 아직입니다 ([payroll.md](payroll.md#퇴직금-정산)) | |
+| 퇴직금 지급일 | 퇴직금은 퇴직 뒤 14일 안에 주며, 퇴직월과 다른 달에 줄 수 있습니다. 원천세는 지급한 달에 셉니다 | 정산의 `paymentDate`가 속한 달의 원천세 A22(퇴직소득 그 외)로 셉니다(2026-11-07 결정, 줄 코드는 2026-11-08 정정). 이벤트에 싣는 것은 아직입니다 ([payroll.md](payroll.md#퇴직금-정산)) | |
 
 ## 원천세 신고
 

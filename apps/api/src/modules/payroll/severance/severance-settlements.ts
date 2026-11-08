@@ -52,7 +52,7 @@ const PLANS = ['PAYROLL'] as const
 /**
  * 퇴직금 정산 목록입니다. 마지막 근무일 순입니다.
  *
- * `paymentMonth`(`YYYY-MM`)를 주면 지급일이 그 달인 정산만 줍니다. 원천세 퇴직소득(A21)은 `status=COMPLETED`와 함께 읽습니다.
+ * `paymentMonth`(`YYYY-MM`)를 주면 지급일이 그 달인 정산만 줍니다. 원천세 퇴직소득 그 외(A22)는 `status=COMPLETED`와 함께 읽습니다.
  * 지급일이 없는 정산(계산됨에서 아직 정하지 않았거나 지급일이 생기기 전에 완료한 정산)은 어느 달에도 들지 않습니다.
  */
 export const listSettlements = (filter: {
