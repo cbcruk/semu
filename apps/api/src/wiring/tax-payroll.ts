@@ -20,8 +20,8 @@ export const TaxPayrollLedgersFromPayroll: Layer.Layer<PayrollLedgers, never, Pa
 /**
  * Tax의 `WithholdingTotals` 포트를 Payroll의 `PayrollWithholdingTotals`로 구현합니다.
  *
- * 지급월에 지급한 마감 급여대장의 소득 종류별 원천세 합계입니다. Payroll의 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)는
- * Tax의 소득 종류에 그대로 들어가고, 신고서 줄 코드로 바꾸는 것은 Tax가 합니다.
+ * 지급월에 지급한 마감 급여대장과 완료 퇴직금 정산의 소득 종류별 원천세 합계입니다. Payroll의 소득 종류(`WAGE`·`DAILY`·
+ * `BUSINESS`·`OTHER`·`RETIREMENT`)는 Tax의 소득 종류에 그대로 들어가고, 신고서 줄 코드로 바꾸는 것은 Tax가 합니다.
  */
 export const TaxWithholdingTotalsFromPayroll: Layer.Layer<WithholdingTotals, never, PayrollWithholdingTotals> =
   Layer.effect(

@@ -12,6 +12,7 @@ let owner = ''
 let agent = ''
 let employeeId = ''
 let ledgerId = ''
+let severanceId = ''
 
 beforeAll(async () => {
   owner = (await app.signIn('owner@semu.example')).token
@@ -186,6 +187,56 @@ describe('Payroll → Tax 연결', () => {
   })
 })
 
+describe('Payroll 퇴직금 → Tax 연결', () => {
+  it('완료한 퇴직금 정산을 지급월 원천세 신고서의 퇴직소득 그 외(A22) 줄로 묻습니다', async () => {
+    const hired = await app.request('POST', '/v1/employees', {
+      token: owner,
+      body: { kind: 'WAGE', name: '한퇴직', joinDate: '2024-03-04' },
+    })
+    expect(hired.status).toBe(201)
+    const leaverId = (await hired.json()).id
+    const resigned = await app.request('POST', `/v1/employees/${leaverId}:resign`, {
+      token: owner,
+      body: { leaveDate: '2026-10-16', leavingReasonCode: '11', leavingDetailReasonCode: '11-1' },
+    })
+    expect(resigned.status).toBe(200)
+
+    const created = await app.request('POST', '/v1/severance-settlements', {
+      token: owner,
+      body: { employeeId: leaverId, input: { threeMonthWages: 9_000_000 }, paymentDate: '2026-10-30' },
+    })
+    expect(created.status).toBe(201)
+    severanceId = (await created.json()).id
+    const lines = async () => {
+      const response = await app.request('GET', `/v1/filings/${WITHHOLDING_2026_10}/withholding-lines`, {
+        token: owner,
+      })
+      return (await response.json()).items[0].lines as Array<{ lineCode: string }>
+    }
+    // 계산됨 정산은 아직 지급하지 않은 것이라 넣지 않습니다.
+    expect((await lines()).map((line) => line.lineCode)).toEqual(['A01'])
+
+    const completed = await app.request('POST', `/v1/severance-settlements/${severanceId}:complete`, { token: owner })
+    expect(completed.status).toBe(200)
+    const settlement = await completed.json()
+
+    expect((await lines()).find((line) => line.lineCode === 'A22')).toEqual({
+      lineCode: 'A22',
+      subtotalCode: 'A20',
+      incomeKind: 'RETIREMENT',
+      otherIncomeCategory: null,
+      headcount: 1,
+      grossPay: settlement.result.severancePay,
+      taxablePay: settlement.result.severancePay,
+      incomeTax: settlement.result.retirementIncomeTax,
+      localIncomeTax: settlement.result.localIncomeTax,
+    })
+    expect((await lines()).map((line) => line.lineCode)).toEqual(['A01', 'A22'])
+    // 퇴직금은 급여대장이 아니므로 "급여대장 마감" 항목은 그대로입니다.
+    expect(await payrollRequirement()).toBe('PROVIDED')
+  })
+})
+
 describe('Tax → Payroll 연결', () => {
   it('원천세를 신고한 뒤에는 금액을 바꾸는 급여대장 커맨드를 거부합니다(409)', async () => {
     for (const command of ['start-review', 'start-preparing']) {
@@ -206,6 +257,13 @@ describe('Tax → Payroll 연결', () => {
     })
 
     expect(detail).toMatchObject({ withholdingFiled: true, allowedActions: [] })
+    expect(reopen.status).toBe(409)
+    expect(await reopen.json()).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: '2026-10' })
+  })
+
+  it('원천세를 신고한 지급월의 퇴직금 정산은 다시 열 수 없습니다(409)', async () => {
+    const reopen = await app.request('POST', `/v1/severance-settlements/${severanceId}:reopen`, { token: owner })
+
     expect(reopen.status).toBe(409)
     expect(await reopen.json()).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: '2026-10' })
   })
@@ -237,5 +295,61 @@ describe('Payroll → Bookkeeping 연결', () => {
       joinedCount: payrollOctober.employment.joined,
       leftCount: payrollOctober.employment.left,
     })
+  })
+})
+
+describe('Payroll 퇴직금만 있는 달 → Tax 연결', () => {
+  const fresh = makeTestApp()
+  afterAll(() => fresh.dispose())
+
+  it('대장 없이 퇴직금만 지급한 달은 원천세 신고서에 A22 줄 하나만 보이고 급여대장 마감 항목은 대기로 남습니다', async () => {
+    const token = (await fresh.signIn('owner@semu.example')).token
+    const hired = await fresh.request('POST', '/v1/employees', {
+      token,
+      body: { kind: 'WAGE', name: '오퇴직', joinDate: '2024-05-07' },
+    })
+    const leaverId = (await hired.json()).id
+    await fresh.request('POST', `/v1/employees/${leaverId}:resign`, {
+      token,
+      body: { leaveDate: '2026-10-09', leavingReasonCode: '11', leavingDetailReasonCode: '11-1' },
+    })
+    const created = await fresh.request('POST', '/v1/severance-settlements', {
+      token,
+      body: { employeeId: leaverId, input: { threeMonthWages: 8_400_000 }, paymentDate: '2026-10-23' },
+    })
+    expect(created.status).toBe(201)
+    const completed = await fresh.request('POST', `/v1/severance-settlements/${(await created.json()).id}:complete`, {
+      token,
+    })
+    expect(completed.status).toBe(200)
+    const { result } = await completed.json()
+
+    const response = await fresh.request('GET', `/v1/filings/${WITHHOLDING_2026_10}/withholding-lines`, { token })
+
+    expect((await response.json()).items).toEqual([
+      {
+        paymentMonth: '2026-10',
+        ledgerCount: 0,
+        closedCount: 0,
+        lines: [
+          {
+            lineCode: 'A22',
+            subtotalCode: 'A20',
+            incomeKind: 'RETIREMENT',
+            otherIncomeCategory: null,
+            headcount: 1,
+            grossPay: result.severancePay,
+            taxablePay: result.severancePay,
+            incomeTax: result.retirementIncomeTax,
+            localIncomeTax: result.localIncomeTax,
+          },
+        ],
+      },
+    ])
+    const filing = await (await fresh.request('GET', `/v1/filings/${WITHHOLDING_2026_10}`, { token })).json()
+    expect(
+      filing.requirements.find((requirement: { code: string }) => requirement.code === 'PAYROLL_LEDGER_CLOSED')
+        .response,
+    ).toBe('PENDING')
   })
 })

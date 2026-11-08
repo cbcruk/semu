@@ -203,6 +203,7 @@ GET /filings/{filingId}/withholding-lines
 
 - **합계는 조회 포트로 받습니다.** `WithholdingTotals.totalsFor(companyId, paymentMonth)`를 [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 Payroll의 `PayrollWithholdingTotals`로 구현합니다. 지급월 마감 이벤트는 금액을 싣지 않으므로 outbox 재전달·순서와 상관없이 부를 때의 값입니다
 - **마감된 대장만 더합니다.** 같은 달의 `ledgerCount`·`closedCount`(`PayrollLedgers.summaryFor`)를 함께 주어, 둘이 다르면 아직 바뀔 수 있는 합계임을 알 수 있습니다
+- **퇴직소득(A22)은 완료한 퇴직금 정산에서 옵니다**(2026-11-08, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 지급일이 그 달인 완료 정산을 Payroll이 `RETIREMENT` 한 줄로 모읍니다. 대장이 아니라서 `ledgerCount`·`closedCount`와 상관없고, 대장이 없는 달(둘 다 0)에도 이 줄만 나올 수 있습니다. 완료한 정산은 신고 뒤 다시 열 수 없으므로(409 `WITHHOLDING_FILED`) 마감된 대장처럼 확정된 값입니다
 - 매월 신고 건은 지급월 하나, 반기 신고 건은 여섯 달을 하나씩 줍니다. 반기 신고서의 인원 규칙(간이세액은 마지막 달 인원, 일용근로는 월별 순인원 합계 등)은 계산하지 않습니다
 - 원천세가 아닌 신고 건은 `items`가 비어 있습니다. 접근 요건은 신고 건 조회(`filing:read`, `TAXATION`)와 같습니다
 - 코드 표는 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. 출처는 소득세법 시행규칙 [별지 제21호서식](https://www.law.go.kr/LSW/flDownload.do?flSeq=164450873) 원천징수이행상황신고서 <개정 2026. 5. 22.> 제1쪽 "원천징수 명세 및 납부세액"입니다
@@ -211,7 +212,7 @@ GET /filings/{filingId}/withholding-lines
 |---|---|---|---|---|
 | `WAGE` | `null` | A01 | A10 | 근로소득 간이세액 |
 | `DAILY` | `null` | A03 | A10 | 근로소득 일용근로 |
-| `RETIREMENT` | `null` | A22 | A20 | 퇴직소득 그 외. Payroll이 아직 집계하지 않음(#49) |
+| `RETIREMENT` | `null` | A22 | A20 | 퇴직소득 그 외. 지급일이 그 달인 완료 퇴직금 정산 |
 | `BUSINESS` | `null` | A25 | A30 | 사업소득 매월징수 |
 | `OTHER` | `PERSONAL_SERVICE` | A59 | A40 | 기타소득 인적용역(소득세법 제21조제1항제19호) |
 | `OTHER` | `GENERAL` | A42 | A40 | 기타소득 그 외 |
@@ -330,7 +331,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 ```mermaid
 flowchart LR
-  PAY[Payroll] -- payroll_pay_month.closed / reopened (outbox) --> SYNC[Filings.syncPayrollLedger]
+  PAY[Payroll] -- payroll_pay_month.closed / reopened / withholding_changed (outbox) --> SYNC[Filings.syncPayrollLedger]
   SYNC -- PayrollLedgers.summaryFor --> PAY
   LINES[withholding-lines] -- WithholdingTotals.totalsFor --> PAY
   BK[Bookkeeping] -- VatEvidence.sales / purchases --> VAT[VatEstimates]
@@ -343,13 +344,13 @@ flowchart LR
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 내보냄(이벤트) | `filing.status_changed` | `{ companyId, filingId, taxType, kind, periodStart, periodEnd, fromStatus, toStatus, payableAmount, occurredAt }` |
-| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 부름. outbox로 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서 반영하고, 실패하면 릴레이가 다시 넘김 |
+| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened`·`payroll_pay_month.withholding_changed` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 부름. outbox로 급여 커맨드가 커밋된 뒤 자기 트랜잭션에서 반영하고, 실패하면 릴레이가 다시 넘김. 세 이벤트 모두 같은 다시 맞춤이라 멱등입니다. 퇴직금만 바뀐 달(`withholding_changed`)은 대장 현황이 그대로라 "급여대장 마감" 항목도 그대로이고(대장이 없는 달이면 `PENDING`), A22 줄은 [원천세 신고서 줄](#원천세-신고서-줄)이 부를 때 읽음 |
 | 공개 조회 | `VatEstimateQuery.current(companyId, businessType, asOf)` | `{ period, asOf, estimatedTax, dueDate }`. Bookkeeping 홈 카드가 씀 |
 | 공개 조회 | `AgencyWorkloadQuery.of(companies)` | 회사(`companyId`, `plans`)마다 `{ openFilingCount, overdueFilingCount, openActionCardCount, nearestDueDate }`. Identity & Access의 `AgencyWorkload` 포트가 씀([identity-access-tax.ts](../../apps/api/src/wiring/identity-access-tax.ts)) |
 | 받음(인가) | Identity & Access `CurrentAgent`, `authorizeAgency` | 대리인 큐가 담당 회사(플랜 포함)를 받음. Tax는 배정을 읽지 않음 |
-| 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장 잠금에 씀 |
+| 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장과 퇴직금 정산 잠금에 씀 |
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
-| 포트(Payroll 구현) | `WithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 마감 대장만. [원천세 신고서 줄](#원천세-신고서-줄)이 씀 |
+| 포트(Payroll 구현) | `WithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 마감 대장과 완료 퇴직금 정산(`RETIREMENT`)만. [원천세 신고서 줄](#원천세-신고서-줄)이 씀 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
 | 포트(Identity·Billing·Tax 설정) | `TaxProfiles.get/listTaxation` | 사업자 형태·플랜과 세무 설정을 합친 `TaxProfile` |
 | 포트(운영) | `PublicHolidays.between(from, to)` | 기한을 미루는 쉬는 날(주말 제외) |

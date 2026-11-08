@@ -1,7 +1,7 @@
 /**
  * 원천세 합계의 소득 종류입니다. Payroll이 지급월마다 이 종류로 모아 줍니다.
  *
- * `RETIREMENT`(퇴직소득)는 신고서 줄 코드만 정해 두었고, Payroll이 아직 집계하지 않습니다(#49).
+ * `RETIREMENT`(퇴직소득)는 Payroll이 지급일이 그 달인 완료 퇴직금 정산에서 모읍니다. 대장이 없는 달에도 올 수 있습니다.
  */
 export type WithholdingIncomeKind = 'WAGE' | 'DAILY' | 'BUSINESS' | 'OTHER' | 'RETIREMENT'
 
@@ -45,7 +45,10 @@ export interface WithholdingReturnMonth {
   paymentMonth: string
   /** 지급일이 그 달인 급여대장 수입니다. */
   ledgerCount: number
-  /** 그중 마감된 수입니다. `lines`는 마감된 대장만 더하므로, 둘이 다르면 아직 바뀔 수 있는 합계입니다. */
+  /**
+   * 그중 마감된 수입니다. `lines`는 마감된 대장만 더하므로, 둘이 다르면 아직 바뀔 수 있는 합계입니다.
+   * 퇴직소득 줄(A22)은 대장이 아니라 완료한 퇴직금 정산이라 이 수와 상관없고, 대장이 없는 달(둘 다 0)에도 나옵니다.
+   */
   closedCount: number
   lines: ReadonlyArray<WithholdingReturnLine>
 }

@@ -37,6 +37,7 @@
 | 인건비 내역 | `LaborCostReport` |
 | 원천세 신고 잠금 | `withholdingFiled` |
 | 기타소득 구분 (인적용역 / 그 밖) | `otherIncomeCategory`: `PERSONAL_SERVICE` / `GENERAL` |
+| 원천세 집계의 소득 종류 (근로·일용·사업·기타 / 퇴직) | `WithholdingIncomeKind`: 대장 행의 `LedgerIncomeKind`(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)와 완료 퇴직금 정산의 `RETIREMENT` |
 
 ## 계산 엔진
 
@@ -238,6 +239,11 @@ stateDiagram-v2
 
 마감 방향(`:request-approval`, `:approve`, `:close`)은 막지 않습니다. 신고 뒤에 늦게 승인하는 일은 금액을 바꾸지 않습니다.
 
+퇴직금 정산도 같은 409로 막습니다. 신고된 지급월의 `:complete`·`:reopen`, 그리고 지급일을 그 달로 정하거나 옮기는 만들기·`PATCH`입니다. 대장과 두 가지가 다릅니다([퇴직금 정산](#퇴직금-정산)).
+
+- 완료(마감 방향)도 막습니다. 정산의 완료가 곧 그 달 퇴직소득을 더하는 일이기 때문입니다
+- 계산됨 정산을 신고된 달에서 **빼내거나 지급일을 지우는 것은 받습니다.** 계산됨 정산은 합계에 들지 않아 신고와 어긋나지 않고, 막으면 지급일을 정해 둔 뒤 그 달이 신고된 정산이 완료도 이동도 못 하고 갇힙니다. 대장은 미마감 대장도 신고된 달이면 편집 전체를 막아 빼낼 수 없습니다. 완료한 정산을 빼내려면 다시 열어야 하므로 여전히 막힙니다
+
 ## 엑셀 가져오기
 
 현행 엑셀 업로드를 대장에 붙은 `Job`으로 바꿉니다. **설계만 있고 구현은 없습니다.**
@@ -310,6 +316,11 @@ stateDiagram-v2
   - 완료한 정산의 지급일을 바꾸려면 `:reopen` 뒤 `PATCH`합니다. 다시 열어도 지급일은 남습니다
   - `?paymentMonth=YYYY-MM`은 지급일이 그 달인 정산만 줍니다. 원천세 요약은 `status=COMPLETED`와 함께 씁니다. 목록은 지금처럼 페이지 없이 회사 정산 전체입니다(퇴사자 수만큼)
   - 이 필드 전에 저장한 정산은 `paymentDate: null`이고 어느 지급월에도 들지 않습니다. 저장은 JSON 열이라 이관이 필요 없고, 다시 열고 완료하면 마지막 근무일로 채워집니다
+- **원천세 연계(2026-11-08, [열린 질문 2](#열린-질문)).** 대장과 같은 세 가지(합계·신호·잠금)를 정산에도 둡니다. 판정은 순수 규칙 [severance-withholding.ts](../../apps/api/src/modules/payroll/severance/severance-withholding.ts)에 있습니다
+  - **합계.** `PayrollWithholdingTotals.totalsFor`가 지급일이 그 달인 완료(`COMPLETED`) 정산을 `incomeKind: RETIREMENT` 한 줄로 더합니다. 인원은 직원 수, 총지급액·과세 지급액은 퇴직금(비과세 퇴직소득은 두지 않음), 세액은 퇴직소득세와 그 지방소득세입니다. 퇴직금이 0원인 정산(근속 1년 미만)은 지급한 퇴직소득이 없어 넣지 않습니다. 줄 순서는 근로·일용·퇴직·사업·기타이고, Tax가 A22(가감계 A20)로 적습니다. 대장이 없는 달에도 이 줄이 나옵니다
+  - **신호.** 완료·다시 열기로 퇴직소득 합계가 바뀐 지급월마다 `payroll_pay_month.withholding_changed { companyId, paymentMonth }`를 대장 이벤트와 같은 outbox 채널로 냅니다. 대장이 없는 달에도 냅니다. 완료한 정산의 지급일은 `:reopen`(옛 달 알림) → `PATCH` → `:complete`(새 달 알림)로만 옮기므로 두 달 모두 알려집니다. 계산됨·제외 정산의 생성·수정·제외·제외 취소는 합계에 들지 않아 내지 않습니다. 대장의 `closed`·`reopened`를 쓰지 않은 것은 그 뜻이 "대장이 모두 마감"이라 대장 없는 달에 맞지 않아서입니다([events.md](events.md#형식)). 금액은 싣지 않습니다(한 달에 퇴직자가 한 명이면 합계가 개인 퇴직금)
+  - **Tax의 처리.** Tax는 세 이벤트를 모두 같은 다시 맞춤(`PayrollLedgerSync`)으로 받습니다. 퇴직금만 바뀐 달은 대장 현황이 그대로라 "급여대장 마감" 항목도 그대로입니다(대장이 없는 달이면 `PENDING`으로 남고 제출은 막지 않음, [열린 질문 10](#열린-질문)). A22 줄은 Tax가 신고서 줄을 만들 때 합계 조회로 읽으므로 따로 저장할 것이 없습니다
+  - **잠금.** 정산 변경이 건드리는 지급월 중 원천세가 신고된(`WithholdingFilingLock.isFiled`) 달이 있으면 저장하지 않고 409 `WITHHOLDING_FILED`(`paymentMonth`)입니다. 건드리는 달은 합계가 바뀐 달(완료·다시 열기)과, 지급일이 옮겨 갈 달(만들 때 정한 지급일, `PATCH`로 정하거나 옮긴 지급일, 완료 때 채운 마지막 근무일)입니다. 그래서 신고된 달에는 나중에 완료할 정산이 새로 들어가지 않습니다. 계산됨 정산을 신고된 달에서 빼내거나 지급일을 지우는 것과 같은 달 안의 입력 수정은 받습니다(합계와 상관없음, 대장과 다른 점은 [원천세 신고 잠금](#원천세-신고-잠금))
 - **HR 가드.** 직원의 정산 중 하나라도 `COMPLETED`면 HR이 직원 삭제·퇴사 취소·다시 퇴사를 409 `RETIREMENT_COMPLETED`로 막습니다. HR은 `SeveranceSettlementQuery`로 묻습니다([열린 질문 16](#열린-질문))
 - 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
@@ -328,7 +339,7 @@ GET /labor-cost-reports/{year}    → { year, hasData, months[12] { month, amoun
 ```mermaid
 flowchart LR
   HR[HR] -- PayrollEmployeeDirectory --> PAY[Payroll]
-  PAY -- payroll_pay_month.closed / reopened --> TAX[Tax]
+  PAY -- payroll_pay_month.closed / reopened / withholding_changed --> TAX[Tax]
   TAX -- WithholdingFilingLock.isFiled --> PAY
   PAY -- PayrollLedgerSummary.summaryFor --> TAX
   PAY -- PayrollWithholdingTotals.totalsFor --> TAX
@@ -340,20 +351,21 @@ flowchart LR
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 포트(HR 구현) | `PayrollEmployeeDirectory` | `listWageEarners(companyId, { start, end })`, `find(companyId, employeeId, asOf) → Option`, `employmentTrend(companyId, month) → { employed, joined, left }` |
-| 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean` |
+| 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean`. 급여대장과 퇴직금 정산이 씀 |
 | 포트(메일 구현) | `PayslipMailer` | `send({ payslipId, to, subject }) → { ok: true } \| { ok: false, reason: NO_EMAIL \| REJECTED }` |
 | 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 앱은 [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)의 `PayrollEventsToTax`로 outbox 채널(`payroll_pay_month->tax`)에 씀. `layerMemory`는 Payroll만 시험할 때 쓰는 배열 |
 | 내보냄(이벤트) | `payroll_pay_month.closed` | `{ eventId, companyId, paymentMonth, ledgerIds[], occurredAt }` |
 | 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, occurredAt }` |
+| 내보냄(이벤트) | `payroll_pay_month.withholding_changed` | `{ eventId, companyId, paymentMonth, occurredAt }`. 퇴직금 정산 완료·다시 열기 |
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
-| 공개 조회 | `PayrollWithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 **마감된** 대장만, 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)별, 기타소득은 인적용역(`PERSONAL_SERVICE`)·그 밖(`GENERAL`)으로 나눔 |
+| 공개 조회 | `PayrollWithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 **마감된** 대장만, 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)별, 기타소득은 인적용역(`PERSONAL_SERVICE`)·그 밖(`GENERAL`)으로 나눔. 지급일이 그 달인 **완료** 퇴직금 정산은 `RETIREMENT` 한 줄 |
 | 공개 조회 | `SeveranceSettlementQuery.statusesOf(companyId, employeeId)` | 그 직원의 정산 상태 전부(`CALCULATED`·`COMPLETED`·`EXCLUDED`). HR `SeveranceSettlementLookup`을 [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts)가 이것으로 구현 |
 
 - `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren { count, effectiveFrom } | null, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
 - `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수, 0–20)와 그 설정의 `effectiveFrom`이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`·`childcareChildrenEffectiveFrom`으로 들어갑니다. 엔진은 기준표의 보육수당 한도가 자녀 1명당(`perChild`)이면 월 비과세 한도를 20만원 × 이 값으로 잡습니다(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분). 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN`, 설정 연도가 귀속 연도와 다르면 값은 그대로 쓰고 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 법정 한도는 직원 한 명의 그달 유형별 합계이고 회사 한도는 항목마다 봅니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
-- **원천세 합계는 이벤트가 아니라 조회로 줍니다**(2026-11-08, [열린 질문 15](#열린-질문)). 지급월 마감 이벤트는 "그 지급월이 바뀌었다"만 알리고, Tax가 신고서 줄이 필요할 때 `PayrollWithholdingTotals.totalsFor`로 소득 종류별 합계를 묻습니다. 그래서 outbox 재전달·마감과 해제의 순서와 상관없이 Tax는 언제나 Payroll의 지금 값을 봅니다. 합계는 지급일이 그 달인 **마감된** 대장의 행만 더합니다([pay-month.ts](../../apps/api/src/modules/payroll/ledgers/pay-month.ts) `withholdingTotalsPaidIn`). 기타소득은 지급사유가 소득세법 제21조제1항제19호의 인적용역(`76` 강연료등, `79` 자문료등, [reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts) `PERSONAL_SERVICE_OTHER_INCOME_CODES`)이면 `otherIncomeCategory: PERSONAL_SERVICE`, 그 밖이면 `GENERAL`로 나눠 더합니다. 지급사유가 없는 행은 계산과 같은 기본값 `76`으로 봅니다. 급여는 신고서 코드를 모르고, 소득 종류와 기타소득 구분을 원천징수이행상황신고서의 줄 코드(A01·A03·A25·A59·A42)로 바꾸는 것은 Tax입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
+- **원천세 합계는 이벤트가 아니라 조회로 줍니다**(2026-11-08, [열린 질문 15](#열린-질문)). 지급월 마감 이벤트는 "그 지급월이 바뀌었다"만 알리고, Tax가 신고서 줄이 필요할 때 `PayrollWithholdingTotals.totalsFor`로 소득 종류별 합계를 묻습니다. 그래서 outbox 재전달·마감과 해제의 순서와 상관없이 Tax는 언제나 Payroll의 지금 값을 봅니다. 합계는 지급일이 그 달인 **마감된** 대장의 행과 **완료한** 퇴직금 정산만 더합니다([pay-month.ts](../../apps/api/src/modules/payroll/ledgers/pay-month.ts) `withholdingTotalsPaidIn`, [퇴직금 정산](#퇴직금-정산)). 기타소득은 지급사유가 소득세법 제21조제1항제19호의 인적용역(`76` 강연료등, `79` 자문료등, [reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts) `PERSONAL_SERVICE_OTHER_INCOME_CODES`)이면 `otherIncomeCategory: PERSONAL_SERVICE`, 그 밖이면 `GENERAL`로 나눠 더합니다. 지급사유가 없는 행은 계산과 같은 기본값 `76`으로 봅니다. 급여는 신고서 코드를 모르고, 소득 종류와 기타소득 구분을 원천징수이행상황신고서의 줄 코드(A01·A03·A22·A25·A59·A42)로 바꾸는 것은 Tax입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
 - Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 outbox 채널 `payroll_pay_month->tax`로 받아 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고(SQLite는 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서, 실패하면 릴레이가 다시), [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`·`PayrollWithholdingTotals`로 Tax 포트(`PayrollLedgers`·`WithholdingTotals`)를 구현합니다
 - 다른 컨텍스트는 [payroll.public.ts](../../apps/api/src/modules/payroll/payroll.public.ts)만 가져옵니다. 급여는 HR·Tax 저장소를 읽지 않습니다
 
@@ -554,7 +566,7 @@ flowchart LR
 | 급여대장·행·재계산·전이 8개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
 | 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 원천세 금액은 싣지 않음 |
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
-| 퇴직금 정산 (퇴직) | 구현 (메모리) |
+| 퇴직금 정산 (퇴직) | 구현 (메모리). 원천세 합계(`RETIREMENT`)·지급월 신호(`payroll_pay_month.withholding_changed`)·신고 잠금 포함 |
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary`, `PayrollWithholdingTotals`, `SeveranceSettlementQuery` | 구현 |
 | 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |
@@ -568,10 +580,10 @@ flowchart LR
 ## 열린 질문
 
 1. **간이세액표.** 공식 표(300만원·1인 74,350원)와 산식(60,380원)이 크게 다릅니다. 공식 표를 기준표 데이터로 넣고 `lookupSimpleTaxTable`로 바꿀지 확인이 필요합니다
-2. **퇴직금 지급과 원천세.** ~~퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 퇴직소득 줄에 언제 넘길지~~ **정함(2026-11-07):** 정산에 지급일(`paymentDate`)을 두고 지급월의 완료 정산을 A22(퇴직소득 그 외)로 셉니다. 결정 때는 A21로 적었으나 A21은 연금계좌취급자가 쓰는 줄이라 2026-11-08에 줄 코드만 고쳤습니다([퇴직금 정산](#퇴직금-정산)). 남은 것:
-   - `PayrollWithholdingTotals`와 Tax의 신고 건에는 아직 퇴직소득이 없습니다. Tax의 코드 표에는 `RETIREMENT` → A22가 있지만 Payroll이 그 종류를 집계하지 않습니다. 지급월 마감은 대장으로만 판정하므로, 퇴직금 완료·다시 열기도 그 달의 이벤트를 낼지(대장이 없는 달은?), 합계에 `RETIREMENT` 종류를 더할지 Tax와 정합니다(#49)
-   - 신고된 지급월(`WITHHOLDING_FILED`)의 정산 완료·다시 열기·지급일 이동은 막지 않습니다. 대장처럼 `WithholdingFilingLock`으로 막을지 함께 정합니다
-3. **지급일 이동 잠금.** 지급일을 신고된 달로, 또는 신고된 달에서 옮기는 것을 모두 막습니다. 신고 정정과 함께 허용할지 정해야 합니다
+2. **퇴직금 지급과 원천세.** ~~퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 퇴직소득 줄에 언제 넘길지~~ **정함(2026-11-07):** 정산에 지급일(`paymentDate`)을 두고 지급월의 완료 정산을 A22(퇴직소득 그 외)로 셉니다. 결정 때는 A21로 적었으나 A21은 연금계좌취급자가 쓰는 줄이라 2026-11-08에 줄 코드만 고쳤습니다([퇴직금 정산](#퇴직금-정산)). 남았던 것:
+   - ~~합계에 `RETIREMENT`를 더할지, 완료·다시 열기도 그 달의 이벤트를 낼지(대장이 없는 달은?)~~ **정함(2026-11-08):** `PayrollWithholdingTotals`가 완료 정산을 `RETIREMENT`로 더하고(Tax는 A22), 합계가 바뀐 지급월마다 대장이 없는 달이어도 새 이벤트 `payroll_pay_month.withholding_changed`를 냅니다. Tax는 대장 이벤트와 같은 다시 맞춤으로 받습니다([퇴직금 정산](#퇴직금-정산))
+   - ~~신고된 지급월의 정산 완료·다시 열기·지급일 이동을 막을지~~ **정함(2026-11-08):** 대장처럼 `WithholdingFilingLock`으로 막습니다(409 `WITHHOLDING_FILED`). 다만 계산됨 정산이 신고된 달에서 빠져나가는 것은 받습니다([원천세 신고 잠금](#원천세-신고-잠금)). 신고 정정과 함께 풀지는 3번과 같이 봅니다
+3. **지급일 이동 잠금.** 급여대장은 지급일을 신고된 달로, 또는 신고된 달에서 옮기는 것을 모두 막습니다. 퇴직금 정산은 신고된 달로 들이는 것만 막고, 계산됨 정산이 빠져나가는 것은 받습니다(합계에 들지 않아서, [원천세 신고 잠금](#원천세-신고-잠금)). 신고 정정과 함께 허용할지, 미마감 대장도 정산처럼 빼낼 수 있게 할지 정해야 합니다
 4. **명부 변동 알림.** 현행 `inquire-wage-employees-change`를 대장 `warnings`(`ROSTER_CHANGED`)로 줄지, HR 이벤트(`employee.joined`·`employee.resigned`, 미구현)를 받아 대장에 표시할지 정해야 합니다
 5. **상여 대장.** 근로소득이 있는 별도 대장은 지금 막습니다. 상여를 따로 지급하는 회사가 있으면 간이세액 특례(지급대상기간)와 함께 설계합니다
 6. **명세서 문구와 PDF.** 회사가 계산식 문구를 고치던 기능과 PDF 다운로드를 Documents의 렌더링으로 할지 정해야 합니다
@@ -589,7 +601,7 @@ flowchart LR
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)
 15. **원천세 집계의 소비.** ~~`payroll_pay_month.closed`가 싣는 `withholding[]`을 Tax가 쓸지, 이벤트로 받을지 조회로 받을지, 신고서 코드 표를 어디 둘지~~ **정함(2026-11-08):** Tax가 조회 포트로 받습니다(#44, #48). 한 것:
     - Tax 포트 `WithholdingTotals.totalsFor(companyId, paymentMonth)`를 Payroll 공개 조회 `PayrollWithholdingTotals`로 구현했습니다([tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)). 지급월의 마감된 대장만 더합니다. 이벤트로 받지 않아 outbox 재전달·순서 문제가 없습니다
-    - 소득 종류 → 원천징수이행상황신고서(별지 제21호서식) 소득구분 코드 표는 Tax의 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. `WAGE` A01, `DAILY` A03, `BUSINESS` A25, `OTHER`는 인적용역(`PERSONAL_SERVICE`) A59와 그 외(`GENERAL`) A42(둘 다 가감계 A40), `RETIREMENT` A22(표만, 집계는 #49). 서식에서 A40은 기타소득의 가감계이고, 제21조제1항제19호 인적용역은 2024. 1. 1. 이후 지급분부터 A59 줄입니다. 어떤 지급사유가 인적용역인지는 Payroll 참조 데이터가, 어느 줄에 적을지는 Tax가 정합니다
+    - 소득 종류 → 원천징수이행상황신고서(별지 제21호서식) 소득구분 코드 표는 Tax의 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. `WAGE` A01, `DAILY` A03, `BUSINESS` A25, `OTHER`는 인적용역(`PERSONAL_SERVICE`) A59와 그 외(`GENERAL`) A42(둘 다 가감계 A40), `RETIREMENT` A22(완료 퇴직금 정산, 2026-11-08). 서식에서 A40은 기타소득의 가감계이고, 제21조제1항제19호 인적용역은 2024. 1. 1. 이후 지급분부터 A59 줄입니다. 어떤 지급사유가 인적용역인지는 Payroll 참조 데이터가, 어느 줄에 적을지는 Tax가 정합니다
     - 쓰는 곳은 `GET /filings/{filingId}/withholding-lines` 하나입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄)). 신고서 초안을 만들거나 저장하지는 않습니다
     - `payroll_pay_month.closed`에서 `withholding[]`을 뺐습니다
 16. **퇴직금 정산 상태를 HR에 알리기.** ~~HR 필드 `severanceSettlementStatus`를 이벤트로 채울지, 상태 매핑을 어떻게 할지~~ **정함(2026-11-08):** 이벤트 대신 HR이 조회 포트로 묻습니다. HR은 정산 상태를 저장하지 않습니다

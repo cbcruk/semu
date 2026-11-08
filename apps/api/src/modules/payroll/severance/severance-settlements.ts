@@ -15,8 +15,11 @@ import {
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
+  WithholdingFiled,
 } from '../payroll-problems.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
+import { PayrollEventPublisher } from '../ports/payroll-events.ts'
+import { WithholdingFilingLock } from '../ports/withholding-filing-lock.ts'
 import type { RateTableRepository } from '../rate-tables/rate-table-repository.ts'
 import { resolveOrFail } from '../rate-tables/rate-tables.ts'
 import {
@@ -30,9 +33,15 @@ import {
 } from './severance-settlement.ts'
 import { SeveranceSettlementRepository } from './severance-settlement-repository.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
+import { severanceMonthsTouched, severanceWithholdingMonthsChanged } from './severance-withholding.ts'
 
 /** 퇴직금 정산 유스케이스가 쓰는 저장소와 포트입니다. */
-export type SeveranceDeps = SeveranceSettlementRepository | PayrollEmployeeDirectory | RateTableRepository
+export type SeveranceDeps =
+  | SeveranceSettlementRepository
+  | PayrollEmployeeDirectory
+  | RateTableRepository
+  | WithholdingFilingLock
+  | PayrollEventPublisher
 
 type Response = typeof SeveranceSettlement.Type
 type SeveranceError =
@@ -45,6 +54,7 @@ type SeveranceError =
   | SeveranceSettlementExists
   | EmployeeNotFound
   | RateTableNotFound
+  | WithholdingFiled
 type Run<A, E = SeveranceError> = Effect.Effect<A, E, CurrentActor | SeveranceDeps>
 
 const PLANS = ['PAYROLL'] as const
@@ -139,7 +149,7 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
       createdAt: now,
       updatedAt: now,
     }
-    yield* repository.save(record)
+    yield* saveWithWithholding(undefined, record)
     return severanceResponse(record)
   })
 
@@ -172,7 +182,7 @@ export const updateSettlement = (
       version: record.version + 1,
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }
-    yield* (yield* SeveranceSettlementRepository).save(next)
+    yield* saveWithWithholding(record, next)
     return severanceResponse(next)
   })
 
@@ -205,9 +215,42 @@ export const transitionSettlement = (
       version: record.version + 1,
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }
-    yield* (yield* SeveranceSettlementRepository).save(next)
+    yield* saveWithWithholding(record, next)
     return severanceResponse(next)
   })
+
+/**
+ * 정산을 저장하고 원천세와 맞춥니다([payroll.md 퇴직금 정산](../../../../../../docs/design/payroll.md#퇴직금-정산)).
+ *
+ * 건드린 지급월(`severanceMonthsTouched`) 중 원천세가 신고된 달이 있으면 저장하지 않고 409 `WITHHOLDING_FILED`입니다.
+ * 급여대장과 같은 잠금입니다. 저장한 뒤 퇴직소득 합계가 바뀐 지급월마다 `payroll_pay_month.withholding_changed`를 냅니다.
+ */
+function saveWithWithholding(
+  before: SeveranceSettlementRecord | undefined,
+  next: SeveranceSettlementRecord,
+): Effect.Effect<
+  void,
+  WithholdingFiled,
+  SeveranceSettlementRepository | WithholdingFilingLock | PayrollEventPublisher
+> {
+  return Effect.gen(function* () {
+    const lock = yield* WithholdingFilingLock
+    for (const paymentMonth of severanceMonthsTouched(before, next)) {
+      if (yield* lock.isFiled(next.companyId, paymentMonth)) return yield* new WithholdingFiled({ paymentMonth })
+    }
+    yield* (yield* SeveranceSettlementRepository).save(next)
+    const publisher = yield* PayrollEventPublisher
+    for (const paymentMonth of severanceWithholdingMonthsChanged(before, next)) {
+      yield* publisher.publish({
+        type: 'payroll_pay_month.withholding_changed',
+        eventId: newId('event'),
+        companyId: next.companyId,
+        paymentMonth,
+        occurredAt: next.updatedAt,
+      })
+    }
+  })
+}
 
 function findOrFail(
   companyId: Id<'company'>,
