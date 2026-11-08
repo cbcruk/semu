@@ -263,7 +263,7 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 - 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`)
 - 고른 (상세)사유는 상실신고(`LOSS`)에 그대로 들어갑니다
 - 퇴직금 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. HR은 정산 상태를 저장하지 않고 커맨드마다 포트 `SeveranceSettlementLookup`으로 Payroll에 묻습니다([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
-  - 그 직원의 정산 중 하나라도 `COMPLETED`면 막습니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세(A21)에 들어가 있어서입니다. 제외 후 새 정산처럼 정산이 여럿이어도 같습니다
+  - 그 직원의 정산 중 하나라도 `COMPLETED`면 막습니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가 있어서입니다. 제외 후 새 정산처럼 정산이 여럿이어도 같습니다
   - `CALCULATED`(지급 전)와 `EXCLUDED`(정산하지 않음)는 막지 않습니다. 현행도 완료만 막았습니다
   - 막히면 Payroll에서 정산을 `:reopen`해 계산됨으로 되돌린 뒤 합니다
   - 판정은 순수 규칙 `isSeveranceSettled`([retirement-rules.ts](../../apps/api/src/modules/hr/retirement/retirement-rules.ts))입니다

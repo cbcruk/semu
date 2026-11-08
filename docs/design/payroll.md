@@ -298,9 +298,9 @@ stateDiagram-v2
   - `:complete` 때 없으면 마지막 근무일로 채웁니다(현행 `complete`가 `payment_date`를 `base_date`로 채운 것과 같음). 그래서 완료된 정산은 모두 지급일이 있습니다. 완료를 막지 않은 이유: 현행 화면의 완료는 지급일 없이도 됐으므로 같은 기본값을 새 API가 한 곳에서 정합니다
   - 마지막 근무일보다 앞서면 422 `SEVERANCE_PAYMENT_DATE_INVALID`(`lastWorkDate`)입니다. 당일은 받습니다(위 기본값). 형식이 틀리거나 없는 날이면 400입니다
   - 완료한 정산의 지급일을 바꾸려면 `:reopen` 뒤 `PATCH`합니다. 다시 열어도 지급일은 남습니다
-- **HR 가드.** 직원의 정산 중 하나라도 `COMPLETED`면 HR이 직원 삭제·퇴사 취소·다시 퇴사를 409 `RETIREMENT_COMPLETED`로 막습니다. HR은 `SeveranceSettlementQuery`로 묻습니다([열린 질문 16](#열린-질문))
   - `?paymentMonth=YYYY-MM`은 지급일이 그 달인 정산만 줍니다. 원천세 요약은 `status=COMPLETED`와 함께 씁니다. 목록은 지금처럼 페이지 없이 회사 정산 전체입니다(퇴사자 수만큼)
   - 이 필드 전에 저장한 정산은 `paymentDate: null`이고 어느 지급월에도 들지 않습니다. 저장은 JSON 열이라 이관이 필요 없고, 다시 열고 완료하면 마지막 근무일로 채워집니다
+- **HR 가드.** 직원의 정산 중 하나라도 `COMPLETED`면 HR이 직원 삭제·퇴사 취소·다시 퇴사를 409 `RETIREMENT_COMPLETED`로 막습니다. HR은 `SeveranceSettlementQuery`로 묻습니다([열린 질문 16](#열린-질문))
 - 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
 ## 인건비
@@ -578,6 +578,6 @@ flowchart LR
 15. **원천세 집계의 소비.** `payroll_pay_month.closed`는 `withholding[]`을 싣지만 Tax는 회사·지급월만 받아 마감 수만 다시 셉니다([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). Tax가 집계를 신고서 초안에 쓸지, 쓴다면 이벤트로 받을지(outbox 재전달·순서 문제) `PayrollLedgerSummary`처럼 조회로 받을지, 소득 종류를 신고서 코드로 바꾸는 표를 어디 둘지 정해야 합니다. 쓰지 않기로 하면 이벤트에서 `withholding[]`을 빼는 것도 방법입니다
 16. **퇴직금 정산 상태를 HR에 알리기.** ~~HR 필드 `severanceSettlementStatus`를 이벤트로 채울지, 상태 매핑을 어떻게 할지~~ **정함(2026-11-08):** 이벤트 대신 HR이 조회 포트로 묻습니다. HR은 정산 상태를 저장하지 않습니다
     - HR 포트 `SeveranceSettlementLookup`([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts))을 [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts)가 Payroll 공개 조회 `SeveranceSettlementQuery`로 구현합니다. 그 직원의 정산 상태를 모두 돌려주고, 상태 값은 Payroll과 같아 매핑이 없습니다
-    - HR 직원 삭제·퇴사 취소·다시 퇴사가 이 포트에 묻고, 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 A21에 들어가므로, 최신 정산이 아니어도 완료가 하나 있으면 퇴직 기록을 바꾸거나 지울 수 없습니다. `CALCULATED`는 지급 전이라(현행도 완료만 막음), `EXCLUDED`는 정산하지 않기로 한 것이라 막지 않습니다. 막히면 `:reopen`으로 계산됨으로 되돌린 뒤 합니다
+    - HR 직원 삭제·퇴사 취소·다시 퇴사가 이 포트에 묻고, 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가므로, 최신 정산이 아니어도 완료가 하나 있으면 퇴직 기록을 바꾸거나 지울 수 없습니다. `CALCULATED`는 지급 전이라(현행도 완료만 막음), `EXCLUDED`는 정산하지 않기로 한 것이라 막지 않습니다. 막히면 `:reopen`으로 계산됨으로 되돌린 뒤 합니다
     - 이벤트를 쓰지 않은 이유: HR이 필요한 것은 커맨드 순간의 판정 하나뿐이라 조회로 충분하고, 이벤트로 받으면 outbox 재전달·순서와 한 직원의 여러 정산(제외 후 새 정산)을 필드 하나로 줄이는 매핑을 따로 정해야 합니다
-    - 남은 것: 퇴사 취소가 계산됨 정산을 남깁니다(마지막 근무일이 더는 퇴직일이 아님). 정산을 자동으로 제외할지, 완료 때 HR 퇴직일과 다시 맞출지는 정하지 않았습니다
+    - 남은 것: 퇴사 취소가 계산됨 정산을 남기고(마지막 근무일이 더는 퇴직일이 아님), 계산됨 정산이 있는 직원을 삭제하면 직원 없는 정산이 남습니다. 정산을 자동으로 제외할지, 완료 때 HR 퇴직일과 다시 맞출지는 정하지 않았습니다
