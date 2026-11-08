@@ -212,6 +212,7 @@ export function calculateWageRow(
     })
   }
 
+  // 4대보험료 계산 결과(금액이 아닌 결과 객체). 식별자는 숫자로 시작할 수 없어 사회보험료로 씁니다
   const 사회보험료 = calculateSocialInsurance({ ...input.insurance, insurablePay: 과세급여 }, rates)
   const 근로소득세계산 = calculateWageIncomeTax(과세급여, input.incomeTax, rates, options.simpleTax ?? MIDPOINT_FORMULA)
   return 결과조립({

@@ -59,7 +59,7 @@ export function annualSimpleTaxSteps(
   const 특별소득공제 = 특별소득공제추정(총급여액, dependants, rates)
   const 과세표준 = Math.max(0, 근로소득금액 - 인적공제 - 연금보험료공제 - 특별소득공제)
   const 산출세액 = progressiveTax(과세표준, rates)
-  const 근로소득세액공제 = Math.min(상한전근로소득세액공제(산출세액, rates), 근로소득세액공제한도(총급여액, rates))
+  const 근로소득세액공제 = Math.min(한도전근로소득세액공제(산출세액, rates), 근로소득세액공제한도(총급여액, rates))
   return {
     annualPay: 총급여액,
     earnedIncomeDeduction: 근로소득공제,
@@ -264,7 +264,7 @@ function 특별소득공제추정(총급여액: number, 공제대상가족수: n
   return Math.max(0, 공제액)
 }
 
-function 상한전근로소득세액공제(산출세액: number, rates: PayrollRateTable): number {
+function 한도전근로소득세액공제(산출세액: number, rates: PayrollRateTable): number {
   const 세액공제기준 = rates.wageIncomeTax.earnedIncomeCredit
   if (산출세액 <= 세액공제기준.threshold) return applyPpm(산출세액, 세액공제기준.lowRatePpm)
   return 세액공제기준.baseAbove + applyPpm(산출세액 - 세액공제기준.threshold, 세액공제기준.highRatePpm)
