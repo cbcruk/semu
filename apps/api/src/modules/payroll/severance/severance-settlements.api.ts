@@ -12,6 +12,7 @@ import {
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
+  WithholdingFiled,
 } from '../payroll-problems.ts'
 import { YearMonthString } from '../payroll-schema.ts'
 import { CreateSeveranceSettlement, SeveranceSettlement, UpdateSeveranceSettlement } from './severance-settlement.ts'
@@ -29,6 +30,7 @@ const WRITE_ERRORS = [
   SeveranceSettlementExists,
   EmployeeNotFound,
   RateTableNotFound,
+  WithholdingFiled,
 ] as const
 
 function command<const Name extends string, const Path extends `/severance-settlements/:settlementId::${string}`>(

@@ -1,6 +1,13 @@
 import { DEFAULT_OTHER_INCOME_CODE, PERSONAL_SERVICE_OTHER_INCOME_CODES } from '../rate-tables/reference-codes.ts'
 import type { PayrollRowInputValue } from '../rows/payroll-row-input.ts'
-import type { OtherIncomeCategory, WithholdingIncomeKind, WithholdingSummaryLine } from './pay-month.types.ts'
+import type { SeveranceSettlementRecord } from '../severance/severance-settlement.types.ts'
+import { severanceWithholdingPaidIn } from '../severance/severance-withholding.ts'
+import type {
+  LedgerIncomeKind,
+  OtherIncomeCategory,
+  WithholdingIncomeKind,
+  WithholdingSummaryLine,
+} from './pay-month.types.ts'
 import { paymentMonthOf } from './ledger-rules.ts'
 import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
@@ -33,24 +40,28 @@ export function payMonthChanges(
 }
 
 /** 행의 소득 구분을 원천세 집계 구분으로 바꿉니다. */
-export function withholdingKindOf(incomeType: string): WithholdingIncomeKind {
+export function withholdingKindOf(incomeType: string): LedgerIncomeKind {
   if (incomeType === 'DAILY' || incomeType === 'BUSINESS' || incomeType === 'OTHER') return incomeType
   return 'WAGE'
 }
 
 /**
- * 지급월(`YYYY-MM`)에 지급일이 있는 **마감된** 대장들의 원천세 집계입니다. Tax의 원천세 신고서 줄이 씁니다.
+ * 지급월(`YYYY-MM`)에 지급일이 있는 **마감된** 대장들과 **완료한** 퇴직금 정산의 원천세 집계입니다. Tax의 원천세 신고서 줄이 씁니다.
  *
  * 마감 전 대장의 금액은 아직 바뀔 수 있어 넣지 않습니다. 그 달이 모두 마감됐는지는 {@link isPayMonthClosed}로 따로 봅니다.
+ * 퇴직소득(`RETIREMENT`)은 대장 행이 아니라 지급일이 그 달인 완료 정산에서 옵니다(`severanceWithholdingPaidIn`). 대장이 없는
+ * 달에도 정산이 있으면 그 줄 하나가 나옵니다.
  */
 export function withholdingTotalsPaidIn(
   ledgers: readonly PayrollLedgerRecord[],
   paymentMonth: string,
+  settlements: readonly SeveranceSettlementRecord[] = [],
 ): WithholdingSummaryLine[] {
   const 마감된지급월대장 = ledgers.filter(
     (ledger) => ledger.status === 'CLOSED' && paymentMonthOf(ledger.paymentDate) === paymentMonth,
   )
-  return withholdingSummary(마감된지급월대장)
+  const 퇴직소득 = severanceWithholdingPaidIn(settlements, paymentMonth)
+  return withholdingSummary(마감된지급월대장, 퇴직소득 === null ? [] : [퇴직소득])
 }
 
 /**
@@ -64,13 +75,17 @@ export function otherIncomeCategoryOf(input: PayrollRowInputValue): OtherIncomeC
 }
 
 /**
- * 지급월 대장들의 원천세 집계입니다. 인원은 직원 ID(없으면 이름) 기준으로 중복 없이 셉니다.
- * 기타소득은 인적용역과 그 밖으로 나눕니다. 행이 없는 구분은 빼고, 순서는 근로·일용·사업·기타(인적용역, 그 밖)입니다.
+ * 지급월 대장들의 원천세 집계에 대장 밖의 줄(퇴직소득)을 더합니다. 인원은 직원 ID(없으면 이름) 기준으로 중복 없이 셉니다.
+ * 기타소득은 인적용역과 그 밖으로 나눕니다. 행이 없는 구분은 빼고, 순서는 근로·일용·퇴직·사업·기타(인적용역, 그 밖)입니다.
  */
-function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): WithholdingSummaryLine[] {
+function withholdingSummary(
+  ledgers: readonly PayrollLedgerRecord[],
+  nonLedgerLines: readonly WithholdingSummaryLine[],
+): WithholdingSummaryLine[] {
   const 집계순서: ReadonlyArray<[WithholdingIncomeKind, OtherIncomeCategory | null]> = [
     ['WAGE', null],
     ['DAILY', null],
+    ['RETIREMENT', null],
     ['BUSINESS', null],
     ['OTHER', 'PERSONAL_SERVICE'],
     ['OTHER', 'GENERAL'],
@@ -97,10 +112,12 @@ function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): Withholdin
     line.localIncomeTax += row.result.localIncomeTax
     구분별합계.set(`${소득구분}:${기타소득구분}`, line)
   }
+  const 줄목록 = new Map<string, WithholdingSummaryLine>(
+    [...구분별합계].map(([key, { people, ...rest }]) => [key, { ...rest, headcount: people.size }]),
+  )
+  for (const line of nonLedgerLines) 줄목록.set(`${line.incomeKind}:${line.otherIncomeCategory}`, line)
   return 집계순서.flatMap(([소득구분, 기타소득구분]) => {
-    const line = 구분별합계.get(`${소득구분}:${기타소득구분}`)
-    if (line === undefined) return []
-    const { people, ...rest } = line
-    return [{ ...rest, headcount: people.size }]
+    const line = 줄목록.get(`${소득구분}:${기타소득구분}`)
+    return line === undefined ? [] : [line]
   })
 }

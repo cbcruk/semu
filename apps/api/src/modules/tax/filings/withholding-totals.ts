@@ -6,7 +6,7 @@ import type { WithholdingTotal } from './withholding-return.types.ts'
  * 지급월에 지급한 소득 종류별 원천세 합계를 묻는 포트입니다. Payroll이 구현합니다(`src/wiring/tax-payroll.ts`).
  *
  * 이벤트로 금액을 받지 않고 필요할 때 묻습니다. outbox 재전달이나 마감·해제 순서와 상관없이 그때 Payroll이 가진 값을 받습니다.
- * Payroll은 마감된 급여대장만 더합니다.
+ * Payroll은 마감된 급여대장과 완료한 퇴직금 정산(퇴직소득 `RETIREMENT`)만 더합니다.
  */
 export class WithholdingTotals extends Context.Service<
   WithholdingTotals,

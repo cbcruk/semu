@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PayrollRowInputValue } from '../rows/payroll-row-input.ts'
+import type { SeveranceSettlementRecord } from '../severance/severance-settlement.types.ts'
 import type { LedgerStatus } from './ledger-status.types.ts'
 import { otherIncomeCategoryOf, withholdingTotalsPaidIn } from './pay-month.ts'
 import type { PayrollLedgerRecord, PayrollRowRecord } from './payroll-ledger.types.ts'
@@ -74,6 +75,41 @@ describe('withholdingTotalsPaidIn', () => {
     ]
 
     expect(withholdingTotalsPaidIn(ledgers, '2026-10')).toEqual([])
+  })
+
+  it('지급일이 그 달인 완료 퇴직금 정산을 퇴직소득 줄로 일용과 사업 사이에 넣습니다', () => {
+    const ledgers = [
+      ledger('2026-10-25', 'CLOSED', [
+        row({ incomeType: 'BUSINESS' }, '정사업', MONTHLY_PAY),
+        row({ incomeType: 'DAILY' }, '최일용', MONTHLY_PAY),
+      ]),
+    ]
+    const settlements = [
+      {
+        employeeId: 'emp_a',
+        status: 'COMPLETED',
+        paymentDate: '2026-10-31',
+        result: { severancePay: 8_321_917, retirementIncomeTax: 79_720, localIncomeTax: 7_970 },
+      },
+    ] as unknown as SeveranceSettlementRecord[]
+
+    expect(withholdingTotalsPaidIn(ledgers, '2026-10', settlements).map((line) => line.incomeKind)).toEqual([
+      'DAILY',
+      'RETIREMENT',
+      'BUSINESS',
+    ])
+    // 대장이 없는 달에도 퇴직소득 줄은 나옵니다.
+    expect(withholdingTotalsPaidIn([], '2026-10', settlements)).toEqual([
+      {
+        incomeKind: 'RETIREMENT',
+        otherIncomeCategory: null,
+        headcount: 1,
+        grossPay: 8_321_917,
+        taxablePay: 8_321_917,
+        incomeTax: 79_720,
+        localIncomeTax: 7_970,
+      },
+    ])
   })
 
   it('계산 결과가 없는 행은 건너뜁니다', () => {

@@ -26,5 +26,20 @@ export interface PayMonthReopened {
   occurredAt: string
 }
 
+/**
+ * 대장의 마감 상태와 상관없이 지급월의 원천세 합계가 바뀌었습니다. 지금은 퇴직금 정산의 완료·다시 열기로 그 달의
+ * 퇴직소득(`RETIREMENT`)이 생기거나 없어질 때 냅니다. 대장이 없는 달에도 냅니다.
+ *
+ * 금액과 정산 ID는 싣지 않습니다. 한 달에 퇴직자가 한 명이면 합계가 곧 개인의 퇴직금이고, Tax는 필요할 때
+ * `PayrollWithholdingTotals`로 묻습니다. Tax는 마감 이벤트와 같은 채널로 받아 그 지급월의 신고 건을 다시 맞춥니다.
+ */
+export interface PayMonthWithholdingChanged {
+  type: 'payroll_pay_month.withholding_changed'
+  eventId: Id<'event'>
+  companyId: Id<'company'>
+  paymentMonth: string
+  occurredAt: string
+}
+
 /** 급여가 내보내는 도메인 이벤트입니다. */
-export type PayrollEvent = PayMonthClosed | PayMonthReopened
+export type PayrollEvent = PayMonthClosed | PayMonthReopened | PayMonthWithholdingChanged
