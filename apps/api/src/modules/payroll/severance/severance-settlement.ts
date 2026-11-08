@@ -43,7 +43,7 @@ export const SeveranceSettlement = Schema.Struct({
   employeeName: Schema.String,
   joinDate: Schema.String,
   lastWorkDate: Schema.String,
-  /** 퇴직금 지급일입니다. 원천세 퇴직소득(A21)의 지급월입니다. 아직 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
+  /** 퇴직금 지급일입니다. 원천세 퇴직소득 그 외(A22)의 지급월입니다. 아직 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
   paymentDate: Schema.NullOr(Schema.String),
   status: Status,
   input: SeveranceInputSchema,
