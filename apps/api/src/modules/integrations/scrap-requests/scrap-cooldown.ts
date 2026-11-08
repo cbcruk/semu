@@ -39,7 +39,8 @@ function secondsUntil(target: number, now: number): number {
   return Math.max(0, Math.ceil((target - now) / 1000))
 }
 
-function isUnfinished(status: JobStatus): boolean {
+/** 대기(`QUEUED`)·진행(`RUNNING`) 중이라 아직 끝나지 않은 상태인지입니다. */
+function 끝나지않은상태인가(status: JobStatus): boolean {
   return status === 'QUEUED' || status === 'RUNNING'
 }
 
@@ -51,17 +52,19 @@ function isUnfinished(status: JobStatus): boolean {
  */
 export function scrapAvailability(latest: LatestScrapRequest | undefined, now: number): ScrapAvailability {
   if (latest === undefined) return { canRequest: true }
-  if (isUnfinished(latest.status) && now < latest.timeoutAt) {
+  if (끝나지않은상태인가(latest.status) && now < latest.timeoutAt) {
     return { canRequest: false, reason: 'RUNNING', retryAfterSeconds: Math.max(1, secondsUntil(latest.timeoutAt, now)) }
   }
-  const remain =
+  const 쿨다운남은초 =
     latest.requester === 'USER' && latest.nextAvailableAt !== undefined ? secondsUntil(latest.nextAvailableAt, now) : 0
-  return remain > 0 ? { canRequest: false, reason: 'COOLDOWN', retryAfterSeconds: remain } : { canRequest: true }
+  return 쿨다운남은초 > 0
+    ? { canRequest: false, reason: 'COOLDOWN', retryAfterSeconds: 쿨다운남은초 }
+    : { canRequest: true }
 }
 
 /** 저장된 상태에 타임아웃을 반영한 상태입니다. 끝나지 않은 채 타임아웃이 지나면 `FAILED`입니다. */
 export function effectiveJobStatus(status: JobStatus, timeoutAt: number, now: number): JobStatus {
-  return isUnfinished(status) && now >= timeoutAt ? 'FAILED' : status
+  return 끝나지않은상태인가(status) && now >= timeoutAt ? 'FAILED' : status
 }
 
 /**
@@ -70,14 +73,14 @@ export function effectiveJobStatus(status: JobStatus, timeoutAt: number, now: nu
  * 현행은 일부 실패를 묶음 전체 `FAIL`로 보여 성공한 항목을 가렸습니다.
  */
 export function summarizeItemResults(results: ReadonlyArray<'SUCCEEDED' | 'FAILED'>): JobStatus {
-  const failed = results.filter((result) => result === 'FAILED').length
-  if (failed === 0) return 'SUCCEEDED'
-  return failed === results.length ? 'FAILED' : 'PARTIALLY_SUCCEEDED'
+  const 실패항목수 = results.filter((result) => result === 'FAILED').length
+  if (실패항목수 === 0) return 'SUCCEEDED'
+  return 실패항목수 === results.length ? 'FAILED' : 'PARTIALLY_SUCCEEDED'
 }
 
 /** 여러 요청(전체 수집)의 상태를 하나로 줄입니다. 진행 중이 하나라도 있으면 `RUNNING`입니다. */
 export function summarizeJobs(statuses: ReadonlyArray<JobStatus>): JobStatus {
-  if (statuses.some(isUnfinished)) return 'RUNNING'
+  if (statuses.some(끝나지않은상태인가)) return 'RUNNING'
   if (statuses.every((status) => status === 'SUCCEEDED')) return 'SUCCEEDED'
   if (statuses.every((status) => status === 'FAILED' || status === 'CANCELED')) return 'FAILED'
   return 'PARTIALLY_SUCCEEDED'

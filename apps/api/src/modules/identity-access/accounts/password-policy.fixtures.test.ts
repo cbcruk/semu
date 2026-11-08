@@ -21,7 +21,7 @@ const NOT_PORTED = new Set([
   'unknown reset token',
 ])
 
-describe('password-policy fixtures', () => {
+describe('비밀번호 정책 규칙 픽스처', () => {
   for (const testCase of loadRuleCases('password-policy')) {
     it.skipIf(NOT_PORTED.has(testCase.name))(testCase.name, () => {
       const expected = (testCase.expected as { legacyServer: unknown }).legacyServer

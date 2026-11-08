@@ -91,14 +91,14 @@ const POLLING_CHANGED: Record<string, JobStatus> = {
   'polling: a timed out request is FAIL': 'PARTIALLY_SUCCEEDED',
 }
 
-describe('scrap-cooldown fixture', () => {
+describe('수동 수집 쿨다운 규칙 픽스처', () => {
   it.each(availabilityCases.map((testCase) => [testCase.name, testCase] as const))('%s', (_, testCase) => {
     const availability = scrapAvailability(latestOf(testCase.input['latest']), Date.parse(testCase.input['now']))
 
     expect(availability).toEqual(CHANGED[testCase.name] ?? legacyAvailability(testCase.expected))
   })
 
-  it('a request after the cooldown starts a new 600s cooldown', () => {
+  it('쿨다운이 끝난 뒤 요청하면 새로 600초 쿨다운을 시작합니다', () => {
     const testCase = fixture.cases.find((candidate) => candidate.name.startsWith('manual request after cooldown'))!
     const now = Date.parse(testCase.input['now'])
 
@@ -107,7 +107,7 @@ describe('scrap-cooldown fixture', () => {
     )
   })
 
-  it('request-all skips services cooling down or not connected', () => {
+  it('전체 수집은 쿨다운 중이거나 연동되지 않은 서비스를 건너뜁니다', () => {
     const testCase = fixture.cases.find((candidate) => candidate.input['check'] === 'requestAll')!
     const now = Date.parse(testCase.input['now'])
     const services = testCase.input['services'] as Record<string, { connected: boolean; latest: unknown }>
@@ -124,7 +124,7 @@ describe('scrap-cooldown fixture', () => {
     expect(status).toBe(POLLING_CHANGED[testCase.name] ?? POLLING[testCase.expected])
   })
 
-  it('accounts for every case that is not ported', () => {
+  it('옮기지 않은 케이스는 모두 이유를 적습니다', () => {
     const ported = new Set([
       ...availabilityCases.map((testCase) => testCase.name),
       ...pollingCases.map((testCase) => testCase.name),

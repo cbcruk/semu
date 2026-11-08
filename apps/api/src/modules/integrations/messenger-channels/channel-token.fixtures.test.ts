@@ -46,7 +46,7 @@ const NOT_PORTED: Record<string, string> = {
 
 const ported = fixture.cases.filter((testCase) => !(testCase.name in NOT_PORTED))
 
-describe('chat-channel-token fixture', () => {
+describe('상담 채널 연결 토큰 규칙 픽스처', () => {
   it.each(ported.map((testCase) => [testCase.name, testCase] as const))('%s', (_, testCase) => {
     const rejection = checkChannelToken(stored(testCase.input['token']), Date.parse(testCase.input['now']))
     const failReason = testCase.expected.failReason as string | undefined
@@ -54,7 +54,7 @@ describe('chat-channel-token fixture', () => {
     expect(rejection).toBe(failReason === undefined ? undefined : REASONS[failReason])
   })
 
-  it('accounts for every case that is not ported', () => {
+  it('옮기지 않은 케이스는 모두 이유를 적습니다', () => {
     const names = new Set(ported.map((testCase) => testCase.name))
     const rest = fixture.cases.map((testCase) => testCase.name).filter((name) => !names.has(name))
 

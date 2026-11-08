@@ -124,7 +124,7 @@ function comparable(value: unknown): unknown {
   return value
 }
 
-describe('internal-invitation fixtures', () => {
+describe('내부 초대 규칙 픽스처', () => {
   for (const testCase of loadRuleCases('internal-invitation')) {
     it.skipIf(NOT_PORTED.has(testCase.name))(testCase.name, () => {
       const expected = comparable(CHANGED[testCase.name] ?? testCase.expected)

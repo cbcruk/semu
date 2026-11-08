@@ -7,10 +7,10 @@ const CHANGED: Record<string, unknown> = {
   'corporate number with a wrong check digit': { valid: true },
 }
 
-describe('business-number-checksum fixtures', () => {
+describe('사업자등록번호 검증 규칙 픽스처', () => {
   const cases = loadRuleCases('business-number-checksum')
 
-  it('names only existing cases as changed', () => {
+  it('기대값을 바꾼 케이스로 픽스처에 있는 케이스만 적습니다', () => {
     expect(Object.keys(CHANGED).filter((name) => !cases.some((testCase) => testCase.name === name))).toEqual([])
   })
 

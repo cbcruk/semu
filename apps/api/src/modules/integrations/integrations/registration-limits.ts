@@ -20,11 +20,11 @@ export const AUTH_METHODS: Readonly<Record<InstitutionType, ReadonlyArray<AuthMe
   ALLRA: ['OAUTH'],
 }
 
-function reject(violation: RegistrationViolation): RegistrationDecision {
+function 거절(violation: RegistrationViolation): RegistrationDecision {
   return { ok: false, violation }
 }
 
-function authField(method: AuthMethod): string {
+function 인증방법필드(method: AuthMethod): string {
   return method === 'CERTIFICATE' ? 'certificateId' : 'authMethod'
 }
 
@@ -41,48 +41,53 @@ function authField(method: AuthMethod): string {
  */
 export function decideRegistration(request: RegistrationRequest, existing: ExistingLinks): RegistrationDecision {
   if (!AUTH_METHODS[request.type].includes(request.authMethod)) {
-    return reject({ code: 'AUTH_METHOD_NOT_SUPPORTED', field: authField(request.authMethod) })
+    return 거절({ code: 'AUTH_METHOD_NOT_SUPPORTED', field: 인증방법필드(request.authMethod) })
   }
   if (
     request.type === 'CREDIT_CARD' &&
     request.isCorporate &&
     request.authMethod === 'CERTIFICATE' &&
-    request.institutionCodes.some((code) => ID_ONLY_CORPORATE_CARD_COMPANIES.has(code))
+    request.institutionCodes.some((카드사코드) => ID_ONLY_CORPORATE_CARD_COMPANIES.has(카드사코드))
   ) {
-    return reject({ code: 'AUTH_METHOD_NOT_SUPPORTED', field: 'certificateId' })
+    return 거절({ code: 'AUTH_METHOD_NOT_SUPPORTED', field: 'certificateId' })
   }
   if (request.authMethod !== 'CERTIFICATE' && request.institutionCodes.length > 1) {
-    return reject({ code: 'SINGLE_INSTITUTION_REQUIRED', field: 'institutionCodes' })
+    return 거절({ code: 'SINGLE_INSTITUTION_REQUIRED', field: 'institutionCodes' })
   }
-  const sameType = existing.integrations.filter((integration) => integration.type === request.type)
-  const code = request.institutionCodes[0]
+  // 같은종류연동: 이 기관 종류의 기존 연동, 연동키규격: PG사별 연동키 규격(`PG_KEY_SPECS`)입니다. 지은 말입니다.
+  const 같은종류연동 = existing.integrations.filter((integration) => integration.type === request.type)
+  const 기관코드 = request.institutionCodes[0]
   switch (request.type) {
     case 'PG': {
-      const spec = code === undefined ? undefined : PG_KEY_SPECS[code]
-      if (spec === undefined) return reject({ code: 'PG_COMPANY_UNKNOWN', field: 'institutionCodes' })
-      const mid = request.mid ?? ''
-      if (code === 'TOSSPAYMENTS' && mid.startsWith('CF_'))
-        return reject({ code: 'PG_MID_NOT_SUPPORTED', field: 'mid' })
-      const names = new Set(request.keyNames ?? [])
-      const missing = spec.required.filter((key) => !names.has(key))
-      const first = missing[0]
-      if (first !== undefined) return reject({ code: 'PG_KEY_MISSING', field: `keys.${first}`, missing })
-      if (sameType.some((link) => link.institutionCode === code && link.accountKey === mid)) {
-        return reject({ code: 'INTEGRATION_DUPLICATE' })
+      const 연동키규격 = 기관코드 === undefined ? undefined : PG_KEY_SPECS[기관코드]
+      if (연동키규격 === undefined) return 거절({ code: 'PG_COMPANY_UNKNOWN', field: 'institutionCodes' })
+      const 상점아이디 = request.mid ?? ''
+      if (기관코드 === 'TOSSPAYMENTS' && 상점아이디.startsWith('CF_'))
+        return 거절({ code: 'PG_MID_NOT_SUPPORTED', field: 'mid' })
+      const 받은키이름 = new Set(request.keyNames ?? [])
+      const 빠진키 = 연동키규격.required.filter((키) => !받은키이름.has(키))
+      const 첫빠진키 = 빠진키[0]
+      if (첫빠진키 !== undefined) return 거절({ code: 'PG_KEY_MISSING', field: `keys.${첫빠진키}`, missing: 빠진키 })
+      if (
+        같은종류연동.some(
+          (integration) => integration.institutionCode === 기관코드 && integration.accountKey === 상점아이디,
+        )
+      ) {
+        return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
-      if (sameType.length >= MAX_ITEMS_PER_TYPE) {
-        return reject({ code: 'ITEM_LIMIT_EXCEEDED', field: 'mid', limit: MAX_ITEMS_PER_TYPE })
+      if (같은종류연동.length >= MAX_ITEMS_PER_TYPE) {
+        return 거절({ code: 'ITEM_LIMIT_EXCEEDED', field: 'mid', limit: MAX_ITEMS_PER_TYPE })
       }
       return {
         ok: true,
         canIssueTaxInvoice: false,
         usableForTaxFiling: false,
-        ...(spec.ipWhitelist === undefined ? {} : { ipWhitelist: spec.ipWhitelist }),
+        ...(연동키규격.ipWhitelist === undefined ? {} : { ipWhitelist: 연동키규격.ipWhitelist }),
       }
     }
     case 'HOMETAX':
-      if (sameType.some((link) => link.authMethod === request.authMethod)) {
-        return reject({ code: 'INTEGRATION_DUPLICATE' })
+      if (같은종류연동.some((integration) => integration.authMethod === request.authMethod)) {
+        return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
       return {
         ok: true,
@@ -91,20 +96,24 @@ export function decideRegistration(request: RegistrationRequest, existing: Exist
       }
     case 'CARD_SALES':
     case 'GIRO':
-      if (sameType.length > 0) return reject({ code: 'INTEGRATION_DUPLICATE' })
+      if (같은종류연동.length > 0) return 거절({ code: 'INTEGRATION_DUPLICATE' })
       return { ok: true, canIssueTaxInvoice: false, usableForTaxFiling: request.type === 'CARD_SALES' }
     case 'SPEED_BANK':
-      if (sameType.some((link) => link.institutionCode === code && link.accountKey === request.accountId)) {
-        return reject({ code: 'INTEGRATION_DUPLICATE' })
+      if (
+        같은종류연동.some(
+          (integration) => integration.institutionCode === 기관코드 && integration.accountKey === request.accountId,
+        )
+      ) {
+        return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
       return { ok: true, canIssueTaxInvoice: false, usableForTaxFiling: true }
     case 'CREDIT_CARD':
     case 'BANK':
     case 'DELIVERY':
     case 'ALLRA': {
-      if (request.newItemCount === 0) return reject({ code: 'NO_NEW_ITEMS', field: 'itemKeys' })
+      if (request.newItemCount === 0) return 거절({ code: 'NO_NEW_ITEMS', field: 'itemKeys' })
       if (existing.itemCount + request.newItemCount > MAX_ITEMS_PER_TYPE) {
-        return reject({ code: 'ITEM_LIMIT_EXCEEDED', field: 'itemKeys', limit: MAX_ITEMS_PER_TYPE })
+        return 거절({ code: 'ITEM_LIMIT_EXCEEDED', field: 'itemKeys', limit: MAX_ITEMS_PER_TYPE })
       }
       return {
         ok: true,

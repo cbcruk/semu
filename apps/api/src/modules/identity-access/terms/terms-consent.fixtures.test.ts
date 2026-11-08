@@ -62,7 +62,7 @@ function run(input: Record<string, unknown>): unknown {
   }
 }
 
-describe('terms-reagreement fixtures', () => {
+describe('약관 재동의 규칙 픽스처', () => {
   for (const testCase of loadRuleCases('terms-reagreement')) {
     it.skipIf(NOT_PORTED.has(testCase.name))(testCase.name, () => {
       const legacy = testCase.expected as { legacyServer?: unknown } | unknown

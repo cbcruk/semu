@@ -11,8 +11,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('agent permissions over HTTP (D5)', () => {
-  it('keeps an assigned agent out of member management in the client company', async () => {
+describe('HTTP로 본 세무 대리인 권한 (D5)', () => {
+  it('배정된 대리인은 고객 회사의 구성원 관리에 들어오지 못합니다', async () => {
     const { token } = await app.signIn('agent@agency.example')
 
     const users = await app.request('GET', '/v1/users', { token })
@@ -30,13 +30,13 @@ describe('agent permissions over HTTP (D5)', () => {
     expect(remove.status).toBe(403)
   })
 
-  it('still lets the agent read the client company', async () => {
+  it('대리인도 고객 회사 정보는 읽을 수 있습니다', async () => {
     const { token } = await app.signIn('agent@agency.example')
 
     expect((await app.request('GET', '/v1/companies/current', { token })).status).toBe(200)
   })
 
-  it('leaves the client admin with the wildcard and member management', async () => {
+  it('고객 관리자는 와일드카드 권한과 구성원 관리를 그대로 가집니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const me = await (await app.request('GET', '/v1/me', { token })).json()

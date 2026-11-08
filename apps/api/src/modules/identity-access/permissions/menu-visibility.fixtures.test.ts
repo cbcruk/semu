@@ -82,7 +82,7 @@ function node(menu: string, input: LegacyInput): Record<string, unknown> {
   }
 }
 
-describe('menu-visibility fixtures', () => {
+describe('메뉴 노출 규칙 픽스처', () => {
   for (const testCase of loadRuleCases('menu-visibility')) {
     it.skipIf(NOT_PORTED.has(testCase.name))(testCase.name, () => {
       const input = testCase.input as unknown as LegacyInput

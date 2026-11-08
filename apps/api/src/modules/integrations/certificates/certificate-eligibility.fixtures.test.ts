@@ -48,7 +48,7 @@ const usage = (value: string): CertificateUsage => value.toUpperCase() as Certif
 
 const byCheck = (check: string) => fixture.cases.filter((testCase) => testCase.input['check'] === check)
 
-describe('certificate-eligibility fixture', () => {
+describe('공동인증서 등록·사용 가능 규칙 픽스처', () => {
   it.each(byCheck('register').map((testCase) => [testCase.name, testCase] as const))('%s', (_, testCase) => {
     const { company, certificate, today } = testCase.input
     const decision = decideCertificateRegistration(
@@ -92,7 +92,7 @@ describe('certificate-eligibility fixture', () => {
     expect(allowed).toBe(testCase.expected === true)
   })
 
-  it('tax filing (세무신고 기관 연동) cannot use certificate integrations', () => {
+  it('세무신고 기관 연동에는 인증서 연동을 쓸 수 없습니다', () => {
     const decision = decideRegistration(
       { type: 'HOMETAX', authMethod: 'CERTIFICATE', institutionCodes: [], isCorporate: true, newItemCount: 0 },
       { integrations: [], itemCount: 0 },
@@ -115,7 +115,7 @@ describe('certificate-eligibility fixture', () => {
     }
   })
 
-  it('classify: label shown on the certificate card', () => {
+  it('인증서 카드에 보일 분류 이름을 정합니다', () => {
     expect(CERTIFICATE_OIDS['1.2.410.200005.1.1.4']).toEqual({
       ownerType: 'PERSONAL',
       usage: 'BANK',
@@ -123,7 +123,7 @@ describe('certificate-eligibility fixture', () => {
     })
   })
 
-  it('ports every case', () => {
+  it('모든 케이스를 옮깁니다', () => {
     const ported = [...byCheck('register'), ...byCheck('useFor'), ...byCheck('status'), ...byCheck('classify')].map(
       (testCase) => testCase.name,
     )

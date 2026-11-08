@@ -17,8 +17,8 @@ async function signupTerms(app: TestApp): Promise<string[]> {
   return terms.items.filter((t: { required: boolean }) => t.required).map((t: { id: string }) => t.id)
 }
 
-describe('invitations', () => {
-  it('invites a new person who signs up through the link and lands in the company', async () => {
+describe('초대', () => {
+  it('초대받은 새 사람이 링크로 가입하면 그 회사의 구성원이 됩니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
 
@@ -54,7 +54,7 @@ describe('invitations', () => {
     await app.dispose()
   })
 
-  it('lets an existing user accept while signed in, and refuses another account', async () => {
+  it('기존 사용자는 로그인한 채로 수락할 수 있고, 다른 계정의 수락은 거절합니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
     await invite(app, owner.token, 'sole@semu.example')
@@ -74,7 +74,7 @@ describe('invitations', () => {
     await app.dispose()
   })
 
-  it('accepts with the password of an existing account when not signed in', async () => {
+  it('로그인하지 않았으면 기존 계정의 비밀번호로 수락합니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
     await invite(app, owner.token, 'sole@semu.example')
@@ -88,7 +88,7 @@ describe('invitations', () => {
     await app.dispose()
   })
 
-  it('refuses a duplicate pending invitation and an existing member, then cancels', async () => {
+  it('유효한 초대가 있거나 이미 구성원이면 새 초대를 거절하고, 초대를 취소한 뒤에는 다시 초대할 수 있습니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
 
@@ -106,7 +106,7 @@ describe('invitations', () => {
     await app.dispose()
   })
 
-  it('does not let a member invite', async () => {
+  it('일반 구성원은 초대할 수 없습니다', async () => {
     const app = makeTestApp()
     const member = await app.signIn('member@semu.example')
 
@@ -114,7 +114,7 @@ describe('invitations', () => {
     await app.dispose()
   })
 
-  it('answers 404 for an unknown link token', async () => {
+  it('모르는 링크 토큰이면 404로 답합니다', async () => {
     const app = makeTestApp()
 
     expect((await app.request('POST', '/v1/invitations:preview', { body: { token: 'nope' } })).status).toBe(404)
@@ -122,8 +122,8 @@ describe('invitations', () => {
   })
 })
 
-describe('audit logs', () => {
-  it('records security actions for admins only', async () => {
+describe('감사 로그', () => {
+  it('보안 동작을 기록하고 관리자에게만 보여 줍니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
     await invite(app, owner.token, 'audited@semu.example')
@@ -137,8 +137,8 @@ describe('audit logs', () => {
   })
 })
 
-describe('invitation acceptance with an agency-scoped token', () => {
-  it('refuses the agency token with 403 TOKEN_SCOPE_MISMATCH instead of ignoring it', async () => {
+describe('대리인 범위 토큰으로 초대 수락', () => {
+  it('대리인 범위 토큰을 무시하지 않고 403 TOKEN_SCOPE_MISMATCH로 거절합니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
     await invite(app, owner.token, 'agent@agency.example')

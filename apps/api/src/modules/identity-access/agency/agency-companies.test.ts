@@ -33,7 +33,7 @@ function walk(companies: ReadonlyArray<AgentCompany>): Promise<string[]> {
   )
 }
 
-describe('AgencyCompanies.list paging', () => {
+describe('대리인 담당 회사 목록의 페이지 나누기', () => {
   it.each([
     [
       ['세무 상점', '세무'],
@@ -47,7 +47,7 @@ describe('AgencyCompanies.list paging', () => {
       ['세무', '세무 상점', 'apple', 'Banana', '세무 상점'],
       ['Banana', 'apple', '세무', '세무 상점', '세무 상점'],
     ],
-  ])('visits every company exactly once with limit=1 (%j)', async (names, expected) => {
+  ])('limit=1로 넘겨도 모든 회사를 정확히 한 번씩 거칩니다 (%j)', async (names, expected) => {
     const companies = names.map((name, index) => company(index + 1, name))
 
     expect(await walk(companies)).toEqual(expected)

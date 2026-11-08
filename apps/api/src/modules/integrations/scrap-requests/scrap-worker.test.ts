@@ -39,8 +39,8 @@ function setup() {
   return { received, enqueued, run }
 }
 
-describe('ScrapWorker', () => {
-  it('queues the request, blocks the next one while it runs and hands the records to Bookkeeping', async () => {
+describe('수집 작업자', () => {
+  it('요청을 대기열에 넣고 진행 중에는 다음 요청을 막으며 수집한 내역을 Bookkeeping에 넘깁니다', async () => {
     const { received, enqueued, run } = setup()
 
     const result = await run(
@@ -68,7 +68,7 @@ describe('ScrapWorker', () => {
     expect(result.replay.id).toBe(result.queued.id)
   })
 
-  it('reports a partial failure per item and offers RETRY only on the failed item', async () => {
+  it('일부 실패를 항목별로 알리고 실패한 항목에만 RETRY를 내놓습니다', async () => {
     const { run } = setup()
 
     const { request, failing } = await run(
@@ -102,7 +102,7 @@ describe('ScrapWorker', () => {
     expect(failing.allowedActions).toContain('RETRY')
   })
 
-  it('never stores the password in the clear', async () => {
+  it('비밀번호를 평문으로 저장하지 않습니다', async () => {
     const { run } = setup()
 
     const stored = await run(

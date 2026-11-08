@@ -50,22 +50,22 @@ function get(token?: string): Promise<Response> {
   return app.handler(new Request('http://localhost/probe', { headers }))
 }
 
-describe('Authentication', () => {
-  it('provides the actor of a known token', async () => {
+describe('인증', () => {
+  it('알려진 토큰이면 그 토큰의 행위자를 줍니다', async () => {
     const response = await get('admin')
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ companyId: testActor().companyId })
   })
 
-  it.each([undefined, 'unknown'])('answers 401 for token %s', async (token) => {
+  it.each([undefined, 'unknown'])('토큰이 %s이면 401로 답합니다', async (token) => {
     const response = await get(token)
 
     expect(response.status).toBe(401)
     expect(await response.json()).toMatchObject({ code: 'UNAUTHENTICATED' })
   })
 
-  it('answers 403 when the actor lacks the permission', async () => {
+  it('행위자에게 권한이 없으면 403으로 답합니다', async () => {
     const response = await get('viewer')
 
     expect(response.status).toBe(403)

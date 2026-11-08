@@ -39,12 +39,12 @@ function inCatalog(permission: string): boolean {
   return action === '*' || entry.actions.includes(action)
 }
 
-describe('permission catalog coverage', () => {
-  it('finds permission strings in the sources', () => {
+describe('권한 카탈로그가 덮는 범위', () => {
+  it('소스에서 권한 문자열을 찾아냅니다', () => {
     expect(usedPermissions().size).toBeGreaterThan(100)
   })
 
-  it('lists every permission string used in src, so roles can grant it and agents get it', () => {
+  it('src에서 쓰는 권한 문자열을 모두 카탈로그에 올려 권한 그룹이 줄 수 있고 대리인이 받게 합니다', () => {
     const missing = [...usedPermissions()]
       .filter(([permission]) => !inCatalog(permission))
       .map(([permission, file]) => `${permission} (${file})`)
@@ -52,7 +52,7 @@ describe('permission catalog coverage', () => {
     expect(missing).toEqual([])
   })
 
-  it('offers the newly listed actions on the role screen but never agent-only or admin-only ones', () => {
+  it('새로 올린 동작은 권한 그룹 화면에 내놓되 대리인 전용·관리자 전용 동작은 내놓지 않습니다', () => {
     const grantable = grantablePermissions().map((entry) => entry.permission)
 
     expect(grantable).toEqual(

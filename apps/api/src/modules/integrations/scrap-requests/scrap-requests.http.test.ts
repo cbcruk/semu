@@ -15,8 +15,8 @@ afterEach(() => app.dispose())
 
 const key = (value: string) => ({ 'idempotency-key': value })
 
-describe('POST /v1/scrap-requests', () => {
-  it('accepts a manual collection, runs it and then holds the next one for the cooldown', async () => {
+describe('수집 요청(POST /v1/scrap-requests)', () => {
+  it('수동 수집을 받아 실행하고 다음 요청은 쿨다운 동안 막습니다', async () => {
     const accepted = await app.request('POST', '/v1/scrap-requests', {
       token,
       headers: key('k-1'),
@@ -39,7 +39,7 @@ describe('POST /v1/scrap-requests', () => {
     expect(problem.retryAfterSeconds).toBeGreaterThan(590)
   })
 
-  it('replays the first response for the same Idempotency-Key', async () => {
+  it('같은 Idempotency-Key면 첫 응답을 그대로 다시 줍니다', async () => {
     const first = await (
       await app.request('POST', '/v1/scrap-requests', {
         token,
@@ -57,13 +57,13 @@ describe('POST /v1/scrap-requests', () => {
     expect((await second.json()).id).toBe(first.id)
   })
 
-  it('requires an Idempotency-Key', async () => {
+  it('Idempotency-Key가 있어야 합니다', async () => {
     const response = await app.request('POST', '/v1/scrap-requests', { token, body: { institutionType: 'BANK' } })
 
     expect(response.status).toBe(428)
   })
 
-  it('refuses an institution without any link', async () => {
+  it('연동이 하나도 없는 기관은 수집 요청을 거절합니다', async () => {
     const response = await app.request('POST', '/v1/scrap-requests', {
       token,
       headers: key('k-1'),
@@ -74,15 +74,15 @@ describe('POST /v1/scrap-requests', () => {
     expect(await response.json()).toMatchObject({ code: 'INSTITUTION_NOT_CONNECTED', institutionType: 'PG' })
   })
 
-  it('answers 404 for an unknown request', async () => {
+  it('모르는 수집 요청이면 404로 답합니다', async () => {
     const response = await app.request('GET', '/v1/scrap-requests/scr_01JBQ0000000000000000000ZZ', { token })
 
     expect(response.status).toBe(404)
   })
 })
 
-describe('request-all and availability', () => {
-  it('queues every connected institution and skips the ones cooling down', async () => {
+describe('전체 수집과 수집 가능 여부', () => {
+  it('연동된 기관을 모두 대기열에 넣고 쿨다운 중인 기관은 건너뜁니다', async () => {
     await app.request('POST', '/v1/scrap-requests', { token, headers: key('bank'), body: { institutionType: 'BANK' } })
 
     const all = await app.request('POST', '/v1/scrap-requests:request-all', { token, headers: key('all') })
@@ -105,7 +105,7 @@ describe('request-all and availability', () => {
     )
   })
 
-  it('lets a company without links see that nothing is connected', async () => {
+  it('연동이 없는 회사에는 연동된 기관이 없다고 보여 줍니다', async () => {
     const free = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const body = await (await app.request('GET', '/v1/scrap-requests:availability', { token: free.token })).json()

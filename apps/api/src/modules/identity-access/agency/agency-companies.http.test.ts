@@ -20,8 +20,8 @@ async function agencySession(email: string): Promise<{ token: string; cookie: st
   return { token: body.accessToken, cookie: cookieOf(response), body }
 }
 
-describe('POST /v1/auth/sessions:switch-agency', () => {
-  it('gives agency staff an agency-scoped token that is bound to no company', async () => {
+describe('대리인 범위로 전환(POST /v1/auth/sessions:switch-agency)', () => {
+  it('세무 대리인 담당자에게 어느 회사에도 묶이지 않은 대리인 범위 토큰을 줍니다', async () => {
     const { body } = await agencySession('agent@agency.example')
 
     expect(body).toMatchObject({ tokenType: 'Bearer', expiresIn: 600, scope: 'AGENCY', user: { kind: 'AGENCY_STAFF' } })
@@ -31,7 +31,7 @@ describe('POST /v1/auth/sessions:switch-agency', () => {
     )
   })
 
-  it('refuses a customer user with 403 and leaves the session usable', async () => {
+  it('고객사 사용자는 403으로 거절하고 세션은 그대로 쓸 수 있게 둡니다', async () => {
     const { cookie } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/auth/sessions:switch-agency', { cookie })
@@ -43,7 +43,7 @@ describe('POST /v1/auth/sessions:switch-agency', () => {
     expect(await refreshed.json()).toMatchObject({ scope: 'COMPANY' })
   })
 
-  it('keeps the agency scope across refresh until the agent switches to a company', async () => {
+  it('대리인이 회사로 전환하기 전까지는 토큰을 갱신해도 대리인 범위를 유지합니다', async () => {
     const agency = await agencySession('agent@agency.example')
 
     const refreshed = await app.request('POST', '/v1/auth/sessions:refresh', { cookie: agency.cookie })
@@ -69,8 +69,8 @@ describe('POST /v1/auth/sessions:switch-agency', () => {
   })
 })
 
-describe('token scope', () => {
-  it('rejects an agency token on company resources with 403 TOKEN_SCOPE_MISMATCH', async () => {
+describe('토큰 범위', () => {
+  it('회사 리소스에 대리인 범위 토큰을 쓰면 403 TOKEN_SCOPE_MISMATCH로 거절합니다', async () => {
     const { token } = await agencySession('agent@agency.example')
 
     for (const path of ['/v1/me', '/v1/companies/current', '/v1/filings', '/v1/action-cards']) {
@@ -80,7 +80,7 @@ describe('token scope', () => {
     }
   })
 
-  it('rejects company tokens on /agency/* with 403, for customers and for agents inside a company', async () => {
+  it('/agency/*에 회사 범위 토큰을 쓰면 고객이든 회사 안의 대리인이든 403으로 거절합니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const agentInCompany = await app.signIn('agent@agency.example')
 
@@ -91,7 +91,7 @@ describe('token scope', () => {
     }
   })
 
-  it('answers 401 without a token', async () => {
+  it('토큰이 없으면 401로 답합니다', async () => {
     const response = await app.request('GET', '/v1/agency/companies')
 
     expect(response.status).toBe(401)
@@ -99,8 +99,8 @@ describe('token scope', () => {
   })
 })
 
-describe('GET /v1/agency/companies', () => {
-  it('lists only the assigned companies by name, with tax workload counted by Tax', async () => {
+describe('대리인 담당 회사 목록(GET /v1/agency/companies)', () => {
+  it('배정된 회사만 이름순으로 보여 주고 세무 일감 개수는 Tax가 셉니다', async () => {
     const { token } = await agencySession('agent@agency.example')
 
     const response = await app.request('GET', '/v1/agency/companies', { token })
@@ -128,7 +128,7 @@ describe('GET /v1/agency/companies', () => {
     expect(body.items.map((c: { id: string }) => c.id)).not.toContain(DEMO_COMPANY_IDS.demo)
   })
 
-  it('shows a manager the companies of the team and filters by assignee', async () => {
+  it('팀장에게는 팀의 담당 회사를 보여 주고 담당자로 거를 수 있습니다', async () => {
     const { token } = await agencySession('manager@agency.example')
 
     const all = await (await app.request('GET', '/v1/agency/companies', { token })).json()
@@ -141,7 +141,7 @@ describe('GET /v1/agency/companies', () => {
     expect(mine.items).toEqual([])
   })
 
-  it('pages with a cursor', async () => {
+  it('커서로 페이지를 나눕니다', async () => {
     const { token } = await agencySession('agent@agency.example')
 
     const first = await (await app.request('GET', '/v1/agency/companies?limit=1', { token })).json()
