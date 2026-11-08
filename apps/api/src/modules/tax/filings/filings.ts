@@ -33,11 +33,11 @@ import type {
 } from './filing.types.ts'
 import { attachDocument, isDocumentVisibleToClient } from './filing-documents.ts'
 import { FilingRepository } from './filing-repository.ts'
-import { answerRequirement, payrollLedgerResponse, responseAfterFiles } from './filing-requirements.ts'
+import { answerRequirement, responseAfterFiles } from './filing-requirements.ts'
 import type { RequirementAnswer, RequirementCode } from './filing-requirements.types.ts'
 import { CLIENT_EDITABLE_STATUSES, transitionFiling } from './filing-status.ts'
 import { filingStatusChanged, toFiling, toFilingSummary, transitionFacts } from './filing-view.ts'
-import { PayrollLedgers } from './payroll-ledgers.ts'
+import { PayrollLedgers, relinkAutoRequirements } from './payroll-ledgers.ts'
 import { monthsBetween, withholdingReturnLines } from './withholding-return.ts'
 import type { WithholdingReturnMonth } from './withholding-return.types.ts'
 import { WithholdingTotals } from './withholding-totals.ts'
@@ -427,31 +427,12 @@ export class Filings extends Context.Service<
         const { now } = yield* currentInstant
         for (const filing of filings) {
           if (filing.status === 'CANCELED') continue
-          const linked = filing.requirements.find((requirement) => requirement.code === 'PAYROLL_LEDGER_CLOSED')
-          if (linked === undefined) continue
-          const summary = yield* payrollLedgers.summaryFor(companyId, filing.periodStart, filing.periodEnd)
-          const response = payrollLedgerResponse(summary)
-          if (response === linked.response) continue
-          yield* repository.save({
-            ...filing,
-            requirements: filing.requirements.map((requirement) =>
-              requirement === linked ? { ...requirement, response, updatedAt: now } : requirement,
-            ),
-            history: [
-              ...filing.history,
-              {
-                type: 'REQUIREMENT_LINKED',
-                actorKind: 'SYSTEM',
-                actorId: null,
-                fromStatus: null,
-                toStatus: null,
-                detail: { code: linked.code, response, paymentMonth, lastDay: lastDayOfMonth(paymentMonth) },
-                occurredAt: now,
-              },
-            ],
-            version: filing.version + 1,
-            updatedAt: now,
+          const relinked = yield* relinkAutoRequirements(payrollLedgers, filing, now, {
+            paymentMonth,
+            lastDay: lastDayOfMonth(paymentMonth),
           })
+          if (!relinked.changed) continue
+          yield* repository.save({ ...relinked.filing, version: filing.version + 1, updatedAt: now })
         }
       })
 
