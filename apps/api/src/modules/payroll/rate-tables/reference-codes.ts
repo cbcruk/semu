@@ -1,33 +1,38 @@
 import type { ReferenceCode } from './reference-codes.types.ts'
 
-const FROM = '2024-01'
+const 적용시작월 = '2024-01'
 
 // 코드 출처(아래에서 "서식"): 소득세법 시행규칙 별지 제23호서식(2) "거주자의 사업소득 지급명세서" <개정 2026. 3. 20.>
 // 작성방법 업종구분코드 표와 별지 제23호서식(4) "거주자의 기타소득 지급명세서" <개정 2026. 3. 20.> 작성방법 소득구분코드 표.
 // 두 서식은 별지 제23호서식 묶음 파일(첫 서식(1)은 <개정 2026. 5. 22.>) 하나에 들어 있습니다.
 // https://www.law.go.kr/flDownload.do?gubun=&flSeq=164443773&bylClsCd=110202
 
-function other(code: string, name: string, expenseRatePpm: number | null, taxRatePpm = 200_000): ReferenceCode {
+function 기타소득구분코드(
+  code: string,
+  name: string,
+  expenseRatePpm: number | null,
+  taxRatePpm = 200_000,
+): ReferenceCode {
   return {
     code,
     name,
     expenseRatePpm,
     taxRatePpm,
     detailType: null,
-    effectiveFrom: FROM,
+    effectiveFrom: 적용시작월,
     effectiveTo: null,
     verified: true,
   }
 }
 
-function business(code: string, name: string, detailType: 'ARTIST' | 'SPECIAL' | null = null): ReferenceCode {
+function 업종구분코드(code: string, name: string, detailType: 'ARTIST' | 'SPECIAL' | null = null): ReferenceCode {
   return {
     code,
     name,
     expenseRatePpm: null,
     taxRatePpm: null,
     detailType,
-    effectiveFrom: FROM,
+    effectiveFrom: 적용시작월,
     effectiveTo: null,
     verified: true,
   }
@@ -44,20 +49,20 @@ function business(code: string, name: string, detailType: 'ARTIST' | 'SPECIAL' |
  * 연금계좌 연금외수령(15%)은 기타소득 지급명세서가 아니라 별지 제24호서식(6)에 적으므로 여기 없습니다.
  */
 export const OTHER_INCOME_CODES: readonly ReferenceCode[] = [
-  other('60', '필요경비가 없는 기타소득', 0),
-  other('62', '그 밖에 필요경비가 있는 기타소득', null),
-  other('63', '소기업소상공인공제부금 해지 소득', null, 150_000),
-  other('64', '서화·골동품 양도소득', 900_000),
-  other('71', '상금 및 부상', 800_000),
-  other('72', '광업권 등', 600_000),
-  other('73', '지역권 등', 600_000),
-  other('74', '주택입주지체상금', 800_000),
-  other('75', '원고료 등', 600_000),
-  other('76', '강연료 등', 600_000),
-  other('78', '사례금', 0),
-  other('79', '자문료 등', 600_000),
-  other('80', '통신판매중개 물품·장소 대여 사용료', 600_000),
-  other('81', '위약금·배상금', null),
+  기타소득구분코드('60', '필요경비가 없는 기타소득', 0),
+  기타소득구분코드('62', '그 밖에 필요경비가 있는 기타소득', null),
+  기타소득구분코드('63', '소기업소상공인공제부금 해지 소득', null, 150_000),
+  기타소득구분코드('64', '서화·골동품 양도소득', 900_000),
+  기타소득구분코드('71', '상금 및 부상', 800_000),
+  기타소득구분코드('72', '광업권 등', 600_000),
+  기타소득구분코드('73', '지역권 등', 600_000),
+  기타소득구분코드('74', '주택입주지체상금', 800_000),
+  기타소득구분코드('75', '원고료 등', 600_000),
+  기타소득구분코드('76', '강연료 등', 600_000),
+  기타소득구분코드('78', '사례금', 0),
+  기타소득구분코드('79', '자문료 등', 600_000),
+  기타소득구분코드('80', '통신판매중개 물품·장소 대여 사용료', 600_000),
+  기타소득구분코드('81', '위약금·배상금', null),
 ]
 
 /**
@@ -68,46 +73,46 @@ export const OTHER_INCOME_CODES: readonly ReferenceCode[] = [
  * `detailType`을 보지 않고 행의 `employmentInsuranceApplicable` 표시만 봅니다.
  */
 export const BUSINESS_INCOME_CODES: readonly ReferenceCode[] = [
-  business('940100', '저술가', 'ARTIST'),
-  business('940200', '화가관련', 'ARTIST'),
-  business('940301', '작곡가', 'ARTIST'),
-  business('940302', '배우', 'ARTIST'),
-  business('940303', '모델', 'ARTIST'),
-  business('940304', '가수', 'ARTIST'),
-  business('940305', '성악가', 'ARTIST'),
-  business('940306', '1인미디어콘텐츠창작자'),
-  business('940500', '연예보조', 'ARTIST'),
-  business('940600', '자문·고문'),
-  business('940901', '바둑기사'),
-  business('940902', '꽃꽂이교사'),
-  business('940903', '학원강사'),
-  business('940904', '직업운동가'),
-  business('940905', '봉사료수취자'),
-  business('940906', '보험설계', 'SPECIAL'),
-  business('940907', '음료배달'),
-  business('940908', '방문판매원', 'SPECIAL'),
-  business('940909', '기타인적용역자'),
-  business('940910', '다단계판매'),
-  business('940911', '기타모집수당'),
-  business('940912', '간병인'),
-  business('940913', '대리운전', 'SPECIAL'),
-  business('940914', '캐디', 'SPECIAL'),
-  business('940915', '목욕관리사'),
-  business('940916', '행사도우미'),
-  business('940917', '심부름용역'),
-  business('940918', '퀵서비스', 'SPECIAL'),
-  business('940919', '물품운반', 'SPECIAL'),
-  business('940920', '학습지방문강사', 'SPECIAL'),
-  business('940921', '교육교구방문강사'),
-  business('940922', '대여제품방문점검원'),
-  business('940923', '대출모집인'),
-  business('940924', '신용카드회원모집인'),
-  business('940925', '방과후강사'),
-  business('940926', '소프트웨어프리랜서', 'SPECIAL'),
-  business('940927', '관광통역안내사'),
-  business('940928', '어린이통학버스기사'),
-  business('940929', '중고자동차판매원'),
-  business('851101', '병의원'),
+  업종구분코드('940100', '저술가', 'ARTIST'),
+  업종구분코드('940200', '화가관련', 'ARTIST'),
+  업종구분코드('940301', '작곡가', 'ARTIST'),
+  업종구분코드('940302', '배우', 'ARTIST'),
+  업종구분코드('940303', '모델', 'ARTIST'),
+  업종구분코드('940304', '가수', 'ARTIST'),
+  업종구분코드('940305', '성악가', 'ARTIST'),
+  업종구분코드('940306', '1인미디어콘텐츠창작자'),
+  업종구분코드('940500', '연예보조', 'ARTIST'),
+  업종구분코드('940600', '자문·고문'),
+  업종구분코드('940901', '바둑기사'),
+  업종구분코드('940902', '꽃꽂이교사'),
+  업종구분코드('940903', '학원강사'),
+  업종구분코드('940904', '직업운동가'),
+  업종구분코드('940905', '봉사료수취자'),
+  업종구분코드('940906', '보험설계', 'SPECIAL'),
+  업종구분코드('940907', '음료배달'),
+  업종구분코드('940908', '방문판매원', 'SPECIAL'),
+  업종구분코드('940909', '기타인적용역자'),
+  업종구분코드('940910', '다단계판매'),
+  업종구분코드('940911', '기타모집수당'),
+  업종구분코드('940912', '간병인'),
+  업종구분코드('940913', '대리운전', 'SPECIAL'),
+  업종구분코드('940914', '캐디', 'SPECIAL'),
+  업종구분코드('940915', '목욕관리사'),
+  업종구분코드('940916', '행사도우미'),
+  업종구분코드('940917', '심부름용역'),
+  업종구분코드('940918', '퀵서비스', 'SPECIAL'),
+  업종구분코드('940919', '물품운반', 'SPECIAL'),
+  업종구분코드('940920', '학습지방문강사', 'SPECIAL'),
+  업종구분코드('940921', '교육교구방문강사'),
+  업종구분코드('940922', '대여제품방문점검원'),
+  업종구분코드('940923', '대출모집인'),
+  업종구분코드('940924', '신용카드회원모집인'),
+  업종구분코드('940925', '방과후강사'),
+  업종구분코드('940926', '소프트웨어프리랜서', 'SPECIAL'),
+  업종구분코드('940927', '관광통역안내사'),
+  업종구분코드('940928', '어린이통학버스기사'),
+  업종구분코드('940929', '중고자동차판매원'),
+  업종구분코드('851101', '병의원'),
 ]
 
 /** 서화·골동품 양도소득 지급사유 코드입니다. */

@@ -63,20 +63,20 @@ const BUSINESS_INCOME_FORM: ReadonlyArray<[string, string]> = [
   ['851101', '병의원'],
 ]
 
-describe('reference codes match the statement forms', () => {
-  it('pins every other income code, deemed expense rate and tax rate', () => {
+describe('소득 구분 코드는 지급명세서 서식과 같습니다', () => {
+  it('기타소득 코드마다 의제필요경비율과 세율을 고정합니다', () => {
     expect(OTHER_INCOME_CODES.map((entry) => [entry.code, entry.name, entry.expenseRatePpm, entry.taxRatePpm])).toEqual(
       OTHER_INCOME_FORM,
     )
     expect(OTHER_INCOME_CODES.every((entry) => entry.verified)).toBe(true)
   })
 
-  it('defaults to 76, a 60% deemed expense code', () => {
+  it('기본값은 의제필요경비 60%인 76입니다', () => {
     expect(DEFAULT_OTHER_INCOME_CODE).toBe('76')
     expect(OTHER_INCOME_CODES.find((entry) => entry.code === DEFAULT_OTHER_INCOME_CODE)?.expenseRatePpm).toBe(600_000)
   })
 
-  it('pins all 40 business income codes and names', () => {
+  it('사업소득 코드 40개와 이름을 모두 고정합니다', () => {
     expect(BUSINESS_INCOME_CODES.map((entry) => [entry.code, entry.name])).toEqual(BUSINESS_INCOME_FORM)
     expect(BUSINESS_INCOME_CODES.every((entry) => entry.verified)).toBe(true)
   })

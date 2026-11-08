@@ -81,11 +81,11 @@ const app = payrollTestApp(
 
 afterAll(() => app.dispose())
 
-describe('/payroll-ledgers with client approval', () => {
+describe('/payroll-ledgers 급여 아웃소싱(고객 승인)', () => {
   let ledgerId = ''
   let rowId = ''
 
-  it('creates the regular ledger with wage rows from HR', async () => {
+  it('인사 정보로 근로소득 행을 채운 정기 대장을 만듭니다', async () => {
     const response = await app.request('POST', '/payroll-ledgers', { body: { attributionMonth: '2026-03' } })
 
     expect(response.status).toBe(201)
@@ -107,7 +107,7 @@ describe('/payroll-ledgers with client approval', () => {
     expect(rows.body.items[0]).toMatchObject({ employeeId: EMPLOYEE_ID, incomeType: 'WAGE_MONTHLY' })
   })
 
-  it('recalculates a row with the legacy-verified amounts', async () => {
+  it('행을 현행 서비스로 확인한 금액대로 다시 계산합니다', async () => {
     const response = await app.request('PATCH', `/payroll-ledgers/${ledgerId}/rows/${rowId}`, {
       headers: { 'if-match': '"1"' },
       body: {
@@ -124,7 +124,7 @@ describe('/payroll-ledgers with client approval', () => {
     expect(response.body.result).toMatchObject({ grossPay: 3_200_000, incomeTax: 60_380, netPay: 2_842_070 })
   })
 
-  it('refuses a second wage row for the same employee and month', async () => {
+  it('같은 직원·귀속월의 두 번째 근로소득 행은 거절합니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
       body: { employeeId: EMPLOYEE_ID, input: { incomeType: 'WAGE_MONTHLY', basePay: 100_000 } },
     })
@@ -133,7 +133,7 @@ describe('/payroll-ledgers with client approval', () => {
     expect(response.body).toMatchObject({ code: 'WAGE_INCOME_DUPLICATED', ledgerId })
   })
 
-  it('refuses a stale If-Match', async () => {
+  it('오래된 If-Match는 거절합니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${ledgerId}:submit`, {
       headers: { 'if-match': '"1"' },
     })
@@ -142,7 +142,7 @@ describe('/payroll-ledgers with client approval', () => {
     expect(response.body).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 2 })
   })
 
-  it('moves through submit, approval request, rejection and approval', async () => {
+  it('제출·승인 요청·반려·승인을 차례로 거칩니다', async () => {
     const submitted = await app.request('POST', `/payroll-ledgers/${ledgerId}:submit`)
     expect(submitted.body).toMatchObject({ status: 'SUBMITTED', step: 2, allowedActions: [] })
 
@@ -163,7 +163,7 @@ describe('/payroll-ledgers with client approval', () => {
     expect(approved.body).toMatchObject({ status: 'CLOSED', step: 3, rejection: null, allowedActions: ['REOPEN'] })
   })
 
-  it('publishes the pay-month closed event with the withholding summary', () => {
+  it('지급월 마감 이벤트를 원천세 요약과 함께 발행합니다', () => {
     expect(events.at(-1)).toMatchObject({
       type: 'payroll_pay_month.closed',
       companyId: TEST_COMPANY_ID,
@@ -182,28 +182,28 @@ describe('/payroll-ledgers with client approval', () => {
     })
   })
 
-  it('keeps the closed ledger read-only', async () => {
+  it('마감한 급여대장은 읽기만 할 수 있습니다', async () => {
     const response = await app.request('DELETE', `/payroll-ledgers/${ledgerId}/rows/${rowId}`)
 
     expect(response.status).toBe(409)
     expect(response.body).toMatchObject({ code: 'PAYROLL_LEDGER_READ_ONLY', ledgerStatus: 'CLOSED' })
   })
 
-  it('reopens the pay month when the ledger is reopened', async () => {
+  it('급여대장을 다시 열면 지급월도 다시 엽니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${ledgerId}:reopen`, { body: { reason: '상여 누락' } })
 
     expect(response.body).toMatchObject({ status: 'SUBMITTED', reopenReason: '상여 누락', closedAt: null })
     expect(events.at(-1)).toMatchObject({ type: 'payroll_pay_month.reopened', paymentMonth: '2026-03' })
   })
 
-  it('lists ledgers by attribution month', async () => {
+  it('귀속월별로 급여대장을 보여 줍니다', async () => {
     const response = await app.request('GET', '/payroll-ledgers?attributionMonth=2026-03')
 
     expect(response.status).toBe(200)
     expect(response.body.items).toHaveLength(1)
   })
 
-  it('needs the update permission to change rows', async () => {
+  it('행을 바꾸려면 수정 권한이 있어야 합니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${ledgerId}:recalculate`, { token: 'viewer' })
 
     expect(response.status).toBe(403)
@@ -211,11 +211,11 @@ describe('/payroll-ledgers with client approval', () => {
   })
 })
 
-describe('/payroll-ledgers additional ledgers', () => {
+describe('/payroll-ledgers 추가 대장', () => {
   let regularId = ''
   let additionalId = ''
 
-  it('blocks an additional ledger until the regular one is submitted', async () => {
+  it('정기 대장을 제출하기 전에는 추가 대장을 만들지 못합니다', async () => {
     const regular = await app.request('POST', '/payroll-ledgers', { body: { attributionMonth: '2027-03' } })
     regularId = regular.body.id
 
@@ -225,7 +225,7 @@ describe('/payroll-ledgers additional ledgers', () => {
     expect(blocked.body).toMatchObject({ code: 'ADDITIONAL_LEDGER_BLOCKED', reason: 'REGULAR_LEDGER_NOT_SUBMITTED' })
   })
 
-  it('creates an additional ledger that takes business income but no wage income', async () => {
+  it('추가 대장은 사업소득은 받고 근로소득은 받지 않습니다', async () => {
     await app.request('POST', `/payroll-ledgers/${regularId}:submit`)
     const additional = await app.request('POST', '/payroll-ledgers', { body: { attributionMonth: '2027-03' } })
     expect(additional.status).toBe(201)
@@ -250,7 +250,7 @@ describe('/payroll-ledgers additional ledgers', () => {
     })
   })
 
-  it('needs a payee name for non-wage rows', async () => {
+  it('근로소득이 아닌 행에는 수령인 이름이 있어야 합니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
       body: { input: { incomeType: 'OTHER', payAmount: 500_000 } },
     })
@@ -259,7 +259,7 @@ describe('/payroll-ledgers additional ledgers', () => {
     expect(response.body).toMatchObject({ code: 'PAYROLL_ROW_PAYEE_INVALID', reason: 'PAYEE_NAME_REQUIRED' })
   })
 
-  it('refuses to link a non-wage row to an employee of another company', async () => {
+  it('근로소득이 아닌 행을 다른 회사 직원에 잇는 것은 거절합니다', async () => {
     const foreign = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
       body: {
         employeeId: FOREIGN_EMPLOYEE_ID,
@@ -276,7 +276,7 @@ describe('/payroll-ledgers additional ledgers', () => {
     expect(own.status).toBe(201)
   })
 
-  it('keeps the regular ledger while additional ledgers exist', async () => {
+  it('추가 대장이 있으면 정기 대장을 지우지 못합니다', async () => {
     await app.request('POST', `/payroll-ledgers/${regularId}:return-to-draft`, { token: AGENCY_TOKEN })
     const response = await app.request('DELETE', `/payroll-ledgers/${regularId}`)
 
@@ -285,8 +285,8 @@ describe('/payroll-ledgers additional ledgers', () => {
   })
 })
 
-describe('/payroll-ledgers self-service', () => {
-  it('closes directly without an approval step', async () => {
+describe('/payroll-ledgers 직접 운영', () => {
+  it('승인 단계 없이 바로 마감합니다', async () => {
     const created = await app.request('POST', '/payroll-ledgers', {
       token: 'direct',
       body: { attributionMonth: '2026-04' },
@@ -307,7 +307,7 @@ describe('/payroll-ledgers self-service', () => {
   })
 })
 
-describe('/payroll-ledgers after withholding is filed', () => {
+describe('/payroll-ledgers 원천세 신고 뒤', () => {
   const closedLedger: PayrollLedgerRecord = {
     id: 'pyl_01JBQ000000000000000000001' as Id<'payrollLedger'>,
     companyId: TEST_COMPANY_ID,
@@ -334,7 +334,7 @@ describe('/payroll-ledgers after withholding is filed', () => {
 
   afterAll(() => filedApp.dispose())
 
-  it('locks reopening and hides amount-changing actions', async () => {
+  it('다시 열기를 잠그고 금액이 바뀌는 동작을 숨깁니다', async () => {
     const detail = await filedApp.request('GET', `/payroll-ledgers/${closedLedger.id}`)
     expect(detail.body).toMatchObject({ withholdingFiled: true, allowedActions: [] })
 

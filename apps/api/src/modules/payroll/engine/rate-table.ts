@@ -18,14 +18,14 @@ export function isYearMonth(value: string): value is YearMonth {
  * ```
  */
 export function resolveRateTable(tables: readonly PayrollRateTable[], month: YearMonth): PayrollRateTable {
-  let match: PayrollRateTable | undefined
+  let 적용기준표: PayrollRateTable | undefined
   for (const table of tables) {
-    if (table.effectiveFrom <= month && (match === undefined || table.effectiveFrom > match.effectiveFrom)) {
-      match = table
+    if (table.effectiveFrom <= month && (적용기준표 === undefined || table.effectiveFrom > 적용기준표.effectiveFrom)) {
+      적용기준표 = table
     }
   }
-  if (match === undefined) throw new RangeError(`No payroll rate table is in force in ${month}`)
-  return match
+  if (적용기준표 === undefined) throw new RangeError(`No payroll rate table is in force in ${month}`)
+  return 적용기준표
 }
 
 /** 원문으로 확인하지 못한 기준표 값의 경로 목록입니다. 예: `longTermCare.ratioOfHealthPpm` */

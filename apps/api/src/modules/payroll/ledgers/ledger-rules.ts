@@ -27,8 +27,8 @@ export function defaultPaymentDate(
   attributionMonth: string,
   terms: { paymentMonth: PaymentMonthRule; paymentDay: number },
 ): string {
-  const offset = terms.paymentMonth === 'NEXT' ? 1 : terms.paymentMonth === 'PREVIOUS' ? -1 : 0
-  return dayInMonth(addMonths(attributionMonth, offset), terms.paymentDay)
+  const 지급월차이 = terms.paymentMonth === 'NEXT' ? 1 : terms.paymentMonth === 'PREVIOUS' ? -1 : 0
+  return dayInMonth(addMonths(attributionMonth, 지급월차이), terms.paymentDay)
 }
 
 /**
@@ -36,8 +36,8 @@ export function defaultPaymentDate(
  */
 export function wagePeriodOf(attributionMonth: string, startDay: number): { start: string; end: string } {
   const start = dayInMonth(attributionMonth, startDay)
-  const nextStart = dayInMonth(addMonths(attributionMonth, 1), startDay)
-  return { start, end: addDays(nextStart, -1) }
+  const 다음시작일 = dayInMonth(addMonths(attributionMonth, 1), startDay)
+  return { start, end: addDays(다음시작일, -1) }
 }
 
 /** 지급일의 지급월(`YYYY-MM`)입니다. 원천세는 지급월 기준입니다. */
@@ -75,15 +75,15 @@ export function additionalLedgerBlocker(input: {
   ledgers: readonly LedgerSummary[]
   withholdingFiled: boolean
 }): AdditionalLedgerBlocker | null {
-  const regular = input.ledgers.find(
+  const 정기대장 = input.ledgers.find(
     (ledger) => ledger.kind === 'REGULAR' && ledger.attributionMonth === input.attributionMonth,
   )
-  if (regular === undefined) return 'NO_REGULAR_LEDGER'
-  if (regular.status === 'DRAFT') return 'REGULAR_LEDGER_NOT_SUBMITTED'
+  if (정기대장 === undefined) return 'NO_REGULAR_LEDGER'
+  if (정기대장.status === 'DRAFT') return 'REGULAR_LEDGER_NOT_SUBMITTED'
   if (input.ledgers.some((ledger) => ledger.status === 'DRAFT')) return 'DRAFT_LEDGER_EXISTS'
   if (input.withholdingFiled) return 'WITHHOLDING_FILED'
-  const deadline = withholdingDeadlineOf(paymentMonthOf(input.paymentDate))
-  if (input.today >= addDays(deadline, -ADDITIONAL_LEDGER_DEADLINE_MARGIN_DAYS)) return 'WITHHOLDING_DEADLINE_NEAR'
+  const 신고기한 = withholdingDeadlineOf(paymentMonthOf(input.paymentDate))
+  if (input.today >= addDays(신고기한, -ADDITIONAL_LEDGER_DEADLINE_MARGIN_DAYS)) return 'WITHHOLDING_DEADLINE_NEAR'
   return null
 }
 
@@ -103,10 +103,10 @@ export function duplicatedWageIncome(
   existing: readonly WageRowRef[],
   candidate: { attributionMonth: string; employeeId: string },
 ): string | null {
-  const found = existing.find(
+  const 중복행 = existing.find(
     (row) => row.attributionMonth === candidate.attributionMonth && row.employeeId === candidate.employeeId,
   )
-  return found === undefined ? null : found.ledgerId
+  return 중복행 === undefined ? null : 중복행.ledgerId
 }
 
 function dayInMonth(month: string, day: number): string {

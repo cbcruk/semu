@@ -29,23 +29,23 @@ export function withholdDailyWorker(
   dailyPays: readonly number[] | undefined,
   rates: PayrollRateTable,
 ): WithholdingResult {
-  const table = rates.dailyWorker
-  const days = Math.max(1, workDays)
-  const taxable =
+  const 일용기준 = rates.dailyWorker
+  const 근로일수 = Math.max(1, workDays)
+  const 과세표준 =
     dailyPays === undefined
-      ? splitEvenly(payAmount, days).reduce((total, pay) => total + Math.max(0, pay - table.dailyDeduction), 0)
-      : sum(dailyPays.map((pay) => Math.max(0, pay - table.dailyDeduction)))
-  const calculated = applyPpm(taxable, table.ratePpm)
-  const credit = applyPpm(calculated, table.creditPpm)
-  const raw = truncateTo(calculated - credit, rates.wageIncomeTax.taxRoundingUnit)
-  const exempt = raw < rates.smallAmountExemption
-  const incomeTax = exempt ? 0 : raw
-  return finish(incomeTax, exempt, rates, [
+      ? splitEvenly(payAmount, 근로일수).reduce((total, 일급) => total + Math.max(0, 일급 - 일용기준.dailyDeduction), 0)
+      : sum(dailyPays.map((일급) => Math.max(0, 일급 - 일용기준.dailyDeduction)))
+  const 산출세액 = applyPpm(과세표준, 일용기준.ratePpm)
+  const 세액공제 = applyPpm(산출세액, 일용기준.creditPpm)
+  const 결정세액 = truncateTo(산출세액 - 세액공제, rates.wageIncomeTax.taxRoundingUnit)
+  const 소액부징수임 = 결정세액 < rates.smallAmountExemption
+  const 소득세 = 소액부징수임 ? 0 : 결정세액
+  return 지방소득세추가(소득세, 소액부징수임, rates, [
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
-      formula: `(지급액 ${formatWon(payAmount)} − ${formatWon(table.dailyDeduction)} × ${days}일 = ${formatWon(taxable)}) × ${formatPpm(table.ratePpm)} − 근로소득세액공제 ${formatPpm(table.creditPpm)}${exempt ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
+      amount: 소득세,
+      formula: `(지급액 ${formatWon(payAmount)} − ${formatWon(일용기준.dailyDeduction)} × ${근로일수}일 = ${formatWon(과세표준)}) × ${formatPpm(일용기준.ratePpm)} − 근로소득세액공제 ${formatPpm(일용기준.creditPpm)}${소액부징수임 ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
     },
   ])
 }
@@ -56,23 +56,26 @@ export function withholdDailyWorker(
  * 소득세는 10원 미만 절사하고, 1,000원 미만이면 0입니다(소액부징수).
  */
 export function withholdBusinessIncome(payAmount: number, rates: PayrollRateTable): WithholdingResult {
-  const raw = truncateTo(applyPpm(payAmount, rates.businessIncome.ratePpm), rates.wageIncomeTax.taxRoundingUnit)
-  const exempt = raw < rates.smallAmountExemption
-  const incomeTax = exempt ? 0 : raw
-  return finish(incomeTax, exempt, rates, [
+  const 원천징수세액 = truncateTo(
+    applyPpm(payAmount, rates.businessIncome.ratePpm),
+    rates.wageIncomeTax.taxRoundingUnit,
+  )
+  const 소액부징수임 = 원천징수세액 < rates.smallAmountExemption
+  const 소득세 = 소액부징수임 ? 0 : 원천징수세액
+  return 지방소득세추가(소득세, 소액부징수임, rates, [
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
-      formula: `${formatWon(payAmount)} × ${formatPpm(rates.businessIncome.ratePpm)}${exempt ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
+      amount: 소득세,
+      formula: `${formatWon(payAmount)} × ${formatPpm(rates.businessIncome.ratePpm)}${소액부징수임 ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
     },
   ])
 }
 
 /** 기타소득의 필요경비입니다. 지급액을 넘지 않습니다. */
 export function necessaryExpenseOf(payAmount: number, expense: NecessaryExpense): number {
-  const amount = expense.kind === 'DEEMED' ? applyPpm(payAmount, expense.ratePpm) : expense.amount
-  return Math.min(Math.max(0, amount), payAmount)
+  const 필요경비 = expense.kind === 'DEEMED' ? applyPpm(payAmount, expense.ratePpm) : expense.amount
+  return Math.min(Math.max(0, 필요경비), payAmount)
 }
 
 /**
@@ -93,30 +96,33 @@ export function withholdOtherIncome(
   taxRatePpm: number | undefined,
   rates: PayrollRateTable,
 ): WithholdingResult {
-  const expenses = necessaryExpenseOf(payAmount, expense)
-  const income = payAmount - expenses
-  const ratePpm = taxRatePpm ?? rates.otherIncome.ratePpm
-  const belowThreshold = income <= rates.otherIncome.minimumTaxableIncome
-  const raw = belowThreshold ? 0 : truncateTo(applyPpm(income, ratePpm), rates.wageIncomeTax.taxRoundingUnit)
-  const exempt = belowThreshold || raw < rates.smallAmountExemption
-  const incomeTax = exempt ? 0 : raw
-  const note = belowThreshold
+  const 필요경비 = necessaryExpenseOf(payAmount, expense)
+  const 기타소득금액 = payAmount - 필요경비
+  const 세율ppm = taxRatePpm ?? rates.otherIncome.ratePpm
+  const 과세최저한이하인가 = 기타소득금액 <= rates.otherIncome.minimumTaxableIncome
+  const 원천징수세액 = 과세최저한이하인가
+    ? 0
+    : truncateTo(applyPpm(기타소득금액, 세율ppm), rates.wageIncomeTax.taxRoundingUnit)
+  const 소액부징수임 = !과세최저한이하인가 && 원천징수세액 < rates.smallAmountExemption
+  const 징수하지않음 = 과세최저한이하인가 || 소액부징수임
+  const 소득세 = 징수하지않음 ? 0 : 원천징수세액
+  const 면제문구 = 과세최저한이하인가
     ? ` → 과세최저한(${formatWon(rates.otherIncome.minimumTaxableIncome)}원 이하)`
-    : exempt
+    : 소액부징수임
       ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)`
       : ''
-  return finish(incomeTax, exempt, rates, [
+  return 지방소득세추가(소득세, 징수하지않음, rates, [
     {
       code: 'NECESSARY_EXPENSE',
       label: '필요경비',
-      amount: expenses,
+      amount: 필요경비,
       formula: expense.kind === 'DEEMED' ? `${formatWon(payAmount)} × ${formatPpm(expense.ratePpm)}` : '실제 경비',
     },
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
-      formula: `(${formatWon(payAmount)} − ${formatWon(expenses)}) × ${formatPpm(ratePpm)}${note}`,
+      amount: 소득세,
+      formula: `(${formatWon(payAmount)} − ${formatWon(필요경비)}) × ${formatPpm(세율ppm)}${면제문구}`,
     },
   ])
 }
@@ -128,28 +134,37 @@ export function withholdOtherIncome(
  * 고릅니다(967,000 → 999,980이 아니라 1,000,000). 정확한 값이 없으면 실지급액이 목표 이상인 가장 작은 총액입니다.
  */
 export function grossUpFromNet(netAmount: number, netOf: (gross: number) => number, effectiveRatePpm: number): number {
-  const estimate = Math.round((netAmount * 1_000_000) / Math.max(1, 1_000_000 - effectiveRatePpm))
-  let best: number | undefined
-  let fallback: number | undefined
-  for (let gross = Math.max(netAmount, estimate - 2_000); gross <= estimate + 2_000; gross += 1) {
-    const net = netOf(gross)
-    if (net === netAmount && (best === undefined || Math.abs(gross - estimate) < Math.abs(best - estimate))) {
-      best = gross
+  const 추정총액 = Math.round((netAmount * 1_000_000) / Math.max(1, 1_000_000 - effectiveRatePpm))
+  let 일치총액: number | undefined
+  // 실지급액이 목표를 처음 넘는(가장 작은) 총액
+  let 초과최소총액: number | undefined
+  for (let 후보총액 = Math.max(netAmount, 추정총액 - 2_000); 후보총액 <= 추정총액 + 2_000; 후보총액 += 1) {
+    const 실지급액 = netOf(후보총액)
+    if (
+      실지급액 === netAmount &&
+      (일치총액 === undefined || Math.abs(후보총액 - 추정총액) < Math.abs(일치총액 - 추정총액))
+    ) {
+      일치총액 = 후보총액
     }
-    if (net > netAmount && fallback === undefined) fallback = gross
+    if (실지급액 > netAmount && 초과최소총액 === undefined) 초과최소총액 = 후보총액
   }
-  return best ?? fallback ?? estimate
+  return 일치총액 ?? 초과최소총액 ?? 추정총액
 }
 
-function finish(incomeTax: number, exempt: boolean, rates: PayrollRateTable, trace: TraceEntry[]): WithholdingResult {
-  const localIncomeTax = localIncomeTaxOf(incomeTax, rates)
+function 지방소득세추가(
+  소득세: number,
+  징수하지않음: boolean,
+  rates: PayrollRateTable,
+  trace: TraceEntry[],
+): WithholdingResult {
+  const 지방소득세 = localIncomeTaxOf(소득세, rates)
   trace.push({
     code: 'LOCAL_INCOME_TAX',
     label: '지방소득세',
-    amount: localIncomeTax,
-    formula: `소득세 ${formatWon(incomeTax)} × 10%`,
+    amount: 지방소득세,
+    formula: `소득세 ${formatWon(소득세)} × 10%`,
   })
-  return { incomeTax, localIncomeTax, exempt, trace }
+  return { incomeTax: 소득세, localIncomeTax: 지방소득세, exempt: 징수하지않음, trace }
 }
 
 function splitEvenly(total: number, days: number): number[] {

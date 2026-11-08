@@ -7,8 +7,8 @@ export type PayMonthChange = { kind: 'CLOSED'; paymentMonth: string } | { kind: 
 
 /** 지급월에 지급일이 있는 대장이 하나 이상이고 모두 `CLOSED`인지입니다. */
 export function isPayMonthClosed(ledgers: readonly PayrollLedgerRecord[], paymentMonth: string): boolean {
-  const inMonth = ledgers.filter((ledger) => paymentMonthOf(ledger.paymentDate) === paymentMonth)
-  return inMonth.length > 0 && inMonth.every((ledger) => ledger.status === 'CLOSED')
+  const 지급월대장 = ledgers.filter((ledger) => paymentMonthOf(ledger.paymentDate) === paymentMonth)
+  return 지급월대장.length > 0 && 지급월대장.every((ledger) => ledger.status === 'CLOSED')
 }
 
 /**
@@ -19,15 +19,15 @@ export function payMonthChanges(
   before: readonly PayrollLedgerRecord[],
   after: readonly PayrollLedgerRecord[],
 ): PayMonthChange[] {
-  const months = new Set([...before, ...after].map((ledger) => paymentMonthOf(ledger.paymentDate)))
-  const changes: PayMonthChange[] = []
-  for (const paymentMonth of [...months].sort()) {
-    const was = isPayMonthClosed(before, paymentMonth)
-    const is = isPayMonthClosed(after, paymentMonth)
-    if (!was && is) changes.push({ kind: 'CLOSED', paymentMonth })
-    if (was && !is) changes.push({ kind: 'REOPENED', paymentMonth })
+  const 지급월목록 = new Set([...before, ...after].map((ledger) => paymentMonthOf(ledger.paymentDate)))
+  const 지급월변경: PayMonthChange[] = []
+  for (const paymentMonth of [...지급월목록].sort()) {
+    const 이전마감임 = isPayMonthClosed(before, paymentMonth)
+    const 이후마감임 = isPayMonthClosed(after, paymentMonth)
+    if (!이전마감임 && 이후마감임) 지급월변경.push({ kind: 'CLOSED', paymentMonth })
+    if (이전마감임 && !이후마감임) 지급월변경.push({ kind: 'REOPENED', paymentMonth })
   }
-  return changes
+  return 지급월변경
 }
 
 /** 행의 소득 구분을 원천세 집계 구분으로 바꿉니다. */
@@ -41,13 +41,13 @@ export function withholdingKindOf(incomeType: string): WithholdingIncomeKind {
  * 행이 없는 구분은 빼고, 구분 순서는 근로·일용·사업·기타입니다.
  */
 export function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): WithholdingSummaryLine[] {
-  const order: WithholdingIncomeKind[] = ['WAGE', 'DAILY', 'BUSINESS', 'OTHER']
-  const lines = new Map<WithholdingIncomeKind, WithholdingSummaryLine & { people: Set<string> }>()
+  const 소득구분순서: WithholdingIncomeKind[] = ['WAGE', 'DAILY', 'BUSINESS', 'OTHER']
+  const 소득구분별합계 = new Map<WithholdingIncomeKind, WithholdingSummaryLine & { people: Set<string> }>()
   for (const row of ledgers.flatMap((ledger) => ledger.rows)) {
     if (row.result === null) continue
-    const kind = withholdingKindOf(row.input.incomeType)
-    const line = lines.get(kind) ?? {
-      incomeKind: kind,
+    const 소득구분 = withholdingKindOf(row.input.incomeType)
+    const line = 소득구분별합계.get(소득구분) ?? {
+      incomeKind: 소득구분,
       headcount: 0,
       grossPay: 0,
       taxablePay: 0,
@@ -60,10 +60,10 @@ export function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): Wit
     line.taxablePay += row.result.taxablePay
     line.incomeTax += row.result.incomeTax
     line.localIncomeTax += row.result.localIncomeTax
-    lines.set(kind, line)
+    소득구분별합계.set(소득구분, line)
   }
-  return order.flatMap((kind) => {
-    const line = lines.get(kind)
+  return 소득구분순서.flatMap((소득구분) => {
+    const line = 소득구분별합계.get(소득구분)
     if (line === undefined) return []
     const { people, ...rest } = line
     return [{ ...rest, headcount: people.size }]

@@ -32,8 +32,8 @@ function context(attributionMonth: string, paymentMonth: string): RowCalculation
   }
 }
 
-describe('calculateRow across rate table boundaries', () => {
-  it('withholds a February row paid in March with the March child credit', () => {
+describe('기준표가 바뀌는 달의 calculateRow', () => {
+  it('3월에 지급한 2월 귀속 행은 3월 자녀세액공제로 원천징수합니다', () => {
     const boundary = context('2026-02', '2026-03')
     const result = calculateRow(input, snapshot, boundary)
     const engineInput = engineInputOf(input, snapshot, boundary)
@@ -50,7 +50,7 @@ describe('calculateRow across rate table boundaries', () => {
     expect(result.employeeInsurance).toEqual(february.insurance.employee)
   })
 
-  it('takes insurance from the attribution month and tax from the payment month around November 2026', () => {
+  it('2026년 11월 전후로 보험료는 귀속월, 세액은 지급월 기준표를 씁니다', () => {
     const october = calculateRow(input, snapshot, context('2026-10', '2026-11'))
     const november = calculateRow(input, snapshot, context('2026-11', '2026-11'))
 
@@ -62,21 +62,21 @@ describe('calculateRow across rate table boundaries', () => {
   })
 })
 
-describe('childcare child count from the snapshot', () => {
+describe('직원 정보 사본의 보육수당 자녀 수', () => {
   const withChildcare: PayrollRowInputValue = {
     incomeType: 'WAGE_MONTHLY',
     basePay: 3_000_000,
     paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
   }
 
-  it('raises the childcare limit to 200,000 per qualifying child', () => {
+  it('보육수당 비과세 한도는 대상 자녀 1명당 200,000원입니다', () => {
     const result = calculateRow(withChildcare, { ...snapshot, childcareChildren: 2 }, context('2026-03', '2026-03'))
 
     expect(result.nonTaxablePay).toBe(400_000)
     expect(result.warnings.map((warning) => warning.code)).toEqual(['NON_TAXABLE_LIMIT_EXCEEDED'])
   })
 
-  it('warns when the count was set for another tax year', () => {
+  it('자녀 수를 다른 과세연도에 정했으면 경고합니다', () => {
     const stale = { ...snapshot, childcareChildren: 2, childcareChildrenEffectiveFrom: '2026-01-01' }
     const sameYear = calculateRow(withChildcare, stale, context('2026-12', '2026-12'))
     const nextYear = calculateRow(withChildcare, stale, context('2027-01', '2027-01'))
@@ -86,7 +86,7 @@ describe('childcare child count from the snapshot', () => {
     expect(nextYear.warnings.map((warning) => warning.code)).toContain('CHILDCARE_CHILDREN_STALE')
   })
 
-  it('keeps one 200,000 limit and warns for snapshots saved without the count', () => {
+  it('자녀 수 없이 저장한 사본은 한도 200,000원 하나로 보고 경고합니다', () => {
     const result = calculateRow(withChildcare, snapshot, context('2026-03', '2026-03'))
 
     expect(result.nonTaxablePay).toBe(200_000)
@@ -97,10 +97,10 @@ describe('childcare child count from the snapshot', () => {
   })
 })
 
-describe('calculateRow for other income codes (별지 제23호서식(4))', () => {
+describe('기타소득 코드별 calculateRow (별지 제23호서식(4))', () => {
   const march = context('2026-03', '2026-03')
 
-  it('uses 76 (강연료 등, 60% deemed expense) when the row has no code', () => {
+  it('코드가 없는 행은 76(강연료 등, 의제필요경비 60%)으로 봅니다', () => {
     const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000 }, null, march)
 
     expect({ incomeTax: result.incomeTax, localIncomeTax: result.localIncomeTax }).toEqual({
@@ -109,19 +109,19 @@ describe('calculateRow for other income codes (별지 제23호서식(4))', () =>
     })
   })
 
-  it('recalculates a row saved with 60 at 0% expense, since 60 is 필요경비가 없는 기타소득', () => {
+  it('60으로 저장한 행은 필요경비가 없는 기타소득이라 필요경비 0%로 다시 계산합니다', () => {
     const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000, otherIncomeCode: '60' }, null, march)
 
     expect(result.incomeTax).toBe(200_000)
   })
 
-  it('applies the 60% deemed expense of code 72', () => {
+  it('코드 72는 의제필요경비 60%를 적용합니다', () => {
     const result = calculateRow({ incomeType: 'OTHER', payAmount: 1_000_000, otherIncomeCode: '72' }, null, march)
 
     expect(result.incomeTax).toBe(80_000)
   })
 
-  it('warns when an artwork sale over 100,000,000 uses the flat 90% expense', () => {
+  it('100,000,000원을 넘는 서화·골동품 양도에 필요경비 90%를 일괄 적용하면 경고합니다', () => {
     const over = calculateRow({ incomeType: 'OTHER', payAmount: 100_000_001, otherIncomeCode: '64' }, null, march)
     const atLimit = calculateRow({ incomeType: 'OTHER', payAmount: 100_000_000, otherIncomeCode: '64' }, null, march)
     const withActual = calculateRow(
@@ -136,11 +136,11 @@ describe('calculateRow for other income codes (별지 제23호서식(4))', () =>
   })
 })
 
-describe('calculateRow for business income employment insurance', () => {
+describe('사업소득 고용보험의 calculateRow', () => {
   const march = context('2026-03', '2026-03')
 
   it.each(['940923', '940921', '940924', '940925', '940100', '940909'])(
-    'follows the row flag for %s, not the code',
+    '%s는 코드가 아니라 행의 고용보험 적용 여부를 따릅니다',
     (code) => {
       const flagged = calculateRow(
         { incomeType: 'BUSINESS', payAmount: 1_000_000, businessIncomeCode: code, employmentInsuranceApplicable: true },

@@ -11,8 +11,8 @@ const RATE: Omit<SocialInsuranceInput, 'insurablePay'> = {
   employmentInsurance: { mode: 'RATE' },
 }
 
-describe('rate tables', () => {
-  it('resolves the table in force by month', () => {
+describe('기준표', () => {
+  it('달마다 그때 시행 중인 기준표를 고릅니다', () => {
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-01').effectiveFrom).toBe('2026-01')
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-02').effectiveFrom).toBe('2026-01')
     expect(resolveRateTable(BUILT_IN_RATE_TABLES, '2026-03').effectiveFrom).toBe('2026-03')
@@ -24,7 +24,7 @@ describe('rate tables', () => {
     expect(() => resolveRateTable(BUILT_IN_RATE_TABLES, '2025-12')).toThrow(RangeError)
   })
 
-  it('records provenance for every rate group and flags source-confirmed values as verified', () => {
+  it('요율 묶음마다 출처를 적고 원문으로 확인한 값은 확인됨으로 표시합니다', () => {
     const paths = Object.keys(rates.verification)
     for (const group of [
       'minimumWage',
@@ -47,7 +47,7 @@ describe('rate tables', () => {
     expect(unverified).not.toContain('minimumWage.hourly')
   })
 
-  it('versions the July 2026 pension base limits and the March 2026 child credits', () => {
+  it('2026년 7월 국민연금 기준소득월액 상·하한과 2026년 3월 자녀세액공제를 따로 둡니다', () => {
     const march = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-03')
     const july = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07')
 
@@ -59,7 +59,7 @@ describe('rate tables', () => {
     expect(BUILT_IN_RATE_TABLES.every((table) => unverifiedRatePaths(table).length > 0)).toBe(true)
   })
 
-  it('confirms the long-term care ratio from the 2026 press release, then from 법률 제21690호 부칙 제3조 in November', () => {
+  it('장기요양보험 비율은 2026년 보도자료로, 11월부터는 법률 제21690호 부칙 제3조로 확인합니다', () => {
     const october = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-10')
     const november = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-11')
 
@@ -76,22 +76,22 @@ describe('rate tables', () => {
 describe('calculateSocialInsurance', () => {
   it.each([
     {
-      label: '3,000,000: NPS 142,500; NHIS 107,850; LTC 14,171.49 → 14,170; EI 27,000',
+      label: '3,000,000: 국민연금 142,500, 건강보험 107,850, 장기요양 14,171.49 → 14,170, 고용보험 27,000',
       pay: 3_000_000,
       expected: [142_500, 107_850, 14_170, 27_000],
     },
     {
-      label: 'NPS cap: 8,000,000 → base 6,370,000 × 4.75% = 302,575 → 302,570',
+      label: '국민연금 상한: 8,000,000 → 기준소득월액 6,370,000 × 4.75% = 302,575 → 302,570',
       pay: 8_000_000,
       expected: [302_570, 287_600, 37_790, 72_000],
     },
     {
-      label: 'NPS floor: 300,000 → base 400,000 × 4.75% = 19,000',
+      label: '국민연금 하한: 300,000 → 기준소득월액 400,000 × 4.75% = 19,000',
       pay: 300_000,
       expected: [19_000, 10_780, 1_410, 2_700],
     },
     {
-      label: 'NPS base truncated below 1,000: 3,456,789 → 3,456,000',
+      label: '국민연금 기준소득월액은 천 원 미만을 버림: 3,456,789 → 3,456,000',
       pay: 3_456_789,
       expected: [164_160, 124_270, 16_320, 31_110],
     },
@@ -106,7 +106,7 @@ describe('calculateSocialInsurance', () => {
     ]).toEqual(expected)
   })
 
-  it('uses the July 2026 pension limits from that month', () => {
+  it('2026년 7월부터 그달의 국민연금 상·하한을 씁니다', () => {
     const july = resolveRateTable(BUILT_IN_RATE_TABLES, '2026-07')
     const cap = calculateSocialInsurance({ ...RATE, insurablePay: 8_000_000 }, july)
     const floor = calculateSocialInsurance({ ...RATE, insurablePay: 300_000 }, july)
@@ -116,7 +116,7 @@ describe('calculateSocialInsurance', () => {
     expect(floor.employee.nationalPension).toBe(19_470)
   })
 
-  it('adds the employer stability rate and the industrial accident rate on the employer side only', () => {
+  it('고용안정·직업능력개발 요율과 산재보험 요율은 사업주 부담에만 더합니다', () => {
     const { employee, employer } = calculateSocialInsurance(
       { ...RATE, insurablePay: 3_000_000, industrialAccidentRatePpm: 7_000 },
       rates,
@@ -128,7 +128,7 @@ describe('calculateSocialInsurance', () => {
     expect(employer.total).toBe(142_500 + 107_850 + 14_170 + 34_500 + 21_000)
   })
 
-  it('takes noticed amounts as is and skips exempt insurances', () => {
+  it('고지 금액은 그대로 쓰고 미적용 보험은 건너뜁니다', () => {
     const result = calculateSocialInsurance(
       {
         insurablePay: 3_000_000,
@@ -149,7 +149,7 @@ describe('calculateSocialInsurance', () => {
     expect(result.employer.nationalPension).toBe(135_000)
   })
 
-  it('uses the artist rate on both sides for 예술인·노무제공자', () => {
+  it('예술인·노무제공자는 근로자·사업주 모두 예술인 요율을 씁니다', () => {
     const result = calculateSocialInsurance(
       {
         insurablePay: 1_000_000,

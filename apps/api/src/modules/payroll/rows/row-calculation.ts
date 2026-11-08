@@ -54,46 +54,46 @@ export function engineInputOf(
     case 'WAGE_MONTHLY':
     case 'WAGE_HOURLY':
     case 'WAGE_DAILY': {
-      const employee = snapshot ?? DEFAULT_EMPLOYEE_SNAPSHOT
-      const methods = context.setting.deductionMethods
-      const notice = input.insuranceNotice ?? {}
-      const base = {
+      const 직원정보사본 = snapshot ?? DEFAULT_EMPLOYEE_SNAPSHOT
+      const 산출방법 = context.setting.deductionMethods
+      const 고지금액 = input.insuranceNotice ?? {}
+      const 공통입력 = {
         attributionMonth,
         paymentItems: (input.paymentItems ?? []).map((item) => ({ ...item })),
         work: { ...input.work },
         multipliers: { ...context.setting.multipliers } satisfies PremiumMultipliers,
-        monthlyStandardHours: employee.monthlyStandardHours,
-        dailyRestMinutes: employee.dailyRestMinutes,
+        monthlyStandardHours: 직원정보사본.monthlyStandardHours,
+        dailyRestMinutes: 직원정보사본.dailyRestMinutes,
         insurance: {
-          nationalPension: insuranceSetting(
-            employee.socialInsurance.nationalPension,
-            methods.nationalPension,
-            notice.nationalPension,
+          nationalPension: 보험설정(
+            직원정보사본.socialInsurance.nationalPension,
+            산출방법.nationalPension,
+            고지금액.nationalPension,
           ),
           healthInsurance: {
-            ...insuranceSetting(
-              employee.socialInsurance.healthInsurance,
-              methods.healthInsurance,
-              notice.healthInsurance,
+            ...보험설정(
+              직원정보사본.socialInsurance.healthInsurance,
+              산출방법.healthInsurance,
+              고지금액.healthInsurance,
             ),
-            ...(notice.longTermCare === undefined ? {} : { longTermCareNoticeAmount: notice.longTermCare }),
+            ...(고지금액.longTermCare === undefined ? {} : { longTermCareNoticeAmount: 고지금액.longTermCare }),
           },
-          employmentInsurance: insuranceSetting(
-            employee.socialInsurance.employmentInsurance,
-            methods.employmentInsurance,
-            notice.employmentInsurance,
+          employmentInsurance: 보험설정(
+            직원정보사본.socialInsurance.employmentInsurance,
+            산출방법.employmentInsurance,
+            고지금액.employmentInsurance,
           ),
         },
-        incomeTax: incomeTaxSetting(employee, methods.incomeTax),
-        ...(employee.childcareChildren === undefined ? {} : { childcareChildren: employee.childcareChildren }),
-        ...(employee.childcareChildrenEffectiveFrom === undefined
+        incomeTax: 소득세설정(직원정보사본, 산출방법.incomeTax),
+        ...(직원정보사본.childcareChildren === undefined ? {} : { childcareChildren: 직원정보사본.childcareChildren }),
+        ...(직원정보사본.childcareChildrenEffectiveFrom === undefined
           ? {}
-          : { childcareChildrenEffectiveFrom: employee.childcareChildrenEffectiveFrom }),
+          : { childcareChildrenEffectiveFrom: 직원정보사본.childcareChildrenEffectiveFrom }),
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
       if (input.incomeType === 'WAGE_HOURLY') {
         return {
-          ...base,
+          ...공통입력,
           incomeType: 'WAGE_HOURLY',
           hourlyWage: input.hourlyWage,
           ...(input.weeklyHolidayWeeks === undefined ? {} : { weeklyHolidayWeeks: input.weeklyHolidayWeeks }),
@@ -101,7 +101,7 @@ export function engineInputOf(
       }
       if (input.incomeType === 'WAGE_DAILY') {
         return {
-          ...base,
+          ...공통입력,
           incomeType: 'WAGE_DAILY',
           dailyWage: input.dailyWage,
           workedDays: input.workedDays,
@@ -109,7 +109,7 @@ export function engineInputOf(
         }
       }
       return {
-        ...base,
+        ...공통입력,
         incomeType: 'WAGE_MONTHLY',
         basePay: input.basePay,
         ...(input.proration === undefined ? {} : { proration: { ...input.proration } }),
@@ -141,7 +141,7 @@ export function engineInputOf(
       }
     }
     case 'OTHER': {
-      const type = findOtherIncomeCode(input.otherIncomeCode ?? DEFAULT_OTHER_INCOME_CODE, attributionMonth)
+      const 소득구분코드 = findOtherIncomeCode(input.otherIncomeCode ?? DEFAULT_OTHER_INCOME_CODE, attributionMonth)
       return {
         incomeType: 'OTHER',
         attributionMonth,
@@ -149,8 +149,8 @@ export function engineInputOf(
         necessaryExpense:
           input.necessaryExpenseAmount !== undefined
             ? { kind: 'ACTUAL', amount: input.necessaryExpenseAmount }
-            : { kind: 'DEEMED', ratePpm: type?.expenseRatePpm ?? 0 },
-        ...(type?.taxRatePpm == null ? {} : { taxRatePpm: type.taxRatePpm }),
+            : { kind: 'DEEMED', ratePpm: 소득구분코드?.expenseRatePpm ?? 0 },
+        ...(소득구분코드?.taxRatePpm == null ? {} : { taxRatePpm: 소득구분코드.taxRatePpm }),
         taxDeductionMode: input.taxDeductionMode ?? 'BEFORE_TAX',
         otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
       }
@@ -167,28 +167,28 @@ export function calculateRow(
   snapshot: EmployeeSnapshot | null,
   context: RowCalculationContext,
 ): PayrollRowResultValue {
-  const engineInput = engineInputOf(input, snapshot, context)
-  const insuranceRun = calculatePayrollRow(engineInput, context.attributionRates)
-  const result =
+  const 엔진입력 = engineInputOf(input, snapshot, context)
+  const 귀속월계산 = calculatePayrollRow(엔진입력, context.attributionRates)
+  const 계산결과 =
     context.paymentRates.effectiveFrom === context.attributionRates.effectiveFrom
-      ? insuranceRun
-      : withTaxesOf(insuranceRun, calculatePayrollRow(engineInput, context.paymentRates))
+      ? 귀속월계산
+      : 지급월세액반영(귀속월계산, calculatePayrollRow(엔진입력, context.paymentRates))
   return {
     rateTable: context.attributionRates.effectiveFrom,
     withholdingRateTable: context.paymentRates.effectiveFrom,
-    payments: result.payments,
-    grossPay: result.grossPay,
-    taxablePay: result.taxablePay,
-    nonTaxablePay: result.nonTaxablePay,
-    employeeInsurance: result.insurance.employee,
-    employerInsurance: result.insurance.employer,
-    incomeTax: result.incomeTax,
-    localIncomeTax: result.localIncomeTax,
-    deductions: result.deductions,
-    deductionTotal: result.deductionTotal,
-    netPay: result.netPay,
-    breakdown: result.breakdown,
-    warnings: [...result.warnings, ...rowInputWarnings(input)],
+    payments: 계산결과.payments,
+    grossPay: 계산결과.grossPay,
+    taxablePay: 계산결과.taxablePay,
+    nonTaxablePay: 계산결과.nonTaxablePay,
+    employeeInsurance: 계산결과.insurance.employee,
+    employerInsurance: 계산결과.insurance.employer,
+    incomeTax: 계산결과.incomeTax,
+    localIncomeTax: 계산결과.localIncomeTax,
+    deductions: 계산결과.deductions,
+    deductionTotal: 계산결과.deductionTotal,
+    netPay: 계산결과.netPay,
+    breakdown: 계산결과.breakdown,
+    warnings: [...계산결과.warnings, ...행입력경고(input)],
   }
 }
 
@@ -198,7 +198,7 @@ export function calculateRow(
  * 서화·골동품(`64`)은 의제 경비 90%를 지급액 전체에 씁니다. 서식 주석은 1억원 초과분을 80%(보유 10년 이상이면 90%)로
  * 하므로, 1억원을 넘는데 실제 경비를 넣지 않으면 경비를 많이 잡아 세금을 덜 뗄 수 있습니다.
  */
-function rowInputWarnings(input: PayrollRowInputValue): PayrollWarning[] {
+function 행입력경고(input: PayrollRowInputValue): PayrollWarning[] {
   if (
     input.incomeType === 'OTHER' &&
     input.otherIncomeCode === ARTWORK_CODE &&
@@ -216,43 +216,43 @@ function rowInputWarnings(input: PayrollRowInputValue): PayrollWarning[] {
   return []
 }
 
-function withTaxesOf(result: PayrollRowResult, taxRun: PayrollRowResult): PayrollRowResult {
-  const replace =
+function 지급월세액반영(귀속월계산: PayrollRowResult, 지급월계산: PayrollRowResult): PayrollRowResult {
+  const 금액교체 =
     (code: string, amount: number) =>
     <L extends { code: string; amount: number }>(line: L): L =>
       line.code === code ? { ...line, amount } : line
-  const deductions = result.deductions
-    .map(replace('INCOME_TAX', taxRun.incomeTax))
-    .map(replace('LOCAL_INCOME_TAX', taxRun.localIncomeTax))
-  const deductionTotal = deductions.reduce((total, line) => total + line.amount, 0)
+  const deductions = 귀속월계산.deductions
+    .map(금액교체('INCOME_TAX', 지급월계산.incomeTax))
+    .map(금액교체('LOCAL_INCOME_TAX', 지급월계산.localIncomeTax))
+  const 공제총액 = deductions.reduce((total, line) => total + line.amount, 0)
   return {
-    ...result,
-    incomeTax: taxRun.incomeTax,
-    localIncomeTax: taxRun.localIncomeTax,
+    ...귀속월계산,
+    incomeTax: 지급월계산.incomeTax,
+    localIncomeTax: 지급월계산.localIncomeTax,
     deductions,
-    deductionTotal,
-    netPay: result.grossPay - deductionTotal,
-    breakdown: result.breakdown
-      .map(replace('INCOME_TAX', taxRun.incomeTax))
-      .map(replace('LOCAL_INCOME_TAX', taxRun.localIncomeTax)),
+    deductionTotal: 공제총액,
+    netPay: 귀속월계산.grossPay - 공제총액,
+    breakdown: 귀속월계산.breakdown
+      .map(금액교체('INCOME_TAX', 지급월계산.incomeTax))
+      .map(금액교체('LOCAL_INCOME_TAX', 지급월계산.localIncomeTax)),
   }
 }
 
-function insuranceSetting(enrolled: boolean, method: 'RATE' | 'NOTICE', notice: number | undefined): InsuranceSetting {
-  if (!enrolled) return { mode: 'EXEMPT' }
-  if (method === 'RATE') return { mode: 'RATE' }
-  return notice === undefined ? { mode: 'NOTICE' } : { mode: 'NOTICE', noticeAmount: notice }
+function 보험설정(가입대상인가: boolean, 산출방법: 'RATE' | 'NOTICE', 고지금액: number | undefined): InsuranceSetting {
+  if (!가입대상인가) return { mode: 'EXEMPT' }
+  if (산출방법 === 'RATE') return { mode: 'RATE' }
+  return 고지금액 === undefined ? { mode: 'NOTICE' } : { mode: 'NOTICE', noticeAmount: 고지금액 }
 }
 
-function incomeTaxSetting(employee: EmployeeSnapshot, method: 'TAX_TABLE' | 'MANUAL' | 'NONE'): WageIncomeTaxSetting {
-  const base = {
-    dependants: employee.dependants,
-    childrenAged8To20: employee.childrenAged8To20,
-    withholdingRatePpm: employee.withholdingRatePpm,
+function 소득세설정(직원정보사본: EmployeeSnapshot, 산출방법: 'TAX_TABLE' | 'MANUAL' | 'NONE'): WageIncomeTaxSetting {
+  const 공통설정 = {
+    dependants: 직원정보사본.dependants,
+    childrenAged8To20: 직원정보사본.childrenAged8To20,
+    withholdingRatePpm: 직원정보사본.withholdingRatePpm,
   }
-  if (method === 'NONE') return { ...base, method: 'NONE' }
-  if (method === 'MANUAL' || employee.manualIncomeTax !== null) {
-    return { ...base, method: 'MANUAL', manualAmount: employee.manualIncomeTax ?? 0 }
+  if (산출방법 === 'NONE') return { ...공통설정, method: 'NONE' }
+  if (산출방법 === 'MANUAL' || 직원정보사본.manualIncomeTax !== null) {
+    return { ...공통설정, method: 'MANUAL', manualAmount: 직원정보사본.manualIncomeTax ?? 0 }
   }
-  return { ...base, method: 'TAX_TABLE' }
+  return { ...공통설정, method: 'TAX_TABLE' }
 }

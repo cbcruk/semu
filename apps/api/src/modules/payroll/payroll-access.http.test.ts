@@ -36,9 +36,9 @@ const app = payrollTestApp(
 
 afterAll(() => app.dispose())
 
-describe('payroll plan gate', () => {
+describe('급여 요금제 확인', () => {
   for (const [token, , attributionMonth] of PLAN_CASES) {
-    it(`opens ledgers, rows, payslips and the labor-cost report to ${token}`, async () => {
+    it(`${token} 회사에는 급여대장·대장 행·급여명세서·인건비 내역을 엽니다`, async () => {
       const created = await app.request('POST', '/payroll-ledgers', { token, body: { attributionMonth } })
       expect(created.status).toBe(201)
       const ledgerId = created.body.id
@@ -96,7 +96,7 @@ describe('payroll plan gate', () => {
     })
   }
 
-  it('refuses a company with neither plan and names both plans', async () => {
+  it('두 요금제가 모두 없는 회사는 거절하고 두 요금제를 모두 알립니다', async () => {
     const paths: ReadonlyArray<readonly [string, string]> = [
       ['GET', '/payroll-ledgers'],
       ['POST', '/payroll-ledgers'],
@@ -121,14 +121,14 @@ describe('payroll plan gate', () => {
     expect(send.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED', requiredPlans: ['TAXATION', 'PAYROLL'] })
   })
 
-  it('asks a taxation-only company for the tax terms it can agree to, not for a payroll term', async () => {
+  it('세무 요금제만 있는 회사에는 급여 약관이 아니라 동의할 수 있는 세무 약관을 요구합니다', async () => {
     const response = await app.request('GET', '/payroll-ledgers', { token: 'taxation-terms-pending' })
 
     expect(response.status).toBe(403)
     expect(response.body).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED', termCodes: ['TAX_SERVICE'] })
   })
 
-  it('keeps settings, severance, rate tables and the calculator to the payroll plan', async () => {
+  it('급여 설정·퇴직금 정산·기준표·계산기는 급여 요금제에만 엽니다', async () => {
     const paths = ['/payroll-settings', '/severance-settlements', '/rate-tables', '/payroll-reference-codes']
     for (const path of paths) {
       const response = await app.request('GET', path, { token: 'taxation-only' })

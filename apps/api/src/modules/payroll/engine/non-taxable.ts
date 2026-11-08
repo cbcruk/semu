@@ -49,30 +49,30 @@ export function splitNonTaxable(
   rates: PayrollRateTable,
   context: NonTaxableContext = {},
 ): NonTaxableSplit {
-  const remaining = new Map<NonTaxableCategory, number>()
+  const 유형별남은법정한도 = new Map<NonTaxableCategory, number>()
   const warnings: PayrollWarning[] = []
-  const childcareChildren = context.childcareChildren === undefined ? 1 : validCount(context.childcareChildren)
-  const hasPerChildItem = items.some(
+  const 보육대상자녀수 = context.childcareChildren === undefined ? 1 : 유효보육대상자녀수(context.childcareChildren)
+  const 자녀당한도항목이있는가 = items.some(
     (item) =>
       item.nonTaxableCategory !== undefined &&
       rates.nonTaxable[item.nonTaxableCategory].perChild === true &&
       item.preclassifiedNonTaxable !== true &&
       item.amount > 0,
   )
-  if (hasPerChildItem && context.childcareChildren === undefined) {
+  if (자녀당한도항목이있는가 && context.childcareChildren === undefined) {
     warnings.push({
       code: 'CHILDCARE_CHILDREN_UNKNOWN',
       message: 'The number of children aged 6 or under is unknown; the childcare limit assumes one child.',
     })
   }
-  if (hasPerChildItem && context.childcareChildren !== undefined && context.childcareChildrenStale === true) {
+  if (자녀당한도항목이있는가 && context.childcareChildren !== undefined && context.childcareChildrenStale === true) {
     warnings.push({
       code: 'CHILDCARE_CHILDREN_STALE',
-      message: `The childcare child count (${childcareChildren}) was set for another tax year; recheck it.`,
+      message: `The childcare child count (${보육대상자녀수}) was set for another tax year; recheck it.`,
     })
   }
   const lines = items.map((item): PaymentLine => {
-    const category = item.nonTaxableCategory
+    const 비과세유형 = item.nonTaxableCategory
     if (item.preclassifiedNonTaxable === true && item.amount > 0) {
       return {
         code: item.code,
@@ -83,7 +83,7 @@ export function splitNonTaxable(
         formula: `비과세 ${formatWon(item.amount)}`,
       }
     }
-    if (category === undefined || item.amount <= 0) {
+    if (비과세유형 === undefined || item.amount <= 0) {
       return {
         code: item.code,
         name: item.name,
@@ -93,25 +93,25 @@ export function splitNonTaxable(
         formula: `${formatWon(item.amount)} (과세)`,
       }
     }
-    const statutoryLeft = remaining.get(category) ?? statutoryLimit(item, category, rates, childcareChildren)
-    const left = Math.min(statutoryLeft, item.companyNonTaxableLimit ?? Number.POSITIVE_INFINITY)
-    const nonTaxableAmount = Math.min(item.amount, left)
-    remaining.set(category, statutoryLeft - nonTaxableAmount)
-    const taxableAmount = item.amount - nonTaxableAmount
-    if (taxableAmount > 0) {
+    const 남은법정한도 = 유형별남은법정한도.get(비과세유형) ?? 남은법정한도계산(item, 비과세유형, rates, 보육대상자녀수)
+    const 항목한도 = Math.min(남은법정한도, item.companyNonTaxableLimit ?? Number.POSITIVE_INFINITY)
+    const 비과세금액 = Math.min(item.amount, 항목한도)
+    유형별남은법정한도.set(비과세유형, 남은법정한도 - 비과세금액)
+    const 과세금액 = item.amount - 비과세금액
+    if (과세금액 > 0) {
       warnings.push({
         code: 'NON_TAXABLE_LIMIT_EXCEEDED',
-        message: `${item.name}: ${formatWon(taxableAmount)} won over the non-taxable limit is taxed.`,
+        message: `${item.name}: ${formatWon(과세금액)} won over the non-taxable limit is taxed.`,
       })
     }
-    const limitText = Number.isFinite(left) ? `한도 ${formatWon(left)}` : '한도 없음'
+    const 한도문구 = Number.isFinite(항목한도) ? `한도 ${formatWon(항목한도)}` : '한도 없음'
     return {
       code: item.code,
       name: item.name,
       amount: item.amount,
-      taxableAmount,
-      nonTaxableAmount,
-      formula: `비과세 ${formatWon(nonTaxableAmount)} (${limitText}), 과세 ${formatWon(taxableAmount)}`,
+      taxableAmount: 과세금액,
+      nonTaxableAmount: 비과세금액,
+      formula: `비과세 ${formatWon(비과세금액)} (${한도문구}), 과세 ${formatWon(과세금액)}`,
     }
   })
   return { lines, warnings }
@@ -123,24 +123,24 @@ export function statutoryMonthlyLimit(category: NonTaxableCategory, rates: Payro
 }
 
 /** 유형 하나의 남은 법정 한도(직원 한 명의 합계)입니다. 회사 한도는 항목마다 따로 봅니다. */
-function statutoryLimit(
+function 남은법정한도계산(
   item: PaymentItemInput,
-  category: NonTaxableCategory,
+  비과세유형: NonTaxableCategory,
   rates: PayrollRateTable,
-  childcareChildren: number,
+  보육대상자녀수: number,
 ): number {
-  const statutory = rates.nonTaxable[category]
-  const candidates: number[] = []
-  if (statutory.monthlyLimit !== null) {
-    candidates.push(statutory.perChild === true ? statutory.monthlyLimit * childcareChildren : statutory.monthlyLimit)
+  const 법정기준 = rates.nonTaxable[비과세유형]
+  const 한도후보: number[] = []
+  if (법정기준.monthlyLimit !== null) {
+    한도후보.push(법정기준.perChild === true ? 법정기준.monthlyLimit * 보육대상자녀수 : 법정기준.monthlyLimit)
   }
-  if (statutory.annualLimit !== null) {
-    candidates.push(Math.max(0, statutory.annualLimit - (item.annualNonTaxableUsed ?? 0)))
+  if (법정기준.annualLimit !== null) {
+    한도후보.push(Math.max(0, 법정기준.annualLimit - (item.annualNonTaxableUsed ?? 0)))
   }
-  return candidates.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...candidates)
+  return 한도후보.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...한도후보)
 }
 
 /** 자녀 수를 0 이상 정수로 맞춥니다. 음수·NaN 같은 잘못된 값은 0명입니다. */
-function validCount(count: number): number {
-  return Number.isInteger(count) && count > 0 ? count : 0
+function 유효보육대상자녀수(보육대상자녀수: number): number {
+  return Number.isInteger(보육대상자녀수) && 보육대상자녀수 > 0 ? 보육대상자녀수 : 0
 }
