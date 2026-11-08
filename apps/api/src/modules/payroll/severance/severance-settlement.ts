@@ -1,6 +1,7 @@
 import { Schema } from 'effect'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { CalendarDate, Won } from '../payroll-schema.ts'
+import type { RetirementMismatch } from './severance-retirement.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
 
 /** 퇴직금 계산 입력입니다. 입사일·마지막 근무일은 HR에서 받습니다. */
@@ -46,6 +47,11 @@ export const SeveranceSettlement = Schema.Struct({
   /** 퇴직금 지급일입니다. 원천세 퇴직소득 그 외(A22)의 지급월입니다. 아직 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
   paymentDate: Schema.NullOr(Schema.String),
   status: Status,
+  /**
+   * HR의 지금 퇴직과 어긋난 까닭입니다. 맞으면 `null`입니다. 저장하지 않고 읽을 때마다 HR 퇴직일과 대조합니다.
+   * 어긋난 정산은 `:complete`가 409 `SEVERANCE_RETIREMENT_MISMATCH`이고 `allowedActions`에 `COMPLETE`가 없습니다.
+   */
+  retirementMismatch: Schema.NullOr(Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED'])),
   input: SeveranceInputSchema,
   result: Schema.Struct({
     eligible: Schema.Boolean,
@@ -79,15 +85,27 @@ export const SEVERANCE_TRANSITIONS: Record<SeveranceCommand, { from: SeveranceSt
   INCLUDE: { from: 'EXCLUDED', to: 'CALCULATED' },
 }
 
-/** 상세 응답의 `allowedActions`입니다. */
-export function severanceActions(status: SeveranceStatus): Array<'UPDATE' | SeveranceCommand> {
+/** 상세 응답의 `allowedActions`입니다. HR 퇴직과 어긋난 정산은 완료할 수 없어 `COMPLETE`를 뺍니다. */
+export function severanceActions(
+  status: SeveranceStatus,
+  retirementMismatch: RetirementMismatch | null,
+): Array<'UPDATE' | SeveranceCommand> {
   const commands = (Object.keys(SEVERANCE_TRANSITIONS) as SeveranceCommand[]).filter(
-    (command) => SEVERANCE_TRANSITIONS[command].from === status,
+    (command) =>
+      SEVERANCE_TRANSITIONS[command].from === status && !(command === 'COMPLETE' && retirementMismatch !== null),
   )
   return status === 'CALCULATED' ? ['UPDATE', ...commands] : commands
 }
 
-/** 레코드를 응답으로 바꿉니다. */
-export function severanceResponse(record: SeveranceSettlementRecord): typeof SeveranceSettlement.Type {
-  return { ...record, paymentDate: record.paymentDate ?? null, allowedActions: severanceActions(record.status) }
+/** 레코드와 읽을 때 대조한 HR 퇴직 어긋남으로 응답을 만듭니다. */
+export function severanceResponse(
+  record: SeveranceSettlementRecord,
+  retirementMismatch: RetirementMismatch | null,
+): typeof SeveranceSettlement.Type {
+  return {
+    ...record,
+    paymentDate: record.paymentDate ?? null,
+    retirementMismatch,
+    allowedActions: severanceActions(record.status, retirementMismatch),
+  }
 }
