@@ -15,6 +15,7 @@ import { PayslipMailer } from './ports/payslip-mailer.ts'
 import { WithholdingFilingLock } from './ports/withholding-filing-lock.ts'
 import { RateTableRepository } from './rate-tables/rate-table-repository.ts'
 import { PayrollCalculatorHttpLive, RateTablesHttpLive } from './rate-tables/rate-tables.http.ts'
+import { PayrollSettingQuery } from './settings/payroll-setting-query.ts'
 import { PayrollSettingRepository } from './settings/payroll-setting-repository.ts'
 import { PayrollSettingsHttpLive } from './settings/payroll-settings.http.ts'
 import { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
@@ -38,9 +39,9 @@ export const PayrollHttpLive = Layer.mergeAll(
 )
 
 /**
- * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황, 지급월 원천세 합계, 월별 인건비, 직원별 퇴직금 정산 상태입니다.
+ * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황, 지급월 원천세 합계, 월별 인건비, 직원별 퇴직금 정산 상태, 사업장 규모(5인 미만 여부)입니다.
  *
- * `PayrollLedgerRepository`, `SeveranceSettlementRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
+ * `PayrollLedgerRepository`, `SeveranceSettlementRepository`, `PayrollSettingRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
  * `Layer.fresh`로 따로 만듭니다. 그래야 테스트가 핸들러 쪽 포트만 바꿔 끼워도 이 서비스가 먼저 만든 인스턴스를 핸들러가 물려받지 않습니다.
  */
 export const PayrollPublicLive = Layer.fresh(
@@ -49,6 +50,7 @@ export const PayrollPublicLive = Layer.fresh(
     PayrollWithholdingTotals.layer,
     PayrollLaborCost.layer,
     SeveranceSettlementQuery.layer,
+    PayrollSettingQuery.layer,
   ),
 )
 

@@ -5,8 +5,10 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
+import { MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE } from '../../payroll/payroll.public.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
+import { CompanyWorkforceSize } from '../ports/company-workforce-size.ts'
 import { PersonalDataAccessLog } from '../shared/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../shared/personal-data-cipher.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
@@ -30,6 +32,9 @@ import { WorkContractRepository } from './work-contract.ts'
  * 저장할 때마다 파생 금액(기본급·기준시급·통상시급·수습시급·고정수당·최저임금 판정)을 다시 계산해 둡니다.
  * 최저시급은 아직 Payroll 기준표에 연결하지 않아 {@link MINIMUM_HOURLY_WAGE_2026}을 씁니다.
  * 수습 지급률은 계약 시작일에 유효한 근로계약에서 읽습니다.
+ * 자동계산 고정수당의 가산 배수는 저장할 때의 사업장 규모(`CompanyWorkforceSize`, Payroll 급여 설정)로 고릅니다. 상시 5명 이상이면
+ * Payroll `MULTIPLIERS_FIVE_OR_MORE`, 4명 이하면 `MULTIPLIERS_UNDER_FIVE`입니다. 규모가 나중에 바뀌어도 저장한 파생 금액은
+ * 다시 저장할 때까지 그대로입니다.
  */
 export class PayrollContracts extends Context.Service<
   PayrollContracts,
@@ -63,6 +68,7 @@ export class PayrollContracts extends Context.Service<
       const employees = yield* EmployeeRepository
       const cipher = yield* PersonalDataCipher
       const accessLog = yield* PersonalDataAccessLog
+      const workforceSize = yield* CompanyWorkforceSize
       const now = DateTime.now.pipe(Effect.map(DateTime.formatIso))
       const today = DateTime.now.pipe(Effect.map((at) => companyDate(DateTime.toEpochMillis(at))))
 
@@ -97,8 +103,10 @@ export class PayrollContracts extends Context.Service<
           (yield* workContracts.list(actor.companyId)).filter((contract) => contract.employeeId === employeeId),
           input.startDate,
         )
+        const fiveOrMore = yield* workforceSize.hasFiveOrMoreEmployees(actor.companyId)
         const evaluation = evaluatePayrollContract(input, {
           minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026,
+          premiumMultipliers: fiveOrMore ? MULTIPLIERS_FIVE_OR_MORE : MULTIPLIERS_UNDER_FIVE,
           probationPayRatePpm: workContract?.probation?.payRatePpm,
           probationMonths: workContract?.probation?.months,
         })

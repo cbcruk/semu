@@ -37,7 +37,7 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
  * `TaxWithholdingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
- * Payroll이 구현하는 포트 `SeveranceSettlementLookup`(`src/wiring/hr-payroll.ts`).
+ * Payroll이 구현하는 포트 `SeveranceSettlementLookup`·`CompanyWorkforceSize`(`src/wiring/hr-payroll.ts`). 급여계약은 `CompanyWorkforceSize`로 사업장 규모를 읽습니다.
  */
 export const HrHttpLive = Layer.mergeAll(
   EmployeesHttpLive,

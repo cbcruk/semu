@@ -1,5 +1,6 @@
 import type { Id } from '../../shared/ids/ids.types.ts'
 import { TEST_COMPANY_ID } from '../identity-access/testing.ts'
+import { MULTIPLIERS_FIVE_OR_MORE } from '../payroll/payroll.public.ts'
 import { evaluatePayrollContract } from './contracts/payroll-contract-evaluation.ts'
 import type { PayrollContractRecord } from './contracts/payroll-contract.ts'
 import { MINIMUM_HOURLY_WAGE_2026 } from './contracts/wage-calculation.ts'
@@ -89,7 +90,11 @@ const demoPayrollTerms = {
   payTiming: { month: 'CURRENT', day: 25 },
   payMethod: 'TRANSFER',
 } as const
-const demoPayrollEvaluation = evaluatePayrollContract(demoPayrollTerms, { minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026 })
+/** 데모 회사는 급여 설정을 저장하지 않아 Payroll 기본값(5인 이상)입니다. */
+const demoPayrollEvaluation = evaluatePayrollContract(demoPayrollTerms, {
+  minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026,
+  premiumMultipliers: MULTIPLIERS_FIVE_OR_MORE,
+})
 
 /** 데모 급여계약의 계좌번호 원문입니다. */
 export const DEMO_PAYROLL_ACCOUNT_NUMBER = '110123456789'
