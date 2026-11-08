@@ -3,6 +3,7 @@ import type { FilingDocumentType, FilingStatus } from '../tax.types.ts'
 import type { FilingDocumentId, FilingDocumentRecord } from './filing.types.ts'
 
 const 매입매출장이보이는상태: ReadonlyArray<FilingStatus> = ['LEDGER_PENDING', 'PREPARING', 'FILED', 'SETTLED']
+/** 결과 문서는 신고서(`RETURN`)·납부서(`PAYMENT_SLIP`)·고지서(`NOTICE`)입니다. */
 const 결과문서가보이는상태: ReadonlyArray<FilingStatus> = ['FILED', 'SETTLED']
 
 /**

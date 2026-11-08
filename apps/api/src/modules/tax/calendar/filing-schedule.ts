@@ -57,10 +57,10 @@ export function planSchedule(
     }
   }
   for (const filing of existing) {
-    // 창의 시작일·종료일 그날 포함입니다
-    const 납부기한이창안임 =
+    // 배치 기간은 `window`(일정 배치가 신고 건을 맞추는 기간)이고 시작일·종료일 그날 포함입니다
+    const 납부기한이배치기간안임 =
       filing.paymentDue !== null && filing.paymentDue >= window.from && filing.paymentDue <= window.to
-    if (filing.status === 'SCHEDULED' && 납부기한이창안임 && !의무키집합.has(의무키(filing)))
+    if (filing.status === 'SCHEDULED' && 납부기한이배치기간안임 && !의무키집합.has(의무키(filing)))
       계획.cancel.push(filing.id)
   }
   return 계획

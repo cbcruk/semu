@@ -22,10 +22,10 @@ const 전이표: Record<CertificateStatus, Partial<Record<CertificateCommand, Ce
  * ```
  */
 export function nextIssueNumber(issued: ReadonlyArray<string>, year: number): string {
-  const prefix = `${year}-`
+  const 연도접두 = `${year}-`
   const 최대연번 = issued
-    .filter((number) => number.startsWith(prefix))
-    .reduce((지금까지최대연번, number) => Math.max(지금까지최대연번, Number(number.slice(prefix.length)) || 0), 0)
+    .filter((발급번호) => 발급번호.startsWith(연도접두))
+    .reduce((지금까지최대연번, 발급번호) => Math.max(지금까지최대연번, Number(발급번호.slice(연도접두.length)) || 0), 0)
   return `${year}-${String(최대연번 + 1).padStart(4, '0')}`
 }
 

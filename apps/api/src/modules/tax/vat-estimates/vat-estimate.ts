@@ -166,17 +166,22 @@ export function confirmedVat(period: VatPeriod, filings: ReadonlyArray<VatFiling
 export function vatTrend(input: VatTrendInput): VatTrendPoint[] {
   const 올해 = Number(input.today.slice(0, 4))
   const 추이: VatTrendPoint[] = []
-  for (let year = 올해 - input.years + 1; year <= 올해; year++) {
-    for (const half of [1, 2] as const) {
-      const 과세기간 = vatHalfPeriod(year, half)
+  for (let 연도 = 올해 - input.years + 1; 연도 <= 올해; 연도++) {
+    for (const 반기 of [1, 2] as const) {
+      const 과세기간 = vatHalfPeriod(연도, 반기)
       if (과세기간.start > input.today) continue
       const 확정세액 = input.hasTaxationPlan ? confirmedVat(과세기간, input.filings) : null
       if (확정세액 !== null) {
-        추이.push({ year, half, amount: 확정세액, source: 'CONFIRMED' })
+        추이.push({ year: 연도, half: 반기, amount: 확정세액, source: 'CONFIRMED' })
         continue
       }
       const 계산종료일 = 과세기간.end < input.today ? 과세기간.end : input.today
-      추이.push({ year, half, amount: input.estimate({ ...과세기간, end: 계산종료일 }), source: 'ESTIMATED' })
+      추이.push({
+        year: 연도,
+        half: 반기,
+        amount: input.estimate({ ...과세기간, end: 계산종료일 }),
+        source: 'ESTIMATED',
+      })
     }
   }
   return 추이

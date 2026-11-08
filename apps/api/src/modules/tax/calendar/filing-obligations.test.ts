@@ -69,7 +69,7 @@ describe('중간예납', () => {
 describe('간이과세자 부가세', () => {
   const simplified: TaxCalendarProfile = { ...individual, vatTaxpayerType: 'SIMPLIFIED' }
 
-  it('7월 예정부과 고지와 1년 확정 신고 하나가 있습니다', () => {
+  it('확정 신고는 1년 과세기간마다 다음 해 1월에 한 번이고 그 사이 7월에 예정부과 고지가 있습니다', () => {
     const vat = resolve(simplified, '2026-01-01', '2027-01-31').filter((item) => item.taxType === 'VAT')
     expect(vat.map((item) => [item.kind, item.periodKey, item.periodStart, item.periodEnd, item.paymentDue])).toEqual([
       ['FINAL', '2025', '2025-01-01', '2025-12-31', '2026-01-26'],

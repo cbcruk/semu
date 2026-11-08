@@ -6,8 +6,8 @@ import type {
   EsignTransitionResult,
 } from './esign-request-status.types.ts'
 
-/** 취소·만료·발송 실패로 멈춘 요청이 받는 사건입니다. '중단된 요청'은 새로 지은 말입니다. */
-const 중단된요청의전이 = {
+/** 취소·만료·발송 실패 상태가 함께 받는 사건입니다. 재발송·초안으로 되돌리기·삭제입니다. */
+const 취소만료발송실패의전이 = {
   RESEND: 'PENDING',
   SEND_REJECTED: 'SEND_FAILED',
   REVERT_TO_DRAFT: 'DRAFT',
@@ -20,9 +20,9 @@ const 전이표: Record<EsignRequestStatus, Partial<Record<EsignRequestEvent, Es
   IN_PROGRESS: { CANCEL: 'CANCELED', VERIFY_SIGNER: 'IN_PROGRESS', COMPLETE: 'COMPLETED', EXPIRE: 'EXPIRED' },
   COMPLETED: { VOID: 'VOIDED' },
   VOIDED: {},
-  EXPIRED: 중단된요청의전이,
-  CANCELED: 중단된요청의전이,
-  SEND_FAILED: 중단된요청의전이,
+  EXPIRED: 취소만료발송실패의전이,
+  CANCELED: 취소만료발송실패의전이,
+  SEND_FAILED: 취소만료발송실패의전이,
 }
 
 /** 서명 기본 기한(발송일 + 16일)입니다. 매뉴얼 스크린샷 2026.06.23 → 07.09에서 추정했습니다. */

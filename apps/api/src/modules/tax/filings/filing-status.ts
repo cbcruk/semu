@@ -36,7 +36,10 @@ export const FILING_TRANSITIONS: Record<FilingCommand, FilingTransitionRule> = {
   CANCEL: { from: ['SCHEDULED', 'REQUESTED', 'SUBMITTED'], to: 'CANCELED', actor: 'AGENCY' },
 }
 
-/** 예정고지 건이 받는 커맨드입니다. 고지서로 끝나므로 자료 요청·검토 흐름이 없습니다. */
+/**
+ * 고지 건(`NOTICE`: 부가세 예정고지·간이과세자 예정부과·종합소득세 중간예납 고지)이 받는 커맨드입니다.
+ * 고지서로 끝나므로 자료 요청·검토 흐름이 없습니다.
+ */
 const 고지건커맨드: ReadonlySet<FilingCommand> = new Set(['RECORD_NOTICE', 'CANCEL', 'PAY', 'CLOSE'])
 
 /** 고객이 자료를 고칠 수 있는 상태입니다. 그 밖의 상태에서 자료 쓰기는 409 `FILING_LOCKED`입니다. */

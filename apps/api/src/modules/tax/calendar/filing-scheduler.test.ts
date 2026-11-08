@@ -48,7 +48,7 @@ describe('신고 일정 배치(FilingScheduler)', () => {
     })
   })
 
-  it('반기 납부로 바꾸면 SCHEDULED인 매월 원천세 신고 건을 취소합니다', async () => {
+  it('반기 납부로 바꾸면 원천세 신고 건만 취소합니다', async () => {
     const events: TaxEvent[] = []
     const result = await run(
       Effect.gen(function* () {
