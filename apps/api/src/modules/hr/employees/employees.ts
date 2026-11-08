@@ -13,8 +13,8 @@ import { InsuranceFilingRepository } from '../insurance-filings/insurance-filing
 import type { InsuranceFilingKind } from '../insurance-filings/insurance-filing.types.ts'
 import { LeaveRepository, type LeaveRecord } from '../leaves/leave.ts'
 import { OrganizationRepository } from '../organization/organization.ts'
-import { checkResignation } from '../retirement/retirement-rules.ts'
-import { isSeveranceSettled } from '../retirement/retirement-rules.ts'
+import { SeveranceSettlementLookup } from '../ports/severance-settlement-lookup.ts'
+import { checkResignation, isSeveranceSettled } from '../retirement/retirement-rules.ts'
 import {
   birthDateFromRegistrationNumber,
   maskIdentityNumber,
@@ -94,6 +94,7 @@ export class Employees extends Context.Service<
       const filings = yield* InsuranceFilingRepository
       const cipher = yield* PersonalDataCipher
       const accessLog = yield* PersonalDataAccessLog
+      const settlements = yield* SeveranceSettlementLookup
 
       const today = DateTime.now.pipe(Effect.map((now) => companyDate(DateTime.toEpochMillis(now))))
       const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso))
@@ -208,6 +209,16 @@ export class Employees extends Context.Service<
         }
       })
 
+      /** Payroll에 물어 퇴직금 정산이 끝난 직원이면 409입니다. */
+      const guardSettlement = (record: EmployeeRecord) =>
+        settlements
+          .statusesOf(record.companyId, record.id)
+          .pipe(
+            Effect.flatMap((statuses) =>
+              isSeveranceSettled(statuses) ? Effect.fail(new RetirementCompleted({})) : Effect.void,
+            ),
+          )
+
       const markAssigned = (record: EmployeeRecord) =>
         Effect.forEach(
           [record.departmentId, record.positionId].filter((id) => id !== undefined),
@@ -302,7 +313,7 @@ export class Employees extends Context.Service<
 
         remove: Effect.fn('Employees.remove')(function* (actor, id) {
           const record = yield* find(actor, id)
-          if (isSeveranceSettled(record.severanceSettlementStatus)) return yield* new RetirementCompleted({})
+          yield* guardSettlement(record)
           yield* employees.remove(actor.companyId, id)
         }),
 
@@ -323,7 +334,7 @@ export class Employees extends Context.Service<
         resign: Effect.fn('Employees.resign')(function* (actor, id, resignation, expectedVersion) {
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          if (isSeveranceSettled(record.severanceSettlementStatus)) return yield* new RetirementCompleted({})
+          yield* guardSettlement(record)
           const rejection = checkResignation(resignation, { joinDate: record.joinDate })
           if (rejection !== undefined) return yield* new ResignationRejected({ reason: rejection })
           const now = yield* nowIso
@@ -338,7 +349,7 @@ export class Employees extends Context.Service<
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
           if (record.resignation === undefined) return yield* new ResignationRejected({ reason: 'NOT_RESIGNED' })
-          if (isSeveranceSettled(record.severanceSettlementStatus)) return yield* new RetirementCompleted({})
+          yield* guardSettlement(record)
           const now = yield* nowIso
           const { resignation: _, ...rest } = record
           const next: EmployeeRecord = { ...rest, version: record.version + 1, updatedAt: now }

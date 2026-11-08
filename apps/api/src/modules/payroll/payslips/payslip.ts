@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
+import { PayrollEarnerSchema } from '../ledgers/payroll-ledger.ts'
 
 const Line = Schema.Struct({ code: Schema.String, name: Schema.String, amount: Schema.Int })
 
@@ -10,6 +11,8 @@ export const Payslip = Schema.Struct({
   rowId: IdSchema('payrollRow'),
   employeeId: Schema.NullOr(IdSchema('employee')),
   payeeName: Schema.String,
+  /** 마감한 대장 행의 소득자 사본입니다. 발송은 `earner.email`로 합니다. */
+  earner: PayrollEarnerSchema,
   incomeType: Schema.String,
   attributionMonth: Schema.String,
   paymentDate: Schema.String,

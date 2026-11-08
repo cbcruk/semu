@@ -1,4 +1,4 @@
-import type { WithholdingIncomeKind } from '../ports/payroll-events.types.ts'
+import type { LedgerIncomeKind } from '../ledgers/pay-month.types.ts'
 
 /** 소득 구분별 금액입니다. */
 export type AmountsByKind = Record<'wage' | 'daily' | 'business' | 'other', number>
@@ -31,7 +31,7 @@ export interface LaborCostReport {
 /** 보고서 집계 입력 행입니다. 계산 확정 이후 대장의 행만 넣습니다. */
 export interface LaborCostRow {
   attributionMonth: string
-  incomeKind: WithholdingIncomeKind
+  incomeKind: LedgerIncomeKind
   payeeKey: string
   grossPay: number
   employerInsurance: number

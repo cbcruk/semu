@@ -1,22 +1,9 @@
 import type { Id } from '../../../shared/ids/ids.types.ts'
 
-/** 원천세 집계의 소득 종류입니다. Tax가 신고서 코드(A01·A03·A25·A40 등)로 바꿉니다. */
-export type WithholdingIncomeKind = 'WAGE' | 'DAILY' | 'BUSINESS' | 'OTHER'
-
-/** 지급월 원천세 집계의 한 줄입니다. */
-export interface WithholdingSummaryLine {
-  incomeKind: WithholdingIncomeKind
-  headcount: number
-  grossPay: number
-  taxablePay: number
-  incomeTax: number
-  localIncomeTax: number
-}
-
 /**
  * 한 지급월에 지급일이 있는 급여대장이 모두 `CLOSED`가 됐습니다. Tax는 원천세 신고 건의
- * "급여대장 마감" 자료를 제출됨으로 바꿉니다. `withholding`은 싣기만 하고 지금 Tax는 쓰지 않습니다
- * (`wiring/payroll-tax.ts`가 회사와 지급월만 넘김). 신고서 초안에 쓰는 것은 미구현입니다.
+ * "급여대장 마감" 자료를 제출됨으로 바꿉니다. 원천세 금액은 싣지 않습니다. Tax는 신고서 줄이 필요할 때
+ * `PayrollWithholdingTotals`로 그때의 값을 묻습니다(outbox 재전달·순서와 상관없이 같은 답).
  */
 export interface PayMonthClosed {
   type: 'payroll_pay_month.closed'
@@ -24,7 +11,6 @@ export interface PayMonthClosed {
   companyId: Id<'company'>
   paymentMonth: string
   ledgerIds: ReadonlyArray<Id<'payrollLedger'>>
-  withholding: ReadonlyArray<WithholdingSummaryLine>
   occurredAt: string
 }
 
@@ -40,5 +26,20 @@ export interface PayMonthReopened {
   occurredAt: string
 }
 
+/**
+ * 대장의 마감 상태와 상관없이 지급월의 원천세 합계가 바뀌었습니다. 지금은 퇴직금 정산의 완료·다시 열기로 그 달의
+ * 퇴직소득(`RETIREMENT`)이 생기거나 없어질 때 냅니다. 대장이 없는 달에도 냅니다.
+ *
+ * 금액과 정산 ID는 싣지 않습니다. 한 달에 퇴직자가 한 명이면 합계가 곧 개인의 퇴직금이고, Tax는 필요할 때
+ * `PayrollWithholdingTotals`로 묻습니다. Tax는 마감 이벤트와 같은 채널로 받아 그 지급월의 신고 건을 다시 맞춥니다.
+ */
+export interface PayMonthWithholdingChanged {
+  type: 'payroll_pay_month.withholding_changed'
+  eventId: Id<'event'>
+  companyId: Id<'company'>
+  paymentMonth: string
+  occurredAt: string
+}
+
 /** 급여가 내보내는 도메인 이벤트입니다. */
-export type PayrollEvent = PayMonthClosed | PayMonthReopened
+export type PayrollEvent = PayMonthClosed | PayMonthReopened | PayMonthWithholdingChanged

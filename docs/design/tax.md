@@ -29,6 +29,8 @@
 | 자료 제출 마감 | `submitDue` |
 | 제출 자료 항목 | `Requirement` (`code`, `response`: `PENDING`·`PROVIDED`·`NOT_APPLICABLE`) |
 | 자동 연계 항목 | `autoLinked` (급여대장 마감 `PAYROLL_LEDGER_CLOSED`) |
+| 원천세 합계 (지급월·소득 종류별) | `WithholdingTotal` (`incomeKind`: `WAGE`·`DAILY`·`BUSINESS`·`OTHER`·`RETIREMENT`, `otherIncomeCategory`: `PERSONAL_SERVICE`(인적용역)·`GENERAL`) |
+| 원천세 신고서 줄 / 소득구분 코드 / 가감계 | `WithholdingReturnLine` / `lineCode` / `subtotalCode` |
 | 매입매출장 / 신고서 / 납부서 / 고지서 | `FilingDocument.type`: `LEDGER` / `RETURN` / `PAYMENT_SLIP` / `NOTICE` |
 | 납부할 세액 | `payableAmount` (음수 = 환급) |
 | 종결 방식 | `settlement`: `PAID`, `REFUND`, `NO_PAYMENT` |
@@ -36,10 +38,19 @@
 | 기한 경과 | `isOverdue` |
 | 오늘의 할 일 카드 | `ActionCard` (`kind`: `SUBMIT_MATERIALS`, `CONFIRM_LEDGER`, `REVIEW_FILING_RESULT`, `PAY_TAX`) |
 | 넘어가기 | `completion: SKIP` → `SKIPPED_OVERDUE`(마감 후) |
-| 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatPreliminaryMode`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
+| 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatTaxpayerType`, `vatSupplyAmounts`, `vatPreliminaryElections`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
+| 과세기간별 공급가액 합계 | `vatSupplyAmounts` (과세기간 키 `2026-H2` → 원) |
+| 예정신고 선택 사유 | `vatPreliminaryElections` (과세기간 키 → `BUSINESS_DECLINE`(휴업·사업 부진), `EARLY_REFUND`(조기환급)) |
 | 예상 부가세 | `VatEstimate` (`outputTax`, `inputTax`, `estimatedTax`) |
 
-**부가세 예정 기간(`vatPreliminaryMode`).** 개인 일반과세자와 직전 과세기간 공급가액이 1억 5천만 원 미만인 법인은 원칙적으로 예정고지(`NOTICE`)를 받습니다. 고지 금액은 직전 기 납부세액의 50%이고, 50만 원 미만이면 고지하지 않습니다. 휴업하거나 사업이 부진한 경우(직전 기 대비 1/3 미달), 또는 조기환급을 받으려는 경우에는 예정 신고를 선택할 수 있습니다. 회사를 만들 때 법인은 `FILING`, 개인은 `NOTICE`로 정하고, 신고 일정은 법인이 `FILING`일 때만 예정 신고 건을 만듭니다([filing-obligations.ts](../../apps/api/src/modules/tax/calendar/filing-obligations.ts)). 1억 5천만 원 기준과 개인의 예정 신고 선택은 반영하지 않았습니다(이전 설계 `tax-api-design.md` 5절, 커밋 `3c6f890`)
+**부가세 예정 기간(예정고지 판정).** 사업자는 원칙적으로 예정신고합니다(부가가치세법 제48조 ①). 개인사업자와 직전 과세기간 공급가액 합계액이 1억 5천만 원 미만인 법인사업자는 세무서가 직전 과세기간 납부세액의 50%를 고지·징수합니다(제48조 ③, 1억 5천만 원은 시행령 제90조 ④). 징수할 금액이 50만 원 미만이거나 간이과세자에서 일반과세자로 바뀐 경우 등은 고지하지 않습니다(제48조 ③ 단서 1–3호). 고지 대상이라도 휴업·사업 부진 등으로 예정신고기간의 공급가액 또는 납부세액이 직전 과세기간의 1/3에 미달하거나 그 기간분을 조기환급 받으려면 예정신고할 수 있습니다(제48조 ④, 시행령 제90조 ⑥ 1·2호).
+
+신고 일정은 예정신고기간마다 판정 규칙([vat-preliminary-notice.ts](../../apps/api/src/modules/tax/calendar/vat-preliminary-notice.ts))으로 예정고지(`NOTICE`)와 예정신고(`PRELIMINARY`)를 정합니다. 입력은 세무 설정의 두 값입니다.
+
+- **직전 과세기간 공급가액:** `vatSupplyAmounts`의 직전 과세기간 값(1기는 전년 2기, 2기는 같은 해 1기)입니다. 확정 신고서의 값을 대리인이 확정 신고 뒤 넣습니다. 신고 건에 기록하지 않고 세무 설정에 둔 것은 일정 배치가 다음 기 예정 건을 120일 전(확정 신고 기한보다 앞)에 만들기 때문입니다. 값이 바뀌어 판정이 달라지면 배치가 `SCHEDULED`인 예정 건을 취소하고 다른 종류를 만들며, 되돌리면 배치가 취소한 건을 되살립니다. 예정고지와 예정 신고는 예정신고기간마다 한 자리라, 예정 건이 이미 `SCHEDULED`를 지났거나 대리인이 취소했으면 판정이 바뀌어도 다른 종류를 만들지 않고 대리인이 정리합니다. 이미 만든 확정 건의 기간(반기 전체 또는 남은 3개월)은 다시 계산하지 않으므로 대리인이 고칩니다. 법인은 값이 없으면(신설 법인, 아직 넣지 않음) 고지 대상인지 알 수 없어 원칙대로 예정신고입니다. 개인은 값과 상관없이 예정고지입니다
+- **예정신고 선택:** `vatPreliminaryElections`에 그 과세기간과 사유를 넣으면 예정신고입니다. 1/3 미달 여부는 대리인이 판단하고 사유만 받습니다
+
+50만 원 미만 등 고지하지 않는 경우는 직전 과세기간 납부세액을 받지 않아 판정하지 않고, 고지 건으로 두고 대리인이 취소합니다. 회사 세무 설정 저장소가 없어 두 값은 지금 비어 있습니다(법인 예정신고, 개인 예정고지. 이전 고정 분기와 같은 결과)
 
 ## 신고 건
 
@@ -65,6 +76,7 @@ Filing                                   fil_
 GET    /filings?taxType=&status=&open=&limit=&cursor=     기간 끝 최근 순
 GET    /filings/{filingId}                                 ETag
 GET    /filings/{filingId}/history
+GET    /filings/{filingId}/withholding-lines               원천세 신고서 줄(지급월별)
 POST   /filings/{filingId}:{command}                       If-Match (선택)
 PATCH  /filings/{filingId}/requirements/{code}             { response: PENDING|NOT_APPLICABLE, note? }
 POST   /filings/{filingId}/requirements/{code}/files       { fileId }
@@ -178,6 +190,40 @@ stateDiagram-v2
 - `POST /documents`는 `PREPARING`·`FILED`에서만 받습니다(그 밖에는 409 `FILING_LOCKED`). `FILED`에서 납부서를 붙이면 `paymentSlipSentAt`을 남깁니다
 - 고객이 문서를 처음 열면 `firstViewedAt`을 남기고, 신고서·고지서면 결과 확인 카드를 닫습니다. 고객이 볼 수 없는 문서는 404 `FILING_DOCUMENT_NOT_FOUND`입니다
 
+### 원천세 신고서 줄
+
+```
+GET /filings/{filingId}/withholding-lines
+→ { items: [ { paymentMonth, ledgerCount, closedCount,
+               lines: [ { lineCode, subtotalCode, incomeKind, otherIncomeCategory,
+                          headcount, grossPay, taxablePay, incomeTax, localIncomeTax } ] } ] }
+```
+
+원천세 신고 건 기간의 지급월마다 Payroll의 소득 종류별 원천세 합계에 원천징수이행상황신고서의 소득구분 코드를 붙여 보여 줍니다(2026-11-08, [payroll.md 열린 질문 15](payroll.md#열린-질문)). 대리인이 신고서를 쓸 때 대장 합계를 어느 줄에 옮길지 보는 읽기 전용 조회이고, 신고서 초안을 만들거나 저장하지는 않습니다.
+
+- **합계는 조회 포트로 받습니다.** `WithholdingTotals.totalsFor(companyId, paymentMonth)`를 [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 Payroll의 `PayrollWithholdingTotals`로 구현합니다. 지급월 마감 이벤트는 금액을 싣지 않으므로 outbox 재전달·순서와 상관없이 부를 때의 값입니다
+- **마감된 대장만 더합니다.** 같은 달의 `ledgerCount`·`closedCount`(`PayrollLedgers.summaryFor`)를 함께 주어, 둘이 다르면 아직 바뀔 수 있는 합계임을 알 수 있습니다
+- **퇴직소득(A22)은 완료한 퇴직금 정산에서 옵니다**(2026-11-08, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 지급일이 그 달인 완료 정산을 Payroll이 `RETIREMENT` 한 줄로 모읍니다. 대장이 아니라서 `ledgerCount`·`closedCount`와 상관없고, 대장이 없는 달(둘 다 0)에도 이 줄만 나올 수 있습니다. 완료한 정산은 신고 뒤 다시 열 수 없으므로(409 `WITHHOLDING_FILED`) 마감된 대장처럼 확정된 값입니다
+- 매월 신고 건은 지급월 하나, 반기 신고 건은 여섯 달을 하나씩 줍니다. 반기 신고서의 인원 규칙(간이세액은 마지막 달 인원, 일용근로는 월별 순인원 합계 등)은 계산하지 않습니다
+- 원천세가 아닌 신고 건은 `items`가 비어 있습니다. 접근 요건은 신고 건 조회(`filing:read`, `TAXATION`)와 같습니다
+- 코드 표는 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. 출처는 소득세법 시행규칙 [별지 제21호서식](https://www.law.go.kr/LSW/flDownload.do?flSeq=164450873) 원천징수이행상황신고서 <개정 2026. 5. 22.> 제1쪽 "원천징수 명세 및 납부세액"입니다
+
+| 소득 종류 `incomeKind` | 기타소득 구분 `otherIncomeCategory` | 줄 `lineCode` | 가감계 `subtotalCode` | 서식의 줄 |
+|---|---|---|---|---|
+| `WAGE` | `null` | A01 | A10 | 근로소득 간이세액 |
+| `DAILY` | `null` | A03 | A10 | 근로소득 일용근로 |
+| `RETIREMENT` | `null` | A22 | A20 | 퇴직소득 그 외. 지급일이 그 달인 완료 퇴직금 정산 |
+| `BUSINESS` | `null` | A25 | A30 | 사업소득 매월징수 |
+| `OTHER` | `PERSONAL_SERVICE` | A59 | A40 | 기타소득 인적용역(소득세법 제21조제1항제19호) |
+| `OTHER` | `GENERAL` | A42 | A40 | 기타소득 그 외 |
+
+- 줄은 위 표 순서(서식 제1쪽의 차례)로 늘어놓습니다. 기타소득은 서식에서 인적용역(A59)이 그 외(A42)보다 위에 있어 코드 순서와 다릅니다
+- **기타소득의 인적용역.** 서식 제1쪽 참고사항 5는 제21조제1항제19호의 인적용역소득(A59)을 2024. 1. 1. 이후 지급분부터 적용한다고 합니다. 대장 행의 지급사유 중 `76`(강연료등, 제19호 가목~라목)과 `79`(자문료등, "제21조 제1항 제19호에 해당하는 소득")가 그렇습니다(별지 제23호서식(4) 소득구분코드 표). 행의 기본 지급사유가 `76`이므로 지급사유 없이 넣은 기타소득도 A59입니다. 어떤 지급사유가 인적용역인지는 Payroll 참조 데이터([reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts) `PERSONAL_SERVICE_OTHER_INCOME_CODES`)가, 구분을 어느 줄에 적을지는 Tax가 정합니다. 구분이 없는 기타소득은 그 외(A42)로 둡니다
+- 기타소득의 A40은 가감계이고, 대장 행은 연금계좌(A41)·종교인소득(A43·A44)·가상자산(A49)이 아닙니다. 인적용역이 아닌 지급사유(상금 `71`, 원고료 `75` 등)는 "그 외" A42 줄입니다. 납부할 세액은 가감계(A10·A30·A40)를 기준으로 계산합니다(서식 작성방법 3. 라.)
+- 퇴직소득의 A21은 연금계좌에서 지급한 금액으로 금융회사가 적습니다. 퇴직금과 확정급여형(DB) 퇴직연금의 퇴직소득은 A22입니다(작성방법 3. 가.)
+- 중도퇴사(A02)·연말정산(A04~A06)은 Payroll이 따로 집계하지 않아 근로 행은 모두 간이세액(A01)으로 봅니다
+- 지방소득세(`localIncomeTax`)는 이 신고서가 아니라 지방세 특별징수 신고에 적지만 함께 보여 줍니다
+
 ## 세무 일정
 
 ```
@@ -188,7 +234,10 @@ GET /tax-calendar?year=2026    → { items: [{ taxType, kind, periodKey, periodS
 - 세무 설정이 없는 회사는 404 `TAX_PROFILE_NOT_FOUND`입니다
 - **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 매일, 그리고 공휴일표·세무 설정이 바뀐 뒤 돕니다. 오늘부터 120일 안의 의무에 대해
   - 신고 건이 없으면 `SCHEDULED`로 만들고 체크리스트를 복사합니다. 급여 플랜 회사의 원천세는 `PAYROLL_LEDGER_CLOSED`를 바로 맞춥니다
-  - 있으면(취소된 것 포함) 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
+  - 있으면 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
+  - 사람이 취소한 건은 다시 만들지 않습니다. 배치가 취소한 건(이력 `SCHEDULE_CANCELED`)은 의무가 다시 생기면 `SCHEDULED`로 되살리고 기한을 맞춥니다(이력 `SCHEDULE_RESTORED`, 이벤트)
+    - 되살린 건은 취소 전의 `requirements`(제출 자료 항목·응답)를 그대로 갖습니다. 원천세를 매월 → 반기 → 매월로 바꿨다 되돌리면 그사이 급여대장 마감이 바뀌어도 자동 연계 항목(`PAYROLL_LEDGER_CLOSED`)이 취소 전 값일 수 있습니다. 되살릴 때 체크리스트를 다시 맞출지는 정하지 않았습니다
+  - 부가세 예정고지(`NOTICE`)와 예정 신고(`PRELIMINARY`)는 예정신고기간마다 한 자리입니다. 그 자리에 `SCHEDULED`를 지난 건이나 사람이 취소한 건이 있으면 다른 종류를 만들거나 되살리지 않습니다
   - 배치 기간 안의 `SCHEDULED` 신고 건이 의무에 없으면 `CANCELED`로 바꾸고(이력 `SCHEDULE_CANCELED`) 카드를 닫고 이벤트를 냅니다
 - 같은 날 다시 돌려도 아무것도 바뀌지 않습니다
 
@@ -242,7 +291,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 | 엔드포인트 | 권한 | 플랜 | 약관 |
 |---|---|---|---|
-| 신고 건 조회, 문서 열람, 세무 일정 | `filing:read` | `TAXATION` | 필요 |
+| 신고 건 조회(원천세 신고서 줄 포함), 문서 열람, 세무 일정 | `filing:read` | `TAXATION` | 필요 |
 | 제출 자료 응답·파일 | `filing:update` | `TAXATION` | 필요 |
 | `:submit`, `:unsubmit` | `filing:submit` | `TAXATION` | 필요 |
 | `:confirm-ledger`, `:dispute-ledger` | `filing:confirm-ledger` | `TAXATION` | 필요 |
@@ -282,8 +331,9 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 ```mermaid
 flowchart LR
-  PAY[Payroll] -- payroll_pay_month.closed / reopened (outbox) --> SYNC[Filings.syncPayrollLedger]
+  PAY[Payroll] -- payroll_pay_month.closed / reopened / withholding_changed (outbox) --> SYNC[Filings.syncPayrollLedger]
   SYNC -- PayrollLedgers.summaryFor --> PAY
+  LINES[withholding-lines] -- WithholdingTotals.totalsFor --> PAY
   BK[Bookkeeping] -- VatEvidence.sales / purchases --> VAT[VatEstimates]
   PAY -- WithholdingFilingLock.isFiled --> TAX[Tax]
   TAX -. "filing.status_changed (메모리 로그, 소비자 없음)" .-> OUT[단말·알림]
@@ -294,12 +344,13 @@ flowchart LR
 | 방향 | 이름 | 형태 |
 |---|---|---|
 | 내보냄(이벤트) | `filing.status_changed` | `{ companyId, filingId, taxType, kind, periodStart, periodEnd, fromStatus, toStatus, payableAmount, occurredAt }` |
-| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 부름. outbox로 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서 반영하고, 실패하면 릴레이가 다시 넘김 |
+| 받음(이벤트) | Payroll `payroll_pay_month.closed`·`payroll_pay_month.reopened`·`payroll_pay_month.withholding_changed` | [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 `PayrollLedgerSync.apply`(= `Filings.syncPayrollLedger`)를 부름. outbox로 급여 커맨드가 커밋된 뒤 자기 트랜잭션에서 반영하고, 실패하면 릴레이가 다시 넘김. 세 이벤트 모두 같은 다시 맞춤이라 멱등입니다. 퇴직금만 바뀐 달(`withholding_changed`)은 대장 현황이 그대로라 "급여대장 마감" 항목도 그대로이고(대장이 없는 달이면 `PENDING`), A22 줄은 [원천세 신고서 줄](#원천세-신고서-줄)이 부를 때 읽음 |
 | 공개 조회 | `VatEstimateQuery.current(companyId, businessType, asOf)` | `{ period, asOf, estimatedTax, dueDate }`. Bookkeeping 홈 카드가 씀 |
 | 공개 조회 | `AgencyWorkloadQuery.of(companies)` | 회사(`companyId`, `plans`)마다 `{ openFilingCount, overdueFilingCount, openActionCardCount, nearestDueDate }`. Identity & Access의 `AgencyWorkload` 포트가 씀([identity-access-tax.ts](../../apps/api/src/wiring/identity-access-tax.ts)) |
 | 받음(인가) | Identity & Access `CurrentAgent`, `authorizeAgency` | 대리인 큐가 담당 회사(플랜 포함)를 받음. Tax는 배정을 읽지 않음 |
-| 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장 잠금에 씀 |
+| 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장과 퇴직금 정산 잠금에 씀 |
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
+| 포트(Payroll 구현) | `WithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 마감 대장과 완료 퇴직금 정산(`RETIREMENT`)만. [원천세 신고서 줄](#원천세-신고서-줄)이 씀 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
 | 포트(Identity·Billing·Tax 설정) | `TaxProfiles.get/listTaxation` | 사업자 형태·플랜과 세무 설정을 합친 `TaxProfile` |
 | 포트(운영) | `PublicHolidays.between(from, to)` | 기한을 미루는 쉬는 날(주말 제외) |
@@ -363,7 +414,8 @@ flowchart LR
 | 일정 배치 | 서비스만 (`FilingSchedulerLive`). 매일 돌릴 실행기는 없음 |
 | 예상 부가세·추이 | 구현 ([vat-estimates.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimates.ts)) |
 | 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
-| 포트 연결(`PayrollLedgers`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
+| 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |
+| 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
 | 수정신고, 감사 로그 | 없음 |
@@ -377,6 +429,6 @@ flowchart LR
 3. **문서 열람 기록의 경로.** `GET /filings/{filingId}/documents/{documentId}`가 첫 열람을 기록합니다(GET에 부수효과). 다운로드 URL 발급을 `POST .../documents/{documentId}:open`으로 바꿀지 파일 저장소 설계와 함께 정합니다
 4. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다
 5. **법인세·종합소득세 자료.** 체크리스트가 없어 고객 흐름이 비어 있습니다. 결산 자료(재고·가지급금 등) 항목을 만들지 업무 확인이 필요합니다
-6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 회사 세무 설정 저장소가 없어 프로필의 `vatTaxpayerType`은 지금 `GENERAL`, `vatSimplifiedInvoiceIssuer`는 없음(거짓)입니다. 사업자 상태조회의 과세 유형으로 채울지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
+6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 회사 세무 설정 저장소가 없어 프로필의 `vatTaxpayerType`은 지금 `GENERAL`, `vatSimplifiedInvoiceIssuer`는 없음(거짓), `vatSupplyAmounts`·`vatPreliminaryElections`는 비어 있습니다. 사업자 상태조회의 과세 유형으로 채울지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
 7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
 8. **대행 커맨드의 발견.** `allowedActions`는 차례인 행위자의 커맨드만 넣어서, 대리인이 보는 원천세 신고 건에는 대행할 수 있는 `SUBMIT`·`UNSUBMIT`·`PAY`가 없습니다. `/v1`의 대리인 화면이 이 버튼을 켜려면 별도 목록(예: `proxyActions`)을 둘지, 클라이언트가 세목·상태로 고를지 정해야 합니다

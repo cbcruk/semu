@@ -6,7 +6,7 @@ import type { TaxProfile } from '../modules/tax/tax.public.ts'
 
 /**
  * Tax가 세무 설정 저장소를 갖기 전까지 쓰는 기본 세무 설정입니다. 12월 결산, 매월 원천세, 성실신고확인 대상 아님,
- * 카드 매출 전부 과세입니다. 부가세 예정 기간은 법인이 신고, 개인이 고지입니다.
+ * 카드 매출 전부 과세입니다. 과세기간별 공급가액과 예정신고 선택이 없어 부가세 예정 기간은 법인이 신고, 개인이 고지입니다.
  */
 export const TAX_SETTINGS_WITHOUT_STORE = {
   fiscalYearEndMonth: 12,
@@ -14,9 +14,17 @@ export const TAX_SETTINGS_WITHOUT_STORE = {
   sincereFilingTarget: false,
   vatTaxpayerType: 'GENERAL',
   taxableCardRatioPpm: 1_000_000,
+  vatSupplyAmounts: {},
+  vatPreliminaryElections: {},
 } as const satisfies Pick<
   TaxProfile,
-  'fiscalYearEndMonth' | 'withholdingCycle' | 'sincereFilingTarget' | 'vatTaxpayerType' | 'taxableCardRatioPpm'
+  | 'fiscalYearEndMonth'
+  | 'withholdingCycle'
+  | 'sincereFilingTarget'
+  | 'vatTaxpayerType'
+  | 'taxableCardRatioPpm'
+  | 'vatSupplyAmounts'
+  | 'vatPreliminaryElections'
 >
 
 /**
@@ -26,7 +34,7 @@ export const TAX_SETTINGS_WITHOUT_STORE = {
  * {@link TAX_SETTINGS_WITHOUT_STORE}로 채웁니다.
  * - 사업연도 종료 월: 12월
  * - 원천세 납부 주기: 매월(반기별 납부 승인을 모릅니다)
- * - 부가세 예정 기간: 법인은 신고(`FILING`), 개인은 고지(`NOTICE`)
+ * - 과세기간별 부가세 공급가액·예정신고 선택: 없음(법인은 예정신고, 개인은 예정고지)
  * - 성실신고확인 대상: 아님
  * - 부가세 과세 유형: 일반과세자
  * - 카드 매출 과세 비율: 100%
@@ -44,7 +52,6 @@ export const TaxProfilesFromIdentityAccess: Layer.Layer<TaxProfiles, never, Comp
             ...TAX_SETTINGS_WITHOUT_STORE,
             companyId: company.id,
             businessType: company.businessType,
-            vatPreliminaryMode: company.businessType === 'CORPORATION' ? 'FILING' : 'NOTICE',
             plans: [...active].toSorted(),
           })),
         )

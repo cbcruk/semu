@@ -28,20 +28,33 @@ function load(rule: string): FixtureCase[] {
 const rollover = load('filing-deadline-rollover')
 const obligations = load('filing-obligations')
 
-function profileOf(company: Record<string, any>): TaxCalendarProfile {
+/**
+ * 현행 `vatPreliminaryMode`를 과세기간별 공급가액으로 옮깁니다. 고지 모드 법인은 계산하는 모든 과세기간의 공급가액을
+ * 1억 5천만 원 미만으로, 신고 모드 법인은 공급가액 없음(예정신고)으로 둡니다. 개인은 모드와 상관없이 예정고지입니다.
+ */
+function vatSupplyAmountsOf(company: Record<string, any>, from: string, to: string): Record<string, number> {
+  if (company['vatPreliminaryMode'] === 'filing') return {}
+  const years = Array.from({ length: Number(to.slice(0, 4)) - Number(from.slice(0, 4)) + 4 }, (_, index) => {
+    return Number(from.slice(0, 4)) - 2 + index
+  })
+  return Object.fromEntries(years.flatMap((year) => [`${year}-H1`, `${year}-H2`].map((key) => [key, 100_000_000])))
+}
+
+function profileOf(company: Record<string, any>, from: string, to: string): TaxCalendarProfile {
   return {
     businessType: company['businessType'] === 'corporate' ? 'CORPORATION' : 'INDIVIDUAL',
     fiscalYearEndMonth: company['fiscalYearEndMonth'],
     withholdingCycle: company['withholdingSemiannual'] === true ? 'SEMIANNUAL' : 'MONTHLY',
-    vatPreliminaryMode: company['vatPreliminaryMode'] === 'filing' ? 'FILING' : 'NOTICE',
     sincereFilingTarget: company['sincereFilingTarget'],
     vatTaxpayerType: 'GENERAL',
+    vatSupplyAmounts: vatSupplyAmountsOf(company, from, to),
+    vatPreliminaryElections: {},
   }
 }
 
 function resolve(input: Record<string, any>): FilingObligation[] {
   return resolveFilingObligations({
-    profile: profileOf(input['company']),
+    profile: profileOf(input['company'], input['from'], input['to']),
     from: input['from'],
     to: input['to'],
     holidays: new Set(input['holidays']),
@@ -125,6 +138,8 @@ describe('신고 의무 픽스처(filing-obligations)', () => {
       ...fromLegacyPeriodKey(filing['taxType'], filing['taxPeriodKey']),
       id: filing['id'],
       status: LEGACY_FILING_STATUS[filing['status']]!,
+      // 현행은 취소 주체를 구분하지 않습니다. 픽스처의 취소 건은 대리인이 취소한 건(결정 5)으로 봅니다
+      canceledBy: filing['status'] === 'cancelled' ? ('USER' as const) : null,
       dueDate: filing['dueDate'],
       paymentDue: filing['paymentDue'],
     }))

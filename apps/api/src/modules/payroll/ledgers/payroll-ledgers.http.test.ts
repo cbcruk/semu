@@ -163,23 +163,16 @@ describe('/payroll-ledgers 급여 아웃소싱(고객 승인)', () => {
     expect(approved.body).toMatchObject({ status: 'CLOSED', step: 3, rejection: null, allowedActions: ['REOPEN'] })
   })
 
-  it('지급월 마감 이벤트를 원천세 요약과 함께 발행합니다', () => {
-    expect(events.at(-1)).toMatchObject({
+  it('지급월 마감 이벤트는 원천세 금액 없이 회사·지급월·대장만 싣습니다', () => {
+    const closed = events.at(-1)
+
+    expect(closed).toMatchObject({
       type: 'payroll_pay_month.closed',
       companyId: TEST_COMPANY_ID,
       paymentMonth: '2026-03',
       ledgerIds: [ledgerId],
-      withholding: [
-        {
-          incomeKind: 'WAGE',
-          headcount: 1,
-          grossPay: 3_200_000,
-          taxablePay: 3_000_000,
-          incomeTax: 60_380,
-          localIncomeTax: 6_030,
-        },
-      ],
     })
+    expect(closed).not.toHaveProperty('withholding')
   })
 
   it('마감한 급여대장은 읽기만 할 수 있습니다', async () => {

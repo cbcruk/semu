@@ -7,6 +7,9 @@ import { TEST_COMPANY_ID } from '../../identity-access/testing.ts'
 import { payrollTestApp } from '../payroll-testing.ts'
 import { testEmployee } from '../payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
+import { PayrollEventPublisher } from '../ports/payroll-events.ts'
+import type { PayrollEvent } from '../ports/payroll-events.types.ts'
+import { WithholdingFilingLock } from '../ports/withholding-filing-lock.ts'
 import { SeveranceSettlementRepository } from './severance-settlement-repository.ts'
 import type { SeveranceSettlementRecord } from './severance-settlement.types.ts'
 
@@ -92,7 +95,7 @@ describe('/severance-settlements', () => {
   })
 })
 
-describe('/severance-settlements 지급일 (원천세 퇴직소득 A21의 지급월)', () => {
+describe('/severance-settlements 지급일 (원천세 퇴직소득 그 외 A22의 지급월)', () => {
   const OCTOBER_LEAVER = 'emp_01JBQ000000000000000000021' as Id<'employee'>
   const NOVEMBER_LEAVER = 'emp_01JBQ000000000000000000022' as Id<'employee'>
   const EARLY_LEAVER = 'emp_01JBQ000000000000000000023' as Id<'employee'>
@@ -242,5 +245,169 @@ describe('/severance-settlements 지급일 (원천세 퇴직소득 A21의 지급
     expect(completed.body).toMatchObject({ status: 'COMPLETED', paymentDate: '2026-09-30', version: 5 })
     const after = await dated.request('GET', '/severance-settlements?paymentMonth=2026-09&status=COMPLETED')
     expect(ids(after.body)).toEqual([LEGACY_ID])
+  })
+})
+
+describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 잠금)', () => {
+  const OCTOBER_LEAVER = 'emp_01JBQ000000000000000000031' as Id<'employee'>
+  const DECEMBER_LEAVER = 'emp_01JBQ000000000000000000032' as Id<'employee'>
+  const FILED_COMPLETED_ID = 'sev_01JBQ0000000000000000000M1' as Id<'severanceSettlement'>
+  const FILED_CALCULATED_ID = 'sev_01JBQ0000000000000000000M2' as Id<'severanceSettlement'>
+  /** 원천세가 신고된 지급월입니다. */
+  const FILED_MONTH = '2026-12'
+  const base = (
+    id: Id<'severanceSettlement'>,
+    employeeId: Id<'employee'>,
+    status: 'CALCULATED' | 'COMPLETED',
+  ): SeveranceSettlementRecord => ({
+    id,
+    companyId: TEST_COMPANY_ID,
+    employeeId,
+    employeeName: '정신고',
+    joinDate: '2024-01-01',
+    lastWorkDate: '2026-11-30',
+    paymentDate: '2026-12-05',
+    status,
+    input: { threeMonthWages: 9_000_000 },
+    result: {
+      eligible: true,
+      serviceDays: 1_065,
+      averageDailyWage: 97_826,
+      usedOrdinaryWage: false,
+      severancePay: 8_500_000,
+      retirementIncomeTax: 80_000,
+      localIncomeTax: 8_000,
+      netPay: 8_412_000,
+      breakdown: [],
+    },
+    rateTable: '2026-01',
+    version: 1,
+    createdAt: '2026-12-01T00:00:00.000Z',
+    updatedAt: '2026-12-01T00:00:00.000Z',
+  })
+  const events: PayrollEvent[] = []
+  const linked = payrollTestApp([
+    PayrollEmployeeDirectory.layerMemory([
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: OCTOBER_LEAVER, leaveDate: '2026-10-31' }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: DECEMBER_LEAVER, leaveDate: '2026-12-01' }) },
+    ]),
+    SeveranceSettlementRepository.layer([
+      base(FILED_COMPLETED_ID, 'emp_01JBQ000000000000000000033' as Id<'employee'>, 'COMPLETED'),
+      base(FILED_CALCULATED_ID, 'emp_01JBQ000000000000000000034' as Id<'employee'>, 'CALCULATED'),
+    ]).pipe(Layer.provide(TableFactory.layerMemory)),
+    WithholdingFilingLock.layerMemory([{ companyId: TEST_COMPANY_ID, paymentMonth: FILED_MONTH }]),
+    PayrollEventPublisher.layerMemory(events),
+  ])
+  afterAll(() => linked.dispose())
+
+  const changedMonths = () =>
+    events.splice(0).map((event) => {
+      expect(event).toEqual({
+        type: 'payroll_pay_month.withholding_changed',
+        eventId: expect.any(String),
+        companyId: TEST_COMPANY_ID,
+        paymentMonth: expect.any(String),
+        occurredAt: expect.any(String),
+      })
+      return event.paymentMonth
+    })
+
+  it('완료·다시 열기 때 그 지급월의 원천세가 바뀌었다고 알리고, 계산됨 정산의 변경은 알리지 않습니다', async () => {
+    const created = await linked.request('POST', '/severance-settlements', {
+      body: { employeeId: OCTOBER_LEAVER, input: { threeMonthWages: 9_000_000 }, paymentDate: '2026-10-31' },
+    })
+    expect(created.status).toBe(201)
+    const id = created.body.id
+    expect(changedMonths()).toEqual([])
+
+    await linked.request('POST', `/severance-settlements/${id}:complete`)
+    expect(changedMonths()).toEqual(['2026-10'])
+
+    await linked.request('POST', `/severance-settlements/${id}:reopen`)
+    expect(changedMonths()).toEqual(['2026-10'])
+
+    // 지급일 이동은 다시 열기(옛 달)와 완료(새 달)로 두 달 모두에 알립니다. 계산됨에서 옮기는 것만으로는 합계가 그대로입니다.
+    const moved = await linked.request('PATCH', `/severance-settlements/${id}`, { body: { paymentDate: '2026-11-10' } })
+    expect(moved.status).toBe(200)
+    expect(changedMonths()).toEqual([])
+    await linked.request('POST', `/severance-settlements/${id}:complete`)
+    expect(changedMonths()).toEqual(['2026-11'])
+
+    // 제외·제외 취소는 계산됨에서만 하므로 합계와 상관없습니다.
+    await linked.request('POST', `/severance-settlements/${id}:reopen`)
+    events.splice(0)
+    await linked.request('POST', `/severance-settlements/${id}:exclude`, { body: { reason: '중복' } })
+    await linked.request('POST', `/severance-settlements/${id}:include`)
+    expect(changedMonths()).toEqual([])
+  })
+
+  it('원천세가 신고된 지급월의 정산은 다시 열거나 완료할 수 없습니다(409)', async () => {
+    const reopen = await linked.request('POST', `/severance-settlements/${FILED_COMPLETED_ID}:reopen`)
+    expect(reopen.status).toBe(409)
+    expect(reopen.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
+
+    const complete = await linked.request('POST', `/severance-settlements/${FILED_CALCULATED_ID}:complete`)
+    expect(complete.status).toBe(409)
+    expect(complete.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
+
+    const unchanged = await linked.request('GET', `/severance-settlements/${FILED_COMPLETED_ID}`)
+    expect(unchanged.body).toMatchObject({ status: 'COMPLETED', version: 1 })
+    expect(changedMonths()).toEqual([])
+  })
+
+  it('지급일을 신고된 지급월로 정하거나 옮길 수 없습니다(409)', async () => {
+    const createdInto = await linked.request('POST', '/severance-settlements', {
+      body: { employeeId: DECEMBER_LEAVER, input: { threeMonthWages: 9_000_000 }, paymentDate: '2026-12-15' },
+    })
+    expect(createdInto.status).toBe(409)
+    expect(createdInto.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
+
+    const created = await linked.request('POST', '/severance-settlements', {
+      body: { employeeId: DECEMBER_LEAVER, input: { threeMonthWages: 9_000_000 }, paymentDate: '2027-01-05' },
+    })
+    expect(created.status).toBe(201)
+    const movedInto = await linked.request('PATCH', `/severance-settlements/${created.body.id}`, {
+      body: { paymentDate: '2026-12-20' },
+    })
+    expect(movedInto.status).toBe(409)
+    expect(movedInto.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
+
+    // 마지막 근무일(2026-12-01)로 채우는 완료도 신고된 달로 들이는 것입니다.
+    const cleared = await linked.request('PATCH', `/severance-settlements/${created.body.id}`, {
+      body: { paymentDate: null },
+    })
+    expect(cleared.status).toBe(200)
+    const completedInto = await linked.request('POST', `/severance-settlements/${created.body.id}:complete`)
+    expect(completedInto.status).toBe(409)
+    expect(completedInto.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
+
+    // 같은 달 안의 입력 수정은 원천세와 상관없어 받습니다.
+    const inputOnly = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { input: { threeMonthWages: 9_300_000 } },
+    })
+    expect(inputOnly.status).toBe(200)
+    expect(changedMonths()).toEqual([])
+  })
+
+  it('계산됨 정산은 신고된 지급월에서 빼내거나 지급일을 지울 수 있습니다', async () => {
+    // 합계에 들지 않으므로 신고와 어긋나지 않고, 막으면 그 정산은 완료도 이동도 못 합니다.
+    const cleared = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: null },
+    })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.paymentDate).toBeNull()
+
+    const into = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: '2026-12-20' },
+    })
+    expect(into.status).toBe(409)
+
+    const movedOut = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: '2027-01-05' },
+    })
+    expect(movedOut.status).toBe(200)
+    const completed = await linked.request('POST', `/severance-settlements/${FILED_CALCULATED_ID}:complete`)
+    expect(completed.status).toBe(200)
+    expect(changedMonths()).toEqual(['2027-01'])
   })
 })

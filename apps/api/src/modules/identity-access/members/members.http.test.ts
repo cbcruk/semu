@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { BusinessStatusCheck } from '../companies/business-status-check.ts'
 import { DEMO_COMPANY_IDS, DEMO_USER_IDS } from '../demo-seed.ts'
 import { makeTestApp } from '../testing-http.ts'
 import type { TestApp } from '../testing-http.ts'
@@ -80,6 +81,52 @@ describe('회사 등록(POST /v1/companies)', () => {
 
     expect(response.status).toBe(422)
     expect(await response.json()).toMatchObject({ code: 'BUSINESS_NUMBER_INVALID' })
+  })
+
+  it('국세청 조회에서 폐업인 사업자는 422로 거절합니다', async () => {
+    const { token } = await app.signIn('owner@semu.example')
+    // Integrations 가짜 상태조회는 끝자리 8을 폐업으로 답합니다.
+    const register = (businessNumber: string) =>
+      app.request('POST', '/v1/companies', {
+        token,
+        body: { name: '폐업한 회사', businessNumber, businessType: 'INDIVIDUAL' },
+      })
+
+    const closed = await register('101-86-00078')
+
+    expect(closed.status).toBe(422)
+    expect(await closed.json()).toMatchObject({ code: 'BUSINESS_CLOSED' })
+    expect((await register('101-86-00006')).status).toBe(201)
+  })
+
+  it.each([
+    ['휴업', '101-86-00097'],
+    ['미등록(알 수 없음)', '101-86-00059'],
+  ])('국세청 조회에서 %s인 사업자는 등록합니다', async (_status, businessNumber) => {
+    const { token } = await app.signIn('owner@semu.example')
+
+    const response = await app.request('POST', '/v1/companies', {
+      token,
+      body: { name: '새 회사', businessNumber, businessType: 'INDIVIDUAL' },
+    })
+
+    expect(response.status).toBe(201)
+  })
+
+  it('사업자 상태조회가 실패해도 등록합니다', async () => {
+    const failing = makeTestApp({ layers: [BusinessStatusCheck.layerFailing] })
+    try {
+      const { token } = await failing.signIn('owner@semu.example')
+
+      const response = await failing.request('POST', '/v1/companies', {
+        token,
+        body: { name: '새 회사', businessNumber: '101-86-00078', businessType: 'INDIVIDUAL' },
+      })
+
+      expect(response.status).toBe(201)
+    } finally {
+      await failing.dispose()
+    }
   })
 
   it('토큰이 없으면 401로 답합니다', async () => {

@@ -4,6 +4,7 @@ import { LaborCostReportsHttpLive } from './labor-cost/labor-cost-reports.http.t
 import { PayrollLaborCost } from './labor-cost/payroll-labor-cost.ts'
 import { PayrollLedgerRepository } from './ledgers/payroll-ledger-repository.ts'
 import { PayrollLedgerSummary } from './ledgers/payroll-ledger-summary.ts'
+import { PayrollWithholdingTotals } from './ledgers/payroll-withholding-totals.ts'
 import { PayrollLedgerApprovalsHttpLive, PayrollLedgersHttpLive } from './ledgers/payroll-ledgers.http.ts'
 import { PAYROLL_DEMO_EMPLOYEES } from './payroll-demo.ts'
 import { PayslipRepository } from './payslips/payslip-repository.ts'
@@ -17,6 +18,7 @@ import { PayrollCalculatorHttpLive, RateTablesHttpLive } from './rate-tables/rat
 import { PayrollSettingQuery } from './settings/payroll-setting-query.ts'
 import { PayrollSettingRepository } from './settings/payroll-setting-repository.ts'
 import { PayrollSettingsHttpLive } from './settings/payroll-settings.http.ts'
+import { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
 import { SeveranceSettlementRepository } from './severance/severance-settlement-repository.ts'
 import { SeveranceSettlementsHttpLive } from './severance/severance-settlements.http.ts'
 
@@ -37,13 +39,19 @@ export const PayrollHttpLive = Layer.mergeAll(
 )
 
 /**
- * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황, 월별 인건비, 사업장 규모(5인 미만 여부)입니다.
+ * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황, 지급월 원천세 합계, 월별 인건비, 직원별 퇴직금 정산 상태, 사업장 규모(5인 미만 여부)입니다.
  *
- * `PayrollLedgerRepository`, `PayrollSettingRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
+ * `PayrollLedgerRepository`, `SeveranceSettlementRepository`, `PayrollSettingRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
  * `Layer.fresh`로 따로 만듭니다. 그래야 테스트가 핸들러 쪽 포트만 바꿔 끼워도 이 서비스가 먼저 만든 인스턴스를 핸들러가 물려받지 않습니다.
  */
 export const PayrollPublicLive = Layer.fresh(
-  Layer.mergeAll(PayrollLedgerSummary.layer, PayrollLaborCost.layer, PayrollSettingQuery.layer),
+  Layer.mergeAll(
+    PayrollLedgerSummary.layer,
+    PayrollWithholdingTotals.layer,
+    PayrollLaborCost.layer,
+    SeveranceSettlementQuery.layer,
+    PayrollSettingQuery.layer,
+  ),
 )
 
 /**

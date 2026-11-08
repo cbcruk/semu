@@ -20,6 +20,10 @@ import { DEFAULT_ENROLLMENT, determineEligibility } from './social-insurance/ins
 import { entryInEffect } from './tax-withholding/tax-withholding-history.ts'
 import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
 
+/** HR이 쓰고 다른 컨텍스트가 구현하는 포트입니다. Payroll이 `src/wiring/hr-payroll.ts`로 구현합니다. */
+export { SeveranceSettlementLookup } from './ports/severance-settlement-lookup.ts'
+export type { SeveranceSettlementStatus } from './retirement/retirement.types.ts'
+
 /** 다른 컨텍스트에 보이는 직원입니다. 주민번호 원문은 담지 않습니다. */
 export interface DirectoryEmployee {
   id: Id<'employee'>

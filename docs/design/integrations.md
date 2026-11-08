@@ -254,7 +254,7 @@ GET  /messenger-channels
 | `ScrapedRecordSink` | Bookkeeping으로 | `accept({ companyId, institutionType, integrationId, itemKey?, scrapRequestId, isInitial, records[{ kind, externalId, occurredOn, amount, payload }] })` | Bookkeeping `ScrapedRecordIngestion` ([integrations-bookkeeping.ts](../../apps/api/src/wiring/integrations-bookkeeping.ts)). Integrations만 시험할 때는 기록만 하는 가짜 |
 | `CompanyProfiles` | Identity & Access에서 | `profileOf(companyId) → { businessNumber, businessType, representativeNames }` | Identity & Access `CompanyDirectory` ([integrations-identity-access.ts](../../apps/api/src/wiring/integrations-identity-access.ts)). Integrations만 시험할 때는 데모 표 |
 | `ScrapQueue` | 워커로 | `enqueue(companyId, requestId)` | 메시지 큐. 메모리는 즉시 처리 |
-| `BusinessStatusClient` | 밖으로 | `lookup(businessNumber)` | 국세청 공공데이터. Bookkeeping 거래처 상태조회도 공개 포트로 씀 |
+| `BusinessStatusClient` | 밖으로 | `lookup(businessNumber)` | 국세청 공공데이터. Bookkeeping 거래처 상태조회와 Identity & Access 회사 등록 전 폐업 확인([identity-access-integrations.ts](../../apps/api/src/wiring/identity-access-integrations.ts))도 공개 포트로 씀 |
 | `HometaxInvoiceClient` | 밖으로 | `issue(request)`, `fetchDetail(companyId, approvalNumber)` | 홈택스 전자세금계산서 발급. Bookkeeping 세금계산서 발행이 씀. 메모리는 결정적 가짜 |
 | `GiroPaymentClient` | 밖으로 | `pay(order)` | 금융결제원 인터넷지로 납부. Bookkeeping 지로 납부가 씀. 메모리는 결정적 가짜 |
 | `HometaxDelegationClient` | 밖으로 | `consent({ businessNumber, agencyName, hometaxLoginId, hometaxPassword })` | 홈택스 |

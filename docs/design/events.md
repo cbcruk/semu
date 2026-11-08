@@ -27,7 +27,8 @@
 
 - **이름은 `<resource>.<event>`이고 둘 다 snake_case입니다.** 예: `filing.status_changed`, `esign_request.completed`
 - `data`에는 소비자가 바로 반응하는 데 필요한 최소 필드만 넣습니다. 전체 리소스는 넣지 않고, 소비자가 ID로 다시 조회합니다
-- 주민등록번호·계좌번호·개인별 급여 금액은 이벤트에 넣지 않습니다 ([compliance.md](compliance.md#개인정보-최소-노출)). 원천세 집계처럼 회사 단위 합계는 넣을 수 있습니다
+- **같은 리소스의 다른 변화는 다른 이벤트로 냅니다.** 예: 지급월(`payroll_pay_month`)은 대장이 모두 마감된 `closed`, 그것이 풀린 `reopened`와 별도로, 퇴직금 정산의 완료·다시 열기로 원천세 합계만 바뀐 `withholding_changed`를 냅니다(2026-11-08, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 대장이 없는 달에도 낼 수 있어 `closed`·`reopened`의 뜻("대장이 모두 마감")을 넓히지 않았고, 정산 리소스 이벤트(`severance_settlement.completed`)로 내면 Tax가 정산을 알아야 하므로 Tax가 관심 있는 지급월을 리소스로 두었습니다. 소비자는 셋을 같은 채널(`payroll_pay_month->tax`)로 받아 같은 다시 맞춤을 합니다
+- 주민등록번호·계좌번호·개인별 급여 금액은 이벤트에 넣지 않습니다 ([compliance.md](compliance.md#개인정보-최소-노출)). 회사 단위 합계는 넣을 수 있지만, 소비자가 언제 받아도 지금 값이 필요하면 조회로 줍니다. 예: 지급월 마감 이벤트는 원천세 합계를 싣지 않고 Tax가 `WithholdingTotals`로 묻습니다(2026-11-08, [payroll.md 열린 질문 15](payroll.md#열린-질문))
 
 ## 전달
 
@@ -60,7 +61,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Tax | `filing.status_changed` | 단말, 알림. Payroll은 받지 않고 대장 잠금을 `WithholdingFilingLock` 조회로 판정하며, 할 일 카드는 같은 요청 안에서 바뀜 | 구현(메모리 발행), 소비자 없음 |
 | HR | `employee.joined`, `employee.resigned`, `leave.started`, `leave.ended` | Payroll(명단 변경 경고), Documents | 설계 |
 | Documents | `esign_request.sent`, `esign_request.completed`, `certificate.issued` | HR(서명 완료 시 근로·급여계약과 문서 보관함 생성) | 발행 구현, HR 소비는 설계 |
-| Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened` | Tax(원천세 신고의 급여대장 항목 `provided` 판정) | 구현(outbox) |
+| Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened`, `payroll_pay_month.withholding_changed` | Tax(원천세 신고의 급여대장 항목 `provided` 판정을 다시 맞춤) | 구현(outbox) |
 | Bookkeeping | `evidence.ingested`, `tax_invoice.issued`, `giro.paid` | 단말, Tax(예상 부가세 갱신 알림) | 설계 |
 | 공통 | `job.completed`, `reset` | 단말 | 설계 |
 
@@ -73,8 +74,10 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Identity & Access `CompanyPlans` | Billing 구독 | 회사의 유효 플랜. `Actor.plans`의 원천 |
 | Tax `TaxProfiles` | Identity & Access 회사 + Billing 플랜 | 사업자 형태, 플랜, 결산월 등 신고 일정 계산 입력 |
 | Tax `PayrollLedgers` | Payroll `PayrollLedgerSummary` | 지급월 범위의 대장 수와 마감 수 |
+| Tax `WithholdingTotals` | Payroll `PayrollWithholdingTotals` | 지급월의 마감 대장 소득 종류별 원천세 합계. Tax가 신고서 줄 코드로 바꿈 |
 | Payroll `WithholdingFilingLock` | Tax `WithholdingFilingLock` | 지급월 원천세가 `FILED`·`SETTLED`인지. 참이면 대장 변경 409 |
 | Payroll `PayrollEmployeeDirectory` | HR `HrDirectory` | 기간 중 재직한 근로자, 계약·4대보험·공제 정보 |
+| HR `SeveranceSettlementLookup` | Payroll `SeveranceSettlementQuery` | 직원의 퇴직금 정산 상태 전부. `COMPLETED`가 있으면 직원 삭제·퇴사 취소·다시 퇴사 409 |
 | Documents (직접) | HR `HrDirectory` | 서명 요청 수신자, 증명서 대상 직원 |
 | Tax `VatEvidence` | Bookkeeping `VatEvidenceQuery` | 과세기간의 매출·매입 증빙 |
 | Bookkeeping `VatEstimateSource` | Tax 예상 부가세 | 홈 요약의 예상 납부세액과 기한 |

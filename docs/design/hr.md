@@ -31,7 +31,7 @@
 | 퇴직(상실)사유 / 상세사유 | `leavingReasonCode` / `leavingDetailReasonCode` (고용보험 상실사유 코드 그대로) |
 | 퇴직금·퇴직연금 유형 | `retirementPlan.benefitType`: `SEVERANCE_PAY` / `DB` / `DC` |
 | 퇴직금 중간정산 | `retirementPlan.interimSettlement` |
-| 퇴직금 정산 상태 | `severanceSettlementStatus`: `IN_PROGRESS` / `COMPLETED` / `EXCLUDED`. Payroll 정산 상태(`CALCULATED` / `COMPLETED` / `EXCLUDED`)와 값이 다르고 둘을 잇는 이벤트가 없어 지금은 채워지지 않음([열린 질문 10](#열린-질문)) |
+| 퇴직금 정산 상태 | 저장하지 않음. `SeveranceSettlementLookup`으로 Payroll에 물은 정산별 `SeveranceSettlementStatus`: `CALCULATED` / `COMPLETED` / `EXCLUDED`(Payroll과 같은 값, [열린 질문 10](#열린-질문)) |
 | 휴직 / 복직 | `Leave` / `:return` |
 | 휴직사유: 출산전후휴가·육아휴직·질병·기타 | `reason`: `MATERNITY` / `PARENTAL` / `ILLNESS` / `OTHER` |
 | 근로계약 / 급여계약 | `WorkContract` / `PayrollContract` |
@@ -63,7 +63,6 @@ Employee
 ├─ joinDate, isRejoin
 ├─ retirementPlan: { benefitType, interimSettlement?: { date, reasonCode } }
 ├─ resignation?: { leaveDate, leavingReasonCode, leavingDetailReasonCode?, severanceAmount? }
-├─ severanceSettlementStatus? (Payroll 이벤트로 갱신할 예정, 미구현. 지금은 늘 비어 있음)
 ├─ paymentAccount?: { bankCode, accountNumber(암호문), accountHolder }   # DAILY·BUSINESS·OTHER만
 ├─ source: MANUAL | ESIGN | ERP_IMPORT
 ├─ status (파생, 저장 안 함), warnings[] (파생), allowedActions[]
@@ -131,7 +130,7 @@ POST   /employees:export                             X-Access-Reason 필수 → 
 - **중복:** 같은 회사·같은 `kind`에 같은 주민등록번호(HMAC)가 있으면 409 `EMPLOYEE_DUPLICATE`(`duplicateEmployeeId`)입니다. `isRejoin: true`이고 겹치는 직원이 모두 `RESIGNED`면 허용합니다. 유일성은 저장소 제약 `(companyId, kind, registrationNumberHash, activeKey)`로 보장합니다
 - **마스킹 값 되돌려 보내기를 없앱니다.** `PATCH`에 `registrationNumber`가 없으면 그대로이고, 있으면 새 값입니다. `*`가 섞인 값은 400 `INVALID_VALUE`입니다
 - **퇴직은 커맨드입니다.** `:resign`이 퇴직일·사유를 기록하고 상실신고(`LOSS`)를 엽니다. `employee.resigned`를 내는 것은 미구현입니다([이벤트](#이벤트)). 퇴직금 유형·중간정산 같은 설정은 `PATCH`의 `retirementPlan`으로 저장합니다 ([retirement-validation](../reference/rules/retirement-validation.md))
-- **삭제 가드:** 퇴직금 정산이 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 가드는 구현됐지만 정산 상태를 채우는 경로가 없어 지금은 걸리지 않습니다([열린 질문 10](#열린-질문)). 급여대장에 들어간 직원도 막아야 하지만 그 사실은 Payroll이 알고 있어 [열린 질문](#열린-질문)에 둡니다
+- **삭제 가드:** 퇴직금 정산이 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 정산 상태는 저장하지 않고 삭제 때 Payroll에 묻습니다([퇴직](#퇴직)). 급여대장에 들어간 직원도 막아야 하지만 그 사실은 Payroll이 알고 있어 [열린 질문](#열린-질문)에 둡니다
 - `allowedActions`: `UPDATE`, `DELETE`, `RESIGN`, `CANCEL_RESIGNATION`, `REGISTER_LEAVE`
 
 ## 유효일 하위 리소스
@@ -266,7 +265,11 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 - 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`)
 - 고른 (상세)사유는 상실신고(`LOSS`)에 그대로 들어갑니다
-- 퇴직금 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. 정산 상태를 Payroll에서 받는 길(이벤트 또는 조회)은 미구현이라 필드가 늘 비어 있고 가드는 걸리지 않습니다. 상태 값도 Payroll과 다릅니다([열린 질문 10](#열린-질문))
+- 퇴직금 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. HR은 정산 상태를 저장하지 않고 커맨드마다 포트 `SeveranceSettlementLookup`으로 Payroll에 묻습니다([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
+  - 그 직원의 정산 중 하나라도 `COMPLETED`면 막습니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가 있어서입니다. 제외 후 새 정산처럼 정산이 여럿이어도 같습니다
+  - `CALCULATED`(지급 전)와 `EXCLUDED`(정산하지 않음)는 막지 않습니다. 현행도 완료만 막았습니다
+  - 막히면 Payroll에서 정산을 `:reopen`해 계산됨으로 되돌린 뒤 합니다
+  - 판정은 순수 규칙 `isSeveranceSettled`([retirement-rules.ts](../../apps/api/src/modules/hr/retirement/retirement-rules.ts))입니다
 - 퇴직 후 휴직 종료일은 퇴직일을 넘을 수 없습니다
 
 ## 4대보험 신고
@@ -344,11 +347,11 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 + 보육수당 대상 자녀 수 | 간이세액, 보육수당 비과세 한도 |
 | `listDependants(companyId, employeeId, asOf)` | 인적공제 대상자 | 연말정산, 비과세 수당 |
 | `listLeavesOverlapping(companyId, employeeId, from, to)` | 기간과 겹치는 휴직 | 일할 계산, 근속 |
-| `findRetirement(companyId, employeeId)` | 퇴직일·사유·퇴직금 유형·중간정산·정산 상태 | 퇴직금 정산 |
+| `findRetirement(companyId, employeeId)` | 퇴직일·사유·퇴직금 유형·중간정산 | 퇴직금 정산 |
 | `revealRegistrationNumber(companyId, employeeId, reason)` | 원문 주민등록번호 | 원천세 신고 파일 (열람 기록) |
 
 - 계좌 원문은 이체 파일을 만들 때만 `revealPaymentAccount(companyId, payrollContractId, reason)`로 받습니다
-- 현행 급여가 HR 테이블에 쓰던 `setSeveranceSettlementStatus`는 Payroll이 정산 상태 이벤트를 내고 HR이 받는 것으로 바꿀 계획입니다. 이벤트 이름·매핑은 정하지 않았고 미구현입니다([열린 질문 10](#열린-질문))
+- 현행 급여가 HR 테이블에 쓰던 `setSeveranceSettlementStatus`는 없앴습니다. 반대 방향으로 HR이 Payroll에 정산 상태를 묻습니다(`SeveranceSettlementLookup`, [퇴직](#퇴직))
 
 ## 이벤트
 
@@ -367,7 +370,6 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 |---|---|
 | `esign_request.completed` (Documents) | 근로·연봉계약서면 근로계약(`origin: ESIGN`)과 급여계약을 만들고, 수신자가 직원이 아니면 `WAGE` 직원을 만들고, 완료본을 보관함에 넣고, 사직서면 퇴직 사유 초안을 남깁니다 (현행 R29) |
 | `certificate.issued` (Documents) | 증명서 PDF를 보관함에 넣습니다 |
-| Payroll 정산 상태 이벤트 (이름 미정, Payroll도 내지 않음) | `severanceSettlementStatus`를 갱신합니다. 값 매핑은 [열린 질문 10](#열린-질문) |
 
 ## 오류 코드
 
@@ -461,7 +463,8 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 권장 가입 여부, 주민번호 원문(열람 기록). 4대보험 설정·인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
 | 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
 | 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
-| 퇴직 정보(급여 형태·중간정산), 퇴직금 정산 상태 구독 | 미구현. 정산 상태 필드(`severanceSettlementStatus`)와 삭제·퇴사·퇴사 취소 가드만 있고, 필드를 채우는 경로가 없어 가드는 걸리지 않습니다([열린 질문 10](#열린-질문)) |
+| 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
+| 퇴직 정보(급여 형태·중간정산) | 미구현 |
 | 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기 | 미구현 |
 | 이벤트 발행·구독 (`esign_request.completed` 처리 포함) | 미구현. 이벤트 버스가 없습니다 |
 | 멱등성 키 재응답 | 미구현 |
@@ -477,4 +480,4 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 7. **ERP 이관 직원:** 현행 "임시저장"으로 들어오는 더존·세무사랑 직원은 `source: ERP_IMPORT` + `MISSING_REGISTRATION_NUMBER` 경고로 둡니다. 이관 작업의 형태(Job)는 [integrations.md](integrations.md)와 맞춰야 합니다
 8. **급여계약의 최저시급 출처:** 설계는 Payroll 기준표(`rateTable`)에서 계약 시작일 기준으로 읽지만, HR에서 Payroll로 가는 포트가 없어 지금은 HR 상수(2026년 10,320원)로 비교합니다. HR 포트(`MinimumWageSource`)와 `wiring/hr-payroll.ts` 어댑터를 둘지 정해야 합니다
 9. **기간제 예외 기간을 2년 계산에서 뺄지:** 지금은 사슬 시작일 + 24개월을 전환일로 두고 예외 계약 기간도 셉니다. 일반 18개월 → 예외 12개월 → 일반 2개월이면 전환으로 보지만, 예외 기간을 빼면 일반 사용기간이 20개월이라 전환이 아닙니다. 판례·행정해석을 확인해 정해야 합니다([결정](rule-decisions/hr.md#indefinite-conversion-alert))
-10. **퇴직금 정산 상태 매핑:** HR `severanceSettlementStatus`(`IN_PROGRESS`·`COMPLETED`·`EXCLUDED`)를 채울 길이 없어 `RETIREMENT_COMPLETED` 가드가 걸리지 않습니다. 매핑·이벤트 이름·조회 포트 대안은 [payroll.md 열린 질문 16](payroll.md#열린-질문)에서 함께 정합니다
+10. **퇴직금 정산 상태 매핑:** ~~HR `severanceSettlementStatus`를 Payroll 이벤트로 채울지, 상태를 어떻게 매핑할지~~ **정함(2026-11-08):** HR은 정산 상태를 저장하지 않고 커맨드 때 포트 `SeveranceSettlementLookup`으로 Payroll에 묻습니다. 필드를 없애 매핑도 이벤트도 필요 없습니다. 완료 정산이 하나라도 있으면 막습니다([퇴직](#퇴직), [payroll.md 열린 질문 16](payroll.md#열린-질문))

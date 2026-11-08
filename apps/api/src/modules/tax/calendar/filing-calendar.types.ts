@@ -4,8 +4,13 @@ import type { FilingKind, TaxType } from '../tax.types.ts'
 /** 원천세 납부 주기입니다. 반기별 납부 승인을 받은 사업장만 `SEMIANNUAL`입니다. */
 export type WithholdingCycle = 'MONTHLY' | 'SEMIANNUAL'
 
-/** 법인 부가세 예정 기간을 신고(`FILING`)로 처리할지 고지(`NOTICE`)로 받을지입니다. 개인은 항상 고지입니다. */
-export type VatPreliminaryMode = 'FILING' | 'NOTICE'
+/**
+ * 예정고지 대상이 예정신고를 고른 사유입니다(부가가치세법 제48조 ④, 시행령 제90조 ⑥).
+ *
+ * - `BUSINESS_DECLINE`: 휴업·사업 부진 등으로 예정신고기간의 공급가액 또는 납부세액이 직전 과세기간의 1/3에 미달(1호)
+ * - `EARLY_REFUND`: 그 예정신고기간분을 조기환급 받으려 함(2호)
+ */
+export type VatPreliminaryElectionReason = 'BUSINESS_DECLINE' | 'EARLY_REFUND'
 
 /**
  * 부가세 과세 유형입니다. 간이과세자(`SIMPLIFIED`)는 개인사업자만 될 수 있고(부가가치세법 제61조),
@@ -19,7 +24,13 @@ export interface TaxCalendarProfile {
   /** 사업연도 종료 월(1–12)입니다. 법인세 기간과 기한을 정합니다. */
   fiscalYearEndMonth: number
   withholdingCycle: WithholdingCycle
-  vatPreliminaryMode: VatPreliminaryMode
+  /**
+   * 일반과세자 과세기간(`2026-H2`)별 공급가액 합계액(원)입니다. 확정 신고를 마치면 대리인이 넣고, 다음 과세기간의
+   * 예정고지 판정에 씁니다(부가가치세법 시행령 제90조 ④). 없는 기간은 모르는 것으로 봅니다.
+   */
+  vatSupplyAmounts: Readonly<Record<string, number>>
+  /** 예정고지 대신 예정신고를 고른 과세기간(`2027-H1`)과 사유입니다. 없는 기간은 고르지 않은 것입니다. */
+  vatPreliminaryElections: Readonly<Record<string, VatPreliminaryElectionReason>>
   /** 부가세 과세 유형입니다. 법인은 `SIMPLIFIED`여도 일반과세자로 계산합니다. */
   vatTaxpayerType: VatTaxpayerType
   /**
