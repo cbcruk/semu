@@ -36,10 +36,19 @@
 | 기한 경과 | `isOverdue` |
 | 오늘의 할 일 카드 | `ActionCard` (`kind`: `SUBMIT_MATERIALS`, `CONFIRM_LEDGER`, `REVIEW_FILING_RESULT`, `PAY_TAX`) |
 | 넘어가기 | `completion: SKIP` → `SKIPPED_OVERDUE`(마감 후) |
-| 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatPreliminaryMode`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
+| 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatTaxpayerType`, `vatSupplyAmounts`, `vatPreliminaryElections`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
+| 과세기간별 공급가액 합계 | `vatSupplyAmounts` (과세기간 키 `2026-H2` → 원) |
+| 예정신고 선택 사유 | `vatPreliminaryElections` (과세기간 키 → `BUSINESS_DECLINE`(휴업·사업 부진), `EARLY_REFUND`(조기환급)) |
 | 예상 부가세 | `VatEstimate` (`outputTax`, `inputTax`, `estimatedTax`) |
 
-**부가세 예정 기간(`vatPreliminaryMode`).** 개인 일반과세자와 직전 과세기간 공급가액이 1억 5천만 원 미만인 법인은 원칙적으로 예정고지(`NOTICE`)를 받습니다. 고지 금액은 직전 기 납부세액의 50%이고, 50만 원 미만이면 고지하지 않습니다. 휴업하거나 사업이 부진한 경우(직전 기 대비 1/3 미달), 또는 조기환급을 받으려는 경우에는 예정 신고를 선택할 수 있습니다. 회사를 만들 때 법인은 `FILING`, 개인은 `NOTICE`로 정하고, 신고 일정은 법인이 `FILING`일 때만 예정 신고 건을 만듭니다([filing-obligations.ts](../../apps/api/src/modules/tax/calendar/filing-obligations.ts)). 1억 5천만 원 기준과 개인의 예정 신고 선택은 반영하지 않았습니다(이전 설계 `tax-api-design.md` 5절, 커밋 `3c6f890`)
+**부가세 예정 기간(예정고지 판정).** 사업자는 원칙적으로 예정신고합니다(부가가치세법 제48조 ①). 개인사업자와 직전 과세기간 공급가액 합계액이 1억 5천만 원 미만인 법인사업자는 세무서가 직전 과세기간 납부세액의 50%를 고지·징수합니다(제48조 ③, 1억 5천만 원은 시행령 제90조 ④). 징수할 금액이 50만 원 미만이거나 간이과세자에서 일반과세자로 바뀐 경우 등은 고지하지 않습니다(제48조 ③ 단서 1–3호). 고지 대상이라도 휴업·사업 부진 등으로 예정신고기간의 공급가액 또는 납부세액이 직전 과세기간의 1/3에 미달하거나 그 기간분을 조기환급 받으려면 예정신고할 수 있습니다(제48조 ④, 시행령 제90조 ⑥ 1·2호).
+
+신고 일정은 예정신고기간마다 판정 규칙([vat-preliminary-notice.ts](../../apps/api/src/modules/tax/calendar/vat-preliminary-notice.ts))으로 예정고지(`NOTICE`)와 예정신고(`PRELIMINARY`)를 정합니다. 입력은 세무 설정의 두 값입니다.
+
+- **직전 과세기간 공급가액:** `vatSupplyAmounts`의 직전 과세기간 값(1기는 전년 2기, 2기는 같은 해 1기)입니다. 확정 신고서의 값을 대리인이 확정 신고 뒤 넣습니다. 신고 건에 기록하지 않고 세무 설정에 둔 것은 일정 배치가 다음 기 예정 건을 120일 전(확정 신고 기한보다 앞)에 만들기 때문입니다. 값이 바뀌면 배치가 `SCHEDULED` 예정 건을 취소하고 맞는 종류로 다시 만듭니다. 이미 만든 확정 건의 기간(반기 전체 또는 남은 3개월)은 다시 계산하지 않으므로 대리인이 고칩니다. 법인은 값이 없으면(신설 법인, 아직 넣지 않음) 고지 대상인지 알 수 없어 원칙대로 예정신고입니다. 개인은 값과 상관없이 예정고지입니다
+- **예정신고 선택:** `vatPreliminaryElections`에 그 과세기간과 사유를 넣으면 예정신고입니다. 1/3 미달 여부는 대리인이 판단하고 사유만 받습니다
+
+50만 원 미만 등 고지하지 않는 경우는 직전 과세기간 납부세액을 받지 않아 판정하지 않고, 고지 건으로 두고 대리인이 취소합니다. 회사 세무 설정 저장소가 없어 두 값은 지금 비어 있습니다(법인 예정신고, 개인 예정고지. 이전 고정 분기와 같은 결과)
 
 ## 신고 건
 
@@ -377,6 +386,6 @@ flowchart LR
 3. **문서 열람 기록의 경로.** `GET /filings/{filingId}/documents/{documentId}`가 첫 열람을 기록합니다(GET에 부수효과). 다운로드 URL 발급을 `POST .../documents/{documentId}:open`으로 바꿀지 파일 저장소 설계와 함께 정합니다
 4. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다
 5. **법인세·종합소득세 자료.** 체크리스트가 없어 고객 흐름이 비어 있습니다. 결산 자료(재고·가지급금 등) 항목을 만들지 업무 확인이 필요합니다
-6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 회사 세무 설정 저장소가 없어 프로필의 `vatTaxpayerType`은 지금 `GENERAL`, `vatSimplifiedInvoiceIssuer`는 없음(거짓)입니다. 사업자 상태조회의 과세 유형으로 채울지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
+6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 회사 세무 설정 저장소가 없어 프로필의 `vatTaxpayerType`은 지금 `GENERAL`, `vatSimplifiedInvoiceIssuer`는 없음(거짓), `vatSupplyAmounts`·`vatPreliminaryElections`는 비어 있습니다. 사업자 상태조회의 과세 유형으로 채울지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
 7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
 8. **대행 커맨드의 발견.** `allowedActions`는 차례인 행위자의 커맨드만 넣어서, 대리인이 보는 원천세 신고 건에는 대행할 수 있는 `SUBMIT`·`UNSUBMIT`·`PAY`가 없습니다. `/v1`의 대리인 화면이 이 버튼을 켜려면 별도 목록(예: `proxyActions`)을 둘지, 클라이언트가 세목·상태로 고를지 정해야 합니다
