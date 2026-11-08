@@ -5,12 +5,12 @@ import { allowedTools } from './tool-access.ts'
 const tools = (permissions: GrantedPermission[], plans: Plan[]): string[] =>
   allowedTools({ permissions: new Set(permissions), plans: new Set(plans) }).map((allowed) => allowed.tool)
 
-describe('allowedTools', () => {
-  it('gives a free admin knowledge, finance summary and tax invoice issuing', () => {
+describe('비서 도구 허용', () => {
+  it('무료 고객의 관리자는 세무·노무 문의, 재무 요약, 세금계산서 발행을 씁니다', () => {
     expect(tools(['*'], [])).toEqual(['KNOWLEDGE_QA', 'FINANCE_SUMMARY', 'ISSUE_TAX_INVOICE'])
   })
 
-  it('adds certificate requests and payroll lookups for tax bookkeeping customers', () => {
+  it('세무 기장 고객은 증명서 발급 요청과 직원·급여 조회를 더 씁니다', () => {
     expect(tools(['*'], ['TAXATION'])).toEqual([
       'KNOWLEDGE_QA',
       'FINANCE_SUMMARY',
@@ -20,17 +20,17 @@ describe('allowedTools', () => {
     ])
   })
 
-  it('opens payroll lookups to the payroll plan alone', () => {
+  it('급여 플랜만 있어도 직원·급여 조회를 씁니다', () => {
     expect(tools(['*'], ['PAYROLL'])).toContain('LOOKUP_PAYROLL')
     expect(tools(['*'], ['PAYROLL'])).not.toContain('REQUEST_CERTIFICATE')
   })
 
-  it('narrows tools to the permissions of the same work outside the assistant', () => {
+  it('도구는 비서 밖에서 같은 일을 할 때의 권한으로 좁힙니다', () => {
     expect(tools(['conversation:create'], ['TAXATION', 'PAYROLL'])).toEqual(['KNOWLEDGE_QA'])
     expect(tools(['conversation:create', 'bank-transaction:*'], [])).toEqual(['KNOWLEDGE_QA', 'FINANCE_SUMMARY'])
   })
 
-  it('marks write tools as needing confirmation', () => {
+  it('쓰기 도구는 사용자 확인이 필요하다고 표시합니다', () => {
     const modes = Object.fromEntries(
       allowedTools({ permissions: new Set(['*']), plans: new Set(['TAXATION']) }).map((t) => [t.tool, t.mode]),
     )

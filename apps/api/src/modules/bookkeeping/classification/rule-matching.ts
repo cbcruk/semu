@@ -18,25 +18,25 @@ import type {
  */
 export const OVERWRITE_KEEPS_MANUAL = true
 
-const AMOUNT_OPERATORS: ReadonlyArray<RuleOperator> = ['GTE', 'LTE', 'BETWEEN']
+const 금액연산자: ReadonlyArray<RuleOperator> = ['GTE', 'LTE', 'BETWEEN']
 
-const EVIDENCE_FIELDS: Partial<Record<RuleField, ReadonlyArray<RuleOperator>>> = {
+const 증빙필드: Partial<Record<RuleField, ReadonlyArray<RuleOperator>>> = {
   PARTNER: ['IN'],
   COUNTERPARTY: ['CONTAINS', 'EQUALS'],
   ITEM: ['STARTS_WITH', 'CONTAINS', 'EQUALS'],
-  TOTAL_AMOUNT: AMOUNT_OPERATORS,
-  SUPPLY_AMOUNT: AMOUNT_OPERATORS,
-  VAT_AMOUNT: AMOUNT_OPERATORS,
+  TOTAL_AMOUNT: 금액연산자,
+  SUPPLY_AMOUNT: 금액연산자,
+  VAT_AMOUNT: 금액연산자,
   SOURCE: ['IN'],
 }
 
 /** 규칙 범위별로 쓸 수 있는 필드와 연산자입니다. */
 export const SCOPE_FIELDS: Record<RuleScope, Partial<Record<RuleField, ReadonlyArray<RuleOperator>>>> = {
-  SALES: EVIDENCE_FIELDS,
-  PURCHASE: EVIDENCE_FIELDS,
+  SALES: 증빙필드,
+  PURCHASE: 증빙필드,
   BANK: {
     SUMMARY: ['STARTS_WITH', 'CONTAINS', 'EQUALS'],
-    AMOUNT: AMOUNT_OPERATORS,
+    AMOUNT: 금액연산자,
     ACCOUNT: ['IN'],
     DIRECTION: ['EQUALS'],
     PARTNER: ['IN'],
@@ -52,13 +52,13 @@ export function conditionViolations(scope: RuleScope, conditions: ReadonlyArray<
   if (conditions.length === 0) return [{ index: -1, code: 'CONDITIONS_EMPTY' }]
   const violations: ConditionViolation[] = []
   conditions.forEach((condition, index) => {
-    const operators = SCOPE_FIELDS[scope][condition.field]
-    if (operators === undefined) return violations.push({ index, code: 'FIELD_NOT_ALLOWED' })
-    if (!operators.includes(condition.operator)) return violations.push({ index, code: 'OPERATOR_NOT_ALLOWED' })
-    if (AMOUNT_OPERATORS.includes(condition.operator)) {
-      const needsMin = condition.operator !== 'LTE'
-      const needsMax = condition.operator !== 'GTE'
-      if ((needsMin && condition.min === undefined) || (needsMax && condition.max === undefined)) {
+    const 허용연산자 = SCOPE_FIELDS[scope][condition.field]
+    if (허용연산자 === undefined) return violations.push({ index, code: 'FIELD_NOT_ALLOWED' })
+    if (!허용연산자.includes(condition.operator)) return violations.push({ index, code: 'OPERATOR_NOT_ALLOWED' })
+    if (금액연산자.includes(condition.operator)) {
+      const 최소금액이필요한가 = condition.operator !== 'LTE'
+      const 최대금액이필요한가 = condition.operator !== 'GTE'
+      if ((최소금액이필요한가 && condition.min === undefined) || (최대금액이필요한가 && condition.max === undefined)) {
         return violations.push({ index, code: 'OPERAND_REQUIRED' })
       }
       if (condition.operator === 'BETWEEN' && (condition.min ?? 0) > (condition.max ?? 0)) {
@@ -85,7 +85,7 @@ export function matchesRule(
   facts: RuleFacts,
 ): boolean {
   if (rule.source !== null && rule.source !== facts.source) return false
-  return rule.conditions.every((condition) => matchesCondition(condition, facts))
+  return rule.conditions.every((condition) => 조건에맞는가(condition, facts))
 }
 
 /** 우선순위 순으로 정렬된 규칙 가운데 처음 맞는 하나입니다. 숨긴 규칙은 호출하는 쪽이 미리 뺍니다. */
@@ -110,24 +110,25 @@ export function planRuleUpdate(
   mode: ApplyMode,
 ): RuleUpdate | null {
   if (mode === 'OVERWRITE' && OVERWRITE_KEEPS_MANUAL && row.classification.method === 'MANUAL') return null
-  const update: RuleUpdate = {}
-  const current = row.classification.accountTitleId
-  const account = result.accountTitleId
+  const 바꿀값: RuleUpdate = {}
+  const 현재계정과목 = row.classification.accountTitleId
+  const 규칙계정과목 = result.accountTitleId
   if (
-    account !== null &&
-    (mode === 'OVERWRITE' || current === null) &&
-    (account !== current || row.classification.method !== 'RULE')
+    규칙계정과목 !== null &&
+    (mode === 'OVERWRITE' || 현재계정과목 === null) &&
+    (규칙계정과목 !== 현재계정과목 || row.classification.method !== 'RULE')
   ) {
-    update.accountTitleId = account
+    바꿀값.accountTitleId = 규칙계정과목
   }
-  const partner = result.partnerId
-  if (partner !== null && (mode === 'OVERWRITE' || row.partnerId === null) && partner !== row.partnerId) {
-    update.partnerId = partner
+  const 규칙거래처 = result.partnerId
+  if (규칙거래처 !== null && (mode === 'OVERWRITE' || row.partnerId === null) && 규칙거래처 !== row.partnerId) {
+    바꿀값.partnerId = 규칙거래처
   }
-  return update.accountTitleId === undefined && update.partnerId === undefined ? null : update
+  return 바꿀값.accountTitleId === undefined && 바꿀값.partnerId === undefined ? null : 바꿀값
 }
 
-const FACT_KEYS: Record<RuleField, keyof RuleFacts> = {
+/** 규칙 필드마다 볼 사실(facts) 값의 키입니다. */
+const 필드별사실키: Record<RuleField, keyof RuleFacts> = {
   PARTNER: 'partner',
   COUNTERPARTY: 'counterparty',
   ITEM: 'item',
@@ -141,26 +142,27 @@ const FACT_KEYS: Record<RuleField, keyof RuleFacts> = {
   DIRECTION: 'direction',
 }
 
-function matchesCondition(condition: RuleCondition, facts: RuleFacts): boolean {
-  const value = facts[FACT_KEYS[condition.field]]
-  if (typeof value === 'number') {
-    const amount = Math.abs(value)
-    if (condition.operator === 'GTE') return amount >= (condition.min ?? 0)
-    if (condition.operator === 'LTE') return amount <= (condition.max ?? 0)
-    if (condition.operator === 'BETWEEN') return amount >= (condition.min ?? 0) && amount <= (condition.max ?? 0)
+function 조건에맞는가(condition: RuleCondition, facts: RuleFacts): boolean {
+  const 사실값 = facts[필드별사실키[condition.field]]
+  if (typeof 사실값 === 'number') {
+    const 금액절댓값 = Math.abs(사실값)
+    if (condition.operator === 'GTE') return 금액절댓값 >= (condition.min ?? 0)
+    if (condition.operator === 'LTE') return 금액절댓값 <= (condition.max ?? 0)
+    if (condition.operator === 'BETWEEN')
+      return 금액절댓값 >= (condition.min ?? 0) && 금액절댓값 <= (condition.max ?? 0)
     return false
   }
-  if (value === null) return false
-  const text = value.toLowerCase()
-  const values = (condition.values ?? []).map((candidate) => candidate.toLowerCase())
+  if (사실값 === null) return false
+  const 사실글자 = 사실값.toLowerCase()
+  const 비교글자 = (condition.values ?? []).map((비교값) => 비교값.toLowerCase())
   switch (condition.operator) {
     case 'IN':
     case 'EQUALS':
-      return values.includes(text)
+      return 비교글자.includes(사실글자)
     case 'CONTAINS':
-      return values.some((candidate) => text.includes(candidate))
+      return 비교글자.some((비교값) => 사실글자.includes(비교값))
     case 'STARTS_WITH':
-      return values.some((candidate) => text.startsWith(candidate))
+      return 비교글자.some((비교값) => 사실글자.startsWith(비교값))
     default:
       return false
   }

@@ -2,7 +2,7 @@ import { companyDateOf, isCalendarDate } from '../../../shared/time/date-format.
 import type { EvidenceSource } from '../evidence/evidence.types.ts'
 import type { IngestionRejection, ScrapedCardApproval, ScrapedEvidence, ScrapedRecord } from './scraped-record.types.ts'
 
-const KIND_ORDER: Record<ScrapedRecord['type'], number> = {
+const 레코드종류별순서: Record<ScrapedRecord['type'], number> = {
   BANK_ACCOUNT: 0,
   BANK_TRANSACTION: 1,
   BANK_BALANCE: 1,
@@ -23,28 +23,28 @@ export const PURCHASE_SOURCES: ReadonlyArray<EvidenceSource> = ['TAX_INVOICE', '
  */
 export function processingOrder(records: ReadonlyArray<Pick<ScrapedRecord, 'type'>>): number[] {
   return records
-    .map((record, index) => ({ index, order: KIND_ORDER[record.type] }))
+    .map((record, index) => ({ index, order: 레코드종류별순서[record.type] }))
     .sort((a, b) => a.order - b.order || a.index - b.index)
     .map((entry) => entry.index)
 }
 
 /** 카드 승인 한 건을 매입 카드 증빙으로 바꿉니다. 세액이 없으면 0으로 둡니다(현행과 같음). */
 export function cardApprovalEvidence(record: ScrapedCardApproval): ScrapedEvidence {
-  const date = companyDateOf(record.approvedAt) ?? record.approvedAt.slice(0, 10)
-  const vat = record.vatAmount ?? 0
+  const 승인일 = companyDateOf(record.approvedAt) ?? record.approvedAt.slice(0, 10)
+  const 세액 = record.vatAmount ?? 0
   return {
     type: 'PURCHASE_EVIDENCE',
     source: 'CARD',
     externalKey: `${record.approvalNo}:${record.cardNumberMasked}:${record.approvedAt}`,
-    writtenOn: date,
-    issuedOn: date,
+    writtenOn: 승인일,
+    issuedOn: 승인일,
     ...(record.merchantName === undefined ? {} : { counterpartyName: record.merchantName }),
     ...(record.merchantBusinessNumber === undefined
       ? {}
       : { counterpartyBusinessNumber: record.merchantBusinessNumber }),
     totalAmount: record.amount,
-    supplyAmount: record.amount - vat,
-    vatAmount: vat,
+    supplyAmount: record.amount - 세액,
+    vatAmount: 세액,
     card: {
       numberMasked: record.cardNumberMasked,
       approvalNo: record.approvalNo,

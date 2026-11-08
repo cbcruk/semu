@@ -18,11 +18,12 @@ export function closingBalanceOn(
   snapshots: ReadonlyArray<Pick<BalanceSnapshotRecord, 'date' | 'closingBalance'>>,
   date: string,
 ): number {
-  let best: Pick<BalanceSnapshotRecord, 'date' | 'closingBalance'> | undefined
+  let 그날포함최근스냅샷: Pick<BalanceSnapshotRecord, 'date' | 'closingBalance'> | undefined
   for (const snapshot of snapshots) {
-    if (snapshot.date <= date && (best === undefined || snapshot.date > best.date)) best = snapshot
+    if (snapshot.date <= date && (그날포함최근스냅샷 === undefined || snapshot.date > 그날포함최근스냅샷.date))
+      그날포함최근스냅샷 = snapshot
   }
-  return best?.closingBalance ?? 0
+  return 그날포함최근스냅샷?.closingBalance ?? 0
 }
 
 /**
@@ -32,13 +33,13 @@ export function closingBalanceOn(
 export function derivedClosing(
   transactions: ReadonlyArray<{ transactedAt: string; externalKey: string; balanceAfter: number | null }>,
 ): number | undefined {
-  const withBalance = transactions.filter((row) => row.balanceAfter !== null)
-  withBalance.sort((a, b) =>
+  const 잔액있는거래 = transactions.filter((row) => row.balanceAfter !== null)
+  잔액있는거래.sort((a, b) =>
     a.transactedAt === b.transactedAt
       ? b.externalKey.localeCompare(a.externalKey)
       : b.transactedAt.localeCompare(a.transactedAt),
   )
-  return withBalance[0]?.balanceAfter ?? undefined
+  return 잔액있는거래[0]?.balanceAfter ?? undefined
 }
 
 /** 자금 현황에 넣는 계좌 종류입니다. 입출금(`01`)과 외화(`31`)입니다. */
@@ -47,7 +48,7 @@ export const CASH_ACCOUNT_TYPES: ReadonlyArray<BankAccountTypeCode> = ['01', '31
 /** 계좌 목록 요약의 자산 묶음입니다. */
 export type AssetBucket = 'DEMAND' | 'FOREIGN_CURRENCY' | 'SAVINGS' | 'FUND' | 'TRUST' | 'INSURANCE' | 'PENSION'
 
-const ASSET_BUCKET: Record<Exclude<BankAccountTypeCode, '41'>, AssetBucket> = {
+const 계좌종류별자산묶음: Record<Exclude<BankAccountTypeCode, '41'>, AssetBucket> = {
   '01': 'DEMAND',
   '31': 'FOREIGN_CURRENCY',
   '02': 'SAVINGS',
@@ -69,7 +70,7 @@ export interface BankAccountSummary {
 export function summarizeBankAccounts(
   accounts: ReadonlyArray<Pick<BankAccountRecord, 'status' | 'accountTypeCode' | 'balance'>>,
 ): BankAccountSummary {
-  const summary: BankAccountSummary = {
+  const 계좌요약: BankAccountSummary = {
     activeAccountCount: 0,
     totalAssetAmount: 0,
     assetAmountByBucket: { DEMAND: 0, FOREIGN_CURRENCY: 0, SAVINGS: 0, FUND: 0, TRUST: 0, INSURANCE: 0, PENSION: 0 },
@@ -77,14 +78,14 @@ export function summarizeBankAccounts(
   }
   for (const account of accounts) {
     if (account.status === 'INACTIVE') continue
-    summary.activeAccountCount++
-    const balance = account.balance ?? 0
+    계좌요약.activeAccountCount++
+    const 잔액 = account.balance ?? 0
     if (account.accountTypeCode === '41') {
-      summary.totalLiabilityAmount += Math.abs(balance)
+      계좌요약.totalLiabilityAmount += Math.abs(잔액)
       continue
     }
-    summary.totalAssetAmount += balance
-    summary.assetAmountByBucket[ASSET_BUCKET[account.accountTypeCode]] += balance
+    계좌요약.totalAssetAmount += 잔액
+    계좌요약.assetAmountByBucket[계좌종류별자산묶음[account.accountTypeCode]] += 잔액
   }
-  return summary
+  return 계좌요약
 }

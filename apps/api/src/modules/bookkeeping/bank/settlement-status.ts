@@ -51,11 +51,11 @@ export function settlementLinkProblem(input: {
   /** 이번에 바꾸지 않고 남는 이 거래의 다른 연결 금액 합계입니다. */
   keptAmount: number
 }): SettlementLinkProblem | undefined {
-  const expected = input.direction === 'DEPOSIT' ? 'SALES' : 'PURCHASE'
-  let total = input.keptAmount
+  const 맞는증빙쪽 = input.direction === 'DEPOSIT' ? 'SALES' : 'PURCHASE'
+  let 연결금액합 = input.keptAmount
   for (const link of input.links) {
     if (link.amount <= 0) return 'AMOUNT_NOT_POSITIVE'
-    if (link.evidenceSide !== expected) return 'SIDE_MISMATCH'
+    if (link.evidenceSide !== 맞는증빙쪽) return 'SIDE_MISMATCH'
     if (
       input.transactionPartnerId !== null &&
       link.evidencePartnerId !== null &&
@@ -64,7 +64,7 @@ export function settlementLinkProblem(input: {
       return 'PARTNER_MISMATCH'
     }
     if (link.linkedElsewhere + link.amount > Math.abs(link.evidenceTotal)) return 'EXCEEDS_EVIDENCE'
-    total += link.amount
+    연결금액합 += link.amount
   }
-  return total > Math.abs(input.transactionAmount) ? 'EXCEEDS_TRANSACTION' : undefined
+  return 연결금액합 > Math.abs(input.transactionAmount) ? 'EXCEEDS_TRANSACTION' : undefined
 }

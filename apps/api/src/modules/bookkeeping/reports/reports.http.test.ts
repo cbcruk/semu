@@ -12,8 +12,8 @@ type Json = {
 const app = testApp({ noPlan: testActor({ plans: new Set() }) })
 afterAll(() => app.dispose())
 
-describe('GET /v1/reports/realtime-pl', () => {
-  it('reproduces the legacy demo profit and loss for October 2026', async () => {
+describe('실시간 손익(GET /v1/reports/realtime-pl)', () => {
+  it('2026년 10월 데모 손익이 현행 값과 같습니다', async () => {
     const response = await app.send('GET', '/v1/reports/realtime-pl?year=2026')
 
     expect(response.status).toBe(200)
@@ -39,15 +39,15 @@ describe('GET /v1/reports/realtime-pl', () => {
     expect(body.unclassifiedCount).toEqual({ sales: 2, purchase: 0, bank: 2 })
   })
 
-  it('rejects a year outside the supported range', async () => {
+  it('지원하는 범위 밖의 연도는 거절합니다', async () => {
     const response = await app.send('GET', '/v1/reports/realtime-pl?year=1990')
 
     expect(response.status).toBe(400)
   })
 })
 
-describe('GET /v1/reports/cash-status', () => {
-  it('reproduces the legacy demo cash status for 2026-10-31', async () => {
+describe('자금 현황(GET /v1/reports/cash-status)', () => {
+  it('2026-10-31 데모 자금 현황이 현행 값과 같습니다', async () => {
     const response = await app.send('GET', '/v1/reports/cash-status?date=2026-10-31')
 
     expect(response.status).toBe(200)
@@ -66,8 +66,8 @@ describe('GET /v1/reports/cash-status', () => {
   })
 })
 
-describe('GET /v1/reports/home-summary', () => {
-  it('combines the month, yesterday cash, VAT estimate and open giros', async () => {
+describe('홈 요약(GET /v1/reports/home-summary)', () => {
+  it('이번 달 손익, 어제 자금, 예상 부가세, 납부할 고지서를 한데 모읍니다', async () => {
     const response = await app.send('GET', '/v1/reports/home-summary?date=2026-10-31')
 
     expect(response.status).toBe(200)
@@ -92,15 +92,15 @@ describe('GET /v1/reports/home-summary', () => {
   })
 })
 
-describe('GET /v1/reports/labor-cost', () => {
-  it('passes Payroll labor cost through for TAXATION subscribers', async () => {
+describe('인건비(GET /v1/reports/labor-cost)', () => {
+  it('세무 기장 구독 회사에는 급여의 인건비를 그대로 보여 줍니다', async () => {
     const response = await app.send('GET', '/v1/reports/labor-cost?year=2026')
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ year: 2026, months: [{ month: '2026-10', employedCount: 2 }] })
   })
 
-  it('requires the TAXATION plan', async () => {
+  it('세무 기장 플랜이 있어야 합니다', async () => {
     const response = await app.send('GET', '/v1/reports/labor-cost?year=2026', { token: 'noPlan' })
 
     expect(response.status).toBe(403)

@@ -20,14 +20,14 @@ export interface OutstandingAmounts {
  * 미분류 증빙은 넣지 않습니다. 세무 보고서의 미수·미지급(결산 기준)과는 다른 숫자입니다.
  */
 export function outstandingByPartner(evidence: ReadonlyArray<OutstandingEvidence>): Map<string, OutstandingAmounts> {
-  const result = new Map<string, OutstandingAmounts>()
+  const 거래처별미정산 = new Map<string, OutstandingAmounts>()
   for (const row of evidence) {
     if (row.partnerId === null || !row.classified) continue
-    const entry = result.get(row.partnerId) ?? { salesAmount: 0, purchaseAmount: 0 }
-    const remaining = row.totalAmount - row.settledAmount
-    if (row.side === 'SALES') entry.salesAmount += remaining
-    else entry.purchaseAmount += remaining
-    result.set(row.partnerId, entry)
+    const 거래처미정산 = 거래처별미정산.get(row.partnerId) ?? { salesAmount: 0, purchaseAmount: 0 }
+    const 증빙미정산금액 = row.totalAmount - row.settledAmount
+    if (row.side === 'SALES') 거래처미정산.salesAmount += 증빙미정산금액
+    else 거래처미정산.purchaseAmount += 증빙미정산금액
+    거래처별미정산.set(row.partnerId, 거래처미정산)
   }
-  return result
+  return 거래처별미정산
 }

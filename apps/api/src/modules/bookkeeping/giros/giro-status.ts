@@ -1,6 +1,6 @@
 import type { GiroActionType, GiroCommand, GiroDoneReason, GiroStatus } from './giro.types.ts'
 
-const TRANSITIONS: Record<GiroStatus, Partial<Record<GiroCommand, { to: GiroStatus; action: GiroActionType }>>> = {
+const 전이표: Record<GiroStatus, Partial<Record<GiroCommand, { to: GiroStatus; action: GiroActionType }>>> = {
   TODO: {
     MARK_PAID: { to: 'DONE', action: 'MARKED_PAID' },
     HIDE: { to: 'HIDDEN', action: 'HIDDEN' },
@@ -14,7 +14,7 @@ const TRANSITIONS: Record<GiroStatus, Partial<Record<GiroCommand, { to: GiroStat
   HIDDEN: {},
 }
 
-const DONE_REASON: Partial<Record<GiroCommand, GiroDoneReason>> = { MARK_PAID: 'MARKED_BY_USER', PAY: 'PAID_IN_APP' }
+const 완료사유: Partial<Record<GiroCommand, GiroDoneReason>> = { MARK_PAID: 'MARKED_BY_USER', PAY: 'PAID_IN_APP' }
 
 /**
  * 고지서 사용자 커맨드의 전이입니다. 허용하지 않으면 `undefined`입니다.
@@ -26,13 +26,13 @@ export function transitionGiro(
   from: GiroStatus,
   command: GiroCommand,
 ): { to: GiroStatus; action: GiroActionType; doneReason: GiroDoneReason | null } | undefined {
-  const next = TRANSITIONS[from][command]
-  return next === undefined ? undefined : { ...next, doneReason: DONE_REASON[command] ?? null }
+  const 전이 = 전이표[from][command]
+  return 전이 === undefined ? undefined : { ...전이, doneReason: 완료사유[command] ?? null }
 }
 
 /** 상태에서 보낼 수 있는 커맨드입니다. `allowedActions`에 씁니다. */
 export function allowedGiroCommands(status: GiroStatus): GiroCommand[] {
-  return Object.keys(TRANSITIONS[status]) as GiroCommand[]
+  return Object.keys(전이표[status]) as GiroCommand[]
 }
 
 /** 재수집이 고지서 하나에 하는 일입니다. */

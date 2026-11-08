@@ -17,15 +17,15 @@ const MALL_RULE = {
   resultAccountTitleId: systemAccountTitleIdOf('sales.revenue'),
 }
 
-describe('/v1/classification-rules', () => {
-  it('lists the demo rules of a scope in priority order', async () => {
+describe('자동분류 규칙(/v1/classification-rules)', () => {
+  it('규칙 범위의 규칙을 우선순위 순으로 보여 줍니다', async () => {
     const response = await app.send('GET', '/v1/classification-rules?scope=BANK')
 
     const { items } = (await response.json()) as { items: Array<{ name: string; priority: number }> }
     expect(items.map((row) => row.name)).toEqual(['에코프로 입금', '임대료', '급여'])
   })
 
-  it('reports every invalid condition at once', async () => {
+  it('잘못된 조건을 한 번에 모두 알려 줍니다', async () => {
     const response = await app.send('POST', '/v1/classification-rules', {
       body: {
         ...MALL_RULE,
@@ -48,7 +48,7 @@ describe('/v1/classification-rules', () => {
     })
   })
 
-  it('creates a rule and applies it to earlier rows as a job', async () => {
+  it('규칙을 만들고 이미 들어온 행에 작업으로 적용합니다', async () => {
     const created = await app.send('POST', '/v1/classification-rules', { body: MALL_RULE })
     const rule = (await created.json()) as { id: string }
     const job = await app.send('POST', `/v1/classification-rules/${rule.id}:apply`, { body: { mode: 'FILL_EMPTY' } })
@@ -63,7 +63,7 @@ describe('/v1/classification-rules', () => {
     })
   })
 
-  it('keeps manual classifications when overwriting', async () => {
+  it('덮어쓰기에서도 사람이 직접 분류한 행은 그대로 둡니다', async () => {
     const created = await app.send('POST', '/v1/classification-rules', {
       body: { ...MALL_RULE, source: 'TAX_INVOICE', resultAccountTitleId: systemAccountTitleIdOf('non_op_income.misc') },
     })
@@ -73,7 +73,7 @@ describe('/v1/classification-rules', () => {
     expect(await job.json()).toMatchObject({ result: { updatedCount: 0 } })
   })
 
-  it('reorders a scope only when every rule is sent once', async () => {
+  it('범위의 모든 규칙을 한 번씩 보낼 때만 순서를 바꿉니다', async () => {
     const listed = await app.send('GET', '/v1/classification-rules?scope=BANK')
     const ids = ((await listed.json()) as { items: Array<{ id: string }> }).items.map((row) => row.id)
     const refused = await app.send('POST', '/v1/classification-rules:reorder', {
@@ -91,7 +91,7 @@ describe('/v1/classification-rules', () => {
     ])
   })
 
-  it('hides a rule with PATCH and deletes it', async () => {
+  it('규칙을 PATCH로 숨기고 지울 수 있습니다', async () => {
     const listed = await app.send('GET', '/v1/classification-rules?scope=SALES')
     const [rule] = ((await listed.json()) as { items: Array<{ id: string }> }).items
     const hidden = await app.send('PATCH', `/v1/classification-rules/${rule!.id}`, { body: { status: 'HIDDEN' } })

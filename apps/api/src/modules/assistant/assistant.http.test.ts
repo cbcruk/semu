@@ -13,8 +13,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('conversations', () => {
-  it('starts a conversation, continues it and reads it back', async () => {
+describe('대화', () => {
+  it('대화를 시작하고 이어 쓰고 다시 읽습니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const started = await app.request('POST', '/v1/conversations', {
@@ -42,7 +42,7 @@ describe('conversations', () => {
     expect(list.items.map((c: { id: string }) => c.id)).toEqual([conversationId])
   })
 
-  it('proposes write tools with a confirmation step instead of running them', async () => {
+  it('쓰기 도구는 실행하지 않고 사용자 확인 단계와 함께 제안합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', {
@@ -59,7 +59,7 @@ describe('conversations', () => {
     ])
   })
 
-  it('narrows the tools of a member to the permissions of their roles', async () => {
+  it('구성원의 도구는 그 역할의 권한으로 좁힙니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     const tools = await (await app.request('GET', '/v1/assistant-tools', { token })).json()
@@ -75,7 +75,7 @@ describe('conversations', () => {
     expect(reply.reply.toolProposals).toEqual([])
   })
 
-  it('gives a free company the knowledge, finance and tax invoice tools', async () => {
+  it('무료 회사는 세무·노무 문의, 재무 요약, 세금계산서 발행 도구를 씁니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: FREE_COMPANY_ID })
 
     const tools = await (await app.request('GET', '/v1/assistant-tools', { token })).json()
@@ -87,7 +87,7 @@ describe('conversations', () => {
     ])
   })
 
-  it('hides a conversation from other users of the same company', async () => {
+  it('같은 회사의 다른 사용자에게는 대화를 보여 주지 않습니다', async () => {
     const owner = await app.signIn('owner@semu.example')
     const member = await app.signIn('member@semu.example')
     const { conversationId } = await (
@@ -100,7 +100,7 @@ describe('conversations', () => {
     expect(await peek.json()).toMatchObject({ code: 'CONVERSATION_NOT_FOUND' })
   })
 
-  it('deletes a conversation', async () => {
+  it('대화를 지웁니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
     const { conversationId } = await (
       await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
@@ -113,7 +113,7 @@ describe('conversations', () => {
     expect((await (await app.request('GET', '/v1/conversations', { token })).json()).items).toEqual([])
   })
 
-  it('blocks a taxation customer who has not agreed to the tax terms', async () => {
+  it('세무 약관에 동의하지 않은 세무 기장 고객은 막습니다', async () => {
     const { token } = await app.signIn('sole@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
@@ -122,7 +122,7 @@ describe('conversations', () => {
     expect(await response.json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED', termCodes: ['TAX_SERVICE'] })
   })
 
-  it('keeps agency staff out of the assistant by default (D5)', async () => {
+  it('수임 세무 대리인 직원은 기본으로 비서를 쓸 수 없습니다 (D5)', async () => {
     const { token } = await app.signIn('agent@agency.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '안녕하세요' } })
@@ -131,7 +131,7 @@ describe('conversations', () => {
     expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'conversation:create' })
   })
 
-  it('rejects an empty message', async () => {
+  it('빈 메시지는 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/conversations', { token, body: { message: '' } })
@@ -140,13 +140,13 @@ describe('conversations', () => {
     expect(await response.json()).toMatchObject({ code: 'VALIDATION_FAILED' })
   })
 
-  it('answers 401 without a token', async () => {
+  it('토큰이 없으면 401입니다', async () => {
     expect((await app.request('GET', '/v1/conversations')).status).toBe(401)
   })
 })
 
-describe('grants', () => {
-  it('lists only calls open today, closest deadline first and always-open last', async () => {
+describe('지원사업 공고', () => {
+  it('오늘 신청 가능한 공고만 마감 임박순으로, 상시 모집은 마지막에 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/grants', { token })).json()
@@ -159,7 +159,7 @@ describe('grants', () => {
     expect(body.totalCount).toBe(3)
   })
 
-  it('recommends grants matching the company industry and region', async () => {
+  it('회사 업종·지역에 맞는 공고를 추천합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
@@ -167,7 +167,7 @@ describe('grants', () => {
     expect(body.items.map((g: { id: string }) => g.id)).toEqual([DEMO_GRANT_IDS.seoulIt, DEMO_GRANT_IDS.nationwide])
   })
 
-  it('does not filter by industry for a company whose industry is unclear', async () => {
+  it('업종이 비어 있는 회사는 업종으로 거르지 않습니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: FREE_COMPANY_ID })
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
@@ -175,7 +175,7 @@ describe('grants', () => {
     expect(body.items.map((g: { id: string }) => g.id)).toEqual([DEMO_GRANT_IDS.seoulIt, DEMO_GRANT_IDS.nationwide])
   })
 
-  it('shows grants even before the tax terms are agreed', async () => {
+  it('세무 약관 동의 전에도 지원사업 공고를 보여 줍니다', async () => {
     const { token } = await app.signIn('sole@semu.example')
 
     const body = await (await app.request('GET', '/v1/grant-recommendations', { token })).json()
@@ -186,7 +186,7 @@ describe('grants', () => {
     ])
   })
 
-  it('reads one grant and answers 404 for an unknown one', async () => {
+  it('공고 하나를 읽고, 없는 공고는 404입니다', async () => {
     const { token } = await app.signIn('member@semu.example')
 
     const found = await app.request('GET', `/v1/grants/${DEMO_GRANT_IDS.closed}`, { token })

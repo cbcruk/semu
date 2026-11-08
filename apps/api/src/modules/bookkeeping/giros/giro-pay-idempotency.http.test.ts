@@ -84,8 +84,8 @@ function pay(app: HttpTestApp, key: string, body: object = PAYMENT, token?: stri
   return app.json('POST', `/giros/${VAT}:pay`, { idempotencyKey: key, body, token })
 }
 
-describe('POST /giros/{id}:pay idempotency', () => {
-  it('pays once and replays the first response', async () => {
+describe('앱 납부 멱등성(POST /giros/{id}:pay)', () => {
+  it('한 번만 납부하고 같은 키에는 첫 응답을 다시 돌려줍니다', async () => {
     const { app, gateway } = setUp()
 
     const first = await pay(app, 'k-pay')
@@ -99,7 +99,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.withdrawn).toHaveLength(1)
   })
 
-  it('rejects the same key with another account', async () => {
+  it('같은 키를 다른 계좌로 보내면 거절합니다', async () => {
     const { app, gateway } = setUp()
 
     await pay(app, 'k-pay-body')
@@ -110,7 +110,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.calls).toHaveLength(1)
   })
 
-  it('does not replay another user’s payment and forgets the key after 24 hours', async () => {
+  it('다른 사용자의 납부는 다시 돌려주지 않고, 24시간이 지나면 키를 잊습니다', async () => {
     const { app, clock, gateway } = setUp()
 
     await pay(app, 'k-pay-scope')
@@ -127,7 +127,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.withdrawn).toHaveLength(1)
   })
 
-  it('pays once while the first request is still waiting for the bank', async () => {
+  it('첫 요청이 은행 응답을 기다리는 동안에도 한 번만 납부합니다', async () => {
     const { app, gateway } = setUp()
     gateway.delayMs = 50
 
@@ -143,7 +143,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.withdrawn).toHaveLength(1)
   })
 
-  it('asks the bank again with the same key after a rejection', async () => {
+  it('거절된 뒤 같은 키로 보내면 은행에 다시 요청합니다', async () => {
     const { app, gateway } = setUp()
 
     const rejected = await pay(app, 'k-pay-fix', { ...PAYMENT, accountPassword: FAKE_WRONG_PASSWORD })
@@ -161,7 +161,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     ])
   })
 
-  it('finishes a payment whose result was lost with the same reference, without paying twice', async () => {
+  it('결과를 잃은 납부는 같은 참조로 마무리하고 두 번 납부하지 않습니다', async () => {
     const { app, gateway } = setUp()
     gateway.dieAfterWithdrawing = true
 
@@ -180,7 +180,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.calls).toEqual([gateway.withdrawn[0], gateway.withdrawn[0]])
   })
 
-  it('keeps an unconfirmed payment past 24 hours, so the same key never pays twice', async () => {
+  it('확인되지 않은 납부는 24시간이 지나도 남겨 같은 키로 두 번 납부하지 않습니다', async () => {
     const { app, clock, gateway } = setUp()
     gateway.dieAfterWithdrawing = true
 
@@ -197,7 +197,7 @@ describe('POST /giros/{id}:pay idempotency', () => {
     expect(gateway.calls).toEqual([gateway.withdrawn[0], gateway.withdrawn[0]])
   })
 
-  it('forgets an unconfirmed payment once its retry finds the bill already settled', async () => {
+  it('다시 시도해 고지서가 이미 납부된 것을 확인하면 확인되지 않은 납부를 잊습니다', async () => {
     const { app, gateway } = setUp()
     gateway.dieAfterWithdrawing = true
 

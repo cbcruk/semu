@@ -35,9 +35,9 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool> = [
  */
 export function allowedTools(access: ToolAccessInput): AllowedTool[] {
   return ASSISTANT_TOOLS.filter((tool) => {
-    const requirement = TOOL_REQUIREMENTS[tool]
-    const planOk = requirement.plans.length === 0 || requirement.plans.some((plan) => access.plans.has(plan))
-    const permissionOk = requirement.permission === undefined || hasPermission(access, requirement.permission)
-    return planOk && permissionOk
+    const 요건 = TOOL_REQUIREMENTS[tool]
+    const 플랜맞는가 = 요건.plans.length === 0 || 요건.plans.some((plan) => access.plans.has(plan))
+    const 권한있는가 = 요건.permission === undefined || hasPermission(access, 요건.permission)
+    return 플랜맞는가 && 권한있는가
   }).map((tool) => ({ tool, mode: TOOL_REQUIREMENTS[tool].mode }))
 }

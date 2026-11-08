@@ -111,14 +111,14 @@ function run(testCase: FixtureCase): unknown {
 
 const ported = fixture.cases.filter((testCase) => !(testCase.name in NOT_PORTED))
 
-describe('assistant-tool-access fixtures', () => {
+describe('비서 도구 접근 픽스처', () => {
   it.each(ported.map((testCase) => [testCase.name, testCase] as const))('%s', (name, testCase) => {
     const expected = name in CHANGED ? CHANGED[name] : testCase.expected
     const normalized = testCase.input.side === 'manual' && Array.isArray(expected) ? [...expected].sort() : expected
     expect(run(testCase)).toEqual(normalized)
   })
 
-  it('names only cases that exist', () => {
+  it('바꾼 사례와 옮기지 않은 사례는 픽스처에 있는 이름만 적습니다', () => {
     const names = new Set(fixture.cases.map((testCase) => testCase.name))
     for (const name of [...Object.keys(CHANGED), ...Object.keys(NOT_PORTED)]) expect(names).toContain(name)
   })

@@ -16,17 +16,17 @@ import { firstMatchingRule, planRuleUpdate } from './rule-matching.ts'
  * `PARTNER`는 거래처 ID, `COUNTERPARTY`는 증빙에 적힌 상호와 사업자번호, `ITEM`은 품목 요약, 금액은 {@link evidenceAmounts}로 채운 값입니다.
  */
 export function evidenceFacts(record: EvidenceRecord): RuleFacts {
-  const amounts = evidenceAmounts(record)
+  const 증빙금액 = evidenceAmounts(record)
   return {
     partner: record.partnerId,
     counterparty: `${record.counterpartyName ?? ''} ${record.counterpartyBusinessNumber ?? ''}`.trim(),
     item: record.itemSummary ?? '',
-    totalAmount: amounts.totalAmount,
-    supplyAmount: amounts.supplyAmount,
-    vatAmount: amounts.vatAmount,
+    totalAmount: 증빙금액.totalAmount,
+    supplyAmount: 증빙금액.supplyAmount,
+    vatAmount: 증빙금액.vatAmount,
     source: record.source,
     summary: '',
-    amount: amounts.totalAmount,
+    amount: 증빙금액.totalAmount,
     account: null,
     direction: null,
   }
@@ -66,17 +66,17 @@ export function planClassification(
   rows: ReadonlyArray<ClassifiableRow>,
   mode: ApplyMode,
 ): PlannedClassification[] {
-  const active = rules.filter((rule) => rule.status === 'ACTIVE').sort((a, b) => a.priority - b.priority)
-  const planned: PlannedClassification[] = []
+  const 사용중규칙 = rules.filter((rule) => rule.status === 'ACTIVE').sort((a, b) => a.priority - b.priority)
+  const 분류계획: PlannedClassification[] = []
   for (const row of rows) {
-    const rule = firstMatchingRule(active, row.facts)
-    if (rule === undefined) continue
-    const update = planRuleUpdate(
+    const 맞은규칙 = firstMatchingRule(사용중규칙, row.facts)
+    if (맞은규칙 === undefined) continue
+    const 바꿀값 = planRuleUpdate(
       row,
-      { accountTitleId: rule.resultAccountTitleId, partnerId: rule.resultPartnerId },
+      { accountTitleId: 맞은규칙.resultAccountTitleId, partnerId: 맞은규칙.resultPartnerId },
       mode,
     )
-    if (update !== null) planned.push({ rowId: row.id, ruleId: rule.id, update })
+    if (바꿀값 !== null) 분류계획.push({ rowId: row.id, ruleId: 맞은규칙.id, update: 바꿀값 })
   }
-  return planned
+  return 분류계획
 }

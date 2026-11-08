@@ -34,23 +34,17 @@ export function cashFlowFigures(input: {
   start: string
   end: string
 }): CashFlowFigures {
-  const dayBefore = addDays(input.start, -1)
-  const openingAmount = input.snapshotsByAccount.reduce(
-    (sum, snapshots) => sum + closingBalanceOn(snapshots, dayBefore),
-    0,
-  )
-  const closingAmount = input.snapshotsByAccount.reduce(
-    (sum, snapshots) => sum + closingBalanceOn(snapshots, input.end),
-    0,
-  )
-  const depositAmount = input.transactions.reduce((sum, row) => sum + Math.max(row.amount, 0), 0)
-  const withdrawalAmount = input.transactions.reduce((sum, row) => sum + Math.min(row.amount, 0), 0)
+  const 시작전날 = addDays(input.start, -1)
+  const 시작잔액 = input.snapshotsByAccount.reduce((sum, snapshots) => sum + closingBalanceOn(snapshots, 시작전날), 0)
+  const 마감잔액 = input.snapshotsByAccount.reduce((sum, snapshots) => sum + closingBalanceOn(snapshots, input.end), 0)
+  const 입금합 = input.transactions.reduce((sum, row) => sum + Math.max(row.amount, 0), 0)
+  const 출금합 = input.transactions.reduce((sum, row) => sum + Math.min(row.amount, 0), 0)
   return {
-    openingAmount,
-    depositAmount,
-    withdrawalAmount,
-    otherChangeAmount: closingAmount - openingAmount - depositAmount - withdrawalAmount,
-    closingAmount,
+    openingAmount: 시작잔액,
+    depositAmount: 입금합,
+    withdrawalAmount: 출금합,
+    otherChangeAmount: 마감잔액 - 시작잔액 - 입금합 - 출금합,
+    closingAmount: 마감잔액,
   }
 }
 
@@ -66,23 +60,28 @@ export function groupByAccountTitle(
   transactions: ReadonlyArray<CashTransaction>,
   titles: ReadonlyMap<string, Pick<AccountTitleInfo, 'name'>>,
 ): Array<{ direction: Direction; key: string; name: string; amount: number; count: number }> {
-  const groups = new Map<string, { direction: Direction; key: string; name: string; amount: number; count: number }>()
+  const 방향계정과목별묶음 = new Map<
+    string,
+    { direction: Direction; key: string; name: string; amount: number; count: number }
+  >()
   for (const row of transactions) {
-    const info = row.accountTitleId === null ? undefined : titles.get(row.accountTitleId)
-    const key = info === undefined || row.accountTitleId === null ? 'UNCLASSIFIED' : row.accountTitleId
-    const id = `${row.direction}:${key}`
-    const entry = groups.get(id) ?? {
+    const 계정과목 = row.accountTitleId === null ? undefined : titles.get(row.accountTitleId)
+    const 계정과목키 = 계정과목 === undefined || row.accountTitleId === null ? 'UNCLASSIFIED' : row.accountTitleId
+    const 묶음키 = `${row.direction}:${계정과목키}`
+    const 묶음 = 방향계정과목별묶음.get(묶음키) ?? {
       direction: row.direction,
-      key,
-      name: info?.name ?? UNCLASSIFIED_LABEL[row.direction],
+      key: 계정과목키,
+      name: 계정과목?.name ?? UNCLASSIFIED_LABEL[row.direction],
       amount: 0,
       count: 0,
     }
-    entry.amount += row.amount
-    entry.count++
-    groups.set(id, entry)
+    묶음.amount += row.amount
+    묶음.count++
+    방향계정과목별묶음.set(묶음키, 묶음)
   }
-  return [...groups.values()].sort((a, b) => (a.direction === b.direction ? 0 : a.direction === 'DEPOSIT' ? -1 : 1))
+  return [...방향계정과목별묶음.values()].sort((a, b) =>
+    a.direction === b.direction ? 0 : a.direction === 'DEPOSIT' ? -1 : 1,
+  )
 }
 
 /**
@@ -93,12 +92,13 @@ export function sumByCashCategory(
   direction: Direction,
   titles: ReadonlyMap<string, Pick<AccountTitleInfo, 'cashCategory' | 'reportName'>>,
 ): Array<{ category: string; amount: number }> {
-  const sums = new Map<string, number>()
+  const 자금카테고리별합 = new Map<string, number>()
   for (const row of transactions) {
     if (row.direction !== direction) continue
-    const info = row.accountTitleId === null ? undefined : titles.get(row.accountTitleId)
-    const label = info === undefined ? UNCLASSIFIED_LABEL[direction] : (info.cashCategory ?? info.reportName)
-    sums.set(label, (sums.get(label) ?? 0) + row.amount)
+    const 계정과목 = row.accountTitleId === null ? undefined : titles.get(row.accountTitleId)
+    const 자금카테고리 =
+      계정과목 === undefined ? UNCLASSIFIED_LABEL[direction] : (계정과목.cashCategory ?? 계정과목.reportName)
+    자금카테고리별합.set(자금카테고리, (자금카테고리별합.get(자금카테고리) ?? 0) + row.amount)
   }
-  return [...sums.entries()].map(([category, amount]) => ({ category, amount }))
+  return [...자금카테고리별합.entries()].map(([category, amount]) => ({ category, amount }))
 }
