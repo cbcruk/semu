@@ -36,7 +36,8 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 핸들러 전체입니다.
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
- * `TaxWithholdingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`.
+ * `TaxWithholdingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
+ * Payroll이 구현하는 포트 `SeveranceSettlementLookup`(`src/wiring/hr-payroll.ts`).
  */
 export const HrHttpLive = Layer.mergeAll(
   EmployeesHttpLive,

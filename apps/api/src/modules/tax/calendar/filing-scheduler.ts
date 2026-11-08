@@ -12,6 +12,7 @@ import { currentInstant } from '../tax-time.ts'
 import type { FilingObligation } from './filing-calendar.types.ts'
 import { resolveFilingObligations } from './filing-obligations.ts'
 import { planSchedule } from './filing-schedule.ts'
+import type { ScheduledFilingFact } from './filing-schedule.ts'
 import { PublicHolidays } from './public-holidays.ts'
 import { TaxProfiles } from './tax-profiles.ts'
 import type { TaxProfile } from './tax-profiles.ts'
@@ -23,6 +24,7 @@ export const SCHEDULE_HORIZON_DAYS = 120
 export interface ScheduleRunResult {
   created: number
   refreshed: number
+  restored: number
   canceled: number
 }
 
@@ -54,7 +56,7 @@ export class FilingScheduler extends Context.Service<
         const holidaySet = yield* holidays.between(addDays(window.from, -31), addDays(window.to, 31))
         const obligations = resolveFilingObligations({ profile, ...window, holidays: holidaySet })
         const existing = yield* repository.list(profile.companyId)
-        const plan = planSchedule(obligations, existing, window)
+        const plan = planSchedule(obligations, existing.map(scheduledFactOf), window)
         const byId = new Map(existing.map((filing) => [filing.id as string, filing]))
 
         for (const obligation of plan.create) {
@@ -81,6 +83,21 @@ export class FilingScheduler extends Context.Service<
             updatedAt: now,
           })
         }
+        for (const { filingId, obligation } of plan.restore) {
+          const filing = byId.get(filingId)!
+          const restored: FilingRecord = {
+            ...filing,
+            status: 'SCHEDULED',
+            statutoryDue: obligation.statutoryDue,
+            dueDate: obligation.dueDate,
+            paymentDue: obligation.paymentDue,
+            history: [...filing.history, systemEntry('SCHEDULE_RESTORED', 'CANCELED', 'SCHEDULED', {}, now)],
+            version: filing.version + 1,
+            updatedAt: now,
+          }
+          yield* repository.save(restored)
+          yield* events.publish([filingStatusChanged(filing, restored, now)])
+        }
         for (const filingId of plan.cancel) {
           const filing = byId.get(filingId)!
           const canceled: FilingRecord = {
@@ -94,7 +111,12 @@ export class FilingScheduler extends Context.Service<
           yield* cards.applyFilingTrigger(canceled, 'SCHEDULE_CANCELED', now)
           yield* events.publish([filingStatusChanged(filing, canceled, now)])
         }
-        return { created: plan.create.length, refreshed: plan.refresh.length, canceled: plan.cancel.length }
+        return {
+          created: plan.create.length,
+          refreshed: plan.refresh.length,
+          restored: plan.restore.length,
+          canceled: plan.cancel.length,
+        }
       })
 
       const newScheduledFiling = Effect.fn('FilingScheduler.newScheduledFiling')(function* (
@@ -154,15 +176,31 @@ export class FilingScheduler extends Context.Service<
           (sum, result) => ({
             created: sum.created + result.created,
             refreshed: sum.refreshed + result.refreshed,
+            restored: sum.restored + result.restored,
             canceled: sum.canceled + result.canceled,
           }),
-          { created: 0, refreshed: 0, canceled: 0 },
+          { created: 0, refreshed: 0, restored: 0, canceled: 0 },
         )
       })
 
       return FilingScheduler.of({ run, runFor })
     }),
   )
+}
+
+/** 저장된 신고 건을 일정 배치가 보는 사실로 옮깁니다. 취소 주체는 `CANCELED`로 바꾼 마지막 이력으로 가립니다. */
+function scheduledFactOf(filing: FilingRecord): ScheduledFilingFact {
+  const cancelType = filing.history.findLast((entry) => entry.toStatus === 'CANCELED')?.type
+  return {
+    id: filing.id,
+    taxType: filing.taxType,
+    kind: filing.kind,
+    periodKey: filing.periodKey,
+    status: filing.status,
+    dueDate: filing.dueDate,
+    paymentDue: filing.paymentDue,
+    canceledBy: filing.status !== 'CANCELED' ? null : cancelType === 'SCHEDULE_CANCELED' ? 'SCHEDULE' : 'USER',
+  }
 }
 
 function systemEntry(

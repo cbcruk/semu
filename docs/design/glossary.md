@@ -47,7 +47,7 @@
 | 수습 감액 | 수습 기간 동안 임금을 줄여 주는 것입니다. 1년 이상 계약에만 허용하고 단순노무 직종은 받지 않습니다 | 근로계약 `probation`과 검증 규칙입니다. 급여의 최저임금 경고는 아직 감액을 반영하지 않습니다 ([work-contract-validation](../reference/rules/work-contract-validation.md), [hr.md](hr.md#근로계약), [payroll.md 열린 질문 13](payroll.md#열린-질문)) | |
 | 기간제와 무기계약 전환 | 기간을 정한 근로계약이 이어져 2년을 넘으면 기간의 정함이 없는 근로계약으로 보는 제도입니다. 만 55세 이상 등 예외가 있습니다 | 직원 경고 `INDEFINITE_CONVERSION_TARGET`과 전환 조회입니다 ([indefinite-conversion-alert](../reference/rules/indefinite-conversion-alert.md), [hr.md](hr.md#근로계약)) | 기간제법 제4조 ([hr.md](hr.md#근로계약)) |
 | 근로계약서 서면 교부와 보존 | 근로조건을 서면으로 명시해 주고 계약 서류를 3년 보존해야 합니다 | 서명 완료 문서와 서명 증적을 지우지 않고 고정합니다 ([compliance.md](compliance.md#근로계약서와-임금명세서), [documents.md](documents.md#전자서명-요청)) | 근로기준법 제17조, 제42조 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
-| 임금명세서 | 임금을 줄 때 구성항목·계산방법·공제내역을 적어 근로자에게 주는 문서입니다 | `Payslip`은 마감된 대장 행의 보기이고, 발송 기록만 따로 저장합니다 ([payroll.md](payroll.md#급여명세서)) | 근로기준법 제48조제2항 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
+| 임금명세서 | 임금을 줄 때 구성항목·계산방법·공제내역을 적어 근로자에게 주는 문서입니다 | `Payslip`은 마감된 대장 행의 보기이고, 발송 기록만 따로 저장합니다. 받는 주소는 행의 소득자 사본(`earner.email`)이라 직원이 아닌 일용·사업·기타소득자도 받습니다 ([payroll.md](payroll.md#급여명세서)) | 근로기준법 제48조제2항 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
 | 휴직(출산전후휴가·육아휴직) | 근로관계를 유지한 채 일정 기간 일을 쉬는 것입니다. 육아휴직은 근속에 항상 포함합니다 | `Leave`와 `:return`입니다. 육아휴직 누적 365일 초과는 막지 않고 경고합니다 ([hr.md](hr.md#휴직), [leave-validation](../reference/rules/leave-validation.md)) | |
 
 ## 퇴직과 퇴직금
@@ -58,7 +58,7 @@
 | 퇴직금 | 계속근로 1년 이상, 4주 평균 주 15시간 이상 일한 근로자가 퇴직할 때 받는 돈으로, 평균임금 30일분 × 재직일수 ÷ 365입니다 | `SeveranceSettlement`와 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)입니다. 엔진은 재직 1년 미만이면 0으로 계산하고, 주 15시간 요건은 판정하지 않습니다 ([severance-pay](../reference/rules/severance-pay.md#근거)의 스펙 4.11 인용, [payroll.md](payroll.md#퇴직금-정산)) | |
 | 평균임금 | 퇴직일 전 3개월 동안 받은 임금 총액을 그 기간 일수로 나눈 하루 임금입니다. 통상임금보다 낮으면 통상임금을 씁니다 | 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다 ([payroll.md](payroll.md#퇴직금-정산), [severance-pay](../reference/rules/severance-pay.md#로직)) | |
 | 퇴직소득세, 근속연수공제, 환산급여공제 | 퇴직금에 매기는 세금입니다. 근속연수(1년 미만 끝수는 올림)에 따른 근속연수공제를 빼고, 연 단위로 환산한 환산급여(`(퇴직소득 − 근속연수공제) × 12 ÷ 근속연수`)에서 환산급여공제를 뺀 뒤 기본세율을 매기고, `× 근속연수 ÷ 12`로 되돌려 10원 미만을 버립니다. 지방소득세는 그 10%입니다 | 퇴직월 기준표의 `retirementIncomeTax`(`serviceYearDeduction`, `convertedPayDeduction`)를 엔진 [severance-pay.ts](../../apps/api/src/modules/payroll/engine/severance-pay.ts)의 `retirementIncomeTax`가 씁니다 ([severance-pay](../reference/rules/severance-pay.md#로직), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) | 소득세법 제48조제1항제1호(근속연수공제)·제2호(환산급여공제) ([severance-pay](../reference/rules/severance-pay.md#서버-이전-시-주의), [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
-| 퇴직금 지급일 | 퇴직금은 퇴직 뒤 14일 안에 주며, 퇴직월과 다른 달에 줄 수 있습니다. 원천세는 지급한 달에 셉니다 | 정산의 `paymentDate`가 속한 달의 원천세 A21로 셉니다(2026-11-07 결정). 이벤트에 싣는 것은 아직입니다 ([payroll.md](payroll.md#퇴직금-정산)) | |
+| 퇴직금 지급일 | 퇴직금은 퇴직 뒤 14일 안에 주며, 퇴직월과 다른 달에 줄 수 있습니다. 원천세는 지급한 달에 셉니다 | 정산의 `paymentDate`가 속한 달의 원천세 A22(퇴직소득 그 외)로 셉니다(2026-11-07 결정, 줄 코드는 2026-11-08 정정). 이벤트에 싣는 것은 아직입니다 ([payroll.md](payroll.md#퇴직금-정산)) | |
 
 ## 원천세 신고
 
@@ -76,8 +76,8 @@
 | 용어 | 뜻 | 이 저장소에서 | 근거 |
 |---|---|---|---|
 | 세목과 신고 건 | 세목은 세금의 종류(부가세·원천세·법인세·종합소득세)이고, 신고 건은 한 세목의 한 기간에 대한 신고 한 번입니다 | `Filing`의 `taxType`·`kind`·`periodKey`입니다 ([tax.md](tax.md#신고-건)) | |
-| 부가세 과세기간, 예정·확정 신고 | 부가세는 반기(1–6월, 7–12월)마다 신고합니다. 앞 3개월(1–3월, 7–9월)을 예정으로 신고하고, 확정 신고는 예정 신고를 했으면 나머지 3개월, 아니면 반기 전체를 다룹니다. 기한은 기간 다음 달 25일입니다 | 법인이 예정 신고 방식일 때만 예정 신고 건을 만들고, 그 밖에는 예정고지 건을 만듭니다 ([filing-obligations](../reference/rules/filing-obligations.md#로직), [filing-obligations.ts](../../apps/api/src/modules/tax/calendar/filing-obligations.ts)) | 부가가치세법 제5조 ① ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) |
-| 예정고지 | 예정 신고 대신 세무서가 직전 기 납부세액의 50%를 고지하는 방식입니다. 50만원 미만이면 고지하지 않습니다. 개인 일반과세자와 작은 법인이 원칙적으로 받습니다 | 신고 종류 `NOTICE`이고, 자료 요청·검토 없이 대리인이 고지서를 붙이는 `:record-notice`로 바로 `FILED`가 됩니다 ([tax.md](tax.md#용어), [tax.md](tax.md#상태)) | |
+| 부가세 과세기간, 예정·확정 신고 | 부가세는 반기(1–6월, 7–12월)마다 신고합니다. 앞 3개월(1–3월, 7–9월)을 예정으로 신고하고, 확정 신고는 예정 신고를 했으면 나머지 3개월, 아니면 반기 전체를 다룹니다. 기한은 기간 다음 달 25일입니다 | 예정신고기간마다 예정고지 판정 규칙이 예정 신고 건과 예정고지 건 중 하나를 만듭니다 ([tax.md](tax.md#용어), [vat-preliminary-notice.ts](../../apps/api/src/modules/tax/calendar/vat-preliminary-notice.ts)) | 부가가치세법 제5조 ① ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) |
+| 예정고지 | 예정 신고 대신 세무서가 직전 기 납부세액의 50%를 고지하는 방식입니다. 50만원 미만이면 고지하지 않습니다. 개인 일반과세자와 직전 과세기간 공급가액 1억 5천만원 미만인 법인이 받고, 휴업·사업 부진(1/3 미달)이나 조기환급이면 예정 신고를 고를 수 있습니다 | 신고 종류 `NOTICE`이고, 자료 요청·검토 없이 대리인이 고지서를 붙이는 `:record-notice`로 바로 `FILED`가 됩니다. 대상 판정은 세무 설정 `vatSupplyAmounts`·`vatPreliminaryElections`로 합니다 ([tax.md](tax.md#용어), [tax.md](tax.md#상태)) | 부가가치세법 제48조 ③·④, 시행령 제90조 ④·⑥ |
 | 간이과세자 | 일반과세자와 다른 방식으로 부가세를 내는 개인사업자 유형입니다. 1년이 과세기간이고 1–6월분은 예정부과(7월 25일), 확정 신고는 다음 해 1월 25일입니다 | 세무 설정 `vatTaxpayerType: SIMPLIFIED`(개인만)로 일정을 계산하지만, 설정 저장소가 없어 지금은 언제나 일반과세자입니다 ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations), [tax.md 열린 질문 6](tax.md#열린-질문)) | 부가가치세법 제66조 ①·③, 제67조 ① ([rule-decisions/tax.md](rule-decisions/tax.md#filing-obligations)) |
 | 매출세액·매입세액·환급 | 부가세 납부세액은 매출 때 받은 세액에서 매입 때 낸 세액을 뺀 것입니다. 음수면 돌려받습니다(환급) | 예상 부가세는 수집한 증빙으로 이 차이를 계산하고, 매입은 공제로 분류된 것만 셉니다 ([estimated-vat](../reference/rules/estimated-vat.md), [tax.md](tax.md#예상-부가세)) | |
 | 매입매출장 | 과세기간의 매출·매입 거래를 모은 장부로, 부가세 신고의 바탕입니다 | 대리인이 파일로 올리는 신고 건 문서(`LEDGER`)이고 고객이 확인하거나 이의를 답니다. 수집한 증빙에서 자동으로 만들지는 않습니다 ([tax.md](tax.md#문서), [tax.md](tax.md#커맨드)) | |

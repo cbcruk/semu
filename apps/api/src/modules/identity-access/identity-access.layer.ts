@@ -49,7 +49,7 @@ const ServicesLive = Layer.mergeAll(Invitations.layer, MeService.layer, AgencyCo
  * 인증·회사(테넌트)·사용자·역할·약관·초대 컨텍스트의 핸들러 전체입니다. 저장소와 외부 연동 포트는 호출하는 쪽이 넣습니다.
  *
  * 필요한 것: 저장소들, `AuditLog`, `Mailer`, `AccessTokens`, Billing이 구현하는 `CompanyPlans` 포트,
- * Tax가 구현하는 `AgencyWorkload` 포트입니다.
+ * Tax가 구현하는 `AgencyWorkload` 포트, Integrations가 구현하는 `BusinessStatusCheck` 포트입니다.
  */
 export const IdentityAccessHttpLive = Layer.mergeAll(
   SessionsHttpLive,

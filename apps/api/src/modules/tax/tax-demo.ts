@@ -51,15 +51,16 @@ export function filingRecord(
   }
 }
 
-/** 데모 회사의 세무 프로필입니다. 12월 결산 법인, 매월 원천세, 예정 신고입니다. */
+/** 데모 회사의 세무 프로필입니다. 12월 결산 법인, 매월 원천세이고 직전 과세기간 공급가액이 없어 예정 신고입니다. */
 export const DEMO_TAX_PROFILE: TaxProfile = {
   companyId: TEST_COMPANY_ID,
   businessType: 'CORPORATION',
   fiscalYearEndMonth: 12,
   withholdingCycle: 'MONTHLY',
-  vatPreliminaryMode: 'FILING',
   sincereFilingTarget: false,
   vatTaxpayerType: 'GENERAL',
+  vatSupplyAmounts: {},
+  vatPreliminaryElections: {},
   plans: ['TAXATION', 'PAYROLL'],
   taxableCardRatioPpm: 1_000_000,
 }

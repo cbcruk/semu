@@ -11,10 +11,10 @@ export interface LeavingReason {
 export type RetirementBenefitType = 'SEVERANCE_PAY' | 'DB' | 'DC'
 
 /**
- * 퇴직금 정산 상태입니다. 설계상 Payroll이 알려 줄 값이지만 그 이벤트·구독은 아직 없어 지금은 채워지지 않습니다.
- * Payroll 정산 상태(`CALCULATED`·`COMPLETED`·`EXCLUDED`)와의 매핑도 정하지 않았습니다(docs/design/payroll.md 열린 질문 16).
+ * Payroll 퇴직금 정산 한 건의 상태입니다. 계산됨, 지급 완료, 정산 대상에서 제외입니다. HR은 저장하지 않고
+ * `SeveranceSettlementLookup`으로 묻습니다. 값은 Payroll 정산 상태와 같습니다(docs/design/payroll.md 열린 질문 16).
  */
-export type SeveranceSettlementStatus = 'IN_PROGRESS' | 'COMPLETED' | 'EXCLUDED'
+export type SeveranceSettlementStatus = 'CALCULATED' | 'COMPLETED' | 'EXCLUDED'
 
 /** 퇴직금 중간정산 사유입니다. */
 export type InterimSettlementReason = (typeof INTERIM_SETTLEMENT_REASONS)[number]

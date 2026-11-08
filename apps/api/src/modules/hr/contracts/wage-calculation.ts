@@ -46,7 +46,7 @@ export function calculateWage(input: WageInput): WageResult {
   const 통상임금상여월할액 = input.bonus?.inOrdinaryWage === true ? input.bonus.amount / 12 : 0
   const 월소정근로시간 = input.monthlyWorkHours
   const 고정수당: Record<FixedAllowanceKind, number> = { overtime: 0, night: 0, holiday: 0, holidayOvertime: 0 }
-  let baseSalary: number
+  let 기본급: number
   let 통상시급: number
   if (input.wageType === 'MONTHLY') {
     if (input.fixedAllowanceAutoCalc) {
@@ -64,22 +64,22 @@ export function calculateWage(input: WageInput): WageResult {
         if (고정수당설정.enabled)
           고정수당[kind] = Math.round(통상시급 * 고정수당설정.hours * FIXED_ALLOWANCE_MULTIPLIER[kind])
       }
-      baseSalary = input.amount - 지급항목합계 - sum(Object.values(고정수당))
+      기본급 = input.amount - 지급항목합계 - sum(Object.values(고정수당))
     } else {
       for (const kind of 고정수당종류)
         if (input.fixedAllowances[kind].enabled) 고정수당[kind] = input.fixedAllowances[kind].amount
-      baseSalary = input.amount - 지급항목합계 - sum(Object.values(고정수당))
-      통상시급 = (baseSalary + 통상임금항목합계 + 통상임금상여월할액) / 월소정근로시간
+      기본급 = input.amount - 지급항목합계 - sum(Object.values(고정수당))
+      통상시급 = (기본급 + 통상임금항목합계 + 통상임금상여월할액) / 월소정근로시간
     }
   } else {
     const 시급 = input.wageType === 'HOURLY' ? input.amount : input.amount / (input.dailyWorkHours ?? 8)
-    baseSalary = Math.round(시급 * 월소정근로시간)
+    기본급 = Math.round(시급 * 월소정근로시간)
     통상시급 = 시급 + (통상임금항목합계 + 통상임금상여월할액) / 월소정근로시간
   }
-  const 기준시급 = baseSalary / 월소정근로시간
-  const 최저임금시급 = (baseSalary + 최저임금산입항목합계) / 월소정근로시간
+  const 기준시급 = 기본급 / 월소정근로시간
+  const 최저임금시급 = (기본급 + 최저임금산입항목합계) / 월소정근로시간
   return {
-    baseSalary,
+    baseSalary: 기본급,
     baseHourlyWage: round2(기준시급),
     ordinaryHourlyWage: round2(통상시급),
     ...(input.probationPayRatePpm === undefined
