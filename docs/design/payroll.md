@@ -134,6 +134,7 @@ PATCH /payroll-settings    If-Match(선택)
 | `workflow` | 대장 운영 방식 | `DIRECT_CLOSE` |
 
 - `underFiveEmployees`를 바꾸면서 `multipliers`를 보내지 않으면 새 규모의 기본 배수로 바꿉니다(매뉴얼 FAQ)
+- HR은 `PayrollSettingQuery.isUnderFiveEmployees`(`payroll.public.ts`, 플랜·권한 확인 없음, HTTP 미공개)로 규모를 읽어 급여계약 고정수당에 `MULTIPLIERS_FIVE_OR_MORE`·`MULTIPLIERS_UNDER_FIVE`를 씁니다. 회사가 바꾼 `multipliers`는 HR에 넘기지 않습니다([hr.md 열린 질문 3](hr.md#열린-질문))
 - `workflow` 변경은 `payroll-workflow:update` 권한이 더 필요합니다. 급여 아웃소싱 계약은 Billing의 일이라 보통 운영자만 바꿉니다
 - 설정은 **새 대장에만** 적용됩니다. 대장은 만들 때 운영 방식과 지급일을 복사합니다
 - 지급·공제 항목 카탈로그, 근무 일정 정책, 근로조건은 아직 없습니다([구현 상태](#구현-상태))

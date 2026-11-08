@@ -38,6 +38,9 @@
 | 계약 형태: 정규직·계약직(기간제) | `contractType`: `PERMANENT` / `FIXED_TERM` |
 | 근로형태: 일반·단시간·초단시간 | `workType`: `FULL_TIME` / `PART_TIME` / `SHORT_PART_TIME` |
 | 임금 산정 방식 | `wageType`: `MONTHLY` / `DAILY` / `HOURLY` |
+| 고정수당: 연장·야간·휴일·휴일연장 | `fixedAllowances`: `overtime` / `night` / `holiday` / `holidayOvertime` |
+| 사업장 규모(상시 5명 이상 여부) | `CompanyWorkforceSize.hasFiveOrMoreEmployees`. Payroll 급여 설정 `underFiveEmployees`의 반대입니다 |
+| 가산 지급배수 | `premiumMultipliers` (Payroll `multipliers`와 같은 ppm 구조) |
 | 무기계약 전환 | `indefiniteConversion` |
 | 4대보험: 국민연금·건강·고용·산재 | `nps` / `nhis` / `ei` / `iais` |
 | 4대보험 자격 판정 | `InsuranceEligibility` |
@@ -183,7 +186,7 @@ DELETE /payroll-contracts/{payrollContractId}
 GET    /payroll-contracts/{payrollContractId}/account-number    X-Access-Reason 필수
 ```
 
-- 파생 금액은 서버가 계산합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md)). 최저임금 미달은 저장을 막지 않고 `warnings`에 `BELOW_MINIMUM_WAGE`로 담습니다. 최저시급은 Payroll의 기준표(`rateTable`)에서 계약 시작일 기준으로 읽습니다
+- 파생 금액은 서버가 계산합니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md)). 자동계산 고정수당은 사업장 규모(`CompanyWorkforceSize`, Payroll 급여 설정의 5인 미만 여부)에 맞는 Payroll 기본 지급배수를 곱합니다([열린 질문 3](#열린-질문)). 최저임금 미달은 저장을 막지 않고 `warnings`에 `BELOW_MINIMUM_WAGE`로 담습니다. 최저시급은 Payroll의 기준표(`rateTable`)에서 계약 시작일 기준으로 읽습니다
 - 기본 급여조건(지급시기·방법·계좌)은 급여 계산에 쓰므로 급여계약에 둡니다(현행 미확인 사항 10)
 
 ### 4대보험 설정과 자격 판정
@@ -451,7 +454,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
 | 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)과 휴직 파생 상태(`SCHEDULED`·`ONGOING`·`ENDED`)는 미구현 |
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
-| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
+| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
 | 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수·보육수당 대상 자녀 수(선택)를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
 | 4대보험 판정 (`POST /employees/{id}/social-insurance:determine`) | 구현(저장 없는 권장값), HTTP 테스트. 설정 저장(`PUT`) 미구현 |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
@@ -467,7 +470,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 1. **급여대장에 들어간 직원 삭제:** 현행은 퇴직금 정산 완료만 막습니다. 확정 급여대장에 행이 있는 직원도 막으려면 Payroll이 `HrDirectory` 반대 방향 조회(`PayrollUsage.hasLedgerRows`)를 HR에 줘야 합니다. 포트를 HR에 둘지, 삭제 대신 보관(`ARCHIVED`)만 허용할지 정해야 합니다
 2. **같은 사람의 여러 `kind`:** 근로자를 기타소득자로도 등록할 때 인적 정보를 공유할지(Person 분리) 복사할지. 지금은 복사이고 중복 판정을 `kind`별로 합니다
-3. **고정임금제 가산율(R10):** 화면 값이 가산 없는 1.0배라 그대로 두었습니다(2026-11-07 임시 결정, [규칙 결정](rule-decisions/hr.md#payroll-contract-wage) 1). 권장 설계: 상시 5명 이상 사업장은 [근로기준법 제56조](https://www.law.go.kr/법령/근로기준법)의 가산(연장·야간·휴일 50%, 휴일 8시간 초과 100%)이 적용되고 4명 이하는 제11조 ②와 [시행령 제7조 별표 1](https://www.law.go.kr/법령/근로기준법시행령)(적용 규정에 제56조가 없음)로 가산이 적용되지 않으므로, HR에 회사 규모를 읽는 포트(예: `CompanyWorkforceSize`)를 두고 `wiring/`에서 Payroll 급여 설정의 5인 미만 여부로 구현합니다. 배수는 Payroll `MULTIPLIERS_FIVE_OR_MORE`·`MULTIPLIERS_UNDER_FIVE`와 같은 값을 씁니다. 바꾸면 `payroll-contract-wage` 자동계산 케이스의 기대값이 바뀝니다 ([payroll-contract-wage](../reference/rules/payroll-contract-wage.md))
+3. **고정임금제 가산율(R10):** ~~화면 값이 가산 없는 1.0배라 그대로 둘지~~ **정함(2026-11-08):** 상시 5명 이상 사업장은 [근로기준법 제56조](https://www.law.go.kr/법령/근로기준법)의 가산(연장·야간·휴일 50%, 휴일 8시간 초과 100%)을 붙이고, 4명 이하는 제11조 ②와 [시행령 제7조 별표 1](https://www.law.go.kr/법령/근로기준법시행령)(적용 규정에 제56조가 없음)로 붙이지 않습니다. HR 포트 `CompanyWorkforceSize`를 `wiring/hr-payroll.ts`가 Payroll `PayrollSettingQuery`(급여 설정 `underFiveEmployees`, 플랜·권한 확인 없음, HTTP 미공개)로 구현합니다. 급여 설정을 저장한 적이 없으면 Payroll 기본값을 따라 5명 이상입니다. 배수는 Payroll이 공개한 `MULTIPLIERS_FIVE_OR_MORE`(1.5·0.5·1.5·2)·`MULTIPLIERS_UNDER_FIVE`(1·0·1·1)를 그대로 쓰므로 5인 미만의 고정 야간수당은 0원입니다. 회사가 급여 설정에서 바꾼 `multipliers`는 쓰지 않고 규모별 기본 배수만 씁니다. 파생 금액은 저장할 때 계산하므로 규모가 바뀌어도 이미 저장한 계약은 다시 저장할 때까지 그대로입니다([규칙 결정](rule-decisions/hr.md#payroll-contract-wage) 1, [급여계약](#급여계약))
 4. **고용보험 상호주의 국가 목록:** 두지 않기로 했습니다. 고용보험법 시행령 제3조의3은 국가 목록이 아니라 본국법 기준이라 D-7·D-8·D-9는 가입을 권하고 본국법 확인을 안내합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
 5. **계약 만료 경고 30일, 무기계약 전환 사전 알림 90일:** 제품 값을 확인하지 못했습니다. 회사 설정으로 둘지 정해야 합니다
 6. **4대보험 신고 처리 주체:** 세무 대리인 큐로 두었습니다. 급여 구독만 쓰는 회사(대리인 없음)에서 누가 처리하는지 정해야 합니다

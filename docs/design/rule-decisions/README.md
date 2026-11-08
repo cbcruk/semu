@@ -22,8 +22,8 @@
 | Integrations | [integrations.md](integrations.md) | 5 | 28 | 10 | 11 | 7 |
 | Assistant | [assistant.md](assistant.md) | 2 | 11 | 3 | 7 | 1 |
 | Tax | [tax.md](tax.md) | 7 | 41 | 25 | 16 | 0 |
-| HR | [hr.md](hr.md) | 13 | 34 | 23 | 11 | 0 |
+| HR | [hr.md](hr.md) | 13 | 34 | 22 | 12 | 0 |
 | Documents | [documents.md](documents.md) | 5 | 13 | 9 | 4 | 0 |
 | Payroll | [payroll.md](payroll.md) | 14 | 34 | 25 | 8 | 1 |
 | Bookkeeping | [bookkeeping.md](bookkeeping.md) | 14 | 29 | 14 | 12 | 3 |
-| | **합계** | **68** | **233** | **127** | **86** | **20** |
+| | **합계** | **68** | **233** | **126** | **87** | **20** |
