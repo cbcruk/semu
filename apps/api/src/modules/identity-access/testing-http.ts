@@ -41,7 +41,7 @@ export interface SignedIn {
  * const response = await app.request('GET', '/v1/me', { token })
  * ```
  */
-export function makeTestApp(): TestApp {
+export function makeTestApp(options: { layers?: ReadonlyArray<Layer.Layer<any, never, never>> } = {}): TestApp {
   const outbox: OutgoingMail[] = []
   const mailer = Layer.succeed(
     Mailer,
@@ -50,7 +50,7 @@ export function makeTestApp(): TestApp {
       sent: () => Effect.sync(() => [...outbox]),
     }),
   )
-  const app = httpTestApp({ layers: [mailer] })
+  const app = httpTestApp({ layers: [mailer, ...(options.layers ?? [])] })
   const signIn = async (email: string, options: { companyId?: string; password?: string } = {}): Promise<SignedIn> => {
     const response = await app.request('POST', '/v1/auth/sessions', {
       body: {

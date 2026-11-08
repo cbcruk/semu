@@ -36,6 +36,7 @@
 | 약관 용도 | `TermPurpose` | `SIGNUP`, `TAX`, `CONSULTING` |
 | 세션 | `Session` | 로그인 한 번. refresh token 회전의 단위 |
 | 가입 토큰 | `onboardingToken` | 회사가 없는 사용자가 `POST /companies`에만 쓰는 토큰 |
+| 사업자 상태 | `BusinessStatus` | 회사 등록 전에 보는 국세청 상태. `ACTIVE`(계속), `SUSPENDED`(휴업), `CLOSED`(폐업), `UNKNOWN`(미등록 등). Bookkeeping의 같은 이름 형은 `ACTIVE` 대신 `REGISTERED`를 씁니다 |
 
 ## 행위자와 권한 계산
 
@@ -207,7 +208,7 @@ sequenceDiagram
 
 - `GET /companies/current`는 `company:read`(기본 권한), `PATCH`는 `company:update`(관리자). `If-Match` 버전이 다르면 412
 - 상호·사업자등록번호·사업자 형태는 등록 때 정하고 바꾸지 않습니다. 급여 지급일 등 업무 설정은 각 컨텍스트가 가집니다
-- `POST /companies`: 사업자등록번호 검증 숫자([business-number-checksum](../reference/rules/business-number-checksum.md))가 틀리면 422, 이미 등록된 번호면 409. 등록한 사용자가 소유자 관리자가 되고, 클라이언트는 `:switch-company`로 그 회사 토큰을 받습니다
+- `POST /companies`: 사업자등록번호 검증 숫자([business-number-checksum](../reference/rules/business-number-checksum.md))가 틀리면 422, 이미 등록된 번호면 409, 국세청 사업자 상태조회에서 폐업이면 422 `BUSINESS_CLOSED`(휴업·알 수 없음·조회 실패는 등록, [열린 질문 10](#열린-질문)). 등록한 사용자가 소유자 관리자가 되고, 클라이언트는 `:switch-company`로 그 회사 토큰을 받습니다
 - 회사의 세무 대리인(`agency.kind` = `HQ`|`BRANCH`)은 배정 데이터에서 읽습니다. 본사 담당 회사는 급여 프로모션을 봅니다
 
 ## 구성원
@@ -287,6 +288,7 @@ stateDiagram-v2
 | 제공 | `CurrentAgent`, `authorizeAgency`, `AgencyAuthentication` | `/agency/*` 그룹이 씁니다(Identity & Access 담당 회사, Tax 작업 큐) |
 | 포트(Tax 구현) | `AgencyWorkload` | `of(companies: AgentCompany[]): Effect<CompanyWorkload[]>`. 회사별 미결 신고 건·기한 경과·진행중 카드 수와 가장 가까운 기한 |
 | 포트(Billing 구현) | `CompanyPlans` | `plansOf(companyId): Effect<ReadonlySet<Plan>>` |
+| 포트(Integrations 구현) | `BusinessStatusCheck` | `statusOf(businessNumber): Effect<BusinessStatus>`. `ACTIVE`·`SUSPENDED`·`CLOSED`·`UNKNOWN`(미등록 포함). 회사 등록 전 폐업 확인 |
 | 포트(알림 구현) | `Mailer` | `send({to, template: INVITATION\|PASSWORD_RESET\|EMAIL_VERIFICATION, token, data})` |
 | 받을 이벤트(예정) | `SubscriptionStarted`/`SubscriptionEnded` | 그 회사 사용자들의 access token 폐기 |
 
@@ -305,6 +307,7 @@ stateDiagram-v2
 | `COMPANY_NOT_FOUND` | 404 | 없거나 접근할 수 없는 회사(구분하지 않음) |
 | `BUSINESS_NUMBER_INVALID` | 422 | 사업자등록번호 검증 숫자 오류 |
 | `COMPANY_ALREADY_REGISTERED` | 409 | 같은 사업자등록번호의 회사가 있음 |
+| `BUSINESS_CLOSED` | 422 | 국세청 사업자 상태조회에서 폐업. 휴업·알 수 없음·조회 실패는 등록 |
 | `MEMBER_NOT_FOUND` | 404 | 이 회사의 구성원이 아님 |
 | `OWNER_IMMUTABLE` | 409 | 소유자 강등·내보내기 |
 | `LAST_ADMIN` | 409 | 마지막 관리자 강등·내보내기 |
@@ -409,4 +412,4 @@ stateDiagram-v2
 7. 대리인이 큐 화면에서 시작하는 경우가 대부분이면 로그인에서 바로 대리인 범위를 받게(`POST /auth/sessions {scope: AGENCY}`) 할지 정해야 합니다. 지금은 로그인 뒤 `:switch-agency`를 한 번 더 부릅니다
 8. 큐와 회사 화면을 탭 두 개로 동시에 띄우려면 세션 하나에 범위별 access token을 하나씩 두어야 합니다. 지금은 세션당 하나라 전환하면 다른 범위의 토큰이 폐기됩니다
 9. **배정 해제의 토큰 폐기.** 회사 범위 토큰은 배정을 요청마다 다시 보지 않아, 배정이 풀린 대리인이 만료(10분)까지 그 회사에서 쓰기를 할 수 있습니다. 원천세 대행(2026-11-07, [tax.md](tax.md#커맨드))으로 그 쓰기에 제출·납부가 들어갑니다. 배정 해제를 이 API로 들일 때 `Sessions.invalidateAccess(userId, companyId)`를 부를지(위 표에 한 줄), 회사 범위의 대리인 토큰만 요청마다 배정을 다시 볼지 정합니다
-10. **가입 때 사업자 상태조회.** 등록 전에 폐업을 막기로 정했습니다([규칙 결정](rule-decisions/identity-access.md#business-number-checksum) 3, 레거시와 같음). 구현하려면 Identity & Access에 상태조회 포트를 두고 `wiring/`에서 Integrations `BusinessStatusClient`로 구현합니다. 휴업·실패·알 수 없음은 허용하고, 막을 때의 오류 코드(예: 422 `BUSINESS_CLOSED`)를 함께 정합니다
+10. ~~**가입 때 사업자 상태조회.**~~ 정함(2026-11-08). `POST /companies`가 검증 숫자·중복 확인 뒤 `BusinessStatusCheck` 포트로 사업자 상태를 조회하고 폐업이면 422 `BUSINESS_CLOSED`로 막습니다([규칙 결정](rule-decisions/identity-access.md#business-number-checksum) 3, 레거시와 같음). 휴업·알 수 없음(미등록 포함)·조회 실패(결함)는 등록합니다. 판정은 순수 규칙 `registration-business-status.ts`(`isRegistrationBlocked`)에 있고, 실패는 `Companies.register`가 결함을 받아 경고 로그만 남깁니다. 포트는 [`identity-access-integrations.ts`](../../apps/api/src/wiring/identity-access-integrations.ts)가 Integrations `BusinessStatusClient`로 구현합니다

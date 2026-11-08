@@ -105,7 +105,7 @@ flowchart TD
   resigned -.-> sev["POST /severance-settlements → CALCULATED<br/>3개월 임금은 마감된 대장 행에서"]
   sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일"]
   sevdone -- "HR 커맨드가 SeveranceSettlementLookup으로 조회" --> guard["COMPLETED 정산이 있으면 직원 삭제·퇴사 취소·다시 퇴사 409<br/>RETIREMENT_COMPLETED"]
-  sevdone --> a21["지급월 원천세 A21로 집계"]:::open
+  sevdone --> a22["지급월 원천세 A22(퇴직소득 그 외)로 집계"]:::open
   resigned -.-> cert["POST /certificate-issuances<br/>퇴직증명서 ISSUED"]
   classDef todo stroke-dasharray: 5 5
   classDef open stroke-width: 3px
@@ -116,7 +116,7 @@ flowchart TD
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
 - **정산 가드.** 반대 방향은 이벤트가 아니라 조회입니다. HR은 정산 상태를 저장하지 않고 직원 삭제·퇴사 취소·다시 퇴사 때 `SeveranceSettlementLookup`으로 묻습니다. 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`이고, `CALCULATED`·`EXCLUDED`는 막지 않습니다. 막히면 정산을 `:reopen`합니다([hr.md](hr.md#퇴직), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
-- **열린 질문.** 퇴직금 지급월을 원천세 A21로 센다고 정했지만(2026-11-07), 지급월 마감 이벤트에 퇴직소득을 실을지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
+- **열린 질문.** 퇴직금 지급월을 원천세 A22(퇴직소득 그 외)로 센다고 정했지만(2026-11-07 결정, 줄 코드는 2026-11-08에 A21에서 고침), 지급월 마감 이벤트에 퇴직소득을 실을지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
 - **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없습니다([hr.md](hr.md#구현-상태)). 퇴사를 취소해도 계산됨 정산은 남습니다([payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지

@@ -92,7 +92,7 @@ describe('/severance-settlements', () => {
   })
 })
 
-describe('/severance-settlements 지급일 (원천세 퇴직소득 A21의 지급월)', () => {
+describe('/severance-settlements 지급일 (원천세 퇴직소득 그 외 A22의 지급월)', () => {
   const OCTOBER_LEAVER = 'emp_01JBQ000000000000000000021' as Id<'employee'>
   const NOVEMBER_LEAVER = 'emp_01JBQ000000000000000000022' as Id<'employee'>
   const EARLY_LEAVER = 'emp_01JBQ000000000000000000023' as Id<'employee'>
