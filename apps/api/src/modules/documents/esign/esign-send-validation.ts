@@ -21,25 +21,25 @@ export function validateEsignSend(input: SendCheckInput): { violations: Violatio
     if (isBlank(recipient.visaCode)) violations.push({ field: 'recipient.visaCode', code: 'REQUIRED' })
   }
   if (input.documents.length === 0) violations.push({ field: 'documents', code: 'REQUIRED' })
-  let defaultSeal: string | undefined
+  let 기본도장: string | undefined
   for (const document of input.documents) {
-    const key = String(document.index)
+    const 문서순번 = String(document.index)
     if (!document.templateActive) violations.push({ field: `documents[${document.index}]`, code: 'TEMPLATE_INACTIVE' })
-    defaultSeal ??= document.defaultCompanySealId
-    const values = input.fieldValues[key] ?? {}
-    const hidden = input.hiddenFields[key] ?? []
+    기본도장 ??= document.defaultCompanySealId
+    const 관리자값 = input.fieldValues[문서순번] ?? {}
+    const 숨긴필드 = input.hiddenFields[문서순번] ?? []
     for (const field of document.fields) {
-      if (!field.required || field.signer || hidden.includes(field.key)) continue
-      const value =
-        values[field.key] ??
+      if (!field.required || field.signer || 숨긴필드.includes(field.key)) continue
+      const 채운값 =
+        관리자값[field.key] ??
         field.default ??
         (field.source === undefined ? undefined : input.sourceValues[field.source])
-      if (value === undefined || value === null || value === '') {
-        violations.push({ field: `fieldValues.${key}.${field.key}`, code: 'REQUIRED' })
+      if (채운값 === undefined || 채운값 === null || 채운값 === '') {
+        violations.push({ field: `fieldValues.${문서순번}.${field.key}`, code: 'REQUIRED' })
       }
     }
   }
-  const companySealId = input.companySealId ?? defaultSeal
+  const companySealId = input.companySealId ?? 기본도장
   if (companySealId === undefined) violations.push({ field: 'companySealId', code: 'REQUIRED' })
   return companySealId === undefined ? { violations } : { violations, companySealId }
 }

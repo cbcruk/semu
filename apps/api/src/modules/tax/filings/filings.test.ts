@@ -40,8 +40,8 @@ const ledgerResponse = Effect.gen(function* () {
   return filing.requirements.find((requirement) => requirement.code === 'PAYROLL_LEDGER_CLOSED')!.response
 })
 
-describe('Filings.syncPayrollLedger', () => {
-  it('marks the payroll item provided once every ledger of the period is closed', async () => {
+describe('급여대장 마감 연계(Filings.syncPayrollLedger)', () => {
+  it('기간의 급여대장이 모두 마감되면 급여대장 항목이 PROVIDED가 됩니다', async () => {
     const response = await run(
       Effect.gen(function* () {
         yield* (yield* Filings).syncPayrollLedger(TEST_COMPANY_ID, '2026-10')
@@ -53,7 +53,7 @@ describe('Filings.syncPayrollLedger', () => {
     expect(response).toBe('PROVIDED')
   })
 
-  it('returns the item to pending when a ledger is reopened', async () => {
+  it('급여대장을 다시 열면 항목이 PENDING으로 돌아갑니다', async () => {
     const provided = withholding()
     provided.requirements[0] = { ...provided.requirements[0]!, response: 'PROVIDED' }
     const response = await run(
@@ -68,13 +68,13 @@ describe('Filings.syncPayrollLedger', () => {
   })
 })
 
-describe('WithholdingFilingLock', () => {
+describe('원천세 신고 잠금(WithholdingFilingLock)', () => {
   it.each([
     ['FILED', true],
     ['SETTLED', true],
     ['PREPARING', false],
     ['CANCELED', false],
-  ] as const)('reports %s as filed=%s', async (status, filed) => {
+  ] as const)('%s 상태의 신고 여부는 %s입니다', async (status, filed) => {
     const result = await run(
       Effect.gen(function* () {
         return yield* (yield* WithholdingFilingLock).isFiled(TEST_COMPANY_ID, '2026-10')

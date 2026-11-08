@@ -52,7 +52,7 @@ function legacyEffect(effect: ActionCardEffect): Record<string, unknown> {
   }
 }
 
-describe('action-card-lifecycle fixture', () => {
+describe('할 일 카드 수명 주기 픽스처(action-card-lifecycle)', () => {
   it.each(cases('effects').map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     const trigger =
       input['transition'] === 'scheduleCancel' ? 'SCHEDULE_CANCELED' : LEGACY_TRANSITION[input['transition']]!
@@ -104,7 +104,7 @@ describe('action-card-lifecycle fixture', () => {
     expect(sorted.map((card) => card.id)).toEqual(expected['ids'])
   })
 
-  it('accounts for every case that is not ported', () => {
+  it('서버 테스트로 옮기지 않은 사례는 모두 이유가 적혀 있습니다', () => {
     const checks = ['effects', 'complete', 'reopen', 'document-view', 'order']
     const ported = new Set(checks.flatMap((check) => cases(check).map((testCase) => testCase.name)))
     const rest = fixture.cases.map((testCase) => testCase.name).filter((name) => !ported.has(name))

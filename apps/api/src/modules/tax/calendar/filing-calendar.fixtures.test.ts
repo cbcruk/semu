@@ -78,13 +78,13 @@ function cases(check: string): FixtureCase[] {
   return obligations.filter((testCase) => testCase.input['check'] === check)
 }
 
-describe('filing-deadline-rollover fixture', () => {
+describe('신고 기한 이월 픽스처(filing-deadline-rollover)', () => {
   it.each(rollover.map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     expect(rollForwardDeadline(input['statutoryDue'], new Set(input['holidays']))).toBe(expected['deadline'])
   })
 })
 
-describe('filing-obligations fixture', () => {
+describe('신고 의무 픽스처(filing-obligations)', () => {
   it.each(cases('period').map((testCase) => [testCase.name, testCase] as const))('%s', (_, { input, expected }) => {
     const key = fromLegacyPeriodKey(legacyTaxTypeOf(input['taxPeriodKey'], expected['taxType']), input['taxPeriodKey'])
     const found = resolve(input).find(
@@ -139,7 +139,7 @@ describe('filing-obligations fixture', () => {
     }).toEqual(expected)
   })
 
-  it('ports every case', () => {
+  it('픽스처의 사례를 모두 옮겼습니다', () => {
     expect(cases('period').length + cases('window').length + cases('schedule').length).toBe(obligations.length)
   })
 })

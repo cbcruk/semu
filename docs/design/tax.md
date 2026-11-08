@@ -189,7 +189,7 @@ GET /tax-calendar?year=2026    → { items: [{ taxType, kind, periodKey, periodS
 - **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 매일, 그리고 공휴일표·세무 설정이 바뀐 뒤 돕니다. 오늘부터 120일 안의 의무에 대해
   - 신고 건이 없으면 `SCHEDULED`로 만들고 체크리스트를 복사합니다. 급여 플랜 회사의 원천세는 `PAYROLL_LEDGER_CLOSED`를 바로 맞춥니다
   - 있으면(취소된 것 포함) 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
-  - 창 안의 `SCHEDULED` 신고 건이 의무에 없으면 `CANCELED`로 바꾸고(이력 `SCHEDULE_CANCELED`) 카드를 닫고 이벤트를 냅니다
+  - 배치 기간 안의 `SCHEDULED` 신고 건이 의무에 없으면 `CANCELED`로 바꾸고(이력 `SCHEDULE_CANCELED`) 카드를 닫고 이벤트를 냅니다
 - 같은 날 다시 돌려도 아무것도 바뀌지 않습니다
 
 ## 할 일 카드

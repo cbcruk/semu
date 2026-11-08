@@ -23,7 +23,7 @@ export interface SchedulePlan {
 }
 
 /** 기한을 다시 맞추는 상태입니다. 고객이 자료를 내기 시작한 뒤에는 기한을 바꾸지 않습니다. */
-const REFRESHABLE: ReadonlyArray<FilingStatus> = ['SCHEDULED', 'REQUESTED']
+const 기한갱신상태: ReadonlyArray<FilingStatus> = ['SCHEDULED', 'REQUESTED']
 
 /**
  * 계산한 신고 의무와 저장된 신고 건을 맞춥니다. 같은 입력으로 다시 돌리면 아무것도 하지 않습니다.
@@ -39,26 +39,29 @@ export function planSchedule(
   existing: ReadonlyArray<ScheduledFilingFact>,
   window: { from: string; to: string },
 ): SchedulePlan {
-  const keyOf = (value: { taxType: TaxType; kind: FilingKind; periodKey: string }): string =>
+  const 의무키 = (value: { taxType: TaxType; kind: FilingKind; periodKey: string }): string =>
     `${value.taxType}:${value.kind}:${value.periodKey}`
-  const byKey = new Map(existing.map((filing) => [keyOf(filing), filing]))
-  const expected = new Set(obligations.map(keyOf))
+  const 키별신고건 = new Map(existing.map((filing) => [의무키(filing), filing]))
+  const 의무키집합 = new Set(obligations.map(의무키))
 
-  const plan: SchedulePlan = { create: [], refresh: [], cancel: [] }
+  const 계획: SchedulePlan = { create: [], refresh: [], cancel: [] }
   for (const obligation of obligations) {
-    const filing = byKey.get(keyOf(obligation))
+    const filing = 키별신고건.get(의무키(obligation))
     if (filing === undefined) {
-      plan.create.push(obligation)
+      계획.create.push(obligation)
     } else if (
-      REFRESHABLE.includes(filing.status) &&
+      기한갱신상태.includes(filing.status) &&
       (filing.dueDate !== obligation.dueDate || filing.paymentDue !== obligation.paymentDue)
     ) {
-      plan.refresh.push({ filingId: filing.id, obligation })
+      계획.refresh.push({ filingId: filing.id, obligation })
     }
   }
   for (const filing of existing) {
-    const inWindow = filing.paymentDue !== null && filing.paymentDue >= window.from && filing.paymentDue <= window.to
-    if (filing.status === 'SCHEDULED' && inWindow && !expected.has(keyOf(filing))) plan.cancel.push(filing.id)
+    // 배치 기간은 `window`(일정 배치가 신고 건을 맞추는 기간)이고 시작일·종료일 그날 포함입니다
+    const 납부기한이배치기간안임 =
+      filing.paymentDue !== null && filing.paymentDue >= window.from && filing.paymentDue <= window.to
+    if (filing.status === 'SCHEDULED' && 납부기한이배치기간안임 && !의무키집합.has(의무키(filing)))
+      계획.cancel.push(filing.id)
   }
-  return plan
+  return 계획
 }

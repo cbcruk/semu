@@ -23,13 +23,13 @@ export function describeRuleFixture<I>(
     readFileSync(join(import.meta.dirname, '../../../../test/fixtures/rules', `${rule}.json`), 'utf8'),
   ) as { cases: FixtureCase[] }
 
-  describe(`${rule} fixture`, () => {
+  describe(`${rule} 규칙 픽스처`, () => {
     it.each(fixture.cases.map((testCase) => [testCase.name, testCase] as const))('%s', (name, testCase) => {
       const expected = Object.hasOwn(changed, name) ? changed[name] : testCase.expected
       expect(JSON.parse(JSON.stringify(run(testCase.input as I)) ?? 'null')).toEqual(expected)
     })
 
-    it('names only existing cases as changed', () => {
+    it('바꿈으로 정한 사례는 모두 픽스처에 있습니다', () => {
       const names = new Set(fixture.cases.map((testCase) => testCase.name))
       expect(Object.keys(changed).filter((name) => !names.has(name))).toEqual([])
     })

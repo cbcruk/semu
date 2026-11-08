@@ -2,7 +2,7 @@ import type { FilingStatus, TaxType } from '../tax.types.ts'
 import { PRE_FILING_STATUSES } from './filing-status.ts'
 import type { FilingProgress, FilingStage } from './filing-progress.types.ts'
 
-const VAT_STAGES: ReadonlyArray<FilingStage> = [
+const 부가세단계: ReadonlyArray<FilingStage> = [
   'MATERIALS_OPEN',
   'UNDER_REVIEW',
   'LEDGER_CONFIRMATION',
@@ -11,9 +11,9 @@ const VAT_STAGES: ReadonlyArray<FilingStage> = [
   'CLOSED',
 ]
 
-const DEFAULT_STAGES: ReadonlyArray<FilingStage> = ['MATERIALS_OPEN', 'UNDER_REVIEW', 'PREPARING', 'PAYMENT', 'CLOSED']
+const 다른세목단계: ReadonlyArray<FilingStage> = ['MATERIALS_OPEN', 'UNDER_REVIEW', 'PREPARING', 'PAYMENT', 'CLOSED']
 
-const STAGE_OF_STATUS: Partial<Record<FilingStatus, FilingStage>> = {
+const 상태별단계: Partial<Record<FilingStatus, FilingStage>> = {
   REQUESTED: 'MATERIALS_OPEN',
   SUBMITTED: 'UNDER_REVIEW',
   REVIEWING: 'UNDER_REVIEW',
@@ -30,10 +30,10 @@ const STAGE_OF_STATUS: Partial<Record<FilingStatus, FilingStage>> = {
  * `SCHEDULED`·`CANCELED`는 단계가 없어 `stage`가 `null`, `index`가 0입니다. 단계 이름 문구는 클라이언트가 고릅니다.
  */
 export function filingProgress(taxType: TaxType, status: FilingStatus): FilingProgress {
-  const stages = taxType === 'VAT' ? VAT_STAGES : DEFAULT_STAGES
-  const stage = STAGE_OF_STATUS[status] ?? null
-  const index = stage === null ? 0 : stages.indexOf(stage) + 1
-  return { stage, index, count: stages.length }
+  const 단계목록 = taxType === 'VAT' ? 부가세단계 : 다른세목단계
+  const stage = 상태별단계[status] ?? null
+  const index = stage === null ? 0 : 단계목록.indexOf(stage) + 1
+  return { stage, index, count: 단계목록.length }
 }
 
 /**
@@ -45,6 +45,6 @@ export function isFilingOverdue(
   filing: { status: FilingStatus; dueDate: string | null; paymentDue: string | null },
   today: string,
 ): boolean {
-  const deadline = filing.dueDate ?? filing.paymentDue
-  return deadline !== null && deadline < today && PRE_FILING_STATUSES.includes(filing.status)
+  const 기한 = filing.dueDate ?? filing.paymentDue
+  return 기한 !== null && 기한 < today && PRE_FILING_STATUSES.includes(filing.status)
 }

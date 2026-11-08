@@ -44,8 +44,8 @@ function withholding(overrides: Partial<FilingRecord> = {}): FilingRecord {
 let app: TaxTestApp
 afterEach(() => app.dispose())
 
-describe('GET /v1/filings', () => {
-  it('lists the newest period first and filters open filings', async () => {
+describe('신고 건 목록 조회(GET /v1/filings)', () => {
+  it('최근 기간부터 보여 주고 진행 중인 신고 건으로 거를 수 있습니다', async () => {
     app = taxTestApp({ filings: [vat(), withholding()] })
 
     const all = await app.send('/filings')
@@ -58,7 +58,7 @@ describe('GET /v1/filings', () => {
     ])
   })
 
-  it('asks for the taxation plan before anything else', async () => {
+  it('세무 플랜이 없으면 무엇보다 먼저 403 ENTITLEMENT_REQUIRED입니다', async () => {
     app = taxTestApp({ filings: [vat()] })
 
     const response = await app.send('/filings', { token: 'free' })
@@ -68,8 +68,8 @@ describe('GET /v1/filings', () => {
   })
 })
 
-describe('GET /v1/filings/{filingId}', () => {
-  it('returns the commands the viewer can send and an ETag', async () => {
+describe('신고 건 상세 조회(GET /v1/filings/{filingId})', () => {
+  it('보는 행위자가 보낼 수 있는 커맨드와 ETag를 돌려줍니다', async () => {
     app = taxTestApp({ filings: [vat()] })
 
     const client = await app.send(`/filings/${VAT_ID}`)
@@ -80,7 +80,7 @@ describe('GET /v1/filings/{filingId}', () => {
     expect((await agency.json()).allowedActions).toEqual(['START_REVIEW', 'CANCEL'])
   })
 
-  it('treats an unknown filing as not found', async () => {
+  it('없는 신고 건은 찾을 수 없다고 답합니다', async () => {
     app = taxTestApp()
 
     const response = await app.send(`/filings/${VAT_ID}`)
@@ -90,8 +90,8 @@ describe('GET /v1/filings/{filingId}', () => {
   })
 })
 
-describe('POST /v1/filings/{filingId}:submit', () => {
-  it('refuses while client items are pending and names them', async () => {
+describe('자료 제출(POST /v1/filings/{filingId}:submit)', () => {
+  it('고객이 답하지 않은 항목이 남았으면 거절하고 그 항목을 알려 줍니다', async () => {
     app = taxTestApp({ filings: [vat()] })
 
     const response = await app.send(`/filings/${VAT_ID}:submit`, { method: 'POST' })
@@ -103,7 +103,7 @@ describe('POST /v1/filings/{filingId}:submit', () => {
     })
   })
 
-  it('submits once every item is answered and publishes the status change', async () => {
+  it('모든 항목에 답하면 제출하고 상태 변경 이벤트를 냅니다', async () => {
     const events: TaxEvent[] = []
     app = taxTestApp({ filings: [vat()], events })
     const codes = vat().requirements.map((requirement) => requirement.code)
@@ -126,7 +126,7 @@ describe('POST /v1/filings/{filingId}:submit', () => {
     ])
   })
 
-  it('belongs to the client', async () => {
+  it('제출은 고객의 커맨드입니다', async () => {
     app = taxTestApp({ filings: [vat({ requirements: [] })] })
 
     const response = await app.send(`/filings/${VAT_ID}:submit`, { method: 'POST', token: 'agency' })
@@ -139,7 +139,7 @@ describe('POST /v1/filings/{filingId}:submit', () => {
     })
   })
 
-  it('rejects a stale If-Match', async () => {
+  it('오래된 If-Match는 거절합니다', async () => {
     app = taxTestApp({ filings: [vat({ requirements: [] })] })
 
     const response = await app.send(`/filings/${VAT_ID}:submit`, { method: 'POST', ifMatch: '"7"' })
@@ -149,8 +149,8 @@ describe('POST /v1/filings/{filingId}:submit', () => {
   })
 })
 
-describe('VAT filing flow', () => {
-  it('runs review, ledger confirmation, filing and payment with the action cards in step', async () => {
+describe('부가세 신고 흐름', () => {
+  it('검토·매입매출장 확인·신고·납부를 할 일 카드와 맞춰 진행합니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED', requirements: [] })] })
     const agency = { token: 'agency' as const }
 
@@ -195,7 +195,7 @@ describe('VAT filing flow', () => {
     expect(await (await app.send('/action-cards:summary')).json()).toMatchObject({ openCount: 0, closedCount: 3 })
   })
 
-  it('closes a refund filing without payment', async () => {
+  it('환급 신고 건은 납부 없이 종결합니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'FILED', payableAmount: -50_000 })] })
 
     const pay = await app.send(`/filings/${VAT_ID}:pay`, { body: { paidOn: '2027-01-20' } })
@@ -210,7 +210,7 @@ describe('VAT filing flow', () => {
     expect(await close.json()).toMatchObject({ status: 'SETTLED', settlement: 'REFUND' })
   })
 
-  it('hides agency documents from the client until the filing is filed', async () => {
+  it('신고하기 전에는 대리인이 붙인 문서를 고객에게 숨깁니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'PREPARING', requirements: [] })] })
 
     const added = await app.send(`/filings/${VAT_ID}/documents`, {
@@ -228,7 +228,7 @@ describe('VAT filing flow', () => {
   })
 })
 
-describe('withholding commands sent by agency staff for the client (2026-11-07)', () => {
+describe('대리인이 고객 대신 보내는 원천세 커맨드(2026-11-07)', () => {
   const clientItems = () =>
     withholding()
       .requirements.filter((requirement) => !requirement.autoLinked)
@@ -239,7 +239,7 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
       .concat((await (await app.send('/action-cards')).json()).items)
       .find((item: { kind: string }) => item.kind === kind)
 
-  it('lets assigned agency staff answer, submit and unsubmit, and records the agency acting for the client', async () => {
+  it('담당 대리인이 응답·제출·제출 취소를 대신하고 이력에 고객 대신 했다고 남깁니다', async () => {
     const events: TaxEvent[] = []
     app = taxTestApp({ filings: [withholding({ status: 'SCHEDULED' })], events })
 
@@ -294,7 +294,7 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
     ])
   })
 
-  it('lets assigned agency staff record the payment of a filed return and closes the payment card', async () => {
+  it('담당 대리인이 신고한 건의 납부를 대신 기록하면 납부 카드가 닫힙니다', async () => {
     app = taxTestApp({ filings: [withholding({ status: 'PREPARING' })] })
 
     const filed = await app.send(`/filings/${WHT_ID}:file`, {
@@ -323,7 +323,7 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
     })
   })
 
-  it('refuses agency staff who are not assigned to the company', async () => {
+  it('회사를 담당하지 않은 대리인은 거절합니다', async () => {
     app = taxTestApp({ filings: [withholding({ status: 'REQUESTED', requirements: [] })] })
 
     const submit = await app.send(`/filings/${WHT_ID}:submit`, { method: 'POST', token: 'otherAgency' })
@@ -350,7 +350,7 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
     ['INCOME_TAX', 'SUBMIT', 'REQUESTED', 'submit'],
     ['INCOME_TAX', 'UNSUBMIT', 'SUBMITTED', 'unsubmit'],
     ['INCOME_TAX', 'PAY', 'FILED', 'pay'],
-  ] as const)("keeps %s %s as the client's own command", async (taxType, command, status, path) => {
+  ] as const)('%s의 %s는 대리인이 대신 보낼 수 없는 고객 커맨드입니다', async (taxType, command, status, path) => {
     app = taxTestApp({
       filings: [vat({ taxType, kind: 'FINAL', status, requirements: [], payableAmount: 482_000 })],
     })
@@ -369,7 +369,7 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
     })
   })
 
-  it('records the client without the marker when the client acts', async () => {
+  it('고객이 직접 보내면 대행 표시 없이 고객으로 남깁니다', async () => {
     app = taxTestApp({ filings: [withholding({ status: 'FILED', payableAmount: 120_000 })] })
 
     const paid = await app.send(`/filings/${WHT_ID}:pay`, { method: 'POST', body: { paidOn: '2026-11-10' } })
@@ -381,11 +381,11 @@ describe('withholding commands sent by agency staff for the client (2026-11-07)'
   })
 })
 
-describe('agent commands called by a client (D5)', () => {
+describe('고객이 부른 대리인 커맨드(D5)', () => {
   const startReview = (token: 'client' | 'viewer' | 'pendingTerms' | 'demo' | 'free') =>
     app.send(`/filings/${VAT_ID}:start-review`, { method: 'POST', token })
 
-  it('answers FILING_ACTOR_NOT_ALLOWED to a client who can see filings', async () => {
+  it('신고 건을 볼 수 있는 고객에게는 FILING_ACTOR_NOT_ALLOWED로 답합니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
 
     for (const token of ['client', 'viewer'] as const) {
@@ -399,7 +399,7 @@ describe('agent commands called by a client (D5)', () => {
     }
   })
 
-  it('still asks for terms re-agreement first', async () => {
+  it('그래도 약관 재동의를 먼저 요구합니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
 
     const response = await startReview('pendingTerms')
@@ -408,7 +408,7 @@ describe('agent commands called by a client (D5)', () => {
     expect(await response.json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED', termCodes: ['TAX_SERVICE'] })
   })
 
-  it('still refuses a demo write as PERMISSION_DENIED', async () => {
+  it('그래도 데모 계정의 쓰기는 PERMISSION_DENIED입니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
 
     const response = await startReview('demo')
@@ -417,7 +417,7 @@ describe('agent commands called by a client (D5)', () => {
     expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'filing:process' })
   })
 
-  it('still asks for the plan before anything else', async () => {
+  it('그래도 플랜 확인을 가장 먼저 합니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
 
     const response = await startReview('free')
@@ -426,7 +426,7 @@ describe('agent commands called by a client (D5)', () => {
     expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED' })
   })
 
-  it('applies the same order to attaching a document', async () => {
+  it('문서 첨부에도 같은 검사 순서를 씁니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'PREPARING', requirements: [] })] })
     const attach = (token: 'pendingTerms' | 'demo') =>
       app.send(`/filings/${VAT_ID}/documents`, { token, body: { type: 'RETURN', fileId: FILE_ID } })
@@ -436,8 +436,8 @@ describe('agent commands called by a client (D5)', () => {
   })
 })
 
-describe('requirements', () => {
-  it('are locked outside REQUESTED', async () => {
+describe('제출 자료 항목', () => {
+  it('REQUESTED가 아니면 고칠 수 없습니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'SUBMITTED' })] })
 
     const response = await app.send(`/filings/${VAT_ID}/requirements/EXPORT_FX`, {
@@ -449,7 +449,7 @@ describe('requirements', () => {
     expect(await response.json()).toMatchObject({ code: 'FILING_LOCKED', currentStatus: 'SUBMITTED' })
   })
 
-  it('keep the auto-linked payroll item out of client hands', async () => {
+  it('자동 연계된 급여대장 항목은 고객이 고칠 수 없습니다', async () => {
     app = taxTestApp({ filings: [withholding({ status: 'REQUESTED' })] })
 
     const response = await app.send(`/filings/${WHT_ID}/requirements/PAYROLL_LEDGER_CLOSED`, {
@@ -461,7 +461,7 @@ describe('requirements', () => {
     expect(await response.json()).toMatchObject({ code: 'REQUIREMENT_AUTO_LINKED' })
   })
 
-  it('refuse NOT_APPLICABLE while files are attached', async () => {
+  it('파일이 붙어 있으면 NOT_APPLICABLE을 받지 않습니다', async () => {
     app = taxTestApp({ filings: [vat()] })
 
     await app.send(`/filings/${VAT_ID}/requirements/EXPORT_FX/files`, { body: { fileId: FILE_ID } })
@@ -481,8 +481,8 @@ describe('requirements', () => {
   })
 })
 
-describe('validation', () => {
-  it('rejects a fractional tax amount', async () => {
+describe('입력 검증', () => {
+  it('세액에 소수가 있으면 400 VALIDATION_FAILED입니다', async () => {
     app = taxTestApp({ filings: [vat({ status: 'PREPARING' })] })
 
     const response = await app.send(`/filings/${VAT_ID}:file`, {

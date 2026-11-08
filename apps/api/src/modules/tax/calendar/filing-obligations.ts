@@ -39,59 +39,60 @@ interface ObligationDraft {
  * ```
  */
 export function resolveFilingObligations(query: FilingObligationQuery): FilingObligation[] {
-  const firstYear = Number(query.from.slice(0, 4)) - 2
-  const lastYear = Number(query.to.slice(0, 4)) + 1
-  const drafts: ObligationDraft[] = []
-  for (let year = firstYear; year <= lastYear; year++) {
-    drafts.push(
-      ...vatDrafts(query.profile, year),
-      ...withholdingDrafts(query.profile, year),
-      ...incomeDrafts(query.profile, year),
-      ...interimDrafts(query.profile, year),
+  const 계산시작연도 = Number(query.from.slice(0, 4)) - 2
+  const 계산종료연도 = Number(query.to.slice(0, 4)) + 1
+  const 의무목록: ObligationDraft[] = []
+  for (let 연도 = 계산시작연도; 연도 <= 계산종료연도; 연도++) {
+    의무목록.push(
+      ...부가세의무(query.profile, 연도),
+      ...원천세의무(query.profile, 연도),
+      ...법인세종합소득세확정의무(query.profile, 연도),
+      ...중간예납의무(query.profile, 연도),
     )
   }
-  return drafts
-    .map((draft) => finalize(draft, query.holidays))
+  return 의무목록
+    .map((draft) => 기한이월적용(draft, query.holidays))
     .filter((obligation) => obligation.paymentDue >= query.from && obligation.paymentDue <= query.to)
     .sort((a, b) => a.paymentDue.localeCompare(b.paymentDue) || a.taxType.localeCompare(b.taxType))
 }
 
-function finalize(draft: ObligationDraft, holidays: ReadonlySet<string>): FilingObligation {
-  const rolled = rollForwardDeadline(draft.statutoryDue, holidays)
-  const isNotice = draft.kind === 'NOTICE'
+/** 법정 기한을 이월해 신고·납부 기한을 정합니다. 고지 건은 신고 기한이 없습니다. */
+function 기한이월적용(draft: ObligationDraft, 공휴일: ReadonlySet<string>): FilingObligation {
+  const 이월기한 = rollForwardDeadline(draft.statutoryDue, 공휴일)
+  const 고지건임 = draft.kind === 'NOTICE'
   return {
     ...draft,
-    statutoryDue: isNotice ? null : draft.statutoryDue,
-    dueDate: isNotice ? null : rolled,
-    paymentDue: rolled,
+    statutoryDue: 고지건임 ? null : draft.statutoryDue,
+    dueDate: 고지건임 ? null : 이월기한,
+    paymentDue: 이월기한,
   }
 }
 
-function vatDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[] {
+function 부가세의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   if (profile.businessType === 'INDIVIDUAL' && profile.vatTaxpayerType === 'SIMPLIFIED')
-    return simplifiedVatDrafts(year, profile.vatSimplifiedInvoiceIssuer === true)
-  const filesPreliminary = profile.businessType === 'CORPORATION' && profile.vatPreliminaryMode === 'FILING'
-  return ([1, 2] as const).flatMap((half): ObligationDraft[] => {
-    const firstMonth = monthOf(year, half === 1 ? 1 : 7)
-    const preliminaryEnd = addMonths(firstMonth, 2)
-    const finalStart = filesPreliminary ? addMonths(firstMonth, 3) : firstMonth
-    const finalEnd = addMonths(firstMonth, 5)
+    return 간이과세자부가세의무(연도, profile.vatSimplifiedInvoiceIssuer === true)
+  const 예정신고대상임 = profile.businessType === 'CORPORATION' && profile.vatPreliminaryMode === 'FILING'
+  return ([1, 2] as const).flatMap((반기): ObligationDraft[] => {
+    const 과세기간시작월 = monthOf(연도, 반기 === 1 ? 1 : 7)
+    const 예정신고기간종료월 = addMonths(과세기간시작월, 2)
+    const 확정신고기간시작월 = 예정신고대상임 ? addMonths(과세기간시작월, 3) : 과세기간시작월
+    const 과세기간종료월 = addMonths(과세기간시작월, 5)
     return [
       {
         taxType: 'VAT',
-        kind: filesPreliminary ? 'PRELIMINARY' : 'NOTICE',
-        periodKey: `${year}-H${half}`,
-        periodStart: `${firstMonth}-01`,
-        periodEnd: lastDayOfMonth(preliminaryEnd),
-        statutoryDue: `${addMonths(preliminaryEnd, 1)}-25`,
+        kind: 예정신고대상임 ? 'PRELIMINARY' : 'NOTICE',
+        periodKey: `${연도}-H${반기}`,
+        periodStart: `${과세기간시작월}-01`,
+        periodEnd: lastDayOfMonth(예정신고기간종료월),
+        statutoryDue: `${addMonths(예정신고기간종료월, 1)}-25`,
       },
       {
         taxType: 'VAT',
         kind: 'FINAL',
-        periodKey: `${year}-H${half}`,
-        periodStart: `${finalStart}-01`,
-        periodEnd: lastDayOfMonth(finalEnd),
-        statutoryDue: `${addMonths(finalEnd, 1)}-25`,
+        periodKey: `${연도}-H${반기}`,
+        periodStart: `${확정신고기간시작월}-01`,
+        periodEnd: lastDayOfMonth(과세기간종료월),
+        statutoryDue: `${addMonths(과세기간종료월, 1)}-25`,
       },
     ]
   })
@@ -105,77 +106,77 @@ function vatDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[]
  * 과세 유형이 바뀐 해(제5조 ④)는 다루지 않습니다. 그 해에는 과세기간이 반기로 줄고, 간이에서 일반으로 바뀌면
  * 예정부과도 없습니다(제66조 ① 2호). 프로필에 유형 변경 이력이 없어 대리인이 그 해 신고 건을 고칩니다.
  */
-function simplifiedVatDrafts(year: number, issuesTaxInvoices: boolean): ObligationDraft[] {
+function 간이과세자부가세의무(연도: number, 세금계산서발급자임: boolean): ObligationDraft[] {
   return [
     {
       taxType: 'VAT',
-      kind: issuesTaxInvoices ? 'PRELIMINARY' : 'NOTICE',
-      periodKey: `${year}-H1`,
-      periodStart: `${year}-01-01`,
-      periodEnd: `${year}-06-30`,
-      statutoryDue: `${year}-07-25`,
+      kind: 세금계산서발급자임 ? 'PRELIMINARY' : 'NOTICE',
+      periodKey: `${연도}-H1`,
+      periodStart: `${연도}-01-01`,
+      periodEnd: `${연도}-06-30`,
+      statutoryDue: `${연도}-07-25`,
     },
     {
       taxType: 'VAT',
       kind: 'FINAL',
-      periodKey: String(year),
-      periodStart: `${year}-01-01`,
-      periodEnd: `${year}-12-31`,
-      statutoryDue: `${year + 1}-01-25`,
+      periodKey: String(연도),
+      periodStart: `${연도}-01-01`,
+      periodEnd: `${연도}-12-31`,
+      statutoryDue: `${연도 + 1}-01-25`,
     },
   ]
 }
 
-function withholdingDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[] {
+function 원천세의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   if (profile.withholdingCycle === 'SEMIANNUAL') {
-    return ([1, 2] as const).map((half) => {
-      const firstMonth = monthOf(year, half === 1 ? 1 : 7)
-      const lastMonth = addMonths(firstMonth, 5)
+    return ([1, 2] as const).map((반기) => {
+      const 반기시작월 = monthOf(연도, 반기 === 1 ? 1 : 7)
+      const 반기종료월 = addMonths(반기시작월, 5)
       return {
         taxType: 'WITHHOLDING_TAX',
         kind: 'SEMIANNUAL',
-        periodKey: `${year}-H${half}`,
-        periodStart: `${firstMonth}-01`,
-        periodEnd: lastDayOfMonth(lastMonth),
-        statutoryDue: `${addMonths(lastMonth, 1)}-10`,
+        periodKey: `${연도}-H${반기}`,
+        periodStart: `${반기시작월}-01`,
+        periodEnd: lastDayOfMonth(반기종료월),
+        statutoryDue: `${addMonths(반기종료월, 1)}-10`,
       }
     })
   }
   return Array.from({ length: 12 }, (_, index) => {
-    const month = monthOf(year, index + 1)
+    const 귀속월 = monthOf(연도, index + 1)
     return {
       taxType: 'WITHHOLDING_TAX',
       kind: 'MONTHLY',
-      periodKey: month,
-      periodStart: `${month}-01`,
-      periodEnd: lastDayOfMonth(month),
-      statutoryDue: `${addMonths(month, 1)}-10`,
+      periodKey: 귀속월,
+      periodStart: `${귀속월}-01`,
+      periodEnd: lastDayOfMonth(귀속월),
+      statutoryDue: `${addMonths(귀속월, 1)}-10`,
     }
   })
 }
 
-function incomeDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[] {
+function 법인세종합소득세확정의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   if (profile.businessType === 'INDIVIDUAL') {
     return [
       {
         taxType: 'INCOME_TAX',
         kind: 'ANNUAL',
-        periodKey: String(year),
-        periodStart: `${year}-01-01`,
-        periodEnd: `${year}-12-31`,
-        statutoryDue: profile.sincereFilingTarget ? `${year + 1}-06-30` : `${year + 1}-05-31`,
+        periodKey: String(연도),
+        periodStart: `${연도}-01-01`,
+        periodEnd: `${연도}-12-31`,
+        statutoryDue: profile.sincereFilingTarget ? `${연도 + 1}-06-30` : `${연도 + 1}-05-31`,
       },
     ]
   }
-  const endMonth = monthOf(year, profile.fiscalYearEndMonth)
+  const 사업연도종료월 = monthOf(연도, profile.fiscalYearEndMonth)
   return [
     {
       taxType: 'CORPORATE_TAX',
       kind: 'ANNUAL',
-      periodKey: String(year),
-      periodStart: `${addMonths(endMonth, -11)}-01`,
-      periodEnd: lastDayOfMonth(endMonth),
-      statutoryDue: lastDayOfMonth(addMonths(endMonth, profile.sincereFilingTarget ? 4 : 3)),
+      periodKey: String(연도),
+      periodStart: `${addMonths(사업연도종료월, -11)}-01`,
+      periodEnd: lastDayOfMonth(사업연도종료월),
+      statutoryDue: lastDayOfMonth(addMonths(사업연도종료월, profile.sincereFilingTarget ? 4 : 3)),
     },
   ]
 }
@@ -187,29 +188,29 @@ function incomeDrafts(profile: TaxCalendarProfile, year: number): ObligationDraf
  *   (법인세법 제63조 ②·③). 기간 이름은 확정 신고와 같은 사업연도 종료 연도입니다
  * - 개인: 1–6월분을 세무서가 11월 30일까지 고지·징수합니다(소득세법 제65조 ①)
  */
-function interimDrafts(profile: TaxCalendarProfile, year: number): ObligationDraft[] {
+function 중간예납의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   if (profile.businessType === 'INDIVIDUAL') {
     return [
       {
         taxType: 'INCOME_TAX',
         kind: 'NOTICE',
-        periodKey: `${year}-H1`,
-        periodStart: `${year}-01-01`,
-        periodEnd: `${year}-06-30`,
-        statutoryDue: `${year}-11-30`,
+        periodKey: `${연도}-H1`,
+        periodStart: `${연도}-01-01`,
+        periodEnd: `${연도}-06-30`,
+        statutoryDue: `${연도}-11-30`,
       },
     ]
   }
-  const firstMonth = addMonths(monthOf(year, profile.fiscalYearEndMonth), -11)
-  const interimEnd = addMonths(firstMonth, 5)
+  const 사업연도시작월 = addMonths(monthOf(연도, profile.fiscalYearEndMonth), -11)
+  const 중간예납기간종료월 = addMonths(사업연도시작월, 5)
   return [
     {
       taxType: 'CORPORATE_TAX',
       kind: 'INTERIM',
-      periodKey: String(year),
-      periodStart: `${firstMonth}-01`,
-      periodEnd: lastDayOfMonth(interimEnd),
-      statutoryDue: lastDayOfMonth(addMonths(interimEnd, 2)),
+      periodKey: String(연도),
+      periodStart: `${사업연도시작월}-01`,
+      periodEnd: lastDayOfMonth(중간예납기간종료월),
+      statutoryDue: lastDayOfMonth(addMonths(중간예납기간종료월, 2)),
     },
   ]
 }

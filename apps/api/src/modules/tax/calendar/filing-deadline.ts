@@ -11,9 +11,9 @@ import { addDays, weekdayIndex } from '../../../shared/time/calendar.ts'
  * ```
  */
 export function rollForwardDeadline(date: string, holidays: ReadonlySet<string>): string {
-  let current = date
-  while (isNonBusinessDay(current, holidays)) current = addDays(current, 1)
-  return current
+  let 기한 = date
+  while (isNonBusinessDay(기한, holidays)) 기한 = addDays(기한, 1)
+  return 기한
 }
 
 /** 주말이거나 `holidays`에 있는 날인지입니다. */
