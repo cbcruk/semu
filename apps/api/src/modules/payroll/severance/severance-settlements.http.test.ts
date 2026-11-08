@@ -136,6 +136,7 @@ describe('/severance-settlements 지급일 (원천세 퇴직소득 그 외 A22�
       { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: OCTOBER_LEAVER, leaveDate: '2026-10-31' }) },
       { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: NOVEMBER_LEAVER, leaveDate: '2026-10-31' }) },
       { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: EARLY_LEAVER, leaveDate: '2026-10-31' }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: legacy.employeeId, leaveDate: legacy.lastWorkDate }) },
     ]),
     SeveranceSettlementRepository.layer([legacy]).pipe(Layer.provide(tables)),
   ])
@@ -253,6 +254,8 @@ describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 �
   const DECEMBER_LEAVER = 'emp_01JBQ000000000000000000032' as Id<'employee'>
   const FILED_COMPLETED_ID = 'sev_01JBQ0000000000000000000M1' as Id<'severanceSettlement'>
   const FILED_CALCULATED_ID = 'sev_01JBQ0000000000000000000M2' as Id<'severanceSettlement'>
+  const FILED_COMPLETED_EMPLOYEE = 'emp_01JBQ000000000000000000033' as Id<'employee'>
+  const FILED_CALCULATED_EMPLOYEE = 'emp_01JBQ000000000000000000034' as Id<'employee'>
   /** 원천세가 신고된 지급월입니다. */
   const FILED_MONTH = '2026-12'
   const base = (
@@ -290,10 +293,15 @@ describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 �
     PayrollEmployeeDirectory.layerMemory([
       { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: OCTOBER_LEAVER, leaveDate: '2026-10-31' }) },
       { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: DECEMBER_LEAVER, leaveDate: '2026-12-01' }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: FILED_COMPLETED_EMPLOYEE, leaveDate: '2026-11-30' }) },
+      {
+        companyId: TEST_COMPANY_ID,
+        employee: testEmployee({ id: FILED_CALCULATED_EMPLOYEE, leaveDate: '2026-11-30' }),
+      },
     ]),
     SeveranceSettlementRepository.layer([
-      base(FILED_COMPLETED_ID, 'emp_01JBQ000000000000000000033' as Id<'employee'>, 'COMPLETED'),
-      base(FILED_CALCULATED_ID, 'emp_01JBQ000000000000000000034' as Id<'employee'>, 'CALCULATED'),
+      base(FILED_COMPLETED_ID, FILED_COMPLETED_EMPLOYEE, 'COMPLETED'),
+      base(FILED_CALCULATED_ID, FILED_CALCULATED_EMPLOYEE, 'CALCULATED'),
     ]).pipe(Layer.provide(TableFactory.layerMemory)),
     WithholdingFilingLock.layerMemory([{ companyId: TEST_COMPANY_ID, paymentMonth: FILED_MONTH }]),
     PayrollEventPublisher.layerMemory(events),

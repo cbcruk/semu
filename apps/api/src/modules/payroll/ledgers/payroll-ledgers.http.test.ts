@@ -322,9 +322,32 @@ describe('/payroll-ledgers 원천세 신고 뒤', () => {
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-21T00:00:00.000Z',
   }
+  /** 신고된 2026-05에 지급일이 있는 마감 전 추가 대장입니다. */
+  const draftInFiledMonth: PayrollLedgerRecord = {
+    ...closedLedger,
+    id: 'pyl_01JBQ000000000000000000002' as Id<'payrollLedger'>,
+    kind: 'ADDITIONAL',
+    status: 'DRAFT',
+    title: '2026년 5월 추가 급여',
+    calculatedAt: null,
+    closedAt: null,
+    version: 1,
+  }
+  /** 신고되지 않은 2026-07에 지급일이 있는 마감 전 대장입니다. */
+  const draftInOpenMonth: PayrollLedgerRecord = {
+    ...draftInFiledMonth,
+    id: 'pyl_01JBQ000000000000000000003' as Id<'payrollLedger'>,
+    kind: 'REGULAR',
+    title: '2026년 7월 급여',
+    attributionMonth: '2026-07',
+    paymentDate: '2026-07-25',
+    wagePeriod: { start: '2026-07-01', end: '2026-07-31' },
+  }
+  const filedEvents: PayrollEvent[] = []
   const filedApp = payrollTestApp([
-    PayrollLedgerRepository.layerMemory([closedLedger]),
+    PayrollLedgerRepository.layerMemory([closedLedger, draftInFiledMonth, draftInOpenMonth]),
     WithholdingFilingLock.layerMemory([{ companyId: TEST_COMPANY_ID, paymentMonth: '2026-05' }]),
+    PayrollEventPublisher.layerMemory(filedEvents),
   ])
 
   afterAll(() => filedApp.dispose())
@@ -339,5 +362,48 @@ describe('/payroll-ledgers 원천세 신고 뒤', () => {
 
     expect(response.status).toBe(409)
     expect(response.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: '2026-05' })
+  })
+
+  it('마감한 대장은 신고된 달에서 지급일을 옮길 수 없습니다', async () => {
+    const response = await filedApp.request('PATCH', `/payroll-ledgers/${closedLedger.id}`, {
+      body: { paymentDate: '2026-06-10' },
+    })
+
+    expect(response.status).toBe(409)
+    expect(response.body).toMatchObject({ code: 'PAYROLL_LEDGER_READ_ONLY', ledgerStatus: 'CLOSED' })
+  })
+
+  it('마감 전 대장이라도 신고된 달 안에서는 지급일을 바꿀 수 없습니다', async () => {
+    const response = await filedApp.request('PATCH', `/payroll-ledgers/${draftInFiledMonth.id}`, {
+      body: { paymentDate: '2026-05-31' },
+    })
+
+    expect(response.status).toBe(409)
+    expect(response.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: '2026-05' })
+  })
+
+  it('마감 전 대장은 신고된 달로 지급일을 옮길 수 없습니다', async () => {
+    const response = await filedApp.request('PATCH', `/payroll-ledgers/${draftInOpenMonth.id}`, {
+      body: { paymentDate: '2026-05-28' },
+    })
+
+    expect(response.status).toBe(409)
+    expect(response.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: '2026-05' })
+  })
+
+  it('마감 전 대장은 신고된 달에서 지급일을 옮겨 나갈 수 있고 남은 대장이 모두 마감이면 그 달 마감을 알립니다', async () => {
+    const response = await filedApp.request('PATCH', `/payroll-ledgers/${draftInFiledMonth.id}`, {
+      body: { paymentDate: '2026-06-10' },
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.body).toMatchObject({ paymentDate: '2026-06-10', paymentMonth: '2026-06', withholdingFiled: false })
+    expect(filedEvents).toEqual([
+      expect.objectContaining({
+        type: 'payroll_pay_month.closed',
+        paymentMonth: '2026-05',
+        ledgerIds: [closedLedger.id],
+      }),
+    ])
   })
 })

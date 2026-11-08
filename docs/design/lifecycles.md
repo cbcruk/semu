@@ -82,7 +82,7 @@ flowchart TD
 - **대장 생성과 계산.** 귀속월의 첫 대장이 정기 대장이고, 임금산정 기간 중 하루라도 재직한 근로자로 근로 행을 채웁니다. 행을 저장하면 같은 요청에서 계산합니다([payroll.md](payroll.md#급여대장))
 - **확정.** 아웃소싱은 담당자가 승인을 요청하고 고객이 승인하며, 직접 운영은 `:close` 하나로 끝납니다([payroll.md](payroll.md#상태))
 - **자료 연계.** 마감·해제·생성·삭제·지급일 이동 모두가 지급월 판정을 다시 하고, 바뀐 지급월마다 `payroll_pay_month.closed`·`reopened`를 outbox에 씁니다. Tax는 회사와 지급월만 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md), [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). 이 자동 연계 항목은 급여 플랜 회사의 신고 건에만 있습니다([payroll.md 열린 질문 10](payroll.md#열린-질문)). 원천세 금액은 이벤트에 싣지 않고, 신고서 줄이 필요할 때 Tax가 `WithholdingTotals`로 묻고 소득구분 코드로 바꿉니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
-- **신고와 잠금.** 원천세는 고객 커맨드를 대리인이 대행할 수 있습니다. `FILED`가 되면 Payroll은 이벤트가 아니라 조회(`WithholdingFilingLock`)로 그 지급월의 금액 변경을 막습니다([tax.md](tax.md#커맨드), [payroll.md](payroll.md#원천세-신고-잠금))
+- **신고와 잠금.** 원천세는 고객 커맨드를 대리인이 대행할 수 있습니다. `FILED`가 되면 Payroll은 이벤트가 아니라 조회(`WithholdingFilingLock`)로 그 지급월의 금액 변경과 그 달로 들이는 지급일 이동을 막습니다. 마감 전 대장은 합계에 들지 않아 그 달에서 지급일을 옮겨 나갈 수 있고(2026-11-08), 그러면 지급월 판정을 다시 해 이벤트가 나갑니다. 수정신고는 모델링하지 않습니다([tax.md](tax.md#커맨드), [payroll.md](payroll.md#원천세-신고-잠금))
 - **구현되지 않은 것.** 일정 배치는 서비스만 있고 매일 돌리는 실행기가 없습니다([tax.md](tax.md#구현-상태)). 원천세 신고서 줄은 읽기 전용 조회뿐이고 신고서 초안을 만들거나 저장하지 않습니다. 지급명세서는 모델링하지 않았습니다. 엑셀 가져오기도 설계만 있습니다([payroll.md](payroll.md#엑셀-가져오기))
 - 통합 테스트: [payroll-tax.test.ts](../../apps/api/test/integration/payroll-tax.test.ts)
 
@@ -103,7 +103,7 @@ flowchart TD
   resign --> resigned["퇴직일 다음 날 RESIGNED (파생)"]
   resign -. "employee.resigned" .-> start["퇴직금 정산 시작 알림"]:::todo
   resigned -.-> sev["POST /severance-settlements → CALCULATED<br/>3개월 임금은 마감된 대장 행에서"]
-  sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일"]
+  sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일<br/>HR 퇴직일과 다르면 409 SEVERANCE_RETIREMENT_MISMATCH"]
   sevdone -- "HR 커맨드가 SeveranceSettlementLookup으로 조회" --> guard["COMPLETED 정산이 있으면 직원 삭제·퇴사 취소·다시 퇴사 409<br/>RETIREMENT_COMPLETED"]
   sevdone --> a22["지급월 원천세 A22(퇴직소득 그 외)로 집계<br/>payroll_pay_month.withholding_changed"]
   resigned -.-> cert["POST /certificate-issuances<br/>퇴직증명서 ISSUED"]
@@ -115,9 +115,10 @@ flowchart TD
 - **HR 반영.** 서명 완료로 근로·급여계약과 직원을 만드는 소비자는 설계만 있습니다(현행 R29). 지금은 직원과 계약을 직접 등록합니다([hr.md](hr.md#이벤트), [hr.md](hr.md#구현-상태))
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
+- **완료 때 퇴직일 대조(2026-11-08).** 계산됨 정산은 HR이 막지 않으므로 퇴사 취소·직원 삭제·다른 날로 다시 퇴사가 정산을 낡게 만들 수 있습니다. `:complete`가 `PayrollEmployeeDirectory`로 HR 퇴직일을 다시 읽어 어긋나면 409 `SEVERANCE_RETIREMENT_MISMATCH`이고, 목록·상세는 `retirementMismatch`로 보입니다. HR이 정산에 쓰는 명령은 없습니다([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))
 - **정산 가드.** 반대 방향은 이벤트가 아니라 조회입니다. HR은 정산 상태를 저장하지 않고 직원 삭제·퇴사 취소·다시 퇴사 때 `SeveranceSettlementLookup`으로 묻습니다. 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`이고, `CALCULATED`·`EXCLUDED`는 막지 않습니다. 막히면 정산을 `:reopen`합니다([hr.md](hr.md#퇴직), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
 - **퇴직소득 원천세(2026-11-08).** 지급일이 그 달인 완료 정산을 `PayrollWithholdingTotals`가 `RETIREMENT`로 모으고 Tax가 A22(퇴직소득 그 외)에 적습니다. 완료·다시 열기로 합계가 바뀐 지급월마다(대장이 없는 달 포함) `payroll_pay_month.withholding_changed`를 outbox로 내고, 신고된 지급월의 완료·다시 열기와 그 달로 들이는 지급일 변경은 대장처럼 409 `WITHHOLDING_FILED`입니다(계산됨 정산이 빠져나가는 것은 받음)([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))
-- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없습니다([hr.md](hr.md#구현-상태)). 퇴사를 취소해도 계산됨 정산은 남습니다([payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
+- **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없습니다([hr.md](hr.md#구현-상태)). 퇴사를 취소해도 계산됨 정산은 남습니다(완료만 막고 `retirementMismatch`로 표시, [payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지
 

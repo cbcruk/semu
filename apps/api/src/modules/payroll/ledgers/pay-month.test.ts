@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PayrollRowInputValue } from '../rows/payroll-row-input.ts'
 import type { SeveranceSettlementRecord } from '../severance/severance-settlement.types.ts'
 import type { LedgerStatus } from './ledger-status.types.ts'
-import { otherIncomeCategoryOf, withholdingTotalsPaidIn } from './pay-month.ts'
+import { ledgerMonthsTouched, otherIncomeCategoryOf, withholdingTotalsPaidIn } from './pay-month.ts'
 import type { PayrollLedgerRecord, PayrollRowRecord } from './payroll-ledger.types.ts'
 
 function row(
@@ -139,5 +139,32 @@ describe('otherIncomeCategoryOf', () => {
 
   it('기타소득이 아니면 구분이 없습니다', () => {
     expect(otherIncomeCategoryOf({ incomeType: 'BUSINESS' } as PayrollRowInputValue)).toBeNull()
+  })
+})
+
+describe('ledgerMonthsTouched', () => {
+  it('마감 전 대장의 지급일을 다른 달로 옮기면 옮겨 갈 달만 잠금 대상으로 봅니다', () => {
+    expect(ledgerMonthsTouched(ledger('2026-05-25', 'DRAFT', []), ledger('2026-06-10', 'DRAFT', []))).toEqual([
+      '2026-06',
+    ])
+    expect(ledgerMonthsTouched(ledger('2026-05-25', 'SUBMITTED', []), ledger('2026-04-30', 'SUBMITTED', []))).toEqual([
+      '2026-04',
+    ])
+  })
+
+  it('마감한 대장을 옮기면 원래 달과 옮겨 갈 달을 모두 봅니다', () => {
+    expect(ledgerMonthsTouched(ledger('2026-05-25', 'CLOSED', []), ledger('2026-06-10', 'CLOSED', []))).toEqual([
+      '2026-05',
+      '2026-06',
+    ])
+  })
+
+  it('제목만 고치거나 같은 달 안에서 지급일을 바꾸면 그 달을 봅니다', () => {
+    expect(ledgerMonthsTouched(ledger('2026-05-25', 'DRAFT', []), ledger('2026-05-25', 'DRAFT', []))).toEqual([
+      '2026-05',
+    ])
+    expect(ledgerMonthsTouched(ledger('2026-05-25', 'DRAFT', []), ledger('2026-05-31', 'DRAFT', []))).toEqual([
+      '2026-05',
+    ])
   })
 })

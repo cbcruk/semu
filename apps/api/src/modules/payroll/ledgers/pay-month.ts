@@ -39,6 +39,25 @@ export function payMonthChanges(
   return 지급월변경
 }
 
+/**
+ * 대장 머리(제목·지급일) 변경이 건드리는 지급월을 앞에서부터 돌려줍니다. 원천세 신고 잠금(`WithholdingFilingLock`)은 이 달들을 봅니다.
+ *
+ * 지급일을 다른 달로 옮기면 옮겨 갈 달이 듭니다. 그래서 신고된 달에는 대장이 새로 들어가지 않습니다. 원래 달은 마감한 대장일 때만
+ * 듭니다. 마감한 대장만 그 달 원천세 합계에 들어 있어(`withholdingTotalsPaidIn`) 빼내면 신고와 어긋나기 때문입니다. 마감 전
+ * 대장은 합계에 들지 않으므로 신고된 달에서 빼내도 신고와 어긋나지 않습니다(2026-11-08 결정). 마감한 대장은 입력을 고칠 수
+ * 없어(`INPUT_EDITORS`) 다시 열어야 옮길 수 있고, 다시 열기가 잠기므로 여전히 빼낼 수 없습니다.
+ *
+ * 제목만 고치거나 같은 달 안에서 지급일을 바꾸면 그 달입니다. 신고된 달의 대장 편집은 행 편집처럼 막습니다.
+ * 퇴직금 정산의 `severanceMonthsTouched`와 달리 같은 달 안의 변경도 잠금 대상입니다.
+ */
+export function ledgerMonthsTouched(before: PayrollLedgerRecord, after: PayrollLedgerRecord): string[] {
+  const 이전지급월 = paymentMonthOf(before.paymentDate)
+  const 이후지급월 = paymentMonthOf(after.paymentDate)
+  if (이전지급월 === 이후지급월) return [이전지급월]
+  const 빼내는달 = before.status === 'CLOSED' ? [이전지급월] : []
+  return [...빼내는달, 이후지급월].toSorted()
+}
+
 /** 행의 소득 구분을 원천세 집계 구분으로 바꿉니다. */
 export function withholdingKindOf(incomeType: string): LedgerIncomeKind {
   if (incomeType === 'DAILY' || incomeType === 'BUSINESS' || incomeType === 'OTHER') return incomeType

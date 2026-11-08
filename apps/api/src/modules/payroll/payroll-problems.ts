@@ -210,6 +210,25 @@ export class SeveranceTransitionInvalid extends HttpApiError.Problem<SeveranceTr
   { code: Schema.tag('SEVERANCE_TRANSITION_INVALID'), settlementStatus: Schema.String, action: Schema.String },
 ) {}
 
+/**
+ * 정산의 마지막 근무일이 HR의 지금 퇴직과 어긋나 완료할 수 없습니다. `reason`은 어긋난 까닭이고 `leaveDate`는 HR의 지금
+ * 퇴직일입니다(직원이 없거나 퇴사를 취소했으면 `null`). 정산을 제외하고 지금 퇴직일로 새로 만듭니다.
+ */
+export class SeveranceRetirementMismatch extends HttpApiError.Problem<SeveranceRetirementMismatch>()(
+  'SeveranceRetirementMismatch',
+  {
+    type: problemType('SEVERANCE_RETIREMENT_MISMATCH'),
+    status: 409,
+    title: 'Severance settlement no longer matches the retirement in HR',
+  },
+  {
+    code: Schema.tag('SEVERANCE_RETIREMENT_MISMATCH'),
+    reason: Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED']),
+    lastWorkDate: Schema.String,
+    leaveDate: Schema.NullOr(Schema.String),
+  },
+) {}
+
 /** 퇴직금 지급일이 마지막 근무일보다 앞섭니다. */
 export class SeverancePaymentDateInvalid extends HttpApiError.Problem<SeverancePaymentDateInvalid>()(
   'SeverancePaymentDateInvalid',

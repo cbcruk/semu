@@ -8,19 +8,25 @@ import { FilingSchedulerLive, taxMemoryLayer } from '../tax.layer.ts'
 import type { TaxEvent } from '../tax.public.ts'
 import { FilingScheduler } from './filing-scheduler.ts'
 import type { FilingRecord } from '../filings/filing.types.ts'
+import type { PayrollLedgerSummary } from '../filings/filing-requirements.types.ts'
 import type { TaxProfile } from './tax-profiles.ts'
 
-function run<A>(effect: Effect.Effect<A, never, FilingScheduler | FilingRepository>, events: TaxEvent[] = []) {
-  const memory = taxMemoryLayer({
-    profiles: [DEMO_TAX_PROFILE],
-    payrollLedgers: Object.fromEntries(
-      Array.from({ length: 24 }, (_, index) => {
-        const date = new Date(Date.UTC(2026, index, 1)).toISOString().slice(0, 7)
-        return [date, { ledgerCount: 1, closedCount: 1 }]
-      }),
-    ),
-    events,
-  })
+/** 2026-01부터 24개월의 급여대장이 모두 마감된 현황입니다. 테스트가 고치면 일정 배치가 다음에 물을 때 고친 값을 봅니다. */
+function closedLedgers(): Record<string, PayrollLedgerSummary> {
+  return Object.fromEntries(
+    Array.from({ length: 24 }, (_, index) => {
+      const date = new Date(Date.UTC(2026, index, 1)).toISOString().slice(0, 7)
+      return [date, { ledgerCount: 1, closedCount: 1 }]
+    }),
+  )
+}
+
+function run<A>(
+  effect: Effect.Effect<A, never, FilingScheduler | FilingRepository>,
+  events: TaxEvent[] = [],
+  payrollLedgers: Record<string, PayrollLedgerSummary> = closedLedgers(),
+) {
+  const memory = taxMemoryLayer({ profiles: [DEMO_TAX_PROFILE], payrollLedgers, events })
   return Effect.runPromise(effect.pipe(Effect.provide(Layer.provideMerge(FilingSchedulerLive, memory))))
 }
 
@@ -180,5 +186,76 @@ describe('부가세 예정 건의 종류가 바뀔 때(FilingScheduler)', () => 
 
     expect(result[0]).toEqual(['PRELIMINARY:CANCELED'])
     expect(result[1]).toEqual(['PRELIMINARY:CANCELED'])
+  })
+})
+
+describe('배치가 되살린 원천세 신고 건의 체크리스트(FilingScheduler)', () => {
+  it('매월 → 반기 → 매월로 되돌리면 급여대장 마감 항목은 지금 현황으로 맞추고 대리인이 답한 항목은 그대로 둡니다', async () => {
+    // 2027년 1월 26일에 돌립니다. 2027-01 원천세(2월 10일 기한)가 배치 기간에 듭니다
+    const ledgers = { ...closedLedgers(), '2027-01': { ledgerCount: 1, closedCount: 0 } }
+    const january = Effect.gen(function* () {
+      const repository = yield* FilingRepository
+      return (yield* repository.list(TEST_COMPANY_ID)).find(
+        (filing) => filing.taxType === 'WITHHOLDING_TAX' && filing.periodKey === '2027-01',
+      )!
+    })
+    const requirement = (filing: FilingRecord, code: FilingRecord['requirements'][number]['code']) =>
+      filing.requirements.find((item) => item.code === code)!
+
+    const [scheduled, canceled, result, restored] = await run(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.UTC(2027, 0, 26))
+        const scheduler = yield* FilingScheduler
+        const repository = yield* FilingRepository
+        yield* scheduler.runFor(DEMO_TAX_PROFILE)
+        const scheduled = yield* january
+        yield* repository.save({
+          ...scheduled,
+          requirements: scheduled.requirements.map((item) =>
+            item.code === 'BUSINESS_INCOME'
+              ? { ...item, response: 'NOT_APPLICABLE' as const, updatedAt: '2027-01-26T09:00:00+09:00' }
+              : item,
+          ),
+          version: scheduled.version + 1,
+        })
+        yield* scheduler.runFor(semiannual)
+        const canceled = yield* january
+        // 취소된 동안 1월 급여대장을 마감합니다. 급여대장 이벤트는 취소된 건을 건너뜁니다
+        ledgers['2027-01'] = { ledgerCount: 1, closedCount: 1 }
+        const result = yield* scheduler.runFor(DEMO_TAX_PROFILE)
+        return [scheduled, canceled, result, yield* january] as const
+      }).pipe(Effect.provide(TestClock.layer())),
+      [],
+      ledgers,
+    )
+
+    expect(requirement(scheduled, 'PAYROLL_LEDGER_CLOSED').response).toBe('PENDING')
+    expect(canceled.status).toBe('CANCELED')
+    expect(result.restored).toBeGreaterThan(0)
+    expect(restored.status).toBe('SCHEDULED')
+    expect(requirement(restored, 'PAYROLL_LEDGER_CLOSED')).toMatchObject({ autoLinked: true, response: 'PROVIDED' })
+    expect(requirement(restored, 'BUSINESS_INCOME').response).toBe('NOT_APPLICABLE')
+    expect(restored.history.slice(-2).map((entry) => entry.type)).toEqual(['SCHEDULE_RESTORED', 'REQUIREMENT_LINKED'])
+    expect(restored.history.at(-1)!.detail).toEqual({ code: 'PAYROLL_LEDGER_CLOSED', response: 'PROVIDED' })
+  })
+
+  it('취소된 동안 급여대장 현황이 그대로면 체크리스트와 이력에 되살리기만 남깁니다', async () => {
+    const restored = await run(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.UTC(2027, 0, 26))
+        const scheduler = yield* FilingScheduler
+        const repository = yield* FilingRepository
+        yield* scheduler.runFor(DEMO_TAX_PROFILE)
+        yield* scheduler.runFor(semiannual)
+        yield* scheduler.runFor(DEMO_TAX_PROFILE)
+        return (yield* repository.list(TEST_COMPANY_ID)).find(
+          (filing) => filing.taxType === 'WITHHOLDING_TAX' && filing.periodKey === '2027-01',
+        )!
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+
+    expect(restored.status).toBe('SCHEDULED')
+    expect(restored.requirements[0]).toMatchObject({ code: 'PAYROLL_LEDGER_CLOSED', response: 'PROVIDED' })
+    expect(restored.history.at(-1)!.type).toBe('SCHEDULE_RESTORED')
   })
 })

@@ -1,6 +1,8 @@
 import type { FilingKind, RequirementResponse, TaxType } from '../tax.types.ts'
+import type { RequirementRecord } from './filing.types.ts'
 import type {
   PayrollLedgerSummary,
+  RequirementCode,
   RequirementAnswer,
   RequirementAnswerResult,
   RequirementState,
@@ -69,4 +71,33 @@ export function responseAfterFiles(fileCount: number): RequirementResponse {
  */
 export function payrollLedgerResponse(summary: PayrollLedgerSummary): RequirementResponse {
   return summary.ledgerCount > 0 && summary.closedCount === summary.ledgerCount ? 'PROVIDED' : 'PENDING'
+}
+
+/** {@link relinkRequirements}가 다시 맞춘 체크리스트와 응답이 바뀐 항목입니다. */
+export interface RelinkedRequirements {
+  requirements: RequirementRecord[]
+  changed: { code: RequirementCode; response: RequirementResponse }[]
+}
+
+/**
+ * 자동 연계 항목(`autoLinked`)의 응답을 급여대장 마감 현황으로 다시 맞춥니다. 어느 항목이 자동 연계인지는 체크리스트를
+ * 복사할 때 {@link requirementTemplate}이 정한 `autoLinked`로만 가립니다.
+ *
+ * 고객·대리인이 답한 항목은 그대로 둡니다. 응답이 같으면 항목도 그대로 두므로, 바뀐 항목이 없으면 `changed`가 비어 있습니다.
+ */
+export function relinkRequirements(
+  requirements: ReadonlyArray<RequirementRecord>,
+  summary: PayrollLedgerSummary,
+  now: string,
+): RelinkedRequirements {
+  const 급여대장응답 = payrollLedgerResponse(summary)
+  const 다시맞출항목 = requirements.filter(
+    (requirement) => requirement.autoLinked && requirement.response !== 급여대장응답,
+  )
+  return {
+    requirements: requirements.map((requirement) =>
+      다시맞출항목.includes(requirement) ? { ...requirement, response: 급여대장응답, updatedAt: now } : requirement,
+    ),
+    changed: 다시맞출항목.map((requirement) => ({ code: requirement.code, response: 급여대장응답 })),
+  }
 }
