@@ -42,7 +42,7 @@
   ],
   "openQuestions": [
     "Retirement income tax deduction tables are unverified (spec 4.11).",
-    "Whether severance is paid on its own or as a row of the leaving month's ledger, and when it feeds withholding A21 (spec Q12).",
+    "Whether severance is paid on its own or as a row of the leaving month's ledger, and when it feeds withholding A22 (spec Q12).",
     "Leave periods inside the three months are not excluded yet."
   ]
 }
