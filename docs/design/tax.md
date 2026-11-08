@@ -236,7 +236,7 @@ GET /tax-calendar?year=2026    → { items: [{ taxType, kind, periodKey, periodS
   - 신고 건이 없으면 `SCHEDULED`로 만들고 체크리스트를 복사합니다. 급여 플랜 회사의 원천세는 `PAYROLL_LEDGER_CLOSED`를 바로 맞춥니다
   - 있으면 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
   - 사람이 취소한 건은 다시 만들지 않습니다. 배치가 취소한 건(이력 `SCHEDULE_CANCELED`)은 의무가 다시 생기면 `SCHEDULED`로 되살리고 기한을 맞춥니다(이력 `SCHEDULE_RESTORED`, 이벤트)
-    - 되살린 건은 취소 전의 `requirements`(제출 자료 항목·응답)를 그대로 갖습니다. 원천세를 매월 → 반기 → 매월로 바꿨다 되돌리면 그사이 급여대장 마감이 바뀌어도 자동 연계 항목(`PAYROLL_LEDGER_CLOSED`)이 취소 전 값일 수 있습니다. 되살릴 때 체크리스트를 다시 맞출지는 정하지 않았습니다
+    - 되살릴 때 자동 연계 항목(`autoLinked`, 지금은 `PAYROLL_LEDGER_CLOSED`)만 Payroll의 지금 마감 현황으로 다시 맞춥니다(2026-11-08 결정, #64). 취소된 동안에는 급여대장 이벤트(`PayrollLedgerSync`)가 그 건을 건너뛰므로, 원천세를 매월 → 반기 → 매월로 바꿨다 되돌리는 사이 급여대장 마감이 바뀌었으면 취소 전 값이 남기 때문입니다. 이벤트 반영과 같은 코드(`relinkAutoRequirements`)로 맞추고, 응답이 바뀌면 `SCHEDULE_RESTORED` 뒤에 이력 `REQUIREMENT_LINKED`를 남깁니다. 고객·대리인이 답한 항목(응답·파일·메모)은 취소 전 그대로 둡니다. 어느 항목이 자동 연계인지는 체크리스트를 복사할 때(`requirementTemplate`) 붙인 `autoLinked`로만 가립니다
   - 부가세 예정고지(`NOTICE`)와 예정 신고(`PRELIMINARY`)는 예정신고기간마다 한 자리입니다. 그 자리에 `SCHEDULED`를 지난 건이나 사람이 취소한 건이 있으면 다른 종류를 만들거나 되살리지 않습니다
   - 배치 기간 안의 `SCHEDULED` 신고 건이 의무에 없으면 `CANCELED`로 바꾸고(이력 `SCHEDULE_CANCELED`) 카드를 닫고 이벤트를 냅니다
 - 같은 날 다시 돌려도 아무것도 바뀌지 않습니다

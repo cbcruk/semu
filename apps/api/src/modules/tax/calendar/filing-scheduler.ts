@@ -6,7 +6,7 @@ import type { FilingRecord } from '../filings/filing.types.ts'
 import { FilingRepository } from '../filings/filing-repository.ts'
 import { filingStatusChanged } from '../filings/filing-view.ts'
 import { payrollLedgerResponse, requirementTemplate } from '../filings/filing-requirements.ts'
-import { PayrollLedgers } from '../filings/payroll-ledgers.ts'
+import { PayrollLedgers, relinkAutoRequirements } from '../filings/payroll-ledgers.ts'
 import { TaxEvents } from '../tax.public.ts'
 import { currentInstant } from '../tax-time.ts'
 import type { FilingObligation } from './filing-calendar.types.ts'
@@ -85,16 +85,20 @@ export class FilingScheduler extends Context.Service<
         }
         for (const { filingId, obligation } of plan.restore) {
           const filing = byId.get(filingId)!
-          const restored: FilingRecord = {
-            ...filing,
-            status: 'SCHEDULED',
-            statutoryDue: obligation.statutoryDue,
-            dueDate: obligation.dueDate,
-            paymentDue: obligation.paymentDue,
-            history: [...filing.history, systemEntry('SCHEDULE_RESTORED', 'CANCELED', 'SCHEDULED', {}, now)],
-            version: filing.version + 1,
-            updatedAt: now,
-          }
+          // 취소된 동안 급여대장 이벤트가 이 건을 건너뛰었으므로 자동 연계 항목만 지금 현황으로 다시 맞춥니다
+          const relinked = yield* relinkAutoRequirements(
+            payrollLedgers,
+            {
+              ...filing,
+              status: 'SCHEDULED',
+              statutoryDue: obligation.statutoryDue,
+              dueDate: obligation.dueDate,
+              paymentDue: obligation.paymentDue,
+              history: [...filing.history, systemEntry('SCHEDULE_RESTORED', 'CANCELED', 'SCHEDULED', {}, now)],
+            },
+            now,
+          )
+          const restored: FilingRecord = { ...relinked.filing, version: filing.version + 1, updatedAt: now }
           yield* repository.save(restored)
           yield* events.publish([filingStatusChanged(filing, restored, now)])
         }
