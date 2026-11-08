@@ -58,9 +58,12 @@ export function severanceWithholdingMonthsChanged(
 /**
  * 정산 하나의 변경이 건드리는 지급월입니다. 원천세 신고 잠금(`WithholdingFilingLock`)은 이 달들을 봅니다.
  *
- * 퇴직소득 합계가 바뀐 달({@link severanceWithholdingMonthsChanged})에 더해, 지급일의 달이 바뀌면 옮기기 전후 두 달이 듭니다
- * (지급일을 새로 정하면 그 달, 지우면 원래 달). 계산됨 정산은 합계에 들지 않지만, 급여대장의 생성·지급일 이동처럼 신고된 달로
- * 들이거나 신고된 달에서 빼내는 것을 함께 막습니다. 그래서 신고된 달에는 나중에 완료할 정산이 새로 생기지 않습니다.
+ * 퇴직소득 합계가 바뀐 달({@link severanceWithholdingMonthsChanged}, 완료·다시 열기)에 더해, 지급일을 새로 정하거나 옮기면
+ * 옮겨 갈 달이 듭니다. 그래서 신고된 달에는 나중에 완료할 정산이 새로 들어가지 않습니다.
+ *
+ * 계산됨 정산을 신고된 달에서 빼내거나 지급일을 지우는 것은 막지 않습니다. 합계에 들지 않아 신고와 어긋나지 않고, 막으면
+ * 지급일을 정한 뒤 그 달이 신고된 정산이 완료도 이동도 못 하고 갇히기 때문입니다. 급여대장은 미마감 대장도 신고된 달에서
+ * 빼낼 수 없는데(대장 편집 전체를 막음), 정산은 이 점이 다릅니다. 완료한 정산을 빼내는 것은 다시 열기라 막힙니다.
  */
 export function severanceMonthsTouched(
   before: SeveranceSettlementRecord | undefined,
@@ -68,9 +71,8 @@ export function severanceMonthsTouched(
 ): string[] {
   const 이전지급일월 = before?.paymentDate?.slice(0, 7)
   const 이후지급일월 = after.paymentDate?.slice(0, 7)
-  const 지급일이동 = 이전지급일월 === 이후지급일월 ? [] : [이전지급일월, 이후지급일월]
-  const 지급월목록 = [...severanceWithholdingMonthsChanged(before, after), ...지급일이동]
-  return [...new Set(지급월목록.filter((month) => month !== undefined))].toSorted()
+  const 들이는달 = 이후지급일월 === undefined || 이후지급일월 === 이전지급일월 ? [] : [이후지급일월]
+  return [...new Set([...severanceWithholdingMonthsChanged(before, after), ...들이는달])].toSorted()
 }
 
 function sum(values: readonly number[]): number {

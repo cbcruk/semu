@@ -355,7 +355,7 @@ describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 �
     expect(changedMonths()).toEqual([])
   })
 
-  it('지급일을 신고된 지급월로 정하거나 옮기거나, 신고된 지급월에서 빼낼 수 없습니다(409)', async () => {
+  it('지급일을 신고된 지급월로 정하거나 옮길 수 없습니다(409)', async () => {
     const createdInto = await linked.request('POST', '/severance-settlements', {
       body: { employeeId: DECEMBER_LEAVER, input: { threeMonthWages: 9_000_000 }, paymentDate: '2026-12-15' },
     })
@@ -381,17 +381,33 @@ describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 �
     expect(completedInto.status).toBe(409)
     expect(completedInto.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
 
-    const movedOut = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
-      body: { paymentDate: '2027-01-05' },
-    })
-    expect(movedOut.status).toBe(409)
-    expect(movedOut.body).toMatchObject({ code: 'WITHHOLDING_FILED', paymentMonth: FILED_MONTH })
-
     // 같은 달 안의 입력 수정은 원천세와 상관없어 받습니다.
     const inputOnly = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
       body: { input: { threeMonthWages: 9_300_000 } },
     })
     expect(inputOnly.status).toBe(200)
     expect(changedMonths()).toEqual([])
+  })
+
+  it('계산됨 정산은 신고된 지급월에서 빼내거나 지급일을 지울 수 있습니다', async () => {
+    // 합계에 들지 않으므로 신고와 어긋나지 않고, 막으면 그 정산은 완료도 이동도 못 합니다.
+    const cleared = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: null },
+    })
+    expect(cleared.status).toBe(200)
+    expect(cleared.body.paymentDate).toBeNull()
+
+    const into = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: '2026-12-20' },
+    })
+    expect(into.status).toBe(409)
+
+    const movedOut = await linked.request('PATCH', `/severance-settlements/${FILED_CALCULATED_ID}`, {
+      body: { paymentDate: '2027-01-05' },
+    })
+    expect(movedOut.status).toBe(200)
+    const completed = await linked.request('POST', `/severance-settlements/${FILED_CALCULATED_ID}:complete`)
+    expect(completed.status).toBe(200)
+    expect(changedMonths()).toEqual(['2027-01'])
   })
 })

@@ -92,23 +92,23 @@ describe('severanceWithholdingMonthsChanged', () => {
 })
 
 describe('severanceMonthsTouched', () => {
-  it('합계가 바뀐 달에 더해 계산됨 정산의 지급일을 옮기기 전후 두 달을 잠금 대상으로 봅니다', () => {
+  it('계산됨 정산의 지급일을 옮기면 옮겨 갈 달만 잠금 대상으로 봅니다', () => {
     expect(
       severanceMonthsTouched(
         settlement('emp_a', 'CALCULATED', '2026-10-31'),
         settlement('emp_a', 'CALCULATED', '2026-11-10'),
       ),
-    ).toEqual(['2026-10', '2026-11'])
+    ).toEqual(['2026-11'])
   })
 
-  it('지급일을 새로 정하거나 지우면 그 달 하나, 같은 달 안의 변경은 완료·다시 열기만 봅니다', () => {
+  it('지급일을 새로 정하면 그 달, 지우거나 같은 달 안에서 바꾸면 잠금 대상이 없고 완료·다시 열기는 지급월을 봅니다', () => {
     expect(severanceMonthsTouched(undefined, settlement('emp_a', 'CALCULATED', '2026-10-31'))).toEqual(['2026-10'])
     expect(
       severanceMonthsTouched(
         settlement('emp_a', 'CALCULATED', '2026-10-31'),
         settlement('emp_a', 'CALCULATED', undefined),
       ),
-    ).toEqual(['2026-10'])
+    ).toEqual([])
     expect(
       severanceMonthsTouched(
         settlement('emp_a', 'CALCULATED', '2026-10-05'),
@@ -119,6 +119,12 @@ describe('severanceMonthsTouched', () => {
       severanceMonthsTouched(
         settlement('emp_a', 'CALCULATED', undefined),
         settlement('emp_a', 'COMPLETED', '2026-10-31'),
+      ),
+    ).toEqual(['2026-10'])
+    expect(
+      severanceMonthsTouched(
+        settlement('emp_a', 'COMPLETED', '2026-10-31'),
+        settlement('emp_a', 'CALCULATED', '2026-10-31'),
       ),
     ).toEqual(['2026-10'])
   })

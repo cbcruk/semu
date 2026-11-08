@@ -116,7 +116,7 @@ flowchart TD
 - **HR 반영.** 서명 완료로 근로·급여계약과 직원을 만드는 소비자는 설계만 있습니다(현행 R29). 지금은 직원과 계약을 직접 등록합니다([hr.md](hr.md#이벤트), [hr.md](hr.md#구현-상태))
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
-- **퇴직소득 원천세(2026-11-08).** 지급일이 그 달인 완료 정산을 `PayrollWithholdingTotals`가 `RETIREMENT`로 모으고 Tax가 A22(퇴직소득 그 외)에 적습니다. 완료·다시 열기로 합계가 바뀐 지급월마다(대장이 없는 달 포함) `payroll_pay_month.withholding_changed`를 outbox로 내고, 신고된 지급월의 완료·다시 열기와 그 달로 들이거나 빼내는 지급일 변경은 대장처럼 409 `WITHHOLDING_FILED`입니다([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))
+- **퇴직소득 원천세(2026-11-08).** 지급일이 그 달인 완료 정산을 `PayrollWithholdingTotals`가 `RETIREMENT`로 모으고 Tax가 A22(퇴직소득 그 외)에 적습니다. 완료·다시 열기로 합계가 바뀐 지급월마다(대장이 없는 달 포함) `payroll_pay_month.withholding_changed`를 outbox로 내고, 신고된 지급월의 완료·다시 열기와 그 달로 들이는 지급일 변경은 대장처럼 409 `WITHHOLDING_FILED`입니다(계산됨 정산이 빠져나가는 것은 받음)([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))
 - **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. HR의 `RETIREMENT_COMPLETED` 가드(409)는 구현됐지만 상태를 채우는 구독이 없어 지금은 걸리지 않습니다([hr.md](hr.md#구현-상태)). 상태 값도 HR(`IN_PROGRESS`·`COMPLETED`·`EXCLUDED`)과 Payroll(`CALCULATED`·`COMPLETED`·`EXCLUDED`)이 달라 매핑을 정해야 합니다([hr.md 열린 질문 10](hr.md#열린-질문), [payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지

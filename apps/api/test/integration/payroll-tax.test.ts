@@ -297,3 +297,59 @@ describe('Payroll → Bookkeeping 연결', () => {
     })
   })
 })
+
+describe('Payroll 퇴직금만 있는 달 → Tax 연결', () => {
+  const fresh = makeTestApp()
+  afterAll(() => fresh.dispose())
+
+  it('대장 없이 퇴직금만 지급한 달은 원천세 신고서에 A22 줄 하나만 보이고 급여대장 마감 항목은 대기로 남습니다', async () => {
+    const token = (await fresh.signIn('owner@semu.example')).token
+    const hired = await fresh.request('POST', '/v1/employees', {
+      token,
+      body: { kind: 'WAGE', name: '오퇴직', joinDate: '2024-05-07' },
+    })
+    const leaverId = (await hired.json()).id
+    await fresh.request('POST', `/v1/employees/${leaverId}:resign`, {
+      token,
+      body: { leaveDate: '2026-10-09', leavingReasonCode: '11', leavingDetailReasonCode: '11-1' },
+    })
+    const created = await fresh.request('POST', '/v1/severance-settlements', {
+      token,
+      body: { employeeId: leaverId, input: { threeMonthWages: 8_400_000 }, paymentDate: '2026-10-23' },
+    })
+    expect(created.status).toBe(201)
+    const completed = await fresh.request('POST', `/v1/severance-settlements/${(await created.json()).id}:complete`, {
+      token,
+    })
+    expect(completed.status).toBe(200)
+    const { result } = await completed.json()
+
+    const response = await fresh.request('GET', `/v1/filings/${WITHHOLDING_2026_10}/withholding-lines`, { token })
+
+    expect((await response.json()).items).toEqual([
+      {
+        paymentMonth: '2026-10',
+        ledgerCount: 0,
+        closedCount: 0,
+        lines: [
+          {
+            lineCode: 'A22',
+            subtotalCode: 'A20',
+            incomeKind: 'RETIREMENT',
+            otherIncomeCategory: null,
+            headcount: 1,
+            grossPay: result.severancePay,
+            taxablePay: result.severancePay,
+            incomeTax: result.retirementIncomeTax,
+            localIncomeTax: result.localIncomeTax,
+          },
+        ],
+      },
+    ])
+    const filing = await (await fresh.request('GET', `/v1/filings/${WITHHOLDING_2026_10}`, { token })).json()
+    expect(
+      filing.requirements.find((requirement: { code: string }) => requirement.code === 'PAYROLL_LEDGER_CLOSED')
+        .response,
+    ).toBe('PENDING')
+  })
+})

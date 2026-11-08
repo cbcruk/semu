@@ -6,7 +6,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
  *
  * 신고가 `FILED` 이후이면 그 지급월의 급여대장은 금액이 바뀌는 커맨드(재계산·되돌리기·반려·마감 해제·추가 대장·
  * 지급일 이동)를 409 `WITHHOLDING_FILED`로 거부합니다.
- * 지급일이 그 달인 퇴직금 정산도 완료·다시 열기와 그 달로 들이거나 빼내는 지급일 변경을 같은 409로 거부합니다.
+ * 지급일이 그 달인 퇴직금 정산도 완료·다시 열기와 그 달로 들이는 지급일 변경을 같은 409로 거부합니다(빠져나가는 계산됨 정산은 받음).
  */
 export class WithholdingFilingLock extends Context.Service<
   WithholdingFilingLock,
