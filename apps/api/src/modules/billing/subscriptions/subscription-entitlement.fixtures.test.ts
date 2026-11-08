@@ -88,14 +88,14 @@ function run(input: FixtureCase['input']): unknown {
   }
 }
 
-describe('subscription-entitlement fixtures', () => {
+describe('subscription-entitlement 픽스처', () => {
   it.each(fixture.cases)('$name', (testCase) => {
     const expected = testCase.name in CHANGED ? CHANGED[testCase.name] : testCase.expected
 
     expect(run(testCase.input)).toEqual(expected)
   })
 
-  it('treats a free company as one without paid plans', () => {
+  it('유료 플랜이 하나도 없으면 무료 고객입니다', () => {
     expect(isFreeOn([], '2026-11-05')).toBe(true)
   })
 })

@@ -93,7 +93,7 @@ function run(input: FixtureCase['input']): unknown {
   }
 }
 
-describe('payment-schedule fixtures', () => {
+describe('payment-schedule 픽스처', () => {
   it.each(fixture.cases.filter((testCase) => !NOT_PORTED.has(testCase.name)))('$name', (testCase) => {
     expect(run(testCase.input)).toEqual(testCase.expected)
   })

@@ -16,8 +16,8 @@ export function checkResignation(
   resignation: Resignation,
   context: { joinDate?: string | undefined; plan?: RetirementPlan | undefined },
 ): ResignationRejection | undefined {
-  const interim = context.plan?.interimSettlement
-  if (interim !== undefined && resignation.leaveDate < interim.date) return 'LEAVE_DATE_BEFORE_INTERIM'
+  const 중간정산 = context.plan?.interimSettlement
+  if (중간정산 !== undefined && resignation.leaveDate < 중간정산.date) return 'LEAVE_DATE_BEFORE_INTERIM'
   if (context.joinDate !== undefined && resignation.leaveDate < context.joinDate) return 'LEAVE_DATE_BEFORE_JOIN'
   if (!isValidLeavingReason(resignation.leavingReasonCode, resignation.leavingDetailReasonCode)) {
     return 'LEAVING_REASON_INVALID'
@@ -32,8 +32,8 @@ export function checkRetirementPlan(
   plan: RetirementPlan,
   leaveDate: string | undefined,
 ): ResignationRejection | undefined {
-  const interim = plan.interimSettlement
-  if (interim !== undefined && leaveDate !== undefined && leaveDate < interim.date) return 'LEAVE_DATE_BEFORE_INTERIM'
+  const 중간정산 = plan.interimSettlement
+  if (중간정산 !== undefined && leaveDate !== undefined && leaveDate < 중간정산.date) return 'LEAVE_DATE_BEFORE_INTERIM'
   return undefined
 }
 

@@ -20,10 +20,10 @@ export const PARENTAL_LEAVE_DAYS = 365
  * ```
  */
 export function nhisDeferredMonths(startDate: string, endDate: string): { first: string; last: string } | undefined {
-  const returnDate = addDays(endDate, 1)
-  const first = startDate.endsWith('-01') ? startDate.slice(0, 7) : addMonths(startDate.slice(0, 7), 1)
-  const last = returnDate.endsWith('-01') ? addMonths(returnDate.slice(0, 7), -1) : returnDate.slice(0, 7)
-  return first <= last ? { first, last } : undefined
+  const 복직일 = addDays(endDate, 1)
+  const 유예시작월 = startDate.endsWith('-01') ? startDate.slice(0, 7) : addMonths(startDate.slice(0, 7), 1)
+  const 유예종료월 = 복직일.endsWith('-01') ? addMonths(복직일.slice(0, 7), -1) : 복직일.slice(0, 7)
+  return 유예시작월 <= 유예종료월 ? { first: 유예시작월, last: 유예종료월 } : undefined
 }
 
 /**
@@ -49,19 +49,19 @@ export function validateLeave(terms: LeaveTerms, context: LeaveContext): LeaveVa
   if (terms.paid !== undefined && terms.paid.allowance === undefined) {
     violations.push({ field: 'paid.allowance', code: 'PAID_ALLOWANCE_REQUIRED' })
   }
-  const returned = terms.actualReturnDate
-  if (returned !== undefined && (returned <= terms.startDate || returned > addDays(terms.endDate, 1))) {
+  const 복직일 = terms.actualReturnDate
+  if (복직일 !== undefined && (복직일 <= terms.startDate || 복직일 > addDays(terms.endDate, 1))) {
     violations.push({ field: 'actualReturnDate', code: 'RETURN_DATE_OUT_OF_RANGE' })
   }
   if (terms.nhisNoticeDeferral === true && nhisDeferredMonths(terms.startDate, terms.endDate) === undefined) {
     violations.push({ field: 'nhisNoticeDeferral', code: 'DEFERRAL_NEEDS_ONE_MONTH' })
   }
-  const overlapping = context.otherLeaves.find(
+  const 겹치는휴직 = context.otherLeaves.find(
     (other) => other.startDate <= terms.endDate && lastLeaveDay(other) >= terms.startDate,
   )
   return {
     violations,
-    ...(overlapping === undefined ? {} : { overlappingLeaveId: overlapping.id }),
+    ...(겹치는휴직 === undefined ? {} : { overlappingLeaveId: 겹치는휴직.id }),
     normalized: {
       expectedReturnDate: terms.expectedReturnDate ?? addDays(terms.endDate, 1),
       includeInServiceYears: terms.reason === 'PARENTAL' || terms.includeInServiceYears === true,
@@ -75,24 +75,25 @@ export function validateLeave(terms: LeaveTerms, context: LeaveContext): LeaveVa
  * 누적 휴직일은 `asOf`까지 지난 날만 세고, 육아휴직 일수는 미래 휴직까지 셉니다(현행과 같음).
  */
 export function summarizeLeaves(leaves: ReadonlyArray<ExistingLeave>, asOf: string): LeaveSummary {
-  const current = leaves.find((leave) => isOnLeave(leave, asOf))
-  const upcoming = leaves
+  const 현재휴직 = leaves.find((leave) => isOnLeave(leave, asOf))
+  const 예정휴직 = leaves
     .filter((leave) => leave.startDate > asOf)
     .reduce<ExistingLeave | undefined>(
-      (first, leave) => (first === undefined || leave.startDate < first.startDate ? leave : first),
+      (가장이른휴직, leave) =>
+        가장이른휴직 === undefined || leave.startDate < 가장이른휴직.startDate ? leave : 가장이른휴직,
       undefined,
     )
-  const elapsed = (leave: ExistingLeave): number =>
+  const 지난휴직일수 = (leave: ExistingLeave): number =>
     leave.startDate > asOf ? 0 : daysBetween(leave.startDate, minDate(lastLeaveDay(leave), asOf)) + 1
-  const parental = leaves
+  const 육아휴직일수 = leaves
     .filter((leave) => leave.reason === 'PARENTAL')
     .reduce((total, leave) => total + daysBetween(leave.startDate, lastLeaveDay(leave)) + 1, 0)
   return {
-    isOnLeave: current !== undefined,
-    ...(current === undefined ? {} : { currentLeaveId: current.id }),
-    ...(upcoming === undefined ? {} : { upcomingLeaveId: upcoming.id }),
-    totalLeaveDays: leaves.reduce((total, leave) => total + elapsed(leave), 0),
-    parentalLeaveDays: parental,
-    parentalLeaveRemainingDays: Math.max(0, PARENTAL_LEAVE_DAYS - parental),
+    isOnLeave: 현재휴직 !== undefined,
+    ...(현재휴직 === undefined ? {} : { currentLeaveId: 현재휴직.id }),
+    ...(예정휴직 === undefined ? {} : { upcomingLeaveId: 예정휴직.id }),
+    totalLeaveDays: leaves.reduce((total, leave) => total + 지난휴직일수(leave), 0),
+    parentalLeaveDays: 육아휴직일수,
+    parentalLeaveRemainingDays: Math.max(0, PARENTAL_LEAVE_DAYS - 육아휴직일수),
   }
 }

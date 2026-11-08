@@ -31,7 +31,7 @@ export function isOnLeave(leave: LeavePeriod, date: string): boolean {
 
 /** 기간 `from`–`to` 중 하루라도 재직(휴직 포함)했는지입니다. 급여대장 대상자를 고를 때 씁니다. */
 export function wasEmployedBetween(dates: Omit<EmployeeDates, 'leaves'>, from: string, to: string): boolean {
-  const joined = dates.joinDate === undefined || dates.joinDate <= to
-  const notYetLeft = dates.leaveDate === undefined || dates.leaveDate >= from
-  return joined && notYetLeft
+  const 종료일뒤입사가아님 = dates.joinDate === undefined || dates.joinDate <= to
+  const 시작일전퇴직이아님 = dates.leaveDate === undefined || dates.leaveDate >= from
+  return 종료일뒤입사가아님 && 시작일전퇴직이아님
 }

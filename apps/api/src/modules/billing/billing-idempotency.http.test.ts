@@ -132,8 +132,8 @@ function expectOneProcessed(a: HttpTestJson, b: HttpTestJson, success: number) {
   }
 }
 
-describe('POST /payments/{id}:retry idempotency', () => {
-  it('replays the first response, without checking If-Match again', async () => {
+describe('결제 재시도의 멱등성(POST /payments/{id}:retry)', () => {
+  it('If-Match를 다시 보지 않고 첫 응답을 되돌려 줍니다', async () => {
     const { app } = setUp()
 
     const first = await retry(app, 'k-retry', { retryOn: '2099-01-03' }, { ifMatch: '"1"' })
@@ -146,7 +146,7 @@ describe('POST /payments/{id}:retry idempotency', () => {
     expect(replay.headers.get('etag')).toBe(first.headers.get('etag'))
   })
 
-  it('rejects the same key with another body or for another command', async () => {
+  it('같은 키로 본문이나 커맨드가 다르면 거부합니다', async () => {
     const { app } = setUp()
 
     await retry(app, 'k-retry-body', { retryOn: '2099-01-03' })
@@ -160,7 +160,7 @@ describe('POST /payments/{id}:retry idempotency', () => {
     expect(payment.body).toMatchObject({ scheduledOn: '2099-01-05', version: 2 })
   })
 
-  it('does not replay another user’s response for the same key', async () => {
+  it('같은 키라도 다른 사용자의 응답은 되돌려 주지 않습니다', async () => {
     const { app } = setUp()
 
     await retry(app, 'k-retry-scope', { retryOn: '2099-01-03' })
@@ -170,7 +170,7 @@ describe('POST /payments/{id}:retry idempotency', () => {
     expect(theirs.body).toMatchObject({ code: 'PAYMENT_TRANSITION_INVALID', currentStatus: 'RETRYING' })
   })
 
-  it('replays within 24 hours and treats the key as new after that', async () => {
+  it('24시간 안에는 되돌려 주고 그 뒤에는 새 키로 봅니다', async () => {
     const { app, clock } = setUp()
 
     const first = await retry(app, 'k-retry-ttl', { retryOn: '2099-01-03' })
@@ -184,7 +184,7 @@ describe('POST /payments/{id}:retry idempotency', () => {
     expect(fresh.body).toMatchObject({ code: 'PAYMENT_TRANSITION_INVALID' })
   })
 
-  it('processes the same key once while the first request is still running', async () => {
+  it('첫 요청이 처리 중이면 같은 키를 한 번만 처리합니다', async () => {
     const { app, holidays } = setUp()
     holidays.delayMs = 50
 
@@ -198,7 +198,7 @@ describe('POST /payments/{id}:retry idempotency', () => {
     expect(payment.body).toMatchObject({ version: 2 })
   })
 
-  it('does not hold the key when the request fails, so the same key works once fixed', async () => {
+  it('요청이 실패하면 키를 잡아 두지 않아 고친 뒤 같은 키로 다시 보낼 수 있습니다', async () => {
     const { app } = setUp()
 
     const stale = await retry(app, 'k-retry-fix', { retryOn: '2099-01-03' }, { ifMatch: '"9"' })
@@ -213,8 +213,8 @@ describe('POST /payments/{id}:retry idempotency', () => {
   })
 })
 
-describe('POST /payments/{id}:refund idempotency', () => {
-  it('rejects a refund that reuses a retry key on the same payment with the same body', async () => {
+describe('환불의 멱등성(POST /payments/{id}:refund)', () => {
+  it('같은 결제·같은 본문이라도 재시도 키를 다시 쓴 환불은 거부합니다', async () => {
     const { app } = setUp()
 
     const retried = await retry(app, 'k-retry-then-refund')
@@ -228,7 +228,7 @@ describe('POST /payments/{id}:refund idempotency', () => {
     expect(refunded.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
   })
 
-  it('replays the first refund', async () => {
+  it('첫 환불 응답을 되돌려 줍니다', async () => {
     const { app } = setUp()
 
     const first = await refund(app, 'k-refund', { ifMatch: '"1"' })
@@ -240,7 +240,7 @@ describe('POST /payments/{id}:refund idempotency', () => {
     expect(replay.body).toEqual(first.body)
   })
 
-  it('rejects the same key for another payment', async () => {
+  it('같은 키로 다른 결제를 요청하면 거부합니다', async () => {
     const { app } = setUp()
 
     await refund(app, 'k-refund-body')
@@ -253,7 +253,7 @@ describe('POST /payments/{id}:refund idempotency', () => {
     expect(other.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
   })
 
-  it('does not replay another user’s refund and forgets the key after 24 hours', async () => {
+  it('다른 사용자의 환불은 되돌려 주지 않고 24시간 뒤에는 키를 잊습니다', async () => {
     const { app, clock } = setUp()
 
     await refund(app, 'k-refund-scope')
@@ -266,7 +266,7 @@ describe('POST /payments/{id}:refund idempotency', () => {
     expect(later.status).toBe(409)
   })
 
-  it('retries with the same key after a failed precondition', async () => {
+  it('전제 조건 실패 뒤에는 같은 키로 다시 보낼 수 있습니다', async () => {
     const { app } = setUp()
 
     const stale = await refund(app, 'k-refund-fix', { ifMatch: '"9"' })
@@ -277,8 +277,8 @@ describe('POST /payments/{id}:refund idempotency', () => {
   })
 })
 
-describe('POST /billing-mandates idempotency', () => {
-  it('registers once and replays the first response', async () => {
+describe('결제 수단 등록의 멱등성(POST /billing-mandates)', () => {
+  it('한 번만 등록하고 첫 응답을 되돌려 줍니다', async () => {
     const { app, cms } = setUp()
 
     const first = await register(app, 'k-mandate')
@@ -290,7 +290,7 @@ describe('POST /billing-mandates idempotency', () => {
     expect(cms.registered).toHaveLength(1)
   })
 
-  it('rejects the same key with another account and keeps the first registration', async () => {
+  it('같은 키로 다른 계좌를 보내면 거부하고 첫 등록을 유지합니다', async () => {
     const { app, cms } = setUp()
 
     await register(app, 'k-mandate-body')
@@ -301,7 +301,7 @@ describe('POST /billing-mandates idempotency', () => {
     expect(cms.calls).toHaveLength(1)
   })
 
-  it('keeps keys apart per user and forgets them after 24 hours', async () => {
+  it('키는 사용자마다 따로 두고 24시간 뒤에는 잊습니다', async () => {
     const { app, cms, clock } = setUp()
 
     const mine = await register(app, 'k-mandate-scope')
@@ -319,7 +319,7 @@ describe('POST /billing-mandates idempotency', () => {
     expect(cms.registered).toHaveLength(3)
   })
 
-  it('registers once while the first request is still waiting for the bank', async () => {
+  it('첫 요청이 은행 응답을 기다리는 동안에도 한 번만 등록합니다', async () => {
     const { app, cms } = setUp()
     cms.delayMs = 50
 
@@ -329,7 +329,7 @@ describe('POST /billing-mandates idempotency', () => {
     expect(cms.registered).toHaveLength(1)
   })
 
-  it('asks the bank again with the same key after a rejection', async () => {
+  it('거절된 뒤에는 같은 키로 은행에 다시 묻습니다', async () => {
     const { app, cms } = setUp()
     const closed = { ...ACCOUNT, accountNumber: '123-456-780000' }
 
@@ -346,7 +346,7 @@ describe('POST /billing-mandates idempotency', () => {
     expect(body.items.filter((item: { status: string }) => item.status === 'REJECTED')).toHaveLength(2)
   })
 
-  it('finishes a registration whose result was lost with the same request ID, without registering twice', async () => {
+  it('결과를 잃은 등록은 같은 요청 ID로 마무리하고 두 번 등록하지 않습니다', async () => {
     const { app, cms } = setUp()
     cms.dieAfterRegistering = true
 

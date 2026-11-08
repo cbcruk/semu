@@ -40,24 +40,24 @@ export function validateWorkContract(terms: WorkContractTerms): Violation[] {
   if (terms.endDate !== undefined && terms.endDate < terms.startDate) {
     violations.push({ field: 'endDate', code: 'END_BEFORE_START' })
   }
-  const probation = terms.probation
-  if (probation === undefined) return violations
-  if (probation.months === undefined) {
+  const 수습 = terms.probation
+  if (수습 === undefined) return violations
+  if (수습.months === undefined) {
     violations.push({ field: 'probation.months', code: 'PROBATION_MONTHS_REQUIRED' })
-  } else if (!Number.isInteger(probation.months) || probation.months < 1 || probation.months > 12) {
+  } else if (!Number.isInteger(수습.months) || 수습.months < 1 || 수습.months > 12) {
     violations.push({ field: 'probation.months', code: 'PROBATION_MONTHS_OUT_OF_RANGE' })
   }
-  const rate = probation.payRatePpm ?? FULL_PAY_RATE_PPM
-  if (rate < MIN_PROBATION_PAY_RATE_PPM || rate > FULL_PAY_RATE_PPM) {
+  const 수습지급률 = 수습.payRatePpm ?? FULL_PAY_RATE_PPM
+  if (수습지급률 < MIN_PROBATION_PAY_RATE_PPM || 수습지급률 > FULL_PAY_RATE_PPM) {
     violations.push({ field: 'probation.payRatePpm', code: 'PROBATION_PAY_RATE_OUT_OF_RANGE' })
   } else if (
-    rate < FULL_PAY_RATE_PPM &&
+    수습지급률 < FULL_PAY_RATE_PPM &&
     terms.endDate !== undefined &&
     addMonthsToDate(terms.startDate, 12) > addDays(terms.endDate, 1)
   ) {
     violations.push({ field: 'probation.payRatePpm', code: 'PROBATION_REDUCTION_NOT_ALLOWED' })
   } else if (
-    rate < FULL_PAY_RATE_PPM &&
+    수습지급률 < FULL_PAY_RATE_PPM &&
     terms.standardOccupationCode?.startsWith(SIMPLE_LABOR_OCCUPATION_MAJOR_GROUP) === true
   ) {
     violations.push({ field: 'probation.payRatePpm', code: 'PROBATION_REDUCTION_SIMPLE_LABOR' })

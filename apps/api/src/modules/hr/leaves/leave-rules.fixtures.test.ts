@@ -30,7 +30,7 @@ describeRuleFixture(
   CHANGED,
 )
 
-describe('nhisDeferredMonths', () => {
+describe('건강보험 납입고지 유예 달', () => {
   it.each([
     ['2026-03-01', '2026-03-30', { first: '2026-03', last: '2026-03' }],
     ['2026-03-01', '2026-03-31', { first: '2026-03', last: '2026-03' }],
@@ -38,7 +38,7 @@ describe('nhisDeferredMonths', () => {
     ['2026-01-15', '2026-04-14', { first: '2026-02', last: '2026-04' }],
     ['2026-03-15', '2026-03-31', undefined],
     ['2026-03-02', '2026-03-20', undefined],
-  ])('%s to %s', (start, end, expected) => {
+  ])('%s부터 %s까지 휴직한 경우', (start, end, expected) => {
     expect(nhisDeferredMonths(start, end)).toEqual(expected)
   })
 })

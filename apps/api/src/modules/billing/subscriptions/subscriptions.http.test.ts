@@ -12,8 +12,8 @@ beforeEach(() => {
 
 afterEach(() => app.dispose())
 
-describe('GET /v1/subscriptions', () => {
-  it('lists entitled subscriptions without agency commands for a client', async () => {
+describe('구독 목록(GET /v1/subscriptions)', () => {
+  it('고객에게는 이용 가능한 구독을 담당자 커맨드 없이 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('GET', '/v1/subscriptions', { token })
@@ -24,7 +24,7 @@ describe('GET /v1/subscriptions', () => {
     expect(items[0]).toMatchObject({ status: 'ACTIVE', isEntitled: true, allowedActions: [] })
   })
 
-  it('shows an ended subscription of a free company as not entitled', async () => {
+  it('무료 고객의 종료된 구독은 이용 불가로 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token })).json()
@@ -32,7 +32,7 @@ describe('GET /v1/subscriptions', () => {
     expect(items).toEqual([expect.objectContaining({ plan: 'PAYROLL', status: 'ENDED', isEntitled: false })])
   })
 
-  it('offers the agency the commands the status allows', async () => {
+  it('담당자에게는 상태가 허용하는 커맨드를 보여 줍니다', async () => {
     const { token } = await app.signIn('agent@agency.example')
 
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token })).json()
@@ -41,8 +41,8 @@ describe('GET /v1/subscriptions', () => {
   })
 })
 
-describe('agency subscription commands', () => {
-  it('refuses a client admin even though the admin holds every permission', async () => {
+describe('담당자의 구독 커맨드', () => {
+  it('고객사 관리자는 모든 권한이 있어도 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/subscriptions', {
@@ -54,7 +54,7 @@ describe('agency subscription commands', () => {
     expect(await response.json()).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'subscription:manage' })
   })
 
-  it('starts a future subscription as pending and rejects a second one for the same plan', async () => {
+  it('미래에 시작하는 구독은 대기로 만들고 같은 플랜의 두 번째 구독은 거절합니다', async () => {
     const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
 
     const started = await app.request('POST', '/v1/subscriptions', {
@@ -72,7 +72,7 @@ describe('agency subscription commands', () => {
     expect(await again.json()).toMatchObject({ code: 'SUBSCRIPTION_ALREADY_EXISTS' })
   })
 
-  it('refuses a service contract of another company', async () => {
+  it('다른 회사의 서비스 계약은 거절합니다', async () => {
     const { token } = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
     const start = (serviceContractId: string) =>
       app.request('POST', '/v1/subscriptions', {
@@ -89,7 +89,7 @@ describe('agency subscription commands', () => {
     expect(await own.json()).toMatchObject({ serviceContractId: DEMO_SERVICE_CONTRACT_IDS.individualBookkeeping })
   })
 
-  it('schedules a cancellation, keeps the plan until the end date and resumes it', async () => {
+  it('해지를 예약하면 종료일까지 플랜을 유지하고 예약을 거둘 수 있습니다', async () => {
     const agent = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token: agent.token })).json()
     const id = items[0].id
@@ -123,7 +123,7 @@ describe('agency subscription commands', () => {
     expect(await resumed.json()).toMatchObject({ status: 'ACTIVE', allowedActions: ['CANCEL'] })
   })
 
-  it('rejects an end date in the past', async () => {
+  it('지난 날짜를 종료일로 받지 않습니다', async () => {
     const agent = await app.signIn('agent@agency.example', { companyId: DEMO_COMPANY_IDS.individual })
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token: agent.token })).json()
 
@@ -136,7 +136,7 @@ describe('agency subscription commands', () => {
     expect(await response.json()).toMatchObject({ code: 'SUBSCRIPTION_END_DATE_INVALID' })
   })
 
-  it('rejects resuming a subscription that is not scheduled to end', async () => {
+  it('해지 예약이 없는 구독은 해지 철회를 거절합니다', async () => {
     const agent = await app.signIn('agent@agency.example')
     const { items } = await (await app.request('GET', '/v1/subscriptions', { token: agent.token })).json()
 

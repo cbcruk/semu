@@ -11,13 +11,13 @@ export const PLAN_ORDER: ReadonlyArray<Plan> = ['TAXATION', 'PAYROLL']
  * - 종료일이 지난 `ACTIVE`·`CANCELLATION_SCHEDULED`는 `ENDED`입니다
  */
 export function refreshedStatus(term: SubscriptionTerm, today: string): SubscriptionStatus {
-  const ended = term.endsOn !== undefined && term.endsOn < today
+  const 종료일이지났음 = term.endsOn !== undefined && term.endsOn < today
   if (term.status === 'PENDING') {
     if (term.startsOn > today) return 'PENDING'
-    return ended ? 'ENDED' : 'ACTIVE'
+    return 종료일이지났음 ? 'ENDED' : 'ACTIVE'
   }
   if (term.status === 'ENDED') return 'ENDED'
-  return ended ? 'ENDED' : term.status
+  return 종료일이지났음 ? 'ENDED' : term.status
 }
 
 /** 그날 이 구독으로 플랜을 쓸 수 있는지입니다. 해지 예약 중에도 종료일(포함)까지는 씁니다. */

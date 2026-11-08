@@ -16,8 +16,8 @@ const hire = (overrides: Record<string, unknown> = {}) =>
     body: { kind: 'WAGE', name: '홍길동', registrationNumber: '900101-1234567', joinDate: '2024-01-02', ...overrides },
   })
 
-describe('POST /v1/employees', () => {
-  it('stores the registration number masked and derives the birth date', async () => {
+describe('직원 등록(POST /v1/employees)', () => {
+  it('주민등록번호를 가려 보여 주고 생년월일을 채웁니다', async () => {
     const created = await hire()
 
     expect(created.status).toBe(201)
@@ -31,13 +31,13 @@ describe('POST /v1/employees', () => {
     expect(created.body).not.toHaveProperty('registrationNumberEncrypted')
   })
 
-  it('warns when a wage employee has no registration number', async () => {
+  it('근로소득자에게 주민등록번호가 없으면 경고합니다', async () => {
     const created = await hire({ registrationNumber: undefined })
 
     expect(created.body.warnings).toEqual(['MISSING_REGISTRATION_NUMBER'])
   })
 
-  it('rejects a malformed registration number', async () => {
+  it('형식이 틀린 주민등록번호를 거부합니다', async () => {
     const created = await hire({ registrationNumber: '901301-1234567' })
 
     expect(created.status).toBe(422)
@@ -47,7 +47,7 @@ describe('POST /v1/employees', () => {
     })
   })
 
-  it('blocks a duplicate registration number of the same kind', async () => {
+  it('같은 소득 유형에서 주민등록번호가 겹치면 막습니다', async () => {
     const first = await hire()
     const second = await hire({ name: '홍길동2' })
 
@@ -55,14 +55,14 @@ describe('POST /v1/employees', () => {
     expect(second.body).toMatchObject({ code: 'EMPLOYEE_DUPLICATE', duplicateEmployeeId: first.body.id })
   })
 
-  it('allows the same number for another kind', async () => {
+  it('소득 유형이 다르면 같은 번호를 허용합니다', async () => {
     await hire()
     const business = await hire({ kind: 'BUSINESS' })
 
     expect(business.status).toBe(201)
   })
 
-  it('allows a rejoin after resignation', async () => {
+  it('퇴직한 뒤의 재입사는 허용합니다', async () => {
     const first = await hire()
     await app.json('POST', `/employees/${first.body.id}:resign`, {
       body: { leaveDate: '2024-12-31', leavingReasonCode: '11', leavingDetailReasonCode: '11-1' },
@@ -73,8 +73,8 @@ describe('POST /v1/employees', () => {
   })
 })
 
-describe('employee commands', () => {
-  it('resigns, filters by status and cancels the resignation', async () => {
+describe('직원 커맨드', () => {
+  it('퇴직 처리하고 퇴직 상태로 거르고 퇴직을 취소합니다', async () => {
     const created = await hire()
     const resigned = await app.request('POST', `/employees/${created.body.id}:resign`, {
       body: { leaveDate: '2025-01-31', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
@@ -92,7 +92,7 @@ describe('employee commands', () => {
     expect(canceled.body).not.toHaveProperty('resignation')
   })
 
-  it('rejects a resignation before the join date', async () => {
+  it('입사일보다 앞선 퇴직일을 거부합니다', async () => {
     const created = await hire()
     const response = await app.json('POST', `/employees/${created.body.id}:resign`, {
       body: { leaveDate: '2023-12-31', leavingReasonCode: '11' },
@@ -102,7 +102,7 @@ describe('employee commands', () => {
     expect(response.body).toMatchObject({ code: 'RESIGNATION_REJECTED', reason: 'LEAVE_DATE_BEFORE_JOIN' })
   })
 
-  it('rejects a stale If-Match', async () => {
+  it('낡은 If-Match를 거부합니다', async () => {
     const created = await hire()
     const response = await app.json('PATCH', `/employees/${created.body.id}`, {
       body: { name: '홍길순' },
@@ -112,7 +112,7 @@ describe('employee commands', () => {
     expect(response.status).toBe(412)
   })
 
-  it('reveals the registration number with a reason', async () => {
+  it('사유가 있으면 주민등록번호 전체를 보여 줍니다', async () => {
     const created = await hire()
     const revealed = await app.json('POST', `/employees/${created.body.id}/registration-number:reveal`, {
       headers: { 'x-access-reason': encodeURIComponent('4대보험 신고') },
@@ -122,7 +122,7 @@ describe('employee commands', () => {
     expect(revealed.body).toEqual({ registrationNumber: '9001011234567' })
   })
 
-  it('refuses to reveal without permission', async () => {
+  it('권한이 없으면 전체 번호를 보여 주지 않습니다', async () => {
     const created = await hire()
     const revealed = await app.json('POST', `/employees/${created.body.id}/registration-number:reveal`, {
       token: 'viewer',
@@ -133,7 +133,7 @@ describe('employee commands', () => {
     expect(revealed.body).toMatchObject({ code: 'PERMISSION_DENIED', permission: 'employee:reveal-rrn' })
   })
 
-  it('marks an assigned department as in use', async () => {
+  it('배정한 부서를 사용 중으로 표시합니다', async () => {
     const department = await app.json('POST', '/departments', { body: { name: '개발팀' } })
     await hire({ departmentId: department.body.id })
 
@@ -143,8 +143,8 @@ describe('employee commands', () => {
   })
 })
 
-describe('leaves', () => {
-  it('puts the employee on leave and rejects an overlapping leave', async () => {
+describe('휴직', () => {
+  it('직원을 휴직으로 두고 겹치는 휴직을 거부합니다', async () => {
     const created = await hire()
     const leave = await app.json('POST', `/employees/${created.body.id}/leaves`, {
       body: { reason: 'PARENTAL', startDate: '2026-01-01', endDate: '2026-12-31' },
@@ -164,7 +164,7 @@ describe('leaves', () => {
     expect(returned.body).toMatchObject({ actualReturnDate: '2026-06-01', version: 2 })
   })
 
-  it('collects every violation', async () => {
+  it('위반을 모두 모읍니다', async () => {
     const created = await hire()
     const leave = await app.json('POST', `/employees/${created.body.id}/leaves`, {
       body: { reason: 'OTHER', startDate: '2023-01-01', endDate: '2022-12-31', paid: {} },
@@ -179,8 +179,8 @@ describe('leaves', () => {
   })
 })
 
-describe('work contracts', () => {
-  it('flags a fixed-term chain reaching two years', async () => {
+describe('근로계약', () => {
+  it('2년에 닿는 기간제 계약 사슬을 무기계약 전환 대상으로 표시합니다', async () => {
     const created = await hire({ joinDate: '2024-07-01' })
     const path = `/employees/${created.body.id}/work-contracts`
     await app.json('POST', path, {
@@ -194,7 +194,7 @@ describe('work contracts', () => {
     expect(conversion.body).toMatchObject({ isTarget: true, status: 'EXCEEDED', conversionDate: '2026-07-01' })
   })
 
-  it('rejects reduced probation pay on a short contract', async () => {
+  it('1년 미만 계약의 수습 감액을 거부합니다', async () => {
     const created = await hire()
     const contract = await app.json('POST', `/employees/${created.body.id}/work-contracts`, {
       body: {
@@ -212,8 +212,8 @@ describe('work contracts', () => {
   })
 })
 
-describe('social insurance', () => {
-  it('recommends excluding short part-timers', async () => {
+describe('4대보험', () => {
+  it('초단시간 근로자는 제외를 권합니다', async () => {
     const created = await hire()
     const result = await app.json('POST', `/employees/${created.body.id}/social-insurance:determine`, {
       body: { weeklyWorkHours: 10 },

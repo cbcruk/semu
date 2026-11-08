@@ -40,7 +40,7 @@ export function noticeDate(withdrawalDate: string): string {
   return addDays(withdrawalDate, -1)
 }
 
-const TRANSITIONS: Record<PaymentStatus, Partial<Record<PaymentEvent, PaymentStatus>>> = {
+const 결제상태전이표: Record<PaymentStatus, Partial<Record<PaymentEvent, PaymentStatus>>> = {
   SCHEDULED: { WITHDRAWAL_SUCCEEDED: 'PAID', WITHDRAWAL_FAILED: 'FAILED' },
   FAILED: { RETRY: 'RETRYING' },
   RETRYING: { WITHDRAWAL_SUCCEEDED: 'PAID', WITHDRAWAL_FAILED: 'FAILED' },
@@ -50,7 +50,7 @@ const TRANSITIONS: Record<PaymentStatus, Partial<Record<PaymentEvent, PaymentSta
 
 /** 사건이 일어난 뒤의 결제 상태입니다. 허용되지 않은 전이면 `undefined`입니다. */
 export function paymentTransition(from: PaymentStatus, event: PaymentEvent): PaymentStatus | undefined {
-  return TRANSITIONS[from][event]
+  return 결제상태전이표[from][event]
 }
 
 /** 상태에서 담당자가 할 수 있는 커맨드입니다. */

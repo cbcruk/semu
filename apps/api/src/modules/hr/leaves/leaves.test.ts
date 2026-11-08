@@ -33,8 +33,8 @@ const layer = Leaves.layer.pipe(
   ),
 )
 
-describe('Leaves.remove', () => {
-  it('withdraws both the leave filing and the return filing of the removed leave', async () => {
+describe('휴직 삭제', () => {
+  it('지운 휴직의 휴직 신고와 복직 신고를 모두 거둡니다', async () => {
     const filings = await Effect.runPromise(
       Effect.gen(function* () {
         const service = yield* Leaves

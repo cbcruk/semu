@@ -25,42 +25,42 @@ export function indefiniteConversion(
   birthDate: string | undefined,
   asOf: string,
 ): IndefiniteConversion {
-  const fixedTerm = contracts
+  const 기간제계약 = contracts
     .flatMap((contract) =>
       contract.contractType === 'FIXED_TERM' && contract.endDate !== undefined
         ? [{ start: contract.startDate, end: contract.endDate, exemption: contract.termLimitExemption }]
         : [],
     )
     .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : 0))
-  const last = fixedTerm.at(-1)
-  if (last === undefined) return { isTarget: false, status: 'NONE', isExempt: false, totalContractDays: 0 }
-  let chainStart = last.start
-  let chainEnd = last.end
-  let firstIndex = fixedTerm.length - 1
-  for (let index = fixedTerm.length - 2; index >= 0; index -= 1) {
-    const previous = fixedTerm[index]
-    if (previous === undefined || addDays(previous.end, 1) < chainStart) break
-    if (previous.start < chainStart) chainStart = previous.start
-    if (previous.end > chainEnd) chainEnd = previous.end
+  const 최종계약 = 기간제계약.at(-1)
+  if (최종계약 === undefined) return { isTarget: false, status: 'NONE', isExempt: false, totalContractDays: 0 }
+  let 사슬시작일 = 최종계약.start
+  let 사슬종료일 = 최종계약.end
+  let firstIndex = 기간제계약.length - 1
+  for (let index = 기간제계약.length - 2; index >= 0; index -= 1) {
+    const 앞계약 = 기간제계약[index]
+    if (앞계약 === undefined || addDays(앞계약.end, 1) < 사슬시작일) break
+    if (앞계약.start < 사슬시작일) 사슬시작일 = 앞계약.start
+    if (앞계약.end > 사슬종료일) 사슬종료일 = 앞계약.end
     firstIndex = index
   }
-  const chain = fixedTerm.slice(firstIndex)
-  const conversionDate = addMonthsToDate(chainStart, 24)
-  const convertedWithoutExemption = chain.some(
+  const 사슬 = 기간제계약.slice(firstIndex)
+  const conversionDate = addMonthsToDate(사슬시작일, 24)
+  const 예외없는계약으로전환임 = 사슬.some(
     (contract) => contract.exemption === undefined && contract.end >= conversionDate,
   )
   const exemptReason =
-    birthDate !== undefined && ageOn(birthDate, chainStart) >= INDEFINITE_CONVERSION_EXEMPT_AGE
+    birthDate !== undefined && ageOn(birthDate, 사슬시작일) >= INDEFINITE_CONVERSION_EXEMPT_AGE
       ? ('AGED_55_OR_OVER' as const)
-      : convertedWithoutExemption
+      : 예외없는계약으로전환임
         ? undefined
-        : last.exemption
+        : 최종계약.exemption
   const isExempt = exemptReason !== undefined
   const daysUntilConversion = daysBetween(asOf, conversionDate)
   const status =
-    chainEnd >= conversionDate
+    사슬종료일 >= conversionDate
       ? 'EXCEEDED'
-      : chainEnd >= asOf && daysUntilConversion <= INDEFINITE_CONVERSION_NOTICE_DAYS
+      : 사슬종료일 >= asOf && daysUntilConversion <= INDEFINITE_CONVERSION_NOTICE_DAYS
         ? 'APPROACHING'
         : 'NONE'
   return {
@@ -68,9 +68,9 @@ export function indefiniteConversion(
     status,
     isExempt,
     ...(exemptReason === undefined ? {} : { exemptReason }),
-    chainStartDate: chainStart,
-    chainEndDate: chainEnd,
-    totalContractDays: daysBetween(chainStart, chainEnd) + 1,
+    chainStartDate: 사슬시작일,
+    chainEndDate: 사슬종료일,
+    totalContractDays: daysBetween(사슬시작일, 사슬종료일) + 1,
     conversionDate,
     daysUntilConversion,
   }

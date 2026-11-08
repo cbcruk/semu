@@ -19,8 +19,8 @@ const account = {
   payerNumber: '1048145235',
 }
 
-describe('/v1/billing-mandates', () => {
-  it('registers a new account, revokes the previous one and never returns the full number', async () => {
+describe('결제 수단(/v1/billing-mandates)', () => {
+  it('새 계좌를 등록하면 이전 계좌를 해지하고 계좌번호 전체는 돌려주지 않습니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/billing-mandates', {
@@ -40,7 +40,7 @@ describe('/v1/billing-mandates', () => {
     expect(JSON.stringify(items)).not.toContain('789012')
   })
 
-  it('keeps a rejected account on record and answers 422', async () => {
+  it('거절된 계좌도 기록에 남기고 422로 답합니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/billing-mandates', {
@@ -55,7 +55,7 @@ describe('/v1/billing-mandates', () => {
     expect(items).toEqual([expect.objectContaining({ status: 'REJECTED' })])
   })
 
-  it('validates the payer number and requires an idempotency key', async () => {
+  it('납부자번호를 검사하고 멱등 키를 요구합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const invalid = await app.request('POST', '/v1/billing-mandates', {
@@ -70,7 +70,7 @@ describe('/v1/billing-mandates', () => {
   })
 })
 
-describe('POST /v1/consultations', () => {
+describe('도입 문의 신청(POST /v1/consultations)', () => {
   const request = {
     products: ['TAXATION'],
     name: '김알프',
@@ -80,7 +80,7 @@ describe('POST /v1/consultations', () => {
     thirdPartyConsent: true,
   }
 
-  it('records a lead for the current company and refuses a duplicate while it is open', async () => {
+  it('현재 회사의 도입 문의를 기록하고 열려 있는 동안 중복 신청을 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const first = await app.request('POST', '/v1/consultations', { token, body: request })
@@ -99,7 +99,7 @@ describe('POST /v1/consultations', () => {
     expect(await second.json()).toMatchObject({ code: 'CONSULTATION_ALREADY_OPEN' })
   })
 
-  it('refuses an inquiry for products the company already has', async () => {
+  it('회사가 이미 쓰는 상품의 문의는 거절합니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request('POST', '/v1/consultations', { token, body: request })
@@ -108,7 +108,7 @@ describe('POST /v1/consultations', () => {
     expect(await response.json()).toMatchObject({ code: 'PRODUCT_ALREADY_SUBSCRIBED', products: ['TAXATION'] })
   })
 
-  it('requires both consents', async () => {
+  it('두 동의를 모두 받아야 합니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('POST', '/v1/consultations', {
@@ -120,8 +120,8 @@ describe('POST /v1/consultations', () => {
   })
 })
 
-describe('/v1/service-contracts', () => {
-  it('lists the contracts of a bookkeeping customer', async () => {
+describe('서비스 계약(/v1/service-contracts)', () => {
+  it('기장 고객의 서비스 계약을 보여 줍니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const { items } = await (await app.request('GET', '/v1/service-contracts', { token })).json()
@@ -137,7 +137,7 @@ describe('/v1/service-contracts', () => {
     expect(await detail.json()).toMatchObject({ monthlyFee: 350000, adjustmentFeeMonth: 3, autoRenew: true })
   })
 
-  it('hides contracts of another company', async () => {
+  it('다른 회사의 서비스 계약은 보이지 않습니다', async () => {
     const { token } = await app.signIn('owner@semu.example')
 
     const response = await app.request(
@@ -149,7 +149,7 @@ describe('/v1/service-contracts', () => {
     expect(response.status).toBe(404)
   })
 
-  it('asks a free company to subscribe to the taxation plan', async () => {
+  it('무료 고객에게는 세무 아웃소싱 플랜 구독을 요구합니다', async () => {
     const { token } = await app.signIn('owner@semu.example', { companyId: DEMO_COMPANY_IDS.free })
 
     const response = await app.request('GET', '/v1/service-contracts', { token })

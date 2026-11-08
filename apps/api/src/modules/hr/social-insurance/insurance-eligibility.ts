@@ -42,7 +42,8 @@ export const EI_OPT_IN_VISAS: ReadonlyArray<string> = [
   'H-1',
 ]
 
-const WEEKS_PER_MONTH = 365 / 7 / 12
+/** 한 달 평균 주 수(365 ÷ 7 ÷ 12)입니다. 주 소정근로시간을 월로 환산할 때 씁니다. */
+const 월평균주수 = 365 / 7 / 12
 
 /** 아무것도 저장하지 않았을 때의 설정입니다. 4대보험 모두 가입입니다. */
 export const DEFAULT_ENROLLMENT: Readonly<Record<Insurance, InsuranceEnrollment>> = {
@@ -86,47 +87,47 @@ export function determineEligibility(
       iais: { ...current.iais },
     },
   }
-  const exclude = (insurance: Insurance, reason: InsuranceExclusionReason): void => {
+  const 가입제외 = (insurance: Insurance, reason: InsuranceExclusionReason): void => {
     result.recommended[insurance] = { enrolled: false, exclusionReason: reason }
   }
   if (facts.birthDate !== undefined) {
-    const ageAtJoin = facts.joinDate === undefined ? undefined : ageOn(facts.birthDate, facts.joinDate)
-    if (ageAtJoin !== undefined && ageAtJoin >= 60) {
+    const 입사일만나이 = facts.joinDate === undefined ? undefined : ageOn(facts.birthDate, facts.joinDate)
+    if (입사일만나이 !== undefined && 입사일만나이 >= 60) {
       result.determinations.push('NPS_OVER_60_NEW_HIRE')
-      exclude('nps', 'AGE_60_OR_OVER')
+      가입제외('nps', 'AGE_60_OR_OVER')
     } else if (ageOn(facts.birthDate, asOf) >= 60) {
       result.determinations.push('NPS_OVER_60_INCUMBENT')
-      exclude('nps', 'AGE_60_OR_OVER')
+      가입제외('nps', 'AGE_60_OR_OVER')
     }
-    if (ageAtJoin !== undefined && ageAtJoin >= 65) {
+    if (입사일만나이 !== undefined && 입사일만나이 >= 65) {
       result.determinations.push('EI_OVER_65_NEW_HIRE')
-      exclude('ei', 'HIRED_AT_65_OR_OVER')
+      가입제외('ei', 'HIRED_AT_65_OR_OVER')
     }
   }
   if (facts.isRepresentativeOrExecutive) {
-    exclude('ei', 'REPRESENTATIVE_OR_EXECUTIVE')
-    exclude('iais', 'REPRESENTATIVE_OR_EXECUTIVE')
+    가입제외('ei', 'REPRESENTATIVE_OR_EXECUTIVE')
+    가입제외('iais', 'REPRESENTATIVE_OR_EXECUTIVE')
   } else if (facts.isRepresentativeRelative) {
-    exclude('ei', 'REPRESENTATIVE_RELATIVE')
-    exclude('iais', 'REPRESENTATIVE_RELATIVE')
+    가입제외('ei', 'REPRESENTATIVE_RELATIVE')
+    가입제외('iais', 'REPRESENTATIVE_RELATIVE')
   }
   if (facts.weeklyWorkHours !== undefined) {
     if (facts.weeklyWorkHours < 15) {
-      exclude('nps', 'SHORT_PART_TIME')
-      exclude('nhis', 'SHORT_PART_TIME')
-      exclude('ei', 'SHORT_PART_TIME')
-    } else if (facts.weeklyWorkHours * WEEKS_PER_MONTH < 60) {
+      가입제외('nps', 'SHORT_PART_TIME')
+      가입제외('nhis', 'SHORT_PART_TIME')
+      가입제외('ei', 'SHORT_PART_TIME')
+    } else if (facts.weeklyWorkHours * 월평균주수 < 60) {
       if (current.nps.enrolled) result.messages.push('NPS_UNDER_60_HOURS_ENROLLED')
-      exclude('nps', 'PART_TIME_UNDER_60_HOURS')
+      가입제외('nps', 'PART_TIME_UNDER_60_HOURS')
     }
   }
   if (facts.isForeigner) {
-    const visa = (facts.visaCode ?? '').toUpperCase()
-    if (EI_RECIPROCITY_VISAS.includes(visa)) {
+    const 체류자격 = (facts.visaCode ?? '').toUpperCase()
+    if (EI_RECIPROCITY_VISAS.includes(체류자격)) {
       result.messages.push('EI_FOREIGNER_RECIPROCITY_CHECK')
-    } else if (!EI_MANDATORY_VISAS.includes(visa)) {
-      if (EI_OPT_IN_VISAS.includes(visa)) result.messages.push('EI_FOREIGNER_OPTIONAL')
-      exclude('ei', 'EXEMPT_FOREIGNER')
+    } else if (!EI_MANDATORY_VISAS.includes(체류자격)) {
+      if (EI_OPT_IN_VISAS.includes(체류자격)) result.messages.push('EI_FOREIGNER_OPTIONAL')
+      가입제외('ei', 'EXEMPT_FOREIGNER')
     }
   }
   return result

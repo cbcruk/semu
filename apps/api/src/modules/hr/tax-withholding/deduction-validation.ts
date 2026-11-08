@@ -28,32 +28,32 @@ export function validateTaxWithholding(terms: TaxWithholdingTerms): {
     violations.push({ field: 'adjustmentRatePpm', code: 'ADJUSTMENT_RATE_NOT_ALLOWED' })
   }
   let reduction: ResolvedReduction | undefined
-  const input = terms.reduction
-  if (input !== undefined) {
-    const candidates = INCOME_TAX_REDUCTION_REASONS.filter((reason) => reason.type === input.type)
-    const reason =
-      candidates.find((candidate) => candidate.code === input.reasonCode) ??
-      (candidates.length === 1 ? candidates[0] : undefined)
-    if (reason === undefined) violations.push({ field: 'reduction.reasonCode', code: 'REDUCTION_REASON_REQUIRED' })
-    if (input.application === undefined) violations.push({ field: 'reduction.application', code: 'REQUIRED' })
-    if (input.startDate === undefined || input.endDate === undefined) {
+  const 감면설정 = terms.reduction
+  if (감면설정 !== undefined) {
+    const 감면사유후보 = INCOME_TAX_REDUCTION_REASONS.filter((reason) => reason.type === 감면설정.type)
+    const 감면사유 =
+      감면사유후보.find((candidate) => candidate.code === 감면설정.reasonCode) ??
+      (감면사유후보.length === 1 ? 감면사유후보[0] : undefined)
+    if (감면사유 === undefined) violations.push({ field: 'reduction.reasonCode', code: 'REDUCTION_REASON_REQUIRED' })
+    if (감면설정.application === undefined) violations.push({ field: 'reduction.application', code: 'REQUIRED' })
+    if (감면설정.startDate === undefined || 감면설정.endDate === undefined) {
       violations.push({ field: 'reduction.startDate', code: 'REDUCTION_PERIOD_REQUIRED' })
-    } else if (input.endDate < input.startDate) {
+    } else if (감면설정.endDate < 감면설정.startDate) {
       violations.push({ field: 'reduction.endDate', code: 'END_BEFORE_START' })
     } else if (
-      reason !== undefined &&
-      input.endDate > addDays(addMonthsToDate(input.startDate, reason.periodYears * 12), -1)
+      감면사유 !== undefined &&
+      감면설정.endDate > addDays(addMonthsToDate(감면설정.startDate, 감면사유.periodYears * 12), -1)
     ) {
       violations.push({ field: 'reduction.endDate', code: 'REDUCTION_PERIOD_TOO_LONG' })
     }
-    const allowed = candidates.map((candidate) => candidate.ratePpm)
-    if (input.ratePpm !== undefined && !allowed.includes(input.ratePpm)) {
+    const 허용감면율 = 감면사유후보.map((candidate) => candidate.ratePpm)
+    if (감면설정.ratePpm !== undefined && !허용감면율.includes(감면설정.ratePpm)) {
       violations.push({ field: 'reduction.ratePpm', code: 'REDUCTION_RATE_NOT_ALLOWED' })
     }
-    if (reason !== undefined) reduction = { reasonCode: reason.code, ratePpm: input.ratePpm ?? reason.ratePpm }
+    if (감면사유 !== undefined) reduction = { reasonCode: 감면사유.code, ratePpm: 감면설정.ratePpm ?? 감면사유.ratePpm }
   }
-  const loan = terms.studentLoan
-  if (loan !== undefined && (loan.monthlyAmount === undefined || loan.startDate === undefined)) {
+  const 학자금상환 = terms.studentLoan
+  if (학자금상환 !== undefined && (학자금상환.monthlyAmount === undefined || 학자금상환.startDate === undefined)) {
     violations.push({ field: 'studentLoan.monthlyAmount', code: 'STUDENT_LOAN_INCOMPLETE' })
   }
   return violations.length === 0 && reduction !== undefined ? { violations, reduction } : { violations }

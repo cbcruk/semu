@@ -21,8 +21,8 @@ const settings = {
   calcMethod: 'TAX_TABLE',
 }
 
-describe('/v1/employees/{employeeId}/tax-withholding', () => {
-  it('returns 404 until settings are saved', async () => {
+describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)', () => {
+  it('설정을 저장하기 전에는 404입니다', async () => {
     const employeeId = await hire()
     const response = await app.json('GET', `/employees/${employeeId}/tax-withholding`)
 
@@ -30,7 +30,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     expect(response.body).toMatchObject({ code: 'TAX_WITHHOLDING_NOT_FOUND' })
   })
 
-  it('saves settings, defaults the adjustment rate and resolves the reduction', async () => {
+  it('설정을 저장하면 조정비율을 기본값으로 채우고 감면을 정합니다', async () => {
     const employeeId = await hire()
     const saved = await app.request('PUT', `/employees/${employeeId}/tax-withholding`, {
       body: {
@@ -56,7 +56,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     })
   })
 
-  it('keeps an effective-dated history', async () => {
+  it('적용 시작일별 이력을 남깁니다', async () => {
     const employeeId = await hire()
     const path = `/employees/${employeeId}/tax-withholding`
     await app.json('PUT', path, { body: settings })
@@ -72,7 +72,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     expect((await app.json('GET', `${path}?asOf=2025-12-31`)).status).toBe(404)
   })
 
-  it('keeps the childcare child count optional and separate from dependants', async () => {
+  it('보육수당 자녀 수는 선택이고 공제대상 가족 수와 따로 둡니다', async () => {
     const employeeId = await hire()
     const path = `/employees/${employeeId}/tax-withholding`
     const without = await app.json('PUT', path, { body: settings })
@@ -106,7 +106,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     expect(tooMany.status).toBe(400)
   })
 
-  it('rejects a stale If-Match', async () => {
+  it('낡은 If-Match를 거부합니다', async () => {
     const employeeId = await hire()
     const path = `/employees/${employeeId}/tax-withholding`
     await app.json('PUT', path, { body: settings })
@@ -116,7 +116,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     expect(stale.body).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 1 })
   })
 
-  it('collects deduction-validation violations', async () => {
+  it('공제 설정 위반을 모두 모읍니다', async () => {
     const employeeId = await hire()
     const response = await app.json('PUT', `/employees/${employeeId}/tax-withholding`, {
       body: { ...settings, childrenAged8To20Count: 3, calcMethod: 'MANUAL', adjustmentRatePpm: 900_000 },
@@ -131,7 +131,7 @@ describe('/v1/employees/{employeeId}/tax-withholding', () => {
     ])
   })
 
-  it('refuses employees that are not wage earners', async () => {
+  it('근로소득자가 아닌 직원은 거절합니다', async () => {
     const employeeId = await hire('OTHER')
     const response = await app.json('PUT', `/employees/${employeeId}/tax-withholding`, { body: settings })
 
