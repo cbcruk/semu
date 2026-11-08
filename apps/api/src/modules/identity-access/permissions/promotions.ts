@@ -19,8 +19,8 @@ const 모든플랜: ReadonlyArray<Plan> = ['TAXATION', 'PAYROLL']
  * ```
  */
 export function promotedPlans(input: { plans: ReadonlySet<Plan>; agencyKind?: AgencyKind | undefined }): Plan[] {
-  const 빠진플랜 = 모든플랜.filter((플랜) => !input.plans.has(플랜))
+  const 빠진플랜 = 모든플랜.filter((plan) => !input.plans.has(plan))
   if (input.plans.size === 0) return 빠진플랜
-  if (input.agencyKind === 'HQ') return 빠진플랜.filter((플랜) => 플랜 === 'PAYROLL')
+  if (input.agencyKind === 'HQ') return 빠진플랜.filter((plan) => plan === 'PAYROLL')
   return []
 }

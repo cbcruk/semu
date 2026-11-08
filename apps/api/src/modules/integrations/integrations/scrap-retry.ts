@@ -38,9 +38,9 @@ export interface RetryItem {
 export function retryableItemKeys(input: Omit<RetryInput, 'lastScrap'>, items: ReadonlyArray<RetryItem>): string[] {
   return items
     .filter(
-      (항목) =>
-        항목.isActive &&
-        isRetryable({ ...input, ...(항목.lastScrap === undefined ? {} : { lastScrap: 항목.lastScrap }) }),
+      (item) =>
+        item.isActive &&
+        isRetryable({ ...input, ...(item.lastScrap === undefined ? {} : { lastScrap: item.lastScrap }) }),
     )
-    .map((항목) => 항목.key)
+    .map((item) => item.key)
 }

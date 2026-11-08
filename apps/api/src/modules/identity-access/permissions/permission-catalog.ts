@@ -129,11 +129,11 @@ export type PermissionWildcard = `${PermissionResource}:*` | '*'
 export type GrantedPermission = Permission | PermissionWildcard
 
 /** 카탈로그의 모든 {@link GrantedPermission}입니다. 저장소·외부에서 온 문자열을 {@link isGrantedPermission}으로 거를 때 씁니다. */
-const 카탈로그권한: ReadonlySet<string> = new Set<string>([
+const 가질수있는권한: ReadonlySet<string> = new Set<string>([
   '*',
-  ...Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([리소스, 항목]) => [
-    `${리소스}:*`,
-    ...항목.actions.map((동작) => `${리소스}:${동작}`),
+  ...Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) => [
+    `${resource}:*`,
+    ...entry.actions.map((action) => `${resource}:${action}`),
   ]),
 ])
 
@@ -147,7 +147,7 @@ const 카탈로그권한: ReadonlySet<string> = new Set<string>([
  * ```
  */
 export function isGrantedPermission(value: string): value is GrantedPermission {
-  return 카탈로그권한.has(value)
+  return 가질수있는권한.has(value)
 }
 
 /** 권한의 리소스입니다. `*`처럼 리소스가 없는 값은 받지 않습니다. */
@@ -204,13 +204,13 @@ export const AGENT_EXCLUDED_RESOURCES: ReadonlyArray<PermissionResource> = [
  */
 export const AGENT_PERMISSIONS: ReadonlyArray<GrantedPermission> = (
   Object.entries(PERMISSION_CATALOG) as Array<[PermissionResource, ResourcePermissions]>
-).flatMap(([리소스, 항목]): GrantedPermission[] =>
-  AGENT_EXCLUDED_RESOURCES.includes(리소스)
+).flatMap(([resource, entry]): GrantedPermission[] =>
+  AGENT_EXCLUDED_RESOURCES.includes(resource)
     ? []
     : [
-        `${리소스}:*`,
+        `${resource}:*`,
         // 카탈로그의 리소스·동작을 이어 붙인 값이라 카탈로그 권한입니다.
-        ...(항목.agentOnly ?? []).map((동작) => `${리소스}:${동작}` as Permission),
+        ...(entry.agentOnly ?? []).map((action) => `${resource}:${action}` as Permission),
       ],
 )
 
@@ -319,14 +319,14 @@ export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>
  * ```
  */
 export function isGrantable(permission: string): boolean {
-  const [리소스, 동작, ...rest] = permission.split(':')
-  if (리소스 === undefined || 동작 === undefined || rest.length > 0) return false
-  const 항목 = 카탈로그항목(리소스)
-  if (항목 === undefined) return false
-  const 관리자전용: ReadonlyArray<string> = 항목.adminOnly ?? []
-  if (동작 === '*') return 관리자전용.length === 0
-  const 대리인전용: ReadonlyArray<string> = 항목.agentOnly ?? []
-  return 항목.actions.includes(동작) && !관리자전용.includes(동작) && !대리인전용.includes(동작)
+  const [resource, action, ...rest] = permission.split(':')
+  if (resource === undefined || action === undefined || rest.length > 0) return false
+  const entry = 카탈로그항목(resource)
+  if (entry === undefined) return false
+  const 관리자전용: ReadonlyArray<string> = entry.adminOnly ?? []
+  if (action === '*') return 관리자전용.length === 0
+  const 대리인전용: ReadonlyArray<string> = entry.agentOnly ?? []
+  return entry.actions.includes(action) && !관리자전용.includes(action) && !대리인전용.includes(action)
 }
 
 /**
@@ -341,10 +341,10 @@ export function isGrantable(permission: string): boolean {
  * ```
  */
 export function isAgentOnly(permission: string): boolean {
-  const [리소스, 동작] = permission.split(':')
-  if (리소스 === undefined || 동작 === undefined) return false
-  const 대리인전용: ReadonlyArray<string> = 카탈로그항목(리소스)?.agentOnly ?? []
-  return 대리인전용.includes(동작)
+  const [resource, action] = permission.split(':')
+  if (resource === undefined || action === undefined) return false
+  const 대리인전용: ReadonlyArray<string> = 카탈로그항목(resource)?.agentOnly ?? []
+  return 대리인전용.includes(action)
 }
 
 /** 권한이 속한 영역입니다. 카탈로그에 없는 리소스면 `undefined`입니다. */
@@ -358,7 +358,7 @@ export function permissionsForLegacyMenus(codes: Iterable<string>): GrantedPermi
   for (const 메뉴코드 of codes) {
     const 메뉴권한 = LEGACY_MENU_PERMISSIONS[메뉴코드]
     if (메뉴권한 === undefined || 메뉴권한.openToEveryone) continue
-    for (const 권한 of 메뉴권한.permissions) 권한집합.add(권한)
+    for (const permission of 메뉴권한.permissions) 권한집합.add(permission)
   }
   return [...권한집합].sort()
 }
@@ -372,27 +372,27 @@ export interface GrantablePermission {
 
 /** 권한 그룹에 넣을 수 있는 권한 전체입니다. 카탈로그 순서를 따릅니다. */
 export function grantablePermissions(): GrantablePermission[] {
-  return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([리소스, 항목]) =>
-    항목.actions
-      .map((동작) => `${리소스}:${동작}` as Permission)
+  return Object.entries(PERMISSION_CATALOG as Record<string, ResourcePermissions>).flatMap(([resource, entry]) =>
+    entry.actions
+      .map((action) => `${resource}:${action}` as Permission)
       .filter(isGrantable)
-      .map((권한) => ({ permission: 권한, area: 항목.area, requiredPlans: 항목.plans ?? [] })),
+      .map((permission) => ({ permission, area: entry.area, requiredPlans: entry.plans ?? [] })),
   )
 }
 
 /** 리소스의 카탈로그 항목입니다. 카탈로그에 없는 리소스면 `undefined`입니다. */
-function 카탈로그항목(리소스: string): ResourcePermissions | undefined {
-  return Object.hasOwn(PERMISSION_CATALOG, 리소스)
-    ? (PERMISSION_CATALOG as Record<string, ResourcePermissions>)[리소스]
+function 카탈로그항목(resource: string): ResourcePermissions | undefined {
+  return Object.hasOwn(PERMISSION_CATALOG, resource)
+    ? (PERMISSION_CATALOG as Record<string, ResourcePermissions>)[resource]
     : undefined
 }
 
 /** 권한과 플랜으로 여는 현행 메뉴입니다. */
-function 메뉴(권한목록: ReadonlyArray<GrantedPermission>, 플랜목록: ReadonlyArray<Plan> = []): LegacyMenuMapping {
-  return { permissions: 권한목록, plans: 플랜목록, openToEveryone: false }
+function 메뉴(permissions: ReadonlyArray<GrantedPermission>, plans: ReadonlyArray<Plan> = []): LegacyMenuMapping {
+  return { permissions, plans, openToEveryone: false }
 }
 
 /** 현행에서 `requiresPermission: false`였던, 모두에게 열린 메뉴입니다. */
-function 열린메뉴(권한목록: ReadonlyArray<GrantedPermission>): LegacyMenuMapping {
-  return { permissions: 권한목록, plans: [], openToEveryone: true }
+function 열린메뉴(permissions: ReadonlyArray<GrantedPermission>): LegacyMenuMapping {
+  return { permissions, plans: [], openToEveryone: true }
 }

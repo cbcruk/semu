@@ -31,8 +31,10 @@ export function actorPermissions(access: ActorAccess): ReadonlySet<GrantedPermis
   if (access.kind === 'AGENCY') return new Set<GrantedPermission>(AGENT_PERMISSIONS)
   if (access.access === 'ADMIN') return new Set<GrantedPermission>(['*'])
   const 권한집합 = new Set<GrantedPermission>(BASE_PERMISSIONS)
-  for (const 권한그룹 of access.rolePermissions) {
-    for (const 권한 of 권한그룹) if (isGrantedPermission(권한) && isGrantable(권한)) 권한집합.add(권한)
+  // 그룹권한목록: 권한 그룹 하나에 저장된 권한 문자열 목록입니다. 지은 말입니다.
+  for (const 그룹권한목록 of access.rolePermissions) {
+    for (const permission of 그룹권한목록)
+      if (isGrantedPermission(permission) && isGrantable(permission)) 권한집합.add(permission)
   }
   return 권한집합
 }

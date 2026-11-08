@@ -78,8 +78,8 @@ export function isCertificateUsableFor(
   if (institution === 'HOMETAX') {
     return certificate.ownerType === 'BUSINESS' && (certificate.usage === 'GENERAL' || certificate.usage === 'ETAX')
   }
-  const 받는명의 = businessType === 'CORPORATION' ? 'BUSINESS' : 'PERSONAL'
-  return certificate.ownerType === 받는명의 && (certificate.usage === 'BANK' || certificate.usage === 'GENERAL')
+  const 허용명의 = businessType === 'CORPORATION' ? 'BUSINESS' : 'PERSONAL'
+  return certificate.ownerType === 허용명의 && (certificate.usage === 'BANK' || certificate.usage === 'GENERAL')
 }
 
 /** 인증서로 연동할 수 있는 기관 목록입니다. 연동 화면의 `가능`/`불가` 표시를 서버가 정합니다. */
@@ -87,7 +87,9 @@ export function usableInstitutions(
   businessType: CertificateCompany['businessType'],
   certificate: Pick<CertificateClass, 'ownerType' | 'usage'>,
 ): InstitutionType[] {
-  return [...CERTIFICATE_INSTITUTIONS].filter((기관) => isCertificateUsableFor(기관, businessType, certificate))
+  return [...CERTIFICATE_INSTITUTIONS].filter((institution) =>
+    isCertificateUsableFor(institution, businessType, certificate),
+  )
 }
 
 /**

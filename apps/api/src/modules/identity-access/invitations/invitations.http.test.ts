@@ -88,7 +88,7 @@ describe('초대', () => {
     await app.dispose()
   })
 
-  it('유효한 초대가 있거나 이미 구성원이면 새 초대를 거절하고, 유효한 초대는 취소할 수 있습니다', async () => {
+  it('유효한 초대가 있거나 이미 구성원이면 새 초대를 거절하고, 초대를 취소한 뒤에는 다시 초대할 수 있습니다', async () => {
     const app = makeTestApp()
     const owner = await app.signIn('owner@semu.example')
 

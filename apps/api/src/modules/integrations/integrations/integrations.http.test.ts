@@ -212,7 +212,7 @@ describe('공동인증서', () => {
     signPassword: 'sign-1234',
   }
 
-  it('인증서를 파생한 상태와 연동할 수 있는 기관과 함께 보여 줍니다', async () => {
+  it('인증서마다 만료일로 파생한 상태와 연동할 수 있는 기관을 함께 보여 주고 서명 비밀번호는 내보내지 않습니다', async () => {
     const body = await (await app.request('GET', '/v1/certificates', { token })).json()
 
     expect(body.items).toEqual([
@@ -228,7 +228,7 @@ describe('공동인증서', () => {
     expect(JSON.stringify(body)).not.toContain(DEMO_SIGN_PASSWORD)
   })
 
-  it('회사의 인증서를 등록하고 같은 인증서를 다시 등록하거나 다른 명의면 거절합니다', async () => {
+  it('회사의 인증서를 등록하고, 같은 인증서는 409, 다른 명의는 거절, 틀린 서명 비밀번호는 CERTIFICATE_PASSWORD_INCORRECT로 답합니다', async () => {
     const created = await app.request('POST', '/v1/certificates', { token, body: upload })
     const duplicate = await app.request('POST', '/v1/certificates', { token, body: upload })
     const stranger = await app.request('POST', '/v1/certificates', {

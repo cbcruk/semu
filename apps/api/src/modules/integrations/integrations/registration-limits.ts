@@ -54,21 +54,25 @@ export function decideRegistration(request: RegistrationRequest, existing: Exist
   if (request.authMethod !== 'CERTIFICATE' && request.institutionCodes.length > 1) {
     return 거절({ code: 'SINGLE_INSTITUTION_REQUIRED', field: 'institutionCodes' })
   }
-  // 같은종류연동: 이 기관 종류의 기존 연동, 키규격: PG사별 연동키 규격(`PG_KEY_SPECS`)입니다. 지은 말입니다.
-  const 같은종류연동 = existing.integrations.filter((연동) => 연동.type === request.type)
+  // 같은종류연동: 이 기관 종류의 기존 연동, 연동키규격: PG사별 연동키 규격(`PG_KEY_SPECS`)입니다. 지은 말입니다.
+  const 같은종류연동 = existing.integrations.filter((integration) => integration.type === request.type)
   const 기관코드 = request.institutionCodes[0]
   switch (request.type) {
     case 'PG': {
-      const 키규격 = 기관코드 === undefined ? undefined : PG_KEY_SPECS[기관코드]
-      if (키규격 === undefined) return 거절({ code: 'PG_COMPANY_UNKNOWN', field: 'institutionCodes' })
+      const 연동키규격 = 기관코드 === undefined ? undefined : PG_KEY_SPECS[기관코드]
+      if (연동키규격 === undefined) return 거절({ code: 'PG_COMPANY_UNKNOWN', field: 'institutionCodes' })
       const 상점아이디 = request.mid ?? ''
       if (기관코드 === 'TOSSPAYMENTS' && 상점아이디.startsWith('CF_'))
         return 거절({ code: 'PG_MID_NOT_SUPPORTED', field: 'mid' })
       const 받은키이름 = new Set(request.keyNames ?? [])
-      const 빠진키 = 키규격.required.filter((키) => !받은키이름.has(키))
+      const 빠진키 = 연동키규격.required.filter((키) => !받은키이름.has(키))
       const 첫빠진키 = 빠진키[0]
       if (첫빠진키 !== undefined) return 거절({ code: 'PG_KEY_MISSING', field: `keys.${첫빠진키}`, missing: 빠진키 })
-      if (같은종류연동.some((연동) => 연동.institutionCode === 기관코드 && 연동.accountKey === 상점아이디)) {
+      if (
+        같은종류연동.some(
+          (integration) => integration.institutionCode === 기관코드 && integration.accountKey === 상점아이디,
+        )
+      ) {
         return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
       if (같은종류연동.length >= MAX_ITEMS_PER_TYPE) {
@@ -78,11 +82,11 @@ export function decideRegistration(request: RegistrationRequest, existing: Exist
         ok: true,
         canIssueTaxInvoice: false,
         usableForTaxFiling: false,
-        ...(키규격.ipWhitelist === undefined ? {} : { ipWhitelist: 키규격.ipWhitelist }),
+        ...(연동키규격.ipWhitelist === undefined ? {} : { ipWhitelist: 연동키규격.ipWhitelist }),
       }
     }
     case 'HOMETAX':
-      if (같은종류연동.some((연동) => 연동.authMethod === request.authMethod)) {
+      if (같은종류연동.some((integration) => integration.authMethod === request.authMethod)) {
         return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
       return {
@@ -95,7 +99,11 @@ export function decideRegistration(request: RegistrationRequest, existing: Exist
       if (같은종류연동.length > 0) return 거절({ code: 'INTEGRATION_DUPLICATE' })
       return { ok: true, canIssueTaxInvoice: false, usableForTaxFiling: request.type === 'CARD_SALES' }
     case 'SPEED_BANK':
-      if (같은종류연동.some((연동) => 연동.institutionCode === 기관코드 && 연동.accountKey === request.accountId)) {
+      if (
+        같은종류연동.some(
+          (integration) => integration.institutionCode === 기관코드 && integration.accountKey === request.accountId,
+        )
+      ) {
         return 거절({ code: 'INTEGRATION_DUPLICATE' })
       }
       return { ok: true, canIssueTaxInvoice: false, usableForTaxFiling: true }

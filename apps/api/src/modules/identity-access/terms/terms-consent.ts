@@ -35,5 +35,5 @@ export function pendingTermCodes(
   terms: ReadonlyArray<ConsentTerm>,
   histories: ReadonlyMap<string, ConsentHistory>,
 ): string[] {
-  return terms.filter((약관) => consentStatus(약관, histories.get(약관.code)) === 'REQUIRED').map((약관) => 약관.code)
+  return terms.filter((term) => consentStatus(term, histories.get(term.code)) === 'REQUIRED').map((term) => term.code)
 }
