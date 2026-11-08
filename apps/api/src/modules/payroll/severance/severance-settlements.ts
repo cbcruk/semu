@@ -12,6 +12,7 @@ import {
   type RateTableNotFound,
   SeveranceNotApplicable,
   SeverancePaymentDateInvalid,
+  SeveranceRetirementMismatch,
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
@@ -31,6 +32,7 @@ import {
   severanceResponse,
   type UpdateSeveranceSettlement,
 } from './severance-settlement.ts'
+import { retirementMismatchOf } from './severance-retirement.ts'
 import { SeveranceSettlementRepository } from './severance-settlement-repository.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
 import { severanceMonthsTouched, severanceWithholdingMonthsChanged } from './severance-withholding.ts'
@@ -51,6 +53,7 @@ type SeveranceError =
   | SeveranceTransitionInvalid
   | SeveranceNotApplicable
   | SeverancePaymentDateInvalid
+  | SeveranceRetirementMismatch
   | SeveranceSettlementExists
   | EmployeeNotFound
   | RateTableNotFound
@@ -64,6 +67,7 @@ const PLANS = ['PAYROLL'] as const
  *
  * `paymentMonth`(`YYYY-MM`)를 주면 지급일이 그 달인 정산만 줍니다. 원천세 퇴직소득 그 외(A22)는 `status=COMPLETED`와 함께 읽습니다.
  * 지급일이 없는 정산(계산됨에서 아직 정하지 않았거나 지급일이 생기기 전에 완료한 정산)은 어느 달에도 들지 않습니다.
+ * 정산마다 HR 퇴직일과 대조한 `retirementMismatch`를 붙입니다(직원별로 한 번 묻습니다).
  */
 export const listSettlements = (filter: {
   readonly status?: SeveranceStatus
@@ -71,12 +75,17 @@ export const listSettlements = (filter: {
 }): Run<{ items: Response[] }, AccessDenied> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'severance-settlement:read', plans: PLANS, requiresTerms: true })
-    const records = yield* (yield* SeveranceSettlementRepository).list(actor.companyId)
+    const records = (yield* (yield* SeveranceSettlementRepository).list(actor.companyId))
+      .filter((record) => filter.status === undefined || record.status === filter.status)
+      .filter((record) => filter.paymentMonth === undefined || paymentMonthOf(record) === filter.paymentMonth)
+    const leaveDates = yield* currentLeaveDates(
+      actor.companyId,
+      records.map((record) => record.employeeId),
+    )
     return {
-      items: records
-        .filter((record) => filter.status === undefined || record.status === filter.status)
-        .filter((record) => filter.paymentMonth === undefined || paymentMonthOf(record) === filter.paymentMonth)
-        .map(severanceResponse),
+      items: records.map((record) =>
+        severanceResponse(record, retirementMismatchOf(record.lastWorkDate, leaveDates.get(record.employeeId))),
+      ),
     }
   })
 
@@ -104,7 +113,7 @@ export const getSettlement = (
 ): Run<Response, AccessDenied | SeveranceSettlementNotFound> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'severance-settlement:read', plans: PLANS, requiresTerms: true })
-    return severanceResponse(yield* findOrFail(actor.companyId, id))
+    return yield* respond(yield* findOrFail(actor.companyId, id))
   })
 
 /**
@@ -150,7 +159,8 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
       updatedAt: now,
     }
     yield* saveWithWithholding(undefined, record)
-    return severanceResponse(record)
+    // 방금 읽은 HR 퇴직일로 만들었으므로 어긋남이 없습니다.
+    return severanceResponse(record, null)
   })
 
 /**
@@ -183,10 +193,15 @@ export const updateSettlement = (
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }
     yield* saveWithWithholding(record, next)
-    return severanceResponse(next)
+    return yield* respond(next)
   })
 
-/** 완료·완료 취소·제외·제외 취소 커맨드입니다. */
+/**
+ * 완료·완료 취소·제외·제외 취소 커맨드입니다.
+ *
+ * `:complete`는 HR 퇴직일을 다시 읽어 정산의 마지막 근무일과 맞지 않으면(직원 삭제, 퇴사 취소, 다른 날로 다시 퇴사)
+ * 409 `SEVERANCE_RETIREMENT_MISMATCH`입니다. HR은 계산됨 정산이 있어도 퇴직을 바꿀 수 있어서, 지급 확정 순간에 맞춰 봅니다.
+ */
 export const transitionSettlement = (
   id: Id<'severanceSettlement'>,
   command: SeveranceCommand,
@@ -207,6 +222,15 @@ export const transitionSettlement = (
     if (record.status !== rule.from) {
       return yield* new SeveranceTransitionInvalid({ settlementStatus: record.status, action: command })
     }
+    const employee = yield* currentEmployee(record.companyId, record.employeeId)
+    const mismatch = retirementMismatchOf(record.lastWorkDate, employee)
+    if (command === 'COMPLETE' && mismatch !== null) {
+      return yield* new SeveranceRetirementMismatch({
+        reason: mismatch,
+        lastWorkDate: record.lastWorkDate,
+        leaveDate: employee?.leaveDate ?? null,
+      })
+    }
     const next: SeveranceSettlementRecord = {
       ...record,
       // 현행 `complete`처럼 지급일이 없으면 마지막 근무일로 채웁니다. 그래서 완료된 정산은 모두 지급월이 있습니다.
@@ -216,8 +240,42 @@ export const transitionSettlement = (
       updatedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
     }
     yield* saveWithWithholding(record, next)
-    return severanceResponse(next)
+    return severanceResponse(next, mismatch)
   })
+
+/** 정산 응답입니다. HR 퇴직일을 지금 읽어 `retirementMismatch`를 붙입니다. */
+function respond(record: SeveranceSettlementRecord): Effect.Effect<Response, never, PayrollEmployeeDirectory> {
+  return currentEmployee(record.companyId, record.employeeId).pipe(
+    Effect.map((employee) => severanceResponse(record, retirementMismatchOf(record.lastWorkDate, employee))),
+  )
+}
+
+/** HR의 지금 직원 정보에서 퇴직일만 꺼냅니다. HR에 없으면 `undefined`입니다. */
+function currentEmployee(
+  companyId: Id<'company'>,
+  employeeId: Id<'employee'>,
+): Effect.Effect<{ leaveDate: string | null } | undefined, never, PayrollEmployeeDirectory> {
+  return Effect.gen(function* () {
+    const today = companyDate(yield* Clock.currentTimeMillis)
+    const found = yield* (yield* PayrollEmployeeDirectory).find(companyId, employeeId, today)
+    return Option.match(found, { onNone: () => undefined, onSome: (employee) => ({ leaveDate: employee.leaveDate }) })
+  })
+}
+
+/** 직원별 지금 퇴직일입니다. 같은 직원은 한 번만 묻고, HR에 없는 직원은 맵에 없습니다. */
+function currentLeaveDates(
+  companyId: Id<'company'>,
+  employeeIds: ReadonlyArray<Id<'employee'>>,
+): Effect.Effect<Map<Id<'employee'>, { leaveDate: string | null }>, never, PayrollEmployeeDirectory> {
+  return Effect.gen(function* () {
+    const leaveDates = new Map<Id<'employee'>, { leaveDate: string | null }>()
+    for (const employeeId of new Set(employeeIds)) {
+      const employee = yield* currentEmployee(companyId, employeeId)
+      if (employee !== undefined) leaveDates.set(employeeId, employee)
+    }
+    return leaveDates
+  })
+}
 
 /**
  * 정산을 저장하고 원천세와 맞춥니다([payroll.md 퇴직금 정산](../../../../../../docs/design/payroll.md#퇴직금-정산)).
