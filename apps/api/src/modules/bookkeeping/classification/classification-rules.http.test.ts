@@ -17,7 +17,7 @@ const MALL_RULE = {
   resultAccountTitleId: systemAccountTitleIdOf('sales.revenue'),
 }
 
-describe('자동분류 규칙 /v1/classification-rules', () => {
+describe('자동분류 규칙(/v1/classification-rules)', () => {
   it('규칙 범위의 규칙을 우선순위 순으로 보여 줍니다', async () => {
     const response = await app.send('GET', '/v1/classification-rules?scope=BANK')
 

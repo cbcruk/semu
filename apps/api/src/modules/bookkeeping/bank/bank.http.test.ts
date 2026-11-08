@@ -22,7 +22,7 @@ async function transaction(summary: string): Promise<TransactionBody> {
   return ((await response.json()) as { items: TransactionBody[] }).items.find((row) => row.summary === summary)!
 }
 
-describe('계좌 /v1/bank-accounts', () => {
+describe('계좌(/v1/bank-accounts)', () => {
   it('계좌번호를 가리고 총 자산·총 부채를 요약합니다', async () => {
     const accounts = await app.send('GET', '/v1/bank-accounts')
     const summary = await app.send('GET', '/v1/bank-accounts:summary')
@@ -53,7 +53,7 @@ describe('계좌 /v1/bank-accounts', () => {
   })
 })
 
-describe('입출금 /v1/bank-transactions', () => {
+describe('입출금(/v1/bank-transactions)', () => {
   it('증빙 연결 상태는 분류·거래처·연결 금액으로 정합니다', async () => {
     expect((await transaction('에코프로비엠')).settlement).toMatchObject({
       status: 'MATCHED',

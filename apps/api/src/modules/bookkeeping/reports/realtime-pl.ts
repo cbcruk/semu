@@ -80,20 +80,20 @@ export function realtimeProfitLoss(input: {
 }): RealtimeProfitLoss {
   const 연도 = String(input.year)
   const 월별줄금액 = Array.from({ length: 12 }, () => new Map<string, number>())
-  const unclassifiedCount = { sales: 0, purchase: 0, bank: 0 }
-  // 기준일: 증빙은 작성일자, 입출금은 거래일입니다. 수익쪽인가: 이 금액이 수익 쪽(매출 증빙·입금)에서 왔는지입니다
-  const 손익에더하기 = (기준일: string, 계정과목ID: string, 금액: number, 수익쪽인가: boolean): void => {
+  const 미분류건수 = { sales: 0, purchase: 0, bank: 0 }
+  // 기준일: 증빙은 작성일자, 입출금은 거래일입니다. 수익쪽이양수인가: 금액이 수익 쪽에서 양수인지입니다. 증빙은 매출이면 참, 입출금은 부호가 방향을 실으므로 늘 참입니다
+  const 손익에더하기 = (기준일: string, 계정과목ID: string, 금액: number, 수익쪽이양수인가: boolean): void => {
     const 계정과목 = input.titles.get(계정과목ID)
     const bucket = 월별줄금액[Number(기준일.slice(5, 7)) - 1]
     if (계정과목 === undefined || 계정과목.plCategory === 'NONE' || bucket === undefined) return
-    const 부호붙은금액 = 수익쪽줄.has(계정과목.plCategory) === 수익쪽인가 ? 금액 : -금액
+    const 부호붙은금액 = 수익쪽줄.has(계정과목.plCategory) === 수익쪽이양수인가 ? 금액 : -금액
     const key = `${계정과목.plCategory}\u0000${계정과목.reportName}`
     bucket.set(key, (bucket.get(key) ?? 0) + 부호붙은금액)
   }
   for (const row of input.evidence) {
     if (!row.date.startsWith(연도)) continue
     if (row.accountTitleId === null) {
-      unclassifiedCount[row.side === 'SALES' ? 'sales' : 'purchase']++
+      미분류건수[row.side === 'SALES' ? 'sales' : 'purchase']++
       continue
     }
     const 넣을금액 = input.policy.basis === 'SUPPLY' ? row.supplyAmount : row.totalAmount
@@ -102,7 +102,7 @@ export function realtimeProfitLoss(input: {
   for (const row of input.bank) {
     if (!row.date.startsWith(연도)) continue
     if (row.accountTitleId === null) {
-      unclassifiedCount.bank++
+      미분류건수.bank++
       continue
     }
     if (input.policy.includeBank) 손익에더하기(row.date, row.accountTitleId, row.amount, true)
@@ -117,7 +117,7 @@ export function realtimeProfitLoss(input: {
   const 연간줄금액 = new Map<string, number>()
   for (const bucket of 월별줄금액)
     for (const [key, amount] of bucket) 연간줄금액.set(key, (연간줄금액.get(key) ?? 0) + amount)
-  return { months: 월별손익, total: 손익집계(연간줄금액), unclassifiedCount }
+  return { months: 월별손익, total: 손익집계(연간줄금액), unclassifiedCount: 미분류건수 }
 }
 
 /** 줄금액: `손익 구분\0보고서 줄 이름` 키별 금액입니다. */

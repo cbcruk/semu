@@ -12,7 +12,7 @@ type Json = {
 const app = testApp({ noPlan: testActor({ plans: new Set() }) })
 afterAll(() => app.dispose())
 
-describe('실시간 손익 GET /v1/reports/realtime-pl', () => {
+describe('실시간 손익(GET /v1/reports/realtime-pl)', () => {
   it('2026년 10월 데모 손익이 현행 값과 같습니다', async () => {
     const response = await app.send('GET', '/v1/reports/realtime-pl?year=2026')
 
@@ -46,7 +46,7 @@ describe('실시간 손익 GET /v1/reports/realtime-pl', () => {
   })
 })
 
-describe('자금 현황 GET /v1/reports/cash-status', () => {
+describe('자금 현황(GET /v1/reports/cash-status)', () => {
   it('2026-10-31 데모 자금 현황이 현행 값과 같습니다', async () => {
     const response = await app.send('GET', '/v1/reports/cash-status?date=2026-10-31')
 
@@ -66,7 +66,7 @@ describe('자금 현황 GET /v1/reports/cash-status', () => {
   })
 })
 
-describe('홈 요약 GET /v1/reports/home-summary', () => {
+describe('홈 요약(GET /v1/reports/home-summary)', () => {
   it('이번 달 손익, 어제 자금, 예상 부가세, 납부할 고지서를 한데 모읍니다', async () => {
     const response = await app.send('GET', '/v1/reports/home-summary?date=2026-10-31')
 
@@ -92,7 +92,7 @@ describe('홈 요약 GET /v1/reports/home-summary', () => {
   })
 })
 
-describe('인건비 GET /v1/reports/labor-cost', () => {
+describe('인건비(GET /v1/reports/labor-cost)', () => {
   it('세무 기장 구독 회사에는 급여의 인건비를 그대로 보여 줍니다', async () => {
     const response = await app.send('GET', '/v1/reports/labor-cost?year=2026')
 

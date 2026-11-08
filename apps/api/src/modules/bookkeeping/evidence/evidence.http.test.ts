@@ -27,7 +27,7 @@ async function list(query: string): Promise<EvidenceBody[]> {
   return ((await response.json()) as { items: EvidenceBody[] }).items
 }
 
-describe('증빙 조회 GET /v1/evidence', () => {
+describe('증빙 조회(GET /v1/evidence)', () => {
   it('매출·매입 한쪽을 최신순으로, 채운 금액과 함께 보여 줍니다', async () => {
     const items = await list('side=SALES')
 
@@ -58,7 +58,7 @@ describe('증빙 조회 GET /v1/evidence', () => {
   })
 })
 
-describe('증빙 건수 GET /v1/evidence:count', () => {
+describe('증빙 건수(GET /v1/evidence:count)', () => {
   it('탭에 쓸 분류·미분류 건수를 셉니다', async () => {
     const response = await app.send('GET', '/v1/evidence:count?side=SALES')
 
@@ -66,7 +66,7 @@ describe('증빙 건수 GET /v1/evidence:count', () => {
   })
 })
 
-describe('증빙 분류 POST /v1/evidence/{id}:classify', () => {
+describe('증빙 분류(POST /v1/evidence/{id}:classify)', () => {
   it('직접 분류하면 버전을 올립니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
@@ -129,7 +129,7 @@ describe('증빙 분류 POST /v1/evidence/{id}:classify', () => {
   })
 })
 
-describe('증빙 일괄 분류 POST /v1/evidence:batchClassify', () => {
+describe('증빙 일괄 분류(POST /v1/evidence:batchClassify)', () => {
   it('모든 행을 분류하거나 하나도 분류하지 않습니다', async () => {
     const unclassified = await list('side=SALES&classification=UNCLASSIFIED')
     const missing = 'evd_01JBQ000000000000000000099'
@@ -147,7 +147,7 @@ describe('증빙 일괄 분류 POST /v1/evidence:batchClassify', () => {
   })
 })
 
-describe('증빙 수정 PATCH /v1/evidence/{id}', () => {
+describe('증빙 수정(PATCH /v1/evidence/{id})', () => {
   it('매입 증빙의 부가세 공제 여부를 정합니다', async () => {
     const [card] = await list('side=PURCHASE&source=CARD')
     const response = await app.send('PATCH', `/v1/evidence/${card!.id}`, { body: { vatDeduction: 'DEDUCTIBLE' } })

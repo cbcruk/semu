@@ -110,7 +110,7 @@ export function planRuleUpdate(
   mode: ApplyMode,
 ): RuleUpdate | null {
   if (mode === 'OVERWRITE' && OVERWRITE_KEEPS_MANUAL && row.classification.method === 'MANUAL') return null
-  const update: RuleUpdate = {}
+  const 바꿀값: RuleUpdate = {}
   const 현재계정과목 = row.classification.accountTitleId
   const 규칙계정과목 = result.accountTitleId
   if (
@@ -118,17 +118,17 @@ export function planRuleUpdate(
     (mode === 'OVERWRITE' || 현재계정과목 === null) &&
     (규칙계정과목 !== 현재계정과목 || row.classification.method !== 'RULE')
   ) {
-    update.accountTitleId = 규칙계정과목
+    바꿀값.accountTitleId = 규칙계정과목
   }
   const 규칙거래처 = result.partnerId
   if (규칙거래처 !== null && (mode === 'OVERWRITE' || row.partnerId === null) && 규칙거래처 !== row.partnerId) {
-    update.partnerId = 규칙거래처
+    바꿀값.partnerId = 규칙거래처
   }
-  return update.accountTitleId === undefined && update.partnerId === undefined ? null : update
+  return 바꿀값.accountTitleId === undefined && 바꿀값.partnerId === undefined ? null : 바꿀값
 }
 
-/** 규칙 필드마다 행에서 볼 값(`행값`, 규칙 조건이 보는 행의 값)의 키입니다. */
-const 필드별행값키: Record<RuleField, keyof RuleFacts> = {
+/** 규칙 필드마다 볼 사실(facts) 값의 키입니다. */
+const 필드별사실키: Record<RuleField, keyof RuleFacts> = {
   PARTNER: 'partner',
   COUNTERPARTY: 'counterparty',
   ITEM: 'item',
@@ -143,26 +143,26 @@ const 필드별행값키: Record<RuleField, keyof RuleFacts> = {
 }
 
 function 조건에맞는가(condition: RuleCondition, facts: RuleFacts): boolean {
-  const 행값 = facts[필드별행값키[condition.field]]
-  if (typeof 행값 === 'number') {
-    const 금액절댓값 = Math.abs(행값)
+  const 사실값 = facts[필드별사실키[condition.field]]
+  if (typeof 사실값 === 'number') {
+    const 금액절댓값 = Math.abs(사실값)
     if (condition.operator === 'GTE') return 금액절댓값 >= (condition.min ?? 0)
     if (condition.operator === 'LTE') return 금액절댓값 <= (condition.max ?? 0)
     if (condition.operator === 'BETWEEN')
       return 금액절댓값 >= (condition.min ?? 0) && 금액절댓값 <= (condition.max ?? 0)
     return false
   }
-  if (행값 === null) return false
-  const 행글자 = 행값.toLowerCase()
+  if (사실값 === null) return false
+  const 사실글자 = 사실값.toLowerCase()
   const 비교글자 = (condition.values ?? []).map((비교값) => 비교값.toLowerCase())
   switch (condition.operator) {
     case 'IN':
     case 'EQUALS':
-      return 비교글자.includes(행글자)
+      return 비교글자.includes(사실글자)
     case 'CONTAINS':
-      return 비교글자.some((비교값) => 행글자.includes(비교값))
+      return 비교글자.some((비교값) => 사실글자.includes(비교값))
     case 'STARTS_WITH':
-      return 비교글자.some((비교값) => 행글자.startsWith(비교값))
+      return 비교글자.some((비교값) => 사실글자.startsWith(비교값))
     default:
       return false
   }

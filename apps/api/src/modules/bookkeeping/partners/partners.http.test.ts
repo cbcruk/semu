@@ -10,7 +10,7 @@ afterEach(() => app.dispose())
 
 const ECOPRO = 'ptn_01JBQ000000000000000000001'
 
-describe('거래처 /v1/partners', () => {
+describe('거래처(/v1/partners)', () => {
   it('미정산 금액은 분류된 증빙 합계에서 연결 금액을 뺀 실시간 값입니다', async () => {
     const ecopro = await app.send('GET', `/v1/partners/${ECOPRO}`)
     const office = await app.send('GET', '/v1/partners/ptn_01JBQ000000000000000000002')

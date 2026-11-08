@@ -13,7 +13,7 @@ beforeEach(() => {
 })
 afterEach(() => app.dispose())
 
-describe('계정과목 조회 GET /v1/account-titles', () => {
+describe('계정과목 조회(GET /v1/account-titles)', () => {
   it('적용 범위로 거르면 맞는 계정과 그 그룹 제목을 깊이 우선 순서로 돌려줍니다', async () => {
     const response = await app.send('GET', '/v1/account-titles?appliesTo=DEPOSIT&search=이자')
 
@@ -26,7 +26,7 @@ describe('계정과목 조회 GET /v1/account-titles', () => {
   })
 })
 
-describe('하위 계정과목 추가 POST /v1/account-titles', () => {
+describe('하위 계정과목 추가(POST /v1/account-titles)', () => {
   it('분류된 거래가 있는 계정에 첫 하위 계정을 만들면 자동 기타 계정을 만들어 거래를 옮깁니다', async () => {
     const response = await app.send('POST', '/v1/account-titles', {
       body: { parentId: systemAccountTitleIdOf('sga.welfare'), name: '식대' },
@@ -62,7 +62,7 @@ describe('하위 계정과목 추가 POST /v1/account-titles', () => {
   })
 })
 
-describe('계정과목 수정·삭제 PATCH·DELETE /v1/account-titles/{id}', () => {
+describe('계정과목 수정·삭제(PATCH·DELETE /v1/account-titles/{id})', () => {
   it('기본 계정과목은 고치거나 지울 수 없습니다', async () => {
     const id = systemAccountTitleIdOf('sga.rent')
     const renamed = await app.send('PATCH', `/v1/account-titles/${id}`, { body: { name: '월세' } })

@@ -60,7 +60,7 @@ async function create(overrides: Record<string, unknown> = {}): Promise<{ id: st
   return (await response.json()) as { id: string; version: number }
 }
 
-describe('거래명세서 /v1/sales-transactions', () => {
+describe('거래명세서(/v1/sales-transactions)', () => {
   it('거래명세서를 만들면 품목 요약을 붙입니다', async () => {
     const response = await app.send('POST', '/v1/sales-transactions', { body: STATEMENT })
 
@@ -102,7 +102,7 @@ describe('거래명세서 /v1/sales-transactions', () => {
   })
 })
 
-describe('전자세금계산서 발급 POST /v1/tax-invoices', () => {
+describe('전자세금계산서 발급(POST /v1/tax-invoices)', () => {
   it('Idempotency-Key가 있어야 합니다', async () => {
     const statement = await create()
     const response = await app.send('POST', '/v1/tax-invoices', { body: { salesTransactionId: statement.id } })

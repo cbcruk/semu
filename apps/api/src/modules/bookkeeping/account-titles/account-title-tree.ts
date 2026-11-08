@@ -17,7 +17,7 @@ import type {
 export function indexAccountTitles(rows: ReadonlyArray<AccountTitleRecord>): Map<Id<'accountTitle'>, AccountTitleInfo> {
   const byId = new Map(rows.map((row) => [row.id, row]))
   const 하위가있는계정ID = new Set(rows.flatMap((row) => (row.parentId === null ? [] : [row.parentId])))
-  const 계정과목정보 = new Map<Id<'accountTitle'>, AccountTitleInfo>()
+  const 계정과목ID별정보 = new Map<Id<'accountTitle'>, AccountTitleInfo>()
   for (const row of rows) {
     let 보고서줄계정 = row
     let 그룹계정 = row
@@ -26,7 +26,7 @@ export function indexAccountTitles(rows: ReadonlyArray<AccountTitleRecord>): Map
       그룹계정 = cursor
       cursor = cursor.parentId === null ? undefined : byId.get(cursor.parentId)
     }
-    계정과목정보.set(row.id, {
+    계정과목ID별정보.set(row.id, {
       id: row.id,
       name: row.name,
       depth: row.depth,
@@ -38,7 +38,7 @@ export function indexAccountTitles(rows: ReadonlyArray<AccountTitleRecord>): Map
       selectable: row.depth >= 2 && !하위가있는계정ID.has(row.id),
     })
   }
-  return 계정과목정보
+  return 계정과목ID별정보
 }
 
 /**
@@ -51,21 +51,21 @@ export function flattenAccountTitles(
   rows: ReadonlyArray<AccountTitleRecord>,
   filter: { appliesTo?: AccountScope; search?: string } = {},
 ): AccountTitleRecord[] {
-  const 하위계정목록 = new Map<string | null, AccountTitleRecord[]>()
+  const 상위계정별하위계정 = new Map<string | null, AccountTitleRecord[]>()
   for (const row of [...rows].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))) {
-    하위계정목록.set(row.parentId, [...(하위계정목록.get(row.parentId) ?? []), row])
+    상위계정별하위계정.set(row.parentId, [...(상위계정별하위계정.get(row.parentId) ?? []), row])
   }
   const 검색어 = filter.search?.trim().toLowerCase() ?? ''
   const 거르는가 = filter.appliesTo !== undefined || 검색어 !== ''
   const 펼치기 = (row: AccountTitleRecord): AccountTitleRecord[] => {
-    const 하위펼침 = (하위계정목록.get(row.id) ?? []).flatMap(펼치기)
-    if (하위펼침.length > 0) return [row, ...하위펼침]
+    const 펼친하위계정 = (상위계정별하위계정.get(row.id) ?? []).flatMap(펼치기)
+    if (펼친하위계정.length > 0) return [row, ...펼친하위계정]
     if (!거르는가) return [row]
     const 적용범위맞는가 = filter.appliesTo === undefined || row.appliesTo.includes(filter.appliesTo)
     const 검색어맞는가 = 검색어 === '' || row.name.toLowerCase().includes(검색어)
     return row.depth > 1 && 적용범위맞는가 && 검색어맞는가 ? [row] : []
   }
-  return (하위계정목록.get(null) ?? []).flatMap(펼치기)
+  return (상위계정별하위계정.get(null) ?? []).flatMap(펼치기)
 }
 
 /**
@@ -102,10 +102,10 @@ export function planChildCreation(input: {
   const { parent, siblingNames, classifiedCount, name } = input
   if (parent.depth === 3) return { ok: false, code: 'DEPTH_EXCEEDED' }
   const 자동기타이름 = `기타 ${parent.name}`
-  const createAutoEtc = siblingNames.length === 0 && parent.depth === 2 && classifiedCount > 0
-  const 쓰인이름 = createAutoEtc ? [...siblingNames, 자동기타이름] : siblingNames
+  const 자동기타를만드는가 = siblingNames.length === 0 && parent.depth === 2 && classifiedCount > 0
+  const 쓰인이름 = 자동기타를만드는가 ? [...siblingNames, 자동기타이름] : siblingNames
   if (쓰인이름.includes(name)) return { ok: false, code: 'NAME_DUPLICATE' }
-  return { ok: true, depth: parent.depth === 1 ? 2 : 3, createAutoEtc, autoEtcName: 자동기타이름 }
+  return { ok: true, depth: parent.depth === 1 ? 2 : 3, createAutoEtc: 자동기타를만드는가, autoEtcName: 자동기타이름 }
 }
 
 /** 계정과목을 지울 수 없는 이유입니다. */

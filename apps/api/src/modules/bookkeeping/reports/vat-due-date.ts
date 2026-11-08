@@ -21,9 +21,9 @@ export function vatPeriodContaining(businessType: BusinessType, date: string): V
   const month = Number(date.slice(5, 7))
   if (businessType === 'CORPORATION') {
     const 분기종료월 = Math.ceil(month / 3) * 3
-    const 분기시작월 = `${year}-${String(분기종료월 - 2).padStart(2, '0')}`
+    const 분기시작연월 = `${year}-${String(분기종료월 - 2).padStart(2, '0')}`
     return {
-      start: `${분기시작월}-01`,
+      start: `${분기시작연월}-01`,
       end: lastDayOfMonth(`${year}-${String(분기종료월).padStart(2, '0')}`),
       unit: 'QUARTER',
     }

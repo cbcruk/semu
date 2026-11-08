@@ -84,7 +84,7 @@ function pay(app: HttpTestApp, key: string, body: object = PAYMENT, token?: stri
   return app.json('POST', `/giros/${VAT}:pay`, { idempotencyKey: key, body, token })
 }
 
-describe('앱 납부 멱등성 POST /giros/{id}:pay', () => {
+describe('앱 납부 멱등성(POST /giros/{id}:pay)', () => {
   it('한 번만 납부하고 같은 키에는 첫 응답을 다시 돌려줍니다', async () => {
     const { app, gateway } = setUp()
 

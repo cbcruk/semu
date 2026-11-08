@@ -14,7 +14,7 @@ const WITHHOLDING_UNKNOWN = 'gir_01JBQ000000000000000000003'
 const PAID = 'gir_01JBQ000000000000000000004'
 const PAYMENT = { bankCode: '004', accountNumber: '123-456-789012', accountPassword: '1234' }
 
-describe('지로 고지서 /v1/giros', () => {
+describe('지로 고지서(/v1/giros)', () => {
   it('납부할 고지서를 요약합니다', async () => {
     const response = await app.send('GET', '/v1/giros:summary')
 
@@ -49,7 +49,7 @@ describe('지로 고지서 /v1/giros', () => {
   })
 })
 
-describe('앱 납부 POST /v1/giros/{id}:pay', () => {
+describe('앱 납부(POST /v1/giros/{id}:pay)', () => {
   it('Idempotency-Key가 있어야 합니다', async () => {
     const response = await app.send('POST', `/v1/giros/${VAT}:pay`, { body: PAYMENT })
 
@@ -70,7 +70,7 @@ describe('앱 납부 POST /v1/giros/{id}:pay', () => {
     expect(again.status).toBe(409)
   })
 
-  it('은행이 거절하면 고지서를 납부 전으로 둡니다', async () => {
+  it('은행이 거절하면 고지서를 납부 필요(`TODO`)로 둡니다', async () => {
     const response = await app.send('POST', `/v1/giros/${VAT}:pay`, {
       body: { ...PAYMENT, accountPassword: FAKE_WRONG_PASSWORD },
       headers: { 'idempotency-key': 'pay-3' },

@@ -164,7 +164,7 @@ function issue(app: HttpTestApp, key: string, salesTransactionId: string, token?
   return app.json('POST', '/tax-invoices', { idempotencyKey: key, body: { salesTransactionId }, token })
 }
 
-describe('전자세금계산서 발급 멱등성 POST /tax-invoices', () => {
+describe('전자세금계산서 발급 멱등성(POST /tax-invoices)', () => {
   it('한 번만 발급하고 같은 키에는 첫 응답을 다시 돌려줍니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app)
