@@ -145,7 +145,7 @@ stateDiagram-v2
 
 - 응답은 바뀐 신고 건과 `ETag`입니다. `If-Match`가 있고 버전이 다르면 412 `VERSION_MISMATCH`입니다
 - 시스템 반영도 버전을 올립니다(#71). 그사이 옛 `ETag`로 보낸 요청은 412 `VERSION_MISMATCH`를 받고, 다시 읽고 재시도합니다. 응답이 실제로 바뀌었으므로 의도한 동작입니다
-  - 급여대장 이벤트(`PayrollLedgerSync`): `CANCELED`가 아닌 건(이미 `FILED`·`SETTLED`인 건 포함)의 자동 연계 항목이 바뀌면 `version`이 오르고 이력 `REQUIREMENT_LINKED`가 남습니다. 바뀐 항목이 없으면 저장하지 않아 버전도 그대로입니다
+  - 급여대장 이벤트(`PayrollLedgerSync`): `CANCELED`가 아닌 원천세 건(이미 `FILED`·`SETTLED`인 건 포함)의 자동 연계 항목이 바뀌면 `version`이 오르고 이력 `REQUIREMENT_LINKED`가 남습니다. 바뀐 항목이 없으면 저장하지 않아 버전도 그대로입니다
   - 일정 배치의 되살리기(`CANCELED` → `SCHEDULED`): 상태가 바뀌므로 언제나 `version`이 오르고 `SCHEDULE_RESTORED`가 남습니다. 자동 연계 항목이 바뀌었으면 그 뒤에 `REQUIREMENT_LINKED`도 남습니다
 - 사유·메시지·금액은 이력 `detail`에 남습니다
 - **대리인 대행(2026-11-07).** 그 회사에 배정된 세무 대리인은 원천세의 `:submit`·`:unsubmit`·`:pay`를 고객 대신 보낼 수 있습니다. 전이표의 행위자는 그대로 고객이고 규칙에 대행 세목(`agencyProxyTaxTypes`)을 둡니다. 이력의 `actorKind`·`actorId`는 요청한 대리인이고 `onBehalfOf: CLIENT`가 붙습니다. 대리인이 고친 제출 자료 응답·파일 이력에도 같은 표시가 붙습니다(제출 자료 쓰기는 전부터 세목과 상관없이 대리인도 받음). 상태 전이·할 일 카드·`filing.status_changed`는 고객이 보낸 것과 같습니다
