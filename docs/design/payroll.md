@@ -1,6 +1,6 @@
 # Payroll: 계산 엔진·급여대장·명세서·퇴직금·인건비
 
-급여 계산 엔진, 요율·간이세액 기준표, 회사 급여 설정, 급여대장(급여 아웃소싱과 직접 운영 모두), 급여명세서 발송, 퇴직금 정산, Bookkeeping에 주는 인건비 집계를 다룹니다. 코드는 [`apps/api/src/modules/payroll/`](../../apps/api/src/modules/payroll/)에 있습니다. 근거 자료는 [`docs/reference/spec/payroll.md`](../reference/spec/payroll.md)(이하 스펙), 매뉴얼 `alfred-manual/05-급여/`, `alfred-manual/08-설정/03-급여-설정.md`, 재설계 전 구현 `apps/api/legacy/src/modules/payroll/`입니다.
+급여 계산 엔진, 요율·간이세액 기준표, 회사 급여 설정, 소득자 명부, 급여대장(급여 아웃소싱과 직접 운영 모두), 급여명세서 발송, 퇴직금 정산, Bookkeeping에 주는 인건비 집계를 다룹니다. 코드는 [`apps/api/src/modules/payroll/`](../../apps/api/src/modules/payroll/)에 있습니다. 근거 자료는 [`docs/reference/spec/payroll.md`](../reference/spec/payroll.md)(이하 스펙), 매뉴얼 `alfred-manual/05-급여/`, `alfred-manual/08-설정/03-급여-설정.md`, 재설계 전 구현 `apps/api/legacy/src/modules/payroll/`입니다.
 
 ## 현행에서 고칠 점
 
@@ -25,7 +25,10 @@
 | 임금산정 기간 | `wagePeriod { start, end }` |
 | 대장 행 (근로·일용·사업·기타) | `PayrollRow` (`pyr_`), `input.incomeType`: `WAGE_MONTHLY`·`WAGE_HOURLY`·`WAGE_DAILY`·`DAILY`·`BUSINESS`·`OTHER` |
 | 직원 정보 사본 | `snapshot` |
-| 소득자 사본 (수신 주소·가린 주민등록번호·부서) | `earner { email, registrationNumberMasked, departmentName }` |
+| 소득자 명부 (직원이 아닌 일용·사업·기타소득자) | `Earner` (`ern_`), 행의 `earnerId` |
+| 신원번호 종류 (주민등록번호 / 외국인등록번호 / 여권번호) | `identityType`: `RESIDENT` / `ALIEN` / `PASSPORT` |
+| 신원번호 원문 / 가린 신원번호 | `registrationNumber` / `registrationNumberMasked` (HR 직원과 같은 이름, 여권번호도 이 이름) |
+| 소득자 사본 (수신 주소·가린 신원번호·부서) | `earner { email, registrationNumberMasked, departmentName }` |
 | 계산 결과 / 근거 | `result` / `result.breakdown[] { code, label, amount, formula }` |
 | 기준표 (요율·간이세액·최저임금) | `RateTable` (`rtb_`), `effectiveFrom` |
 | 미확인 값 | `unverifiedPaths` |
@@ -158,7 +161,7 @@ PayrollLedger                              pyl_
 ├─ calculatedAt, closedAt, version, createdAt, updatedAt
 └─ rows[] (별도 경로)
     PayrollRow                             pyr_
-    ├─ employeeId | null, payeeName, incomeType
+    ├─ employeeId | null, earnerId | null, payeeName, incomeType   # 근로 행은 직원, 그 밖은 직원이나 소득자 하나
     ├─ earner { email, registrationNumberMasked, departmentName }   # 소득자 사본
     ├─ input                               # incomeType별 판별 유니온
     ├─ snapshot                            # 계산에 쓴 HR 정보
@@ -172,8 +175,8 @@ GET    /payroll-ledgers/{ledgerId}                                              
 PATCH  /payroll-ledgers/{ledgerId}           { paymentDate?, title? }                            If-Match
 DELETE /payroll-ledgers/{ledgerId}                                                               If-Match, 204
 GET    /payroll-ledgers/{ledgerId}/rows
-POST   /payroll-ledgers/{ledgerId}/rows      { employeeId? | payeeName?, earner?, input }        If-Match
-PATCH  /payroll-ledgers/{ledgerId}/rows/{rowId}  { payeeName?, earner?, input? }               If-Match
+POST   /payroll-ledgers/{ledgerId}/rows      { employeeId? | earnerId?, input }                  If-Match
+PATCH  /payroll-ledgers/{ledgerId}/rows/{rowId}  { input }                                       If-Match
 DELETE /payroll-ledgers/{ledgerId}/rows/{rowId}                                                  If-Match
 POST   /payroll-ledgers/{ledgerId}:recalculate                                                   If-Match
 POST   /payroll-ledgers/{ledgerId}:{transition}                                                  If-Match
@@ -183,14 +186,47 @@ POST   /payroll-ledgers/{ledgerId}:approve | :reject { reason }                 
 - **귀속월의 첫 대장이 정기 대장, 그다음이 추가 대장입니다.** 정기 대장을 만들 때 HR의 근로소득자(임금산정 기간 중 하루라도 재직)로 근로 행을 채우고, 중도 입·퇴사자는 역일 일할 입력을 넣습니다
 - 지급일을 주지 않으면 설정의 지급월·지급일로 정하고, 추가 대장은 정기 대장의 지급일을 씁니다
 - **행은 대장을 통해서만 바뀝니다.** 행을 저장하면 같은 요청에서 계산하고 대장 `version`을 올립니다. 행의 `If-Match`는 대장 버전입니다
-- 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 이름 중 하나가 필수입니다. 이름과 함께 `employeeId`를 주어도 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`)
-- `:recalculate`는 HR 정보를 다시 받아 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
-- **행마다 소득자 사본(`earner`)을 둡니다.** 명세서 머리(가린 주민등록번호·부서)와 발송 주소가 이 값을 씁니다
-  - 직원이 연결된 행은 HR의 이메일·가린 주민등록번호·부서를 복사합니다. 행을 만들 때(정기 대장 생성, 행 추가) 복사하고 `:recalculate` 때 다시 복사합니다. 입력으로 주면 422 `PAYROLL_ROW_PAYEE_INVALID`(`EARNER_FROM_EMPLOYEE`)입니다
-  - 직원이 없는 행(일용·사업·기타)은 행 추가·수정 때 입력받습니다. 빠진 값은 `null`이고, 수정의 `earner`는 사본을 통째로 바꿉니다
-  - 주민등록번호는 가린 형식(`900101-1******`)만 받습니다(400 `VALIDATION_FAILED`). HR 포트처럼 급여는 원문을 받지도 저장하지도 않습니다. 원천세 신고 파일처럼 원문이 필요한 곳은 HR의 열람 기록이 남는 조회(`revealRegistrationNumber`)를 씁니다. 직원이 없는 소득자의 원문은 아직 둘 곳이 없습니다
+- 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 [소득자 명부](#소득자-명부)의 소득자 중 하나가 필수입니다(없으면 `PAYEE_REQUIRED`, 둘 다면 `PAYEE_AMBIGUOUS`, 명부에 없으면 `EARNER_NOT_FOUND`). 직원은 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류와 소득자는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`). 행 수정은 계산 입력(`input`)만 받고, 소득자를 바꾸려면 행을 지우고 다시 넣습니다
+- 이름(`payeeName`)은 입력받지 않고 직원이나 소득자의 이름을 소득자 사본과 같은 때에 복사합니다
+- `:recalculate`는 HR 정보와 소득자 명부를 다시 읽어 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
+- **행마다 소득자 사본(`earner`)을 둡니다.** 명세서 머리(가린 신원번호·부서)와 발송 주소가 이 값을 씁니다
+  - 직원이 연결된 행은 HR의 이메일·가린 주민등록번호·부서를, 소득자를 가리키는 행은 명부의 이메일·가린 신원번호·부서를 복사합니다. 행을 만들 때(정기 대장 생성, 행 추가) 복사하고 `:recalculate` 때 다시 복사합니다. 직원이나 소득자가 그사이 없어졌으면 사본은 그대로 둡니다
+  - **사본은 입력받지 않습니다(2026-11-08).** 직원이 없는 행도 명부의 소득자를 가리켜야 하고, 직접 적은 사본만 가진 행은 두지 않습니다. 사본만 적던 방식(#58)은 지급명세서에 필요한 원문을 둘 곳이 없었고, 명부와 직접 입력이 함께 있으면 같은 사람의 주소·부서가 두 군데서 어긋납니다. 한 번 올린 소득자는 다음 달 대장에서도 고르기만 하면 됩니다
+  - 행에는 가린 값만 있습니다. 원천세 신고 파일·지급명세서처럼 원문이 필요한 곳은 직원이면 HR의 열람 기록이 남는 조회(`revealRegistrationNumber`), 소득자면 명부의 `:reveal`을 씁니다
   - **복사 시점은 계산 입력(`snapshot`)과 같습니다.** 마감 때 따로 복사하지 않습니다. 사본은 행의 다른 HR 값과 같은 때에 같은 방법(`:recalculate`)으로 갱신되어야 담당자가 한 번에 맞출 수 있고, 마감된 대장은 고칠 수 없으므로 명세서는 마감한 그대로의 주소로 갑니다. 마감 뒤 HR 이메일이 바뀌면 마감을 풀고 다시 계산해야 반영됩니다. 발송할 때 HR을 다시 읽던 방식은 마감 기록과 받는 사람이 어긋날 수 있어 버렸습니다
 - 정기 대장은 추가 대장이 있으면 지울 수 없습니다(409 `PAYROLL_LEDGER_HAS_ADDITIONAL`). 대장 삭제는 입력 상태에서만 됩니다
+
+### 소득자 명부
+
+직원이 아닌 일용·사업·기타소득자를 회사마다 올려 두는 명부입니다(2026-11-08, [열린 질문 11](#열린-질문)). 직원이 없는 대장 행은 명부의 소득자를 `earnerId`로 가리키고, 사본은 명부에서 복사합니다. 코드는 [earners/](../../apps/api/src/modules/payroll/earners/)에 있습니다.
+
+```
+Earner                                     ern_
+├─ name, identityType (RESIDENT | ALIEN | PASSPORT)
+├─ registrationNumberMasked                # 900101-1******, 여권은 끝 3자리만
+├─ email | null, departmentName | null     # 행 사본의 기본값
+└─ version, createdAt, updatedAt
+```
+
+```
+GET    /earners?limit=&cursor=                                                                   totalCount
+POST   /earners                              { name, identityType, registrationNumber, email?, departmentName? }   201 + ETag
+GET    /earners/{earnerId}                                                                       ETag
+PATCH  /earners/{earnerId}                   { name?, identityType?, registrationNumber?, email?, departmentName? }  If-Match
+DELETE /earners/{earnerId}                                                                       204
+POST   /earners/{earnerId}/registration-number:reveal     X-Access-Reason                        { identityType, registrationNumber }
+```
+
+- **원문은 암호화해서만 둡니다.** HR 직원과 같은 공유 서비스 `PersonalDataCipher`(`src/shared/personal-data/`)로 암호화하고, 필드(`earnerRegistrationNumber`)마다 키와 AAD가 달라 HR 주민등록번호 암호문과 서로 열리지 않습니다. 응답·대장 행·로그에는 가린 값만 나갑니다
+- **원문 열람.** `:reveal`은 `X-Access-Reason`을 필수로 받고(없으면 400) HR과 같은 열람 기록 `PersonalDataAccessLog`에 `earner:{earnerId}:registrationNumber`로 남깁니다. 권한은 `earner:reveal-rrn`으로 따로 둡니다
+- **`GET`이 아니라 `POST …:reveal`입니다.** 열람 기록을 쓰는 커맨드라 안전한 조회(`GET`)로 두지 않고, 응답이 캐시·프리페치·로그의 URL로 새지 않게 합니다. HR 직원 원문 열람도 구현은 같은 `POST /employees/{id}/registration-number:reveal`입니다. HR 급여계약 계좌번호만 아직 `GET …/account-number`입니다
+- **번호 검사(순수 규칙 [earner-identity.ts](../../apps/api/src/modules/payroll/earners/earner-identity.ts)).** 주민등록번호·외국인등록번호는 13자리(하이픈 있어도 됨)이고 7번째 자리가 종류와 맞아야 합니다(내국인 1·2·3·4·9·0, 외국인 5·6·7·8). 앞 6자리는 그 세기의 실제 날짜여야 합니다. 끝자리 검증번호는 보지 않습니다. 2020년 10월부터 새로 주는 주민등록번호는 검증 공식을 따르지 않고, HR 직원도 검사하지 않습니다. 여권번호는 영문·숫자 5~20자이고 대문자로 바꿉니다. 틀리면 422 `EARNER_INVALID`(`registrationNumber`·`INVALID_FORMAT`)입니다
+- **종류를 바꾸려면 번호도 함께 줍니다**(없으면 422 `EARNER_INVALID`, `registrationNumber`·`REQUIRED`). 원문을 다시 열지 않고는 새 종류로 검사할 수 없기 때문입니다
+- **중복.** 같은 회사에 같은 종류·같은 번호의 소득자가 있으면 409 `EARNER_DUPLICATE`(`duplicateEarnerId`)입니다. 암호문은 비교할 수 없어 HR과 같은 HMAC 키로 `종류:번호`를 해시해 찾습니다. 종류를 붙이므로 여권번호가 등록번호와 같은 문자열이어도 겹치지 않습니다. 다른 회사는 같은 사람을 따로 올립니다
+- **삭제.** 대장 행이 가리키는 소득자는 지울 수 없습니다(409 `EARNER_IN_USE`). 행에는 가린 값만 있어 지급명세서에 쓸 원문이 명부에만 있기 때문입니다
+- **명부를 고쳐도 이미 만든 행은 그대로입니다.** 직원 정보와 같이 `:recalculate` 때 다시 복사하고, 마감된 대장은 마감한 그대로입니다
+- 플랜·권한은 대장과 같습니다(`PAYROLL` 또는 `TAXATION`, [접근 요건](#접근-요건))
+- 직원이 소득자 명부에도 있을 수 있습니다(같은 사람이 근로와 사업소득을 받는 경우). 근로 외 행에 직원을 이으면 HR 값을 쓰므로 명부에 따로 올리지 않아도 됩니다. 직원과 명부 사이의 중복은 보지 않습니다
 
 ### 상태
 
@@ -387,9 +423,9 @@ flowchart LR
 
 ## 접근 요건
 
-모든 경로는 플랜과 약관 동의가 필요합니다. 급여대장·행·명세서·인건비 보고서는 `PAYROLL` 또는 `TAXATION`, 나머지(급여 설정·운영 방식, 기준표·참조 코드, 계산기, 퇴직금)는 `PAYROLL`입니다.
+모든 경로는 플랜과 약관 동의가 필요합니다. 급여대장·행·명세서·소득자 명부·인건비 보고서는 `PAYROLL` 또는 `TAXATION`, 나머지(급여 설정·운영 방식, 기준표·참조 코드, 계산기, 퇴직금)는 `PAYROLL`입니다.
 
-- **급여대장·명세서를 기장에도 엶 (2026-11-07 결정).** 현행 급여 관리(`payroll_management`)는 기장(`TAXATION`) 메뉴였고, 급여 아웃소싱(`PAYROLL`)은 급여 정산(`payroll_settlement`)으로 같은 대장을 썼습니다. 기장 고객을 `PAYROLL`로 옮기지 않고 두 플랜 모두에 엽니다. 플랜 목록은 권한 카탈로그의 `PAYROLL_LEDGER_PLANS` 한 곳이고, 카탈로그의 `payroll-ledger`·`payslip`·`labor-cost-report`와 급여 엔드포인트([payroll-access.ts](../../apps/api/src/modules/payroll/payroll-access.ts)의 `LEDGER_PLANS`)가 함께 씁니다. 그래서 권한 그룹 화면의 `requiredPlans`와 엔드포인트가 어긋나지 않습니다. 둘 다 없으면 403 `ENTITLEMENT_REQUIRED`(`requiredPlans: ["TAXATION", "PAYROLL"]`)입니다
+- **급여대장·명세서를 기장에도 엶 (2026-11-07 결정).** 현행 급여 관리(`payroll_management`)는 기장(`TAXATION`) 메뉴였고, 급여 아웃소싱(`PAYROLL`)은 급여 정산(`payroll_settlement`)으로 같은 대장을 썼습니다. 기장 고객을 `PAYROLL`로 옮기지 않고 두 플랜 모두에 엽니다. 플랜 목록은 권한 카탈로그의 `PAYROLL_LEDGER_PLANS` 한 곳이고, 카탈로그의 `payroll-ledger`·`payslip`·`earner`·`labor-cost-report`와 급여 엔드포인트([payroll-access.ts](../../apps/api/src/modules/payroll/payroll-access.ts)의 `LEDGER_PLANS`)가 함께 씁니다. 그래서 권한 그룹 화면의 `requiredPlans`와 엔드포인트가 어긋나지 않습니다. 둘 다 없으면 403 `ENTITLEMENT_REQUIRED`(`requiredPlans: ["TAXATION", "PAYROLL"]`)입니다
 - **`PAYROLL`만 여는 경로.** 급여 설정·퇴직금·기준표·계산기는 현행에서도 급여 아웃소싱 메뉴(`payroll_setting`, `severance_pay_settlement`)였으므로 그대로 둡니다. 기장만 쓰는 회사의 대장은 저장된 급여 설정이 없으면 기본값(현행 기본값, 직접 운영)으로 계산합니다. 대장 계산이 안에서 설정·기준표를 읽는 것은 플랜을 보지 않습니다
 - **약관.** 급여 전용 약관은 없습니다. `requiresTerms`는 회사 플랜이 정한 약관(가입 약관, 기장이면 세무 약관)을 보므로, 기장만 쓰는 회사는 스스로 동의할 수 있는 세무 약관에만 걸립니다(403 `TERMS_REAGREEMENT_REQUIRED`). 대리인은 약관 게이트를 건너뜁니다
 - **원천세 제출 자료.** 원천세 신고 건의 "급여대장 마감분" 자동 연계 항목은 현행처럼 급여 플랜 회사에만 넣습니다([filing-requirements.ts](../../apps/api/src/modules/tax/filings/filing-requirements.ts)). 이 결정은 대장을 여는 플랜만 바꾸고 신고 체크리스트는 바꾸지 않았습니다. 이유는 둘입니다. 현행도 이 항목을 급여 구독 고객에게만 넣었습니다(지운 이전 설계 `docs/reference/legacy-design/tax-api-design.md`의 원천세 제출 자료 표, 커밋 `3c6f890`). 그리고 기장 고객은 대부분 급여대장을 쓰지 않으므로, 이 항목을 넣으면 기간에 대장이 없어 응답이 영영 `PENDING`으로 남습니다. 자동 연계 항목은 제출 전 남은 항목 검사에서 빠지므로(`filing-view.ts`의 `transitionFacts`) 제출을 막지는 않지만, 고객 화면에는 끝나지 않는 "대기" 항목으로 보여 혼란을 줍니다([열린 질문 10](#열린-질문))
@@ -405,6 +441,7 @@ flowchart LR
 | `:approve`, `:reject` | `payroll-ledger:approve` |
 | `:close`, `:reopen` | `payroll-ledger:close` |
 | 명세서 조회 / 발송 | `payslip:read` / `payslip:send` |
+| 소득자 명부 조회 / 등록 / 수정 / 삭제 / 원문 열람 | `earner:read` / `earner:create` / `earner:update` / `earner:delete` / `earner:reveal-rrn` |
 | 퇴직금 조회 / 생성 / 입력·제외·포함 / 확정·다시 열기 | `severance-settlement:read` / `:create` / `:update` / `:complete` |
 | 인건비 보고서 | `labor-cost-report:read` |
 
@@ -422,6 +459,7 @@ flowchart LR
 | 404 | `RATE_TABLE_ID_NOT_FOUND` | 없는 기준표 ID | |
 | 404 | `PAYSLIP_NOT_FOUND` | 없거나 마감 전 대장의 행 | |
 | 404 | `SEVERANCE_SETTLEMENT_NOT_FOUND` | 없는 정산 | |
+| 404 | `EARNER_NOT_FOUND` | 명부에 없거나 다른 회사 소득자 | |
 | 409 | `PAYROLL_LEDGER_TRANSITION_INVALID` | 상태·운영 방식·행위자가 전이와 맞지 않음 | `ledgerStatus`, `action` |
 | 409 | `PAYROLL_LEDGER_READ_ONLY` | 지금 상태에서 이 행위자가 입력을 고칠 수 없음 | `ledgerStatus` |
 | 409 | `WITHHOLDING_FILED` | 원천세가 신고된 지급월의 금액 변경 | `paymentMonth` |
@@ -431,10 +469,13 @@ flowchart LR
 | 409 | `PAYROLL_LEDGER_HAS_ADDITIONAL` | 추가 대장이 있는 정기 대장 삭제 | |
 | 409 | `SEVERANCE_SETTLEMENT_EXISTS` | 같은 직원의 두 번째 정산 | `settlementId` |
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
+| 409 | `EARNER_DUPLICATE` | 같은 회사에 같은 신원번호의 소득자 | `duplicateEarnerId` |
+| 409 | `EARNER_IN_USE` | 대장 행이 가리키는 소득자 삭제 | |
 | 409 | `SEVERANCE_RETIREMENT_MISMATCH` | 정산의 마지막 근무일이 HR의 지금 퇴직과 어긋나 `:complete` 불가 | `reason`, `lastWorkDate`, `leaveDate` |
 | 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` | 같은 키의 명세서 발송이 아직 처리 중 | |
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
-| 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음(`EMPLOYEE_REQUIRED`), 이름 없음(`PAYEE_NAME_REQUIRED`), 소득 종류 변경(`INCOME_TYPE_CHANGED`), 직원이 연결된 행에 소득자 사본 입력(`EARNER_FROM_EMPLOYEE`) | `reason` |
+| 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음(`EMPLOYEE_REQUIRED`), 근로 외 행에 직원·소득자 없음(`PAYEE_REQUIRED`), 둘 다 줌(`PAYEE_AMBIGUOUS`), 명부에 없는 소득자(`EARNER_NOT_FOUND`), 소득 종류 변경(`INCOME_TYPE_CHANGED`) | `reason` |
+| 422 | `EARNER_INVALID` | 신원번호 형식 오류(`INVALID_FORMAT`), 종류만 바꾸고 번호 없음(`REQUIRED`) | `violations` |
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
 | 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
@@ -580,6 +621,7 @@ flowchart LR
 | 계산 엔진 (근로 3종·일용·사업·기타, 4대보험, 간이세액, 비과세, 가산수당, 일할, 최저임금, 퇴직금) | 구현 ([engine/](../../apps/api/src/modules/payroll/engine/)) |
 | 기준표 2026-01·2026-03·2026-07·2026-11, 참조 코드, 계산기 | 구현 (메모리, [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
 | 급여 설정 | 구현 (메모리) |
+| 소득자 명부(신원번호 암호화·원문 열람 기록) | 구현 ([earners/](../../apps/api/src/modules/payroll/earners/), `payroll_earners` 표) |
 | 급여대장·행·재계산·전이 8개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
 | 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 원천세 금액은 싣지 않음 |
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
@@ -606,13 +648,17 @@ flowchart LR
 6. **명세서 문구와 PDF.** 회사가 계산식 문구를 고치던 기능과 PDF 다운로드를 Documents의 렌더링으로 할지 정해야 합니다
 7. **공유 변경.**
    - Identity & Access 역할 템플릿에 [접근 요건](#접근-요건)의 권한을 넣어야 합니다
-   - ID 접두사(`pyl`·`pyr`·`psl`·`sev`·`rtb`)는 공유 목록에 이미 있어 변경이 필요 없습니다
+   - ID 접두사(`pyl`·`pyr`·`psl`·`sev`·`rtb`)는 공유 목록에 이미 있어 변경이 필요 없습니다. 소득자 명부의 `ern`은 2026-11-08에 더했습니다
    - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다
    - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
 10. **기장 회사의 "급여대장 마감분".** 급여대장을 기장(`TAXATION`)에도 열었지만 원천세의 "급여대장 마감분" 자동 연계 항목은 급여 플랜 회사에만 넣습니다([접근 요건](#접근-요건)). 대장을 쓰는 기장 회사에도 넣으려면 "신고 기간에 대장이 있으면 마감 여부로, 없으면 `NOT_APPLICABLE`" 같은 규칙이 필요합니다. 지금 판정(`payrollLedgerResponse`)은 대장이 없으면 `PENDING`이라, 그대로 넣으면 대장을 쓰지 않는 기장 회사의 화면에 끝나지 않는 대기 항목이 남습니다(제출은 막지 않음). 기간 중에 대장이 생기거나 지워질 때 항목을 넣고 빼는 것도 함께 정합니다
-11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** ~~명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지~~ **정함(2026-11-08):** 대장 행에 소득자 사본(`earner { email, registrationNumberMasked, departmentName }`)을 둡니다([급여대장](#급여대장)). 직원이 연결된 행은 HR 값을 행 생성·`:recalculate` 때 복사하고, 직원이 없는 일용·사업·기타 행은 입력받습니다. 명세서 발송은 행의 주소를 써서 근로 외 소득자도 받고, 주소가 없을 때만 `NO_EMAIL`입니다([급여명세서](#급여명세서)). 현행 BPO가 대장 행에 저장한 주소로 보내던 방식과 같습니다. 남은 것: 직원이 없는 소득자의 주민등록번호 원문(지급명세서용)은 둘 곳이 없습니다. 또 사본 입력은 가린 주민등록번호·외국인등록번호 형식(`900101-1******`)만 받아, 여권번호로 식별하는 소득자는 직원 없이 넣을 수 없습니다
+11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** ~~명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지~~ **정함(2026-11-08):** 대장 행에 소득자 사본(`earner { email, registrationNumberMasked, departmentName }`)을 둡니다([급여대장](#급여대장)). 직원이 연결된 행은 HR 값을 행 생성·`:recalculate` 때 복사합니다. 명세서 발송은 행의 주소를 써서 근로 외 소득자도 받고, 주소가 없을 때만 `NO_EMAIL`입니다([급여명세서](#급여명세서)). 현행 BPO가 대장 행에 저장한 주소로 보내던 방식과 같습니다.
+    - ~~직원이 없는 소득자의 전체 주민등록번호(지급명세서용)를 어디 둘지, 여권번호로만 신원을 확인하는 소득자를 어떻게 받을지~~ **정함(2026-11-08, #63):** Payroll에 회사별 [소득자 명부](#소득자-명부)(`Earner`)를 둡니다. 신원번호는 종류(`RESIDENT`·`ALIEN`·`PASSPORT`)와 함께 받아 HR과 같은 `PersonalDataCipher`로 암호화하고, 원문 열람은 HR처럼 사유를 받아 `PersonalDataAccessLog`에 남깁니다. 직원이 없는 행은 `earnerId`로 명부를 가리키고 사본(이름·가린 신원번호·이메일·부서)은 명부에서 행 생성·`:recalculate` 때 복사합니다
+    - 사본을 직접 적는 입력(#58의 `earner`, `payeeName`)은 없앴습니다. 명부와 직접 입력을 함께 두면 원문 없는 행이 남고 같은 사람의 값이 두 군데서 어긋나기 때문입니다(도메인 학습 저장소라 이전 입력은 남기지 않음)
+    - `PersonalDataCipher`·`PersonalDataAccessLog`는 HR 안에 있다가 두 컨텍스트가 함께 쓰게 되어 `src/shared/personal-data/`로 옮겼습니다. Payroll이 HR 내부를 읽지 않고, 열람 기록은 한 표(`personal_data_accesses`)에 남습니다. HR 필드의 키 용도(`hr/registrationNumber` 등)는 그대로라 저장한 암호문은 그대로 열립니다
+    - 남은 것: 직원이면서 소득자 명부에도 있는 사람의 중복은 보지 않습니다. 지급명세서 제출 파일은 아직 없습니다
 12. **고정 연장근로 초과분.** 지금은 담당자가 약정 시간을 넘은 연장 분만 행에 넣습니다. 행에 고정 연장 약정 분을 받아 `max(0, 실제 − 약정)`을 가산하려면 HR 급여계약의 고정수당 시간을 `PayrollEmployee`로 넘겨야 합니다(7번의 계약 지급항목과 함께, [규칙 결정](rule-decisions/payroll.md#overtime-multipliers) 1)
 13. **수습 감액과 최저임금 경고.** 급여 경고는 감액 없이 최저시급과 비교합니다. HR 포트가 수습 시작일과 감액 허용 여부(급여계약 검증 결과)를 주면, 그 달이 수습 3개월 안이고 허용된 경우에만 90%로 비교할 수 있습니다([규칙 결정](rule-decisions/payroll.md#minimum-wage-warning) 2)
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)

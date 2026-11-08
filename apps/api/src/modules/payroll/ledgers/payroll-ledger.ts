@@ -23,24 +23,11 @@ const LedgerActionSchema = Schema.Literals([
   'DELETE',
 ])
 
-const EmailAddress = Schema.String.pipe(Schema.check(Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)))
-/** 가린 주민등록번호(외국인등록번호)입니다. 원문을 받지 않도록 뒤 6자리가 `*`인 형식만 받습니다. */
-const MaskedRegistrationNumber = Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{6}-\d\*{6}$/)))
-
-/** 행의 소득자 사본입니다. 직원이 연결된 행은 HR 값, 아니면 입력한 값입니다. */
+/** 행의 소득자 사본입니다. 직원이 연결된 행은 HR 값, 소득자 명부를 가리키는 행은 명부 값입니다. */
 export const PayrollEarnerSchema = Schema.Struct({
   email: Schema.NullOr(Schema.String),
   registrationNumberMasked: Schema.NullOr(Schema.String),
   departmentName: Schema.NullOr(Schema.String),
-})
-
-/**
- * 직원이 없는 행의 소득자 사본 입력입니다. 빠진 값은 `null`입니다. 주민등록번호는 가린 형식(`900101-1******`)만 받습니다.
- */
-export const PayrollEarnerInput = Schema.Struct({
-  email: Schema.optionalKey(EmailAddress),
-  registrationNumberMasked: Schema.optionalKey(MaskedRegistrationNumber),
-  departmentName: Schema.optionalKey(Schema.String.pipe(Schema.check(Schema.isMinLength(1)))),
 })
 
 /** 급여대장 응답입니다. 행은 `GET /payroll-ledgers/{ledgerId}/rows`로 읽습니다. */
@@ -85,6 +72,7 @@ export const PayrollRow = Schema.Struct({
   id: IdSchema('payrollRow'),
   ledgerId: IdSchema('payrollLedger'),
   employeeId: Schema.NullOr(IdSchema('employee')),
+  earnerId: Schema.NullOr(IdSchema('earner')),
   payeeName: Schema.String,
   earner: PayrollEarnerSchema,
   incomeType: Schema.String,
@@ -109,24 +97,21 @@ export const UpdatePayrollLedger = Schema.Struct({
 })
 
 /**
- * `POST /payroll-ledgers/{ledgerId}/rows` 본문입니다. 근로 행은 `employeeId`, 그 밖의 행은 `payeeName`이 필요합니다.
- * `earner`는 직원이 없는 행에만 줍니다. 직원이 있으면 HR에서 복사합니다.
+ * `POST /payroll-ledgers/{ledgerId}/rows` 본문입니다. 근로 행은 `employeeId`, 그 밖의 행은 `employeeId`나 소득자 명부의
+ * `earnerId` 중 하나가 필요합니다. 이름과 소득자 사본(`earner`)은 직원이나 명부에서 복사하므로 받지 않습니다.
  */
 export const AddPayrollRow = Schema.Struct({
   employeeId: Schema.optionalKey(IdSchema('employee')),
-  payeeName: Schema.optionalKey(Schema.String.pipe(Schema.check(Schema.isMinLength(1)))),
-  earner: Schema.optionalKey(PayrollEarnerInput),
+  earnerId: Schema.optionalKey(IdSchema('earner')),
   input: PayrollRowInputSchema,
 })
 
 /**
- * `PATCH /payroll-ledgers/{ledgerId}/rows/{rowId}` 본문입니다. 소득 구분은 바꿀 수 없습니다.
- * `earner`는 직원이 없는 행의 사본을 통째로 바꿉니다(빠진 값은 `null`).
+ * `PATCH /payroll-ledgers/{ledgerId}/rows/{rowId}` 본문입니다. 계산 입력만 바꿉니다. 소득 구분과 소득자는 바꿀 수 없어,
+ * 소득자를 바꾸려면 행을 지우고 다시 넣습니다.
  */
 export const UpdatePayrollRow = Schema.Struct({
-  payeeName: Schema.optionalKey(Schema.String.pipe(Schema.check(Schema.isMinLength(1)))),
-  earner: Schema.optionalKey(PayrollEarnerInput),
-  input: Schema.optionalKey(PayrollRowInputSchema),
+  input: PayrollRowInputSchema,
 })
 
 /** 반려·마감 해제처럼 사유가 필요한 커맨드 본문입니다. */
@@ -182,6 +167,7 @@ export function rowResponse(ledger: PayrollLedgerRecord, row: PayrollRowRecord):
     id: row.id,
     ledgerId: ledger.id,
     employeeId: row.employeeId,
+    earnerId: row.earnerId,
     payeeName: row.payeeName,
     earner: row.earner,
     incomeType: row.input.incomeType,

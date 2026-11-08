@@ -9,9 +9,9 @@ import type {
 const CRUD = ['read', 'create', 'update', 'delete'] as const
 
 /**
- * 급여대장·명세서·인건비 보고서를 여는 플랜입니다. 급여·세무 중 하나만 구독해도 됩니다(2026-11-07 결정).
+ * 급여대장·명세서·소득자 명부·인건비 보고서를 여는 플랜입니다. 급여·세무 중 하나만 구독해도 됩니다(2026-11-07 결정).
  *
- * 카탈로그의 세 리소스와 급여 엔드포인트(`payroll/payroll-access.ts`의 `LEDGER_PLANS`)가 이 값 하나를 써서,
+ * 카탈로그의 네 리소스(대장·명세서·소득자 명부·인건비 보고서)와 급여 엔드포인트(`payroll/payroll-access.ts`의 `LEDGER_PLANS`)가 이 값 하나를 써서,
  * 권한 그룹 화면의 `requiredPlans`와 엔드포인트의 `ENTITLEMENT_REQUIRED`가 어긋나지 않습니다.
  */
 export const PAYROLL_LEDGER_PLANS = ['TAXATION', 'PAYROLL'] as const
@@ -65,6 +65,7 @@ export const PERMISSION_CATALOG = {
     plans: PAYROLL_LEDGER_PLANS,
   },
   payslip: { area: 'PAYROLL', actions: ['read', 'send'], plans: PAYROLL_LEDGER_PLANS },
+  earner: { area: 'PAYROLL', actions: [...CRUD, 'reveal-rrn'], plans: PAYROLL_LEDGER_PLANS },
   'payroll-setting': { area: 'PAYROLL', actions: ['read', 'update'], plans: ['PAYROLL'] },
   'severance-settlement': { area: 'PAYROLL', actions: [...CRUD, 'complete'], plans: ['PAYROLL'] },
   'labor-cost-report': { area: 'PAYROLL', actions: ['read'], plans: PAYROLL_LEDGER_PLANS },
@@ -236,7 +237,7 @@ export const ROLE_TEMPLATES: ReadonlyArray<RoleTemplate> = [
   {
     code: 'PAYROLL',
     name: '급여',
-    permissions: ['payroll-ledger:*', 'payslip:*', 'severance-settlement:*', 'labor-cost-report:read'],
+    permissions: ['payroll-ledger:*', 'payslip:*', 'earner:*', 'severance-settlement:*', 'labor-cost-report:read'],
   },
   {
     code: 'TAX',
@@ -286,8 +287,8 @@ export const LEGACY_MENU_PERMISSIONS: Readonly<Record<string, LegacyMenuMapping>
   employment_e_sign: 메뉴(['esign-request:*'], ['PAYROLL']),
   employment_certificate: 메뉴(['certificate-issuance:*'], ['PAYROLL']),
   settings_e_sign: 메뉴(['esign-template:*', 'company-seal:*'], ['PAYROLL']),
-  payroll_settlement: 메뉴(['payroll-ledger:*', 'payslip:*'], ['PAYROLL']),
-  payroll_management: 메뉴(['payroll-ledger:*', 'payslip:*'], ['TAXATION']),
+  payroll_settlement: 메뉴(['payroll-ledger:*', 'payslip:*', 'earner:*'], ['PAYROLL']),
+  payroll_management: 메뉴(['payroll-ledger:*', 'payslip:*', 'earner:*'], ['TAXATION']),
   payroll_setting: 메뉴(['payroll-setting:*'], ['PAYROLL']),
   severance_pay_settlement: 메뉴(['severance-settlement:*'], ['PAYROLL']),
   tax_surtax: 메뉴(['vat-filing:*'], ['TAXATION']),

@@ -9,6 +9,8 @@ import { daysBetween } from '../../../shared/time/calendar.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
+import { EarnerRepository } from '../earners/earner-repository.ts'
+import type { EarnerRecord } from '../earners/earner.ts'
 import { LEDGER_PLANS } from '../payroll-access.ts'
 import {
   AdditionalLedgerBlocked,
@@ -45,7 +47,6 @@ import { ledgerMonthsTouched, payMonthChanges } from './pay-month.ts'
 import type {
   AddPayrollRow,
   CreatePayrollLedger,
-  PayrollEarnerInput,
   PayrollLedger,
   PayrollRow,
   UpdatePayrollLedger,
@@ -61,6 +62,7 @@ export type LedgerDeps =
   | PayrollSettingRepository
   | RateTableRepository
   | PayrollEmployeeDirectory
+  | EarnerRepository
   | WithholdingFilingLock
   | PayrollEventPublisher
 
@@ -180,6 +182,7 @@ export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<Ledg
       rows: employees.map((employee) => ({
         id: newId('payrollRow'),
         employeeId: employee.id,
+        earnerId: null,
         payeeName: employee.name,
         earner: earnerOf(employee),
         input: initialWageInput(employee, wagePeriod),
@@ -255,6 +258,7 @@ export const addRow = (
     const row: PayrollRowRecord = {
       id: newId('payrollRow'),
       employeeId: payee.employeeId,
+      earnerId: payee.earnerId,
       payeeName: payee.payeeName,
       earner: payee.earner,
       input: payload.input,
@@ -270,7 +274,7 @@ export const addRow = (
     return { ledger: next, row: rowResponse(next, next.rows.at(-1) ?? row) }
   })
 
-/** 행 입력을 고치고 다시 계산합니다. 소득 구분은 바꿀 수 없습니다. */
+/** 행 입력을 고치고 다시 계산합니다. 소득 구분은 바꿀 수 없습니다. 소득자는 행을 다시 넣어야 바뀝니다. */
 export const updateRow = (
   id: Id<'payrollLedger'>,
   rowId: Id<'payrollRow'>,
@@ -282,20 +286,11 @@ export const updateRow = (
     const { ledger, before } = yield* editable(actor, id, expected)
     const row = ledger.rows.find((candidate) => candidate.id === rowId)
     if (row === undefined) return yield* new PayrollRowNotFound({})
-    if (patch.input !== undefined && patch.input.incomeType !== row.input.incomeType) {
+    if (patch.input.incomeType !== row.input.incomeType) {
       return yield* new PayrollRowPayeeInvalid({ reason: 'INCOME_TYPE_CHANGED' })
     }
-    if (patch.earner !== undefined && row.employeeId !== null) {
-      return yield* new PayrollRowPayeeInvalid({ reason: 'EARNER_FROM_EMPLOYEE' })
-    }
     const now = yield* nowIso
-    const updated: PayrollRowRecord = {
-      ...row,
-      input: patch.input ?? row.input,
-      payeeName: row.employeeId === null ? (patch.payeeName ?? row.payeeName) : row.payeeName,
-      earner: patch.earner === undefined ? row.earner : earnerFromInput(patch.earner),
-      updatedAt: now,
-    }
+    const updated: PayrollRowRecord = { ...row, input: patch.input, updatedAt: now }
     const next = yield* calculateAll(
       {
         ...ledger,
@@ -324,17 +319,26 @@ export const deleteRow = (id: Id<'payrollLedger'>, rowId: Id<'payrollRow'>, expe
     })
   })
 
-/** HR 정보를 다시 받아 직원이 연결된 행의 사본(계산 입력·소득자)을 갱신하고 모든 행을 다시 계산합니다. 기준표·설정이 바뀐 뒤에 씁니다. */
+/**
+ * HR 정보와 소득자 명부를 다시 읽어 행의 사본(계산 입력·이름·소득자)을 갱신하고 모든 행을 다시 계산합니다.
+ * 기준표·설정·명부가 바뀐 뒤에 씁니다. 직원이나 소득자가 없어졌으면 그 행의 사본은 그대로 둡니다.
+ */
 export const recalculateLedger = (id: Id<'payrollLedger'>, expected: number | undefined): Run<LedgerResponse> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
     const { ledger, before } = yield* editable(actor, id, expected)
     const directory = yield* PayrollEmployeeDirectory
+    const earners = yield* EarnerRepository
     const now = yield* nowIso
     const rows: PayrollRowRecord[] = []
     for (const row of ledger.rows) {
       if (row.employeeId === null) {
-        rows.push(row)
+        const earner = row.earnerId === null ? Option.none() : yield* earners.find(actor.companyId, row.earnerId)
+        rows.push(
+          Option.isSome(earner)
+            ? { ...row, payeeName: earner.value.name, earner: earnerFromRegistry(earner.value) }
+            : row,
+        )
         continue
       }
       const found = yield* directory.find(actor.companyId, row.employeeId, ledger.wagePeriod.end)
@@ -469,8 +473,8 @@ function rejectFiledMonths(
 }
 
 /**
- * 새 행의 소득자를 정합니다. 근로 행은 정기 대장에만, 직원·귀속월마다 하나만 넣을 수 있습니다.
- * 소득자 사본은 직원이 있으면 HR에서 복사하고(입력하면 422 `EARNER_FROM_EMPLOYEE`), 없으면 입력값입니다.
+ * 새 행의 소득자를 정합니다. 근로 행은 정기 대장에만, 직원·귀속월마다 하나만 넣을 수 있습니다. 그 밖의 행은 직원이나
+ * 소득자 명부의 소득자 중 하나를 가리킵니다. 이름과 소득자 사본은 직원이면 HR에서, 소득자면 명부에서 복사합니다.
  */
 function payeeOf(
   actor: Actor,
@@ -478,42 +482,30 @@ function payeeOf(
   ledgers: ReadonlyArray<PayrollLedgerRecord>,
   payload: typeof AddPayrollRow.Type,
 ): Effect.Effect<
-  { employeeId: Id<'employee'> | null; payeeName: string; earner: PayrollEarner; snapshot: EmployeeSnapshot | null },
+  Pick<PayrollRowRecord, 'employeeId' | 'earnerId' | 'payeeName' | 'earner' | 'snapshot'>,
   WageRowOnAdditionalLedger | PayrollRowPayeeInvalid | EmployeeNotFound | WageIncomeDuplicated,
-  PayrollEmployeeDirectory
+  PayrollEmployeeDirectory | EarnerRepository
 > {
   return Effect.gen(function* () {
-    if (payload.employeeId !== undefined && payload.earner !== undefined) {
-      return yield* new PayrollRowPayeeInvalid({ reason: 'EARNER_FROM_EMPLOYEE' })
-    }
-    if (!isWage(payload.input)) {
-      if (payload.payeeName !== undefined) {
-        // 이름을 직접 받아도 직원을 이으려면 같은 회사 직원이어야 합니다. 다른 회사 직원 ID를 저장하지 않습니다.
-        if (payload.employeeId !== undefined) {
-          const linked = yield* (yield* PayrollEmployeeDirectory).find(
-            actor.companyId,
-            payload.employeeId,
-            ledger.wagePeriod.end,
-          )
-          if (Option.isNone(linked)) return yield* new EmployeeNotFound({})
-          return {
-            employeeId: payload.employeeId,
-            payeeName: payload.payeeName,
-            earner: earnerOf(linked.value),
-            snapshot: null,
-          }
-        }
-        return {
-          employeeId: null,
-          payeeName: payload.payeeName,
-          earner: earnerFromInput(payload.earner),
-          snapshot: null,
-        }
-      }
-      if (payload.employeeId === undefined) return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_NAME_REQUIRED' })
+    if (payload.employeeId !== undefined && payload.earnerId !== undefined) {
+      return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_AMBIGUOUS' })
     }
     if (isWage(payload.input) && ledger.kind === 'ADDITIONAL') return yield* new WageRowOnAdditionalLedger({})
-    if (payload.employeeId === undefined) return yield* new PayrollRowPayeeInvalid({ reason: 'EMPLOYEE_REQUIRED' })
+    if (isWage(payload.input) && payload.employeeId === undefined) {
+      return yield* new PayrollRowPayeeInvalid({ reason: 'EMPLOYEE_REQUIRED' })
+    }
+    if (payload.earnerId !== undefined) {
+      const earner = yield* (yield* EarnerRepository).find(actor.companyId, payload.earnerId)
+      if (Option.isNone(earner)) return yield* new PayrollRowPayeeInvalid({ reason: 'EARNER_NOT_FOUND' })
+      return {
+        employeeId: null,
+        earnerId: payload.earnerId,
+        payeeName: earner.value.name,
+        earner: earnerFromRegistry(earner.value),
+        snapshot: null,
+      }
+    }
+    if (payload.employeeId === undefined) return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_REQUIRED' })
     const found = yield* (yield* PayrollEmployeeDirectory).find(
       actor.companyId,
       payload.employeeId,
@@ -538,7 +530,8 @@ function payeeOf(
     }
     return {
       employeeId: payload.employeeId,
-      payeeName: payload.payeeName ?? found.value.name,
+      earnerId: null,
+      payeeName: found.value.name,
       earner: earnerOf(found.value),
       snapshot: isWage(payload.input) ? snapshotOf(found.value) : null,
     }
@@ -626,11 +619,12 @@ function earnerOf(employee: PayrollEmployee): PayrollEarner {
   }
 }
 
-function earnerFromInput(input: typeof PayrollEarnerInput.Type | undefined): PayrollEarner {
+/** 소득자 명부의 소득자를 소득자 사본으로 바꿉니다. 신원번호는 명부가 가려 둔 값입니다. */
+function earnerFromRegistry(earner: EarnerRecord): PayrollEarner {
   return {
-    email: input?.email ?? null,
-    registrationNumberMasked: input?.registrationNumberMasked ?? null,
-    departmentName: input?.departmentName ?? null,
+    email: earner.email,
+    registrationNumberMasked: earner.registrationNumberMasked,
+    departmentName: earner.departmentName,
   }
 }
 

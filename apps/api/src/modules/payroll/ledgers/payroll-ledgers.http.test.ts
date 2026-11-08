@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
-import { AGENCY_TOKEN, clockAt, payrollTestApp } from '../payroll-testing.ts'
+import { addEarner, AGENCY_TOKEN, clockAt, payrollTestApp } from '../payroll-testing.ts'
 import { PayrollEmployeeDirectory, type PayrollEmployee } from '../ports/payroll-employee-directory.ts'
 import { PayrollEventPublisher } from '../ports/payroll-events.ts'
 import type { PayrollEvent } from '../ports/payroll-events.types.ts'
@@ -232,7 +232,10 @@ describe('/payroll-ledgers 추가 대장', () => {
     expect(wage.body).toMatchObject({ code: 'WAGE_ROW_ON_ADDITIONAL_LEDGER' })
 
     const business = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
-      body: { payeeName: '박프리', input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
+      body: {
+        earnerId: await addEarner(app, { name: '박프리' }),
+        input: { incomeType: 'BUSINESS', payAmount: 1_000_000 },
+      },
     })
     expect(business.status).toBe(201)
     expect(business.body.result).toMatchObject({
@@ -243,20 +246,19 @@ describe('/payroll-ledgers 추가 대장', () => {
     })
   })
 
-  it('근로소득이 아닌 행에는 수령인 이름이 있어야 합니다', async () => {
+  it('근로소득이 아닌 행에는 직원이나 소득자 명부의 소득자가 있어야 합니다', async () => {
     const response = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
       body: { input: { incomeType: 'OTHER', payAmount: 500_000 } },
     })
 
     expect(response.status).toBe(422)
-    expect(response.body).toMatchObject({ code: 'PAYROLL_ROW_PAYEE_INVALID', reason: 'PAYEE_NAME_REQUIRED' })
+    expect(response.body).toMatchObject({ code: 'PAYROLL_ROW_PAYEE_INVALID', reason: 'PAYEE_REQUIRED' })
   })
 
   it('근로소득이 아닌 행을 다른 회사 직원에 잇는 것은 거절합니다', async () => {
     const foreign = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
       body: {
         employeeId: FOREIGN_EMPLOYEE_ID,
-        payeeName: '남회사',
         input: { incomeType: 'BUSINESS', payAmount: 100_000 },
       },
     })
@@ -264,7 +266,7 @@ describe('/payroll-ledgers 추가 대장', () => {
     expect(foreign.body).toMatchObject({ code: 'EMPLOYEE_NOT_FOUND' })
 
     const own = await app.request('POST', `/payroll-ledgers/${additionalId}/rows`, {
-      body: { employeeId: EMPLOYEE_ID, payeeName: '김하나', input: { incomeType: 'BUSINESS', payAmount: 100_000 } },
+      body: { employeeId: EMPLOYEE_ID, input: { incomeType: 'BUSINESS', payAmount: 100_000 } },
     })
     expect(own.status).toBe(201)
   })

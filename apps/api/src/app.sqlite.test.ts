@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppLive, CiphersLive, SqliteLive } from './app.ts'
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DEMO_PAYROLL_ACCOUNT_NUMBER } from './modules/hr/hr-demo-seed.ts'
-import { PersonalDataCipher } from './modules/hr/shared/personal-data-cipher.ts'
+import { PersonalDataCipher } from './shared/personal-data/personal-data-cipher.ts'
 import { AccessTokens } from './modules/identity-access/access-tokens.ts'
 import { DEMO_PASSWORD, DEMO_USER_IDS } from './modules/identity-access/demo-seed.ts'
 import { CredentialVault } from './modules/integrations/credentials/credential-vault.ts'
@@ -42,6 +42,31 @@ describe('암호화 계층', () => {
     const tampered = token.slice(0, -2) + (token.endsWith('A') ? 'B' : 'A')
     expect(() =>
       run(Effect.flatMap(PersonalDataCipher, (cipher) => cipher.decrypt('registrationNumber', tampered))),
+    ).toThrow()
+  })
+
+  it('소득자 명부의 신원번호는 HR 주민등록번호와 다른 키라 서로의 암호문이 열리지 않습니다', () => {
+    const run2 = <A>(program: Effect.Effect<A, never, PersonalDataCipher>) =>
+      Effect.runSync(
+        program.pipe(Effect.provide(PersonalDataCipher.layerAesGcm.pipe(Layer.provide(DataKey.layerRandom())))),
+      )
+    const plain = run2(
+      Effect.gen(function* () {
+        const cipher = yield* PersonalDataCipher
+        const token = yield* cipher.encrypt('earnerRegistrationNumber', 'M12345678')
+        return yield* cipher.decrypt('earnerRegistrationNumber', token)
+      }),
+    )
+
+    expect(plain).toBe('M12345678')
+    expect(() =>
+      run2(
+        Effect.gen(function* () {
+          const cipher = yield* PersonalDataCipher
+          const token = yield* cipher.encrypt('earnerRegistrationNumber', 'M12345678')
+          return yield* cipher.decrypt('registrationNumber', token)
+        }),
+      ),
     ).toThrow()
   })
 

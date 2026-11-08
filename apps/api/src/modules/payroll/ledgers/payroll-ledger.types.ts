@@ -8,13 +8,13 @@ export type LedgerKind = 'REGULAR' | 'ADDITIONAL'
 /**
  * 행에 둔 소득자 사본입니다. 명세서 머리와 발송 주소가 이 값을 씁니다.
  *
- * 직원이 연결된 행은 행을 만들 때와 `:recalculate` 때 HR 값을 복사하고(입력은 받지 않음), 직원이 없는 행(일용·사업·기타)은
- * 행을 추가·수정할 때 입력받습니다. 마감된 대장의 사본은 바뀌지 않으므로, 명세서는 마감한 그대로의 주소로 갑니다.
+ * 행을 만들 때와 `:recalculate` 때 직원이 연결된 행은 HR 값을, 소득자 명부를 가리키는 행(일용·사업·기타)은 명부 값을
+ * 복사합니다. 입력으로는 받지 않습니다. 마감된 대장의 사본은 바뀌지 않으므로, 명세서는 마감한 그대로의 주소로 갑니다.
  */
 export interface PayrollEarner {
   /** 명세서를 받을 주소입니다. 없으면 발송이 `NO_EMAIL`로 실패합니다. */
   email: string | null
-  /** `900101-1******` 형식입니다. 원문 주민등록번호는 급여가 받지도 저장하지도 않습니다. */
+  /** 가린 신원번호입니다. 등록번호는 `900101-1******`, 여권번호는 끝 3자리만 보입니다. 원문은 행에 두지 않습니다. */
   registrationNumberMasked: string | null
   departmentName: string | null
 }
@@ -22,8 +22,11 @@ export interface PayrollEarner {
 /** 급여대장의 행입니다. 소득자 한 명의 한 달 지급입니다. */
 export interface PayrollRowRecord {
   id: Id<'payrollRow'>
-  /** 근로 행은 직원 ID가 있고, 일용·사업·기타 행은 없을 수 있습니다. */
+  /** 근로 행은 직원 ID가 있고, 일용·사업·기타 행은 직원 ID와 소득자 ID 중 하나만 있습니다. */
   employeeId: Id<'employee'> | null
+  /** 소득자 명부의 소득자입니다. 직원이 연결된 행은 `null`입니다. */
+  earnerId: Id<'earner'> | null
+  /** 직원이나 소득자의 이름 사본입니다. 소득자 사본과 같은 때에 복사합니다. */
   payeeName: string
   /** 소득자 사본입니다. */
   earner: PayrollEarner

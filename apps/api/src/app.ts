@@ -9,7 +9,6 @@ import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
 import { HrHttpLive, HrStoreLive } from './modules/hr/hr.layer.ts'
-import { PersonalDataCipher } from './modules/hr/shared/personal-data-cipher.ts'
 import { AgencyAuthenticationLive, AuthenticationLive } from './modules/identity-access/authentication.ts'
 import { IdentityAccessHttpLive, IdentityAccessStoreLive } from './modules/identity-access/identity-access.layer.ts'
 import { CredentialVault } from './modules/integrations/credentials/credential-vault.ts'
@@ -27,6 +26,8 @@ import {
   UnitOfWorkMiddleware,
 } from './shared/persistence/persistence.layer.ts'
 import { DataKey } from './shared/crypto/data-key.ts'
+import { PersonalDataAccessLog } from './shared/personal-data/personal-data-access-log.ts'
+import { PersonalDataCipher } from './shared/personal-data/personal-data-cipher.ts'
 import { describeDefect } from './shared/problem/defect-log.ts'
 import { Internal, NotFound } from './shared/problem/problem.ts'
 import { RequestValidationLive } from './shared/problem/request-validation.ts'
@@ -96,7 +97,7 @@ export const AppLive = HttpApiBuilder.layer(Api).pipe(
 )
 
 /**
- * 컨텍스트마다 자기가 소유한 저장소와 외부 기관 어댑터입니다. 공유 쉬는 날 참조데이터도 넣습니다.
+ * 컨텍스트마다 자기가 소유한 저장소와 외부 기관 어댑터입니다. 공유 쉬는 날 참조데이터와 HR·Payroll이 함께 쓰는 개인정보 열람 기록도 넣습니다.
  *
  * 표는 모두 `TableFactory`로 만들어 저장 방식(메모리 또는 SQLite)을 바깥에서 받습니다.
  * 컨텍스트 사이 포트는 넣지 않습니다. 각 컨텍스트의 `<Ctx>MemoryLive`에 있는 그 포트의 가짜는 컨텍스트 단위 테스트에서만 씁니다.
@@ -113,12 +114,14 @@ const ContextStoresLive = Layer.mergeAll(
   PayrollStoreLive,
   BookkeepingStoreLive,
   PublicHolidayCalendar.layerMemory(),
+  PersonalDataAccessLog.layer,
 )
 
 /**
  * 저장하는 개인정보·자격 증명의 실제 암호화입니다. 모두 AES-256-GCM이고, 키는 {@link DataKey}에서 용도마다 HKDF로 따로 만듭니다.
  *
- * - HR `PersonalDataCipher.layerAesGcm`: 주민등록번호·급여 계좌번호 암호화와 중복 판정용 HMAC-SHA256 해시
+ * - 공유 `PersonalDataCipher.layerAesGcm`: HR 직원·Payroll 소득자의 주민등록번호(외국인등록번호·여권번호)와 HR 급여 계좌번호 암호화,
+ *   중복 판정용 HMAC-SHA256 해시
  * - Bookkeeping `AccountNumberCipher.layerAesGcm`: 회사·거래처·지로 출금 계좌번호
  * - Integrations `CredentialVault.layerDataKey`: 기관 연동 비밀번호·인증서 개인키와 서명 비밀번호
  */

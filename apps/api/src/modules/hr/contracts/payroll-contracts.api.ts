@@ -4,7 +4,8 @@ import { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employee.ts'
 import { ACCESS_ERRORS } from '../shared/hr-access.ts'
-import { AccessReasonHeaders, EmployeeId, IfMatchHeaders, PayrollContractId } from '../shared/hr-schemas.ts'
+import { AccessReasonHeaders } from '../../../shared/personal-data/access-reason.ts'
+import { EmployeeId, IfMatchHeaders, PayrollContractId } from '../shared/hr-schemas.ts'
 import {
   PayrollContract,
   PayrollContractInput,

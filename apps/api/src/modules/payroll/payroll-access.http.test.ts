@@ -1,13 +1,13 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Plan } from '../identity-access/actor.types.ts'
 import { TEST_COMPANY_ID, testActor } from '../identity-access/testing.ts'
-import { clockAt, payrollTestApp } from './payroll-testing.ts'
+import { addEarner, clockAt, payrollTestApp } from './payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from './payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from './ports/payroll-employee-directory.ts'
 import { PayrollSettingRepository } from './settings/payroll-setting-repository.ts'
 
 /**
- * 급여대장·행·명세서·인건비 보고서는 `PAYROLL`이나 `TAXATION` 중 하나면 열고(2026-11-07 결정), 급여 설정·퇴직금·기준표·
+ * 급여대장·행·명세서·소득자 명부·인건비 보고서는 `PAYROLL`이나 `TAXATION` 중 하나면 열고(2026-11-07 결정), 급여 설정·퇴직금·기준표·
  * 계산기는 현행 메뉴처럼 `PAYROLL`만 엽니다. 토큰마다 같은 회사의 다른 구독을 흉내 냅니다.
  *
  * 추가 대장은 원천세 기한이 가까우면 막히므로 시계를 {@link TODAY}에 두어, 벽시계와 상관없이 같은 결과를 냅니다.
@@ -38,14 +38,17 @@ afterAll(() => app.dispose())
 
 describe('급여 요금제 확인', () => {
   for (const [token, , attributionMonth] of PLAN_CASES) {
-    it(`${token} 회사에는 급여대장·대장 행·급여명세서·인건비 내역을 엽니다`, async () => {
+    it(`${token} 회사에는 급여대장·대장 행·소득자 명부·급여명세서·인건비 내역을 엽니다`, async () => {
       const created = await app.request('POST', '/payroll-ledgers', { token, body: { attributionMonth } })
       expect(created.status).toBe(201)
       const ledgerId = created.body.id
 
       const row = await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
         token,
-        body: { payeeName: '박프리', input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
+        body: {
+          earnerId: await addEarner(app, { name: '박프리' }, token),
+          input: { incomeType: 'BUSINESS', payAmount: 1_000_000 },
+        },
       })
       expect(row.status).toBe(201)
       expect((await app.request('GET', `/payroll-ledgers/${ledgerId}/rows`, { token })).status).toBe(200)
@@ -60,7 +63,10 @@ describe('급여 요금제 확인', () => {
 
       const extra = await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
         token,
-        body: { payeeName: '임시', input: { incomeType: 'OTHER', payAmount: 100_000 } },
+        body: {
+          earnerId: await addEarner(app, { name: '임시' }, token),
+          input: { incomeType: 'OTHER', payAmount: 100_000 },
+        },
       })
       expect(extra.status).toBe(201)
       const extraRow = `/payroll-ledgers/${ledgerId}/rows/${extra.body.id}`
@@ -101,6 +107,7 @@ describe('급여 요금제 확인', () => {
       ['GET', '/payroll-ledgers'],
       ['POST', '/payroll-ledgers'],
       ['GET', '/payslips'],
+      ['GET', '/earners'],
       ['GET', '/labor-cost-reports/2026'],
     ]
     for (const [method, path] of paths) {

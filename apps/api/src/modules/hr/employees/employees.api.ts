@@ -5,7 +5,8 @@ import { Page, PageQueryFields } from '../../../shared/http/pagination.ts'
 import { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
 import { ACCESS_ERRORS } from '../shared/hr-access.ts'
-import { AccessReasonHeaders, EmployeeId, IfMatchHeaders } from '../shared/hr-schemas.ts'
+import { AccessReasonHeaders } from '../../../shared/personal-data/access-reason.ts'
+import { EmployeeId, IfMatchHeaders } from '../shared/hr-schemas.ts'
 import {
   CreateEmployee,
   Employee,

@@ -120,7 +120,7 @@ POST   /employees                                    ?dryRun=true 로 중복만 
 GET    /employees/{employeeId}
 PATCH  /employees/{employeeId}                       If-Match. registrationNumber를 보내면 새 값으로 바꿈
 DELETE /employees/{employeeId}                       If-Match
-GET    /employees/{employeeId}/registration-number   X-Access-Reason 필수, 열람 기록
+POST   /employees/{employeeId}/registration-number:reveal   X-Access-Reason 필수, 열람 기록
 POST   /employees/{employeeId}:resign                If-Match { leaveDate, leavingReasonCode, leavingDetailReasonCode?, severanceAmount? }
 POST   /employees/{employeeId}:cancel-resignation    If-Match
 POST   /employees:export                             X-Access-Reason 필수 → Job (xlsx)
@@ -330,7 +330,7 @@ GET    /reference/document-categories
 
 - 주민등록번호·외국인등록번호·여권번호·계좌번호는 `PersonalDataCipher`(AES-256-GCM, 필드마다 서버 데이터 키에서 HKDF로 파생한 키와 AAD, 운영은 KMS가 데이터 키를 보관)로 암호화하고, 중복 판정은 회사와 무관한 HMAC 키로 만든 `registrationNumberHash`로 합니다. 암호문은 매번 달라 비교할 수 없고, 평문 해시는 13자리 공간이라 사전 공격에 약하기 때문입니다
 - 응답은 `registrationNumberMasked`(`900101-1******`, 여권은 끝 3자리만), `accountNumberMasked`(끝 4자리)만 넣습니다
-- 원문은 `GET …/registration-number`, `GET …/account-number`로만 주고 `X-Access-Reason`을 필수로 받아 열람 기록(`PersonalDataAccessLog`)을 남깁니다. 권한은 `employee:reveal-rrn`, `employee:reveal-account`로 따로 둡니다
+- 원문은 `POST …/registration-number:reveal`, `GET …/account-number`로만 주고 `X-Access-Reason`을 필수로 받아 열람 기록(`PersonalDataAccessLog`)을 남깁니다. 암호화와 열람 기록은 Payroll 소득자 명부와 함께 쓰는 공유 서비스(`src/shared/personal-data/`)이고, 열람 기록은 한 표(`personal_data_accesses`)에 남습니다. 권한은 `employee:reveal-rrn`, `employee:reveal-account`로 따로 둡니다
 - 생년월일은 주민등록번호에서 파생하고(7번째 자리로 세기 판정), 여권이면 입력을 받습니다
 
 ## Payroll에 주는 조회 서비스

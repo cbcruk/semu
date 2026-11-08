@@ -124,7 +124,7 @@ function withholdingSummary(
       localIncomeTax: 0,
       people: new Set<string>(),
     }
-    line.people.add(row.employeeId ?? `name:${row.payeeName}`)
+    line.people.add(row.employeeId ?? row.earnerId ?? `name:${row.payeeName}`)
     line.grossPay += row.result.grossPay
     line.taxablePay += row.result.taxablePay
     line.incomeTax += row.result.incomeTax

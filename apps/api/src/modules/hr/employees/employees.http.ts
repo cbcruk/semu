@@ -4,7 +4,7 @@ import { Api } from '../../../api.ts'
 import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import { authorize } from '../../identity-access/authorization.ts'
 import { hrAccess } from '../shared/hr-access.ts'
-import { decodeHeaderText } from '../shared/hr-schemas.ts'
+import { decodeHeaderText } from '../../../shared/personal-data/access-reason.ts'
 import { Employees } from './employees.ts'
 
 /** 직원 핸들러입니다. */
