@@ -78,10 +78,10 @@ describe('부가세 예정 건의 종류가 바뀔 때(FilingScheduler)', () => 
     )
   }
 
-  const 공급가액없음: TaxProfile = { ...DEMO_TAX_PROFILE }
-  const 공급가액1억4천만원: TaxProfile = { ...DEMO_TAX_PROFILE, vatSupplyAmounts: { '2026-H2': 140_000_000 } }
+  const noSupplyAmount: TaxProfile = { ...DEMO_TAX_PROFILE }
+  const supply140m: TaxProfile = { ...DEMO_TAX_PROFILE, vatSupplyAmounts: { '2026-H2': 140_000_000 } }
 
-  const 예정자리 = Effect.gen(function* () {
+  const preliminarySlot = Effect.gen(function* () {
     const repository = yield* FilingRepository
     return (yield* repository.list(TEST_COMPANY_ID))
       .filter((filing) => filing.taxType === 'VAT' && filing.periodKey === '2027-H1' && filing.kind !== 'FINAL')
@@ -89,7 +89,7 @@ describe('부가세 예정 건의 종류가 바뀔 때(FilingScheduler)', () => 
       .toSorted()
   })
 
-  const 상태바꾸기 = (kind: FilingRecord['kind'], status: FilingRecord['status'], actorKind: 'AGENCY' | 'SYSTEM') =>
+  const setStatus = (kind: FilingRecord['kind'], status: FilingRecord['status'], actorKind: 'AGENCY' | 'SYSTEM') =>
     Effect.gen(function* () {
       const repository = yield* FilingRepository
       const filing = (yield* repository.list(TEST_COMPANY_ID)).find(
@@ -115,70 +115,70 @@ describe('부가세 예정 건의 종류가 바뀔 때(FilingScheduler)', () => 
     })
 
   it('공급가액을 넣었다가 지우면 배치가 취소한 예정 신고 건을 되살립니다', async () => {
-    const [처음, 고지로바뀜, 되돌림, 다시돌림] = await runOnJanuary26(
+    const [initial, switchedToNotice, revertedBack, rerun] = await runOnJanuary26(
       Effect.gen(function* () {
         const scheduler = yield* FilingScheduler
-        yield* scheduler.runFor(공급가액없음)
-        const 처음 = yield* 예정자리
-        yield* scheduler.runFor(공급가액1억4천만원)
-        const 고지로바뀜 = yield* 예정자리
-        const result = yield* scheduler.runFor(공급가액없음)
-        const 되돌림 = yield* 예정자리
-        return [처음, 고지로바뀜, { result, 되돌림 }, yield* scheduler.runFor(공급가액없음)] as const
+        yield* scheduler.runFor(noSupplyAmount)
+        const initial = yield* preliminarySlot
+        yield* scheduler.runFor(supply140m)
+        const switchedToNotice = yield* preliminarySlot
+        const result = yield* scheduler.runFor(noSupplyAmount)
+        const revertedBack = yield* preliminarySlot
+        return [initial, switchedToNotice, { result, revertedBack }, yield* scheduler.runFor(noSupplyAmount)] as const
       }),
     )
 
-    expect(처음).toEqual(['PRELIMINARY:SCHEDULED'])
-    expect(고지로바뀜).toEqual(['NOTICE:SCHEDULED', 'PRELIMINARY:CANCELED'])
-    expect(되돌림.되돌림).toEqual(['NOTICE:CANCELED', 'PRELIMINARY:SCHEDULED'])
-    expect(되돌림.result).toMatchObject({ created: 0, restored: 1, canceled: 1 })
-    expect(다시돌림).toEqual({ created: 0, refreshed: 0, restored: 0, canceled: 0 })
+    expect(initial).toEqual(['PRELIMINARY:SCHEDULED'])
+    expect(switchedToNotice).toEqual(['NOTICE:SCHEDULED', 'PRELIMINARY:CANCELED'])
+    expect(revertedBack.revertedBack).toEqual(['NOTICE:CANCELED', 'PRELIMINARY:SCHEDULED'])
+    expect(revertedBack.result).toMatchObject({ created: 0, restored: 1, canceled: 1 })
+    expect(rerun).toEqual({ created: 0, refreshed: 0, restored: 0, canceled: 0 })
   })
 
   it('예정신고 선택을 넣었다가 빼도 예정 건이 하나 남습니다', async () => {
-    const 개인: TaxProfile = { ...DEMO_TAX_PROFILE, businessType: 'INDIVIDUAL' }
-    const 결과 = await runOnJanuary26(
+    const individualProfile: TaxProfile = { ...DEMO_TAX_PROFILE, businessType: 'INDIVIDUAL' }
+    const result = await runOnJanuary26(
       Effect.gen(function* () {
         const scheduler = yield* FilingScheduler
-        yield* scheduler.runFor(개인)
-        yield* scheduler.runFor({ ...개인, vatPreliminaryElections: { '2027-H1': 'EARLY_REFUND' } })
-        yield* scheduler.runFor(개인)
-        return yield* 예정자리
+        yield* scheduler.runFor(individualProfile)
+        yield* scheduler.runFor({ ...individualProfile, vatPreliminaryElections: { '2027-H1': 'EARLY_REFUND' } })
+        yield* scheduler.runFor(individualProfile)
+        return yield* preliminarySlot
       }),
     )
 
-    expect(결과).toEqual(['NOTICE:SCHEDULED', 'PRELIMINARY:CANCELED'])
+    expect(result).toEqual(['NOTICE:SCHEDULED', 'PRELIMINARY:CANCELED'])
   })
 
   it('예정 신고 건이 SCHEDULED를 지났으면 판정이 바뀌어도 예정고지 건을 만들지 않습니다', async () => {
-    const 결과 = await runOnJanuary26(
+    const result = await runOnJanuary26(
       Effect.gen(function* () {
         const scheduler = yield* FilingScheduler
-        yield* scheduler.runFor(공급가액없음)
-        yield* 상태바꾸기('PRELIMINARY', 'REQUESTED', 'AGENCY')
-        yield* scheduler.runFor(공급가액1억4천만원)
-        return yield* 예정자리
+        yield* scheduler.runFor(noSupplyAmount)
+        yield* setStatus('PRELIMINARY', 'REQUESTED', 'AGENCY')
+        yield* scheduler.runFor(supply140m)
+        return yield* preliminarySlot
       }),
     )
 
-    expect(결과).toEqual(['PRELIMINARY:REQUESTED'])
+    expect(result).toEqual(['PRELIMINARY:REQUESTED'])
   })
 
   it('대리인이 취소한 예정 자리에는 판정이 바뀌어도 어느 종류도 만들거나 되살리지 않습니다', async () => {
-    const 결과 = await runOnJanuary26(
+    const result = await runOnJanuary26(
       Effect.gen(function* () {
         const scheduler = yield* FilingScheduler
-        yield* scheduler.runFor(공급가액없음)
-        yield* 상태바꾸기('PRELIMINARY', 'CANCELED', 'AGENCY')
-        yield* scheduler.runFor(공급가액없음)
-        const 그대로 = yield* 예정자리
-        yield* scheduler.runFor(공급가액1억4천만원)
-        yield* scheduler.runFor(공급가액없음)
-        return [그대로, yield* 예정자리] as const
+        yield* scheduler.runFor(noSupplyAmount)
+        yield* setStatus('PRELIMINARY', 'CANCELED', 'AGENCY')
+        yield* scheduler.runFor(noSupplyAmount)
+        const unchanged = yield* preliminarySlot
+        yield* scheduler.runFor(supply140m)
+        yield* scheduler.runFor(noSupplyAmount)
+        return [unchanged, yield* preliminarySlot] as const
       }),
     )
 
-    expect(결과[0]).toEqual(['PRELIMINARY:CANCELED'])
-    expect(결과[1]).toEqual(['PRELIMINARY:CANCELED'])
+    expect(result[0]).toEqual(['PRELIMINARY:CANCELED'])
+    expect(result[1]).toEqual(['PRELIMINARY:CANCELED'])
   })
 })
