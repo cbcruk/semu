@@ -22,8 +22,8 @@ async function transaction(summary: string): Promise<TransactionBody> {
   return ((await response.json()) as { items: TransactionBody[] }).items.find((row) => row.summary === summary)!
 }
 
-describe('/v1/bank-accounts', () => {
-  it('masks account numbers and summarizes assets and liabilities', async () => {
+describe('계좌 /v1/bank-accounts', () => {
+  it('계좌번호를 가리고 총 자산·총 부채를 요약합니다', async () => {
     const accounts = await app.send('GET', '/v1/bank-accounts')
     const summary = await app.send('GET', '/v1/bank-accounts:summary')
 
@@ -37,7 +37,7 @@ describe('/v1/bank-accounts', () => {
     })
   })
 
-  it('prefers the scraped closing balance over the derived one', async () => {
+  it('은행이 준 마감 잔액이 거래 후 잔액으로 만든 값보다 우선합니다', async () => {
     const accounts = await app.send('GET', '/v1/bank-accounts')
     const { items } = (await accounts.json()) as { items: Array<{ id: string; alias: string }> }
     const main = items.find((row) => row.alias === '운영자금')!
@@ -53,8 +53,8 @@ describe('/v1/bank-accounts', () => {
   })
 })
 
-describe('/v1/bank-transactions', () => {
-  it('derives the settlement status from classification, partner and links', async () => {
+describe('입출금 /v1/bank-transactions', () => {
+  it('증빙 연결 상태는 분류·거래처·연결 금액으로 정합니다', async () => {
     expect((await transaction('에코프로비엠')).settlement).toMatchObject({
       status: 'MATCHED',
       linkedAmount: 33_000_000,
@@ -64,14 +64,14 @@ describe('/v1/bank-transactions', () => {
     expect((await transaction('이자')).settlement.status).toBe('NOT_APPLICABLE')
   })
 
-  it('filters by settlement status', async () => {
+  it('증빙 연결 상태로 거릅니다', async () => {
     const response = await app.send('GET', '/v1/bank-transactions?settlement=MATCHED')
 
     const { items } = (await response.json()) as { items: TransactionBody[] }
     expect(items.map((row) => row.summary)).toEqual(['에코프로비엠'])
   })
 
-  it('links purchase evidence to a withdrawal and refuses a sales evidence', async () => {
+  it('출금에는 매입 증빙만 연결하고 매출 증빙은 거절합니다', async () => {
     const out = await transaction('오피스디포')
     const purchases = await app.send('GET', '/v1/evidence?side=PURCHASE&source=TAX_INVOICE')
     const [invoice] = ((await purchases.json()) as { items: Array<{ id: string }> }).items
@@ -91,7 +91,7 @@ describe('/v1/bank-transactions', () => {
     expect(await linked.json()).toMatchObject({ settlement: { status: 'MATCHED', linkedAmount: 11_000_000 } })
   })
 
-  it('refuses a link above the evidence total', async () => {
+  it('증빙 합계를 넘는 연결은 거절합니다', async () => {
     const deposit = await transaction('에코프로비엠 선급')
     const sales = await app.send('GET', '/v1/evidence?side=SALES&source=TAX_INVOICE')
     const [invoice] = ((await sales.json()) as { items: Array<{ id: string }> }).items
@@ -102,7 +102,7 @@ describe('/v1/bank-transactions', () => {
     expect(await response.json()).toMatchObject({ reason: 'EXCEEDS_EVIDENCE' })
   })
 
-  it('classifies a withdrawal with a withdrawal account only', async () => {
+  it('출금은 출금에 쓰는 계정과목으로만 분류합니다', async () => {
     const telecom = await transaction('통신비 자동이체')
     const refused = await app.send('POST', `/v1/bank-transactions/${telecom.id}:classify`, {
       body: { accountTitleId: systemAccountTitleIdOf('non_op_income.tax_refund') },
@@ -115,7 +115,7 @@ describe('/v1/bank-transactions', () => {
     expect(await done.json()).toMatchObject({ classification: { status: 'CLASSIFIED', method: 'MANUAL' } })
   })
 
-  it('limits memos to 50 characters', async () => {
+  it('메모는 50자까지입니다', async () => {
     const telecom = await transaction('통신비 자동이체')
     const response = await app.send('PATCH', `/v1/bank-transactions/${telecom.id}`, { body: { memo: 'x'.repeat(51) } })
 

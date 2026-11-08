@@ -56,12 +56,12 @@ function run(input: FixtureInput): unknown {
   return result.map((grant) => grant.id)
 }
 
-describe('grant-recommendation fixtures', () => {
+describe('지원사업 추천 픽스처', () => {
   it.each(ported.map((testCase) => [testCase.name, testCase] as const))('%s', (name, testCase) => {
     expect(run(testCase.input)).toEqual(name in CHANGED ? CHANGED[name] : testCase.expected)
   })
 
-  it('names only cases that exist', () => {
+  it('바꾼 사례와 옮기지 않은 사례는 픽스처에 있는 이름만 적습니다', () => {
     const names = new Set(fixture.cases.map((testCase) => testCase.name))
     for (const name of [...Object.keys(CHANGED), ...Object.keys(NOT_PORTED)]) expect(names).toContain(name)
     expect(MAX_RECOMMENDATIONS).toBe(15)

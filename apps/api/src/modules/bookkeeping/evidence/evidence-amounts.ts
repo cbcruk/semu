@@ -15,9 +15,9 @@ export interface EvidenceAmounts {
  * 예상 부가세와 같은 규칙입니다 (`apps/api/legacy/src/lib/money.ts`의 `splitVatFromTotal`).
  */
 export function splitVatFromTotal(total: number): number {
-  const absolute = Math.abs(total)
-  const vat = absolute - Math.floor((absolute * 10) / 11)
-  return total < 0 ? -vat : vat
+  const 합계절댓값 = Math.abs(total)
+  const 세액 = 합계절댓값 - Math.floor((합계절댓값 * 10) / 11)
+  return total < 0 ? -세액 : 세액
 }
 
 /**
@@ -32,15 +32,15 @@ export function evidenceAmounts(
 ): EvidenceAmounts {
   const { totalAmount, supplyAmount, vatAmount } = record
   if (totalAmount !== null) {
-    const vat = vatAmount ?? (supplyAmount === null ? splitVatFromTotal(totalAmount) : totalAmount - supplyAmount)
+    const 세액 = vatAmount ?? (supplyAmount === null ? splitVatFromTotal(totalAmount) : totalAmount - supplyAmount)
     return {
-      supplyAmount: supplyAmount ?? totalAmount - vat,
-      vatAmount: vat,
+      supplyAmount: supplyAmount ?? totalAmount - 세액,
+      vatAmount: 세액,
       totalAmount,
       vatEstimated: vatAmount === null && supplyAmount === null,
     }
   }
-  const supply = supplyAmount ?? 0
-  const vat = vatAmount ?? 0
-  return { supplyAmount: supply, vatAmount: vat, totalAmount: supply + vat, vatEstimated: false }
+  const 공급가액 = supplyAmount ?? 0
+  const 세액 = vatAmount ?? 0
+  return { supplyAmount: 공급가액, vatAmount: 세액, totalAmount: 공급가액 + 세액, vatEstimated: false }
 }

@@ -13,8 +13,8 @@ beforeEach(() => {
 })
 afterEach(() => app.dispose())
 
-describe('GET /v1/account-titles', () => {
-  it('returns the tree depth first with group headings kept for a scope', async () => {
+describe('계정과목 조회 GET /v1/account-titles', () => {
+  it('적용 범위로 거르면 맞는 계정과 그 그룹 제목을 깊이 우선 순서로 돌려줍니다', async () => {
     const response = await app.send('GET', '/v1/account-titles?appliesTo=DEPOSIT&search=이자')
 
     expect(response.status).toBe(200)
@@ -26,8 +26,8 @@ describe('GET /v1/account-titles', () => {
   })
 })
 
-describe('POST /v1/account-titles', () => {
-  it('creates the first sub-account and moves classified rows to an automatic 기타', async () => {
+describe('하위 계정과목 추가 POST /v1/account-titles', () => {
+  it('분류된 거래가 있는 계정에 첫 하위 계정을 만들면 자동 기타 계정을 만들어 거래를 옮깁니다', async () => {
     const response = await app.send('POST', '/v1/account-titles', {
       body: { parentId: systemAccountTitleIdOf('sga.welfare'), name: '식대' },
     })
@@ -44,7 +44,7 @@ describe('POST /v1/account-titles', () => {
     expect(rows.every((row) => row.classification.accountTitleId === body.autoCreatedEtc.id)).toBe(true)
   })
 
-  it('refuses a fourth level', async () => {
+  it('4단계 계정과목은 만들 수 없습니다', async () => {
     const response = await app.send('POST', '/v1/account-titles', {
       body: { parentId: systemAccountTitleIdOf('trade.sales_in.partner'), name: '하위' },
     })
@@ -53,7 +53,7 @@ describe('POST /v1/account-titles', () => {
     expect(await response.json()).toMatchObject({ code: 'ACCOUNT_TITLE_DEPTH_EXCEEDED' })
   })
 
-  it('refuses a duplicate name under the same parent', async () => {
+  it('같은 상위 계정 아래 같은 이름은 만들 수 없습니다', async () => {
     const response = await app.send('POST', '/v1/account-titles', {
       body: { parentId: systemAccountTitleIdOf('trade.sales_in'), name: '카드 매출 대금 입금' },
     })
@@ -62,8 +62,8 @@ describe('POST /v1/account-titles', () => {
   })
 })
 
-describe('PATCH and DELETE /v1/account-titles/{id}', () => {
-  it('locks default account titles', async () => {
+describe('계정과목 수정·삭제 PATCH·DELETE /v1/account-titles/{id}', () => {
+  it('기본 계정과목은 고치거나 지울 수 없습니다', async () => {
     const id = systemAccountTitleIdOf('sga.rent')
     const renamed = await app.send('PATCH', `/v1/account-titles/${id}`, { body: { name: '월세' } })
     const deleted = await app.send('DELETE', `/v1/account-titles/${id}`)
@@ -73,7 +73,7 @@ describe('PATCH and DELETE /v1/account-titles/{id}', () => {
     expect(await deleted.json()).toMatchObject({ code: 'ACCOUNT_TITLE_SYSTEM_LOCKED' })
   })
 
-  it('requires a move target when rows are classified and moves them', async () => {
+  it('분류된 거래가 있으면 옮길 계정이 있어야 지우고, 거래를 그 계정으로 옮깁니다', async () => {
     const created = await app.send('POST', '/v1/account-titles', {
       body: { parentId: systemAccountTitleIdOf('sga.welfare'), name: '식대' },
     })

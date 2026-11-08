@@ -30,14 +30,17 @@ export function openGrants<G extends GrantWindow>(grants: ReadonlyArray<G>, toda
  * 회사 업종이 비어 있으면 업종으로 거르지 않고, 회사 지역이 없으면 전국 공고만 맞습니다.
  */
 export function matchesProfile(grant: GrantWindow, profile: GrantProfile): boolean {
-  const regionOk =
+  const 지역맞는가 =
     grant.regionCodes.length === 0 ||
-    (profile.regionCode !== null && grant.regionCodes.some((code) => profile.regionCode?.startsWith(code) === true))
-  const industryOk =
+    (profile.regionCode !== null &&
+      grant.regionCodes.some((공고지역코드) => profile.regionCode?.startsWith(공고지역코드) === true))
+  const 업종맞는가 =
     grant.industryCodes.length === 0 ||
     profile.industryCodes.length === 0 ||
-    grant.industryCodes.some((code) => profile.industryCodes.some((own) => own.startsWith(code)))
-  return regionOk && industryOk
+    grant.industryCodes.some((공고업종코드) =>
+      profile.industryCodes.some((회사업종코드) => 회사업종코드.startsWith(공고업종코드)),
+    )
+  return 지역맞는가 && 업종맞는가
 }
 
 /**

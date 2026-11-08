@@ -11,9 +11,9 @@ export const BUSINESS_STATUS_TTL_DAYS = 1
  * 시각이 아니라 날짜로 비교하므로 23:59에 조회한 결과도 다음 날 0시에 만료됩니다.
  */
 export function isBusinessStatusFresh(checkedAt: string, today: string): boolean {
-  const checkedOn = companyDateOf(checkedAt)
-  if (checkedOn === null) return false
-  return addDays(checkedOn, BUSINESS_STATUS_TTL_DAYS) > today
+  const 조회일 = companyDateOf(checkedAt)
+  if (조회일 === null) return false
+  return addDays(조회일, BUSINESS_STATUS_TTL_DAYS) > today
 }
 
 /** 사업자번호를 숫자 10자리로 정리합니다. 형식이 틀리면 `null`입니다. */

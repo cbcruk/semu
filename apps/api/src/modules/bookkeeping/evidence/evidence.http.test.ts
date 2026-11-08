@@ -27,8 +27,8 @@ async function list(query: string): Promise<EvidenceBody[]> {
   return ((await response.json()) as { items: EvidenceBody[] }).items
 }
 
-describe('GET /v1/evidence', () => {
-  it('lists one side newest first with derived amounts', async () => {
+describe('증빙 조회 GET /v1/evidence', () => {
+  it('매출·매입 한쪽을 최신순으로, 채운 금액과 함께 보여 줍니다', async () => {
     const items = await list('side=SALES')
 
     const dates = items.map((row) => row.writtenOn)
@@ -39,7 +39,7 @@ describe('GET /v1/evidence', () => {
     expect(card.classification).toMatchObject({ status: 'CLASSIFIED', method: 'RULE' })
   })
 
-  it('filters by classification status and pages with a cursor', async () => {
+  it('분류 여부로 거르고 커서로 나눠 보여 줍니다', async () => {
     const first = await app.send('GET', '/v1/evidence?side=SALES&classification=UNCLASSIFIED&limit=1')
     const page = (await first.json()) as { items: EvidenceBody[]; nextCursor: string }
     const second = await app.send(
@@ -51,23 +51,23 @@ describe('GET /v1/evidence', () => {
     expect(((await second.json()) as { items: EvidenceBody[] }).items.map((row) => row.source)).toEqual(['DELIVERY'])
   })
 
-  it('links the counterparty business number to an existing partner on ingestion', async () => {
+  it('받을 때 상대방 사업자번호가 같은 거래처에 연결합니다', async () => {
     const [invoice] = await list('side=PURCHASE&source=TAX_INVOICE')
 
     expect(invoice?.partnerId).toBe('ptn_01JBQ000000000000000000002')
   })
 })
 
-describe('GET /v1/evidence:count', () => {
-  it('counts classified and unclassified rows for the tabs', async () => {
+describe('증빙 건수 GET /v1/evidence:count', () => {
+  it('탭에 쓸 분류·미분류 건수를 셉니다', async () => {
     const response = await app.send('GET', '/v1/evidence:count?side=SALES')
 
     expect(await response.json()).toEqual({ totalCount: 6, classifiedCount: 4, unclassifiedCount: 2 })
   })
 })
 
-describe('POST /v1/evidence/{id}:classify', () => {
-  it('classifies manually and bumps the version', async () => {
+describe('증빙 분류 POST /v1/evidence/{id}:classify', () => {
+  it('직접 분류하면 버전을 올립니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
       body: { accountTitleId: systemAccountTitleIdOf('sales.revenue') },
@@ -81,7 +81,7 @@ describe('POST /v1/evidence/{id}:classify', () => {
     })
   })
 
-  it('refuses an account title outside the sales scope', async () => {
+  it('매출에 쓰지 않는 계정과목은 거절합니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
       body: { accountTitleId: systemAccountTitleIdOf('sga.salary') },
@@ -98,7 +98,7 @@ describe('POST /v1/evidence/{id}:classify', () => {
     })
   })
 
-  it('refuses a group heading that has sub-accounts', async () => {
+  it('하위 계정이 있는 그룹 계정은 거절합니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
       body: { accountTitleId: systemAccountTitleIdOf('sales') },
@@ -107,7 +107,7 @@ describe('POST /v1/evidence/{id}:classify', () => {
     expect(await response.json()).toMatchObject({ reason: 'NOT_SELECTABLE' })
   })
 
-  it('answers 412 for a stale version', async () => {
+  it('지난 버전으로 고치면 412입니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
       body: { accountTitleId: null },
@@ -117,7 +117,7 @@ describe('POST /v1/evidence/{id}:classify', () => {
     expect(response.status).toBe(412)
   })
 
-  it('needs evidence:classify', async () => {
+  it('evidence:classify 권한이 있어야 합니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('POST', `/v1/evidence/${mall!.id}:classify`, {
       body: { accountTitleId: null },
@@ -129,8 +129,8 @@ describe('POST /v1/evidence/{id}:classify', () => {
   })
 })
 
-describe('POST /v1/evidence:batchClassify', () => {
-  it('classifies every row or none', async () => {
+describe('증빙 일괄 분류 POST /v1/evidence:batchClassify', () => {
+  it('모든 행을 분류하거나 하나도 분류하지 않습니다', async () => {
     const unclassified = await list('side=SALES&classification=UNCLASSIFIED')
     const missing = 'evd_01JBQ000000000000000000099'
     const refused = await app.send('POST', '/v1/evidence:batchClassify', {
@@ -147,15 +147,15 @@ describe('POST /v1/evidence:batchClassify', () => {
   })
 })
 
-describe('PATCH /v1/evidence/{id}', () => {
-  it('sets the VAT deduction of purchase evidence', async () => {
+describe('증빙 수정 PATCH /v1/evidence/{id}', () => {
+  it('매입 증빙의 부가세 공제 여부를 정합니다', async () => {
     const [card] = await list('side=PURCHASE&source=CARD')
     const response = await app.send('PATCH', `/v1/evidence/${card!.id}`, { body: { vatDeduction: 'DEDUCTIBLE' } })
 
     expect(await response.json()).toMatchObject({ vatDeduction: 'DEDUCTIBLE' })
   })
 
-  it('refuses a VAT deduction on sales evidence', async () => {
+  it('매출 증빙에는 부가세 공제 여부를 정할 수 없습니다', async () => {
     const [mall] = await list('side=SALES&source=MALL')
     const response = await app.send('PATCH', `/v1/evidence/${mall!.id}`, { body: { vatDeduction: 'DEDUCTIBLE' } })
 
@@ -163,7 +163,7 @@ describe('PATCH /v1/evidence/{id}', () => {
     expect(await response.json()).toMatchObject({ code: 'VAT_DEDUCTION_NOT_APPLICABLE' })
   })
 
-  it('answers 404 for another company', async () => {
+  it('다른 회사의 증빙은 404입니다', async () => {
     const response = await app.send('GET', '/v1/evidence/evd_01JBQ000000000000000000099')
 
     expect(response.status).toBe(404)

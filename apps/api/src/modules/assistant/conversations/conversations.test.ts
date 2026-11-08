@@ -29,8 +29,8 @@ const run = <A, E>(
     effect.pipe(Effect.provide(Conversations.layer.pipe(Layer.provide([ConversationRepository.layerMemory(), model])))),
   )
 
-describe('guardProposals', () => {
-  it('drops tools the actor may not use and forces confirmation on write tools', () => {
+describe('도구 제안 거르기', () => {
+  it('행위자가 쓸 수 없는 도구는 빼고 쓰기 도구는 사용자 확인을 거치게 합니다', () => {
     const guarded = guardProposals(
       [
         { tool: 'ISSUE_TAX_INVOICE', arguments: {}, requiresConfirmation: false },
@@ -43,8 +43,8 @@ describe('guardProposals', () => {
   })
 })
 
-describe('Conversations', () => {
-  it('never shows a model proposal outside the actor tools', async () => {
+describe('대화 서비스', () => {
+  it('모델이 행위자에게 허용되지 않은 도구를 제안해도 보여 주지 않습니다', async () => {
     const freeAdmin = testActor({ plans: new Set() })
 
     const exchange = await run(
@@ -57,7 +57,7 @@ describe('Conversations', () => {
     ])
   })
 
-  it('keeps conversations private to the user who started them', async () => {
+  it('대화는 시작한 사용자만 봅니다', async () => {
     const owner = testActor()
     const colleague = testActor({ userId: 'usr_01JBQ000000000000000000002' as Id<'user'> })
 
@@ -75,7 +75,7 @@ describe('Conversations', () => {
     expect(result).toEqual({ mine: 1, theirs: 0, peek: 'ConversationNotFound' })
   })
 
-  it('lists the most recently updated conversation first, across pages', async () => {
+  it('여러 페이지에 걸쳐 가장 최근에 바뀐 대화부터 보여 줍니다', async () => {
     const actor = testActor()
 
     const pages = await run(

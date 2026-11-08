@@ -28,11 +28,11 @@ export function statementProblems(statement: {
   if (statement.invoiceClassCode === '02' || statement.invoiceClassCode === '04') {
     problems.push({ code: 'UNSUPPORTED', field: 'invoiceClassCode' })
   }
-  const supply = statement.items.reduce((sum, item) => sum + item.supplyAmount, 0)
-  const vat = statement.items.reduce((sum, item) => sum + item.vatAmount, 0)
-  if (supply !== statement.supplyAmount) problems.push({ code: 'AMOUNT_MISMATCH', field: 'supplyAmount' })
-  const vatFree = statement.invoiceClassCode === '03' || statement.invoiceKindCode === '02'
-  if (vat !== statement.vatAmount || (vatFree && statement.vatAmount !== 0)) {
+  const 품목공급가액합 = statement.items.reduce((sum, item) => sum + item.supplyAmount, 0)
+  const 품목세액합 = statement.items.reduce((sum, item) => sum + item.vatAmount, 0)
+  if (품목공급가액합 !== statement.supplyAmount) problems.push({ code: 'AMOUNT_MISMATCH', field: 'supplyAmount' })
+  const 계산서또는영세율인가 = statement.invoiceClassCode === '03' || statement.invoiceKindCode === '02'
+  if (품목세액합 !== statement.vatAmount || (계산서또는영세율인가 && statement.vatAmount !== 0)) {
     problems.push({ code: 'AMOUNT_MISMATCH', field: 'vatAmount' })
   }
   if (statement.totalAmount !== statement.supplyAmount + statement.vatAmount) {
@@ -60,6 +60,6 @@ export function statementLock(
 
 /** 목록에 보이는 품목 요약입니다. `첫 품목 외 N건`입니다. */
 export function itemSummary(items: ReadonlyArray<Pick<StatementItem, 'name'>>): string {
-  const first = items[0]?.name ?? ''
-  return items.length > 1 ? `${first} 외 ${items.length - 1}건` : first
+  const 첫품목명 = items[0]?.name ?? ''
+  return items.length > 1 ? `${첫품목명} 외 ${items.length - 1}건` : 첫품목명
 }

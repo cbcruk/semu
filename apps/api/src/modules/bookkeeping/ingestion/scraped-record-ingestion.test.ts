@@ -20,8 +20,8 @@ function run<A, E>(
   return Effect.runPromise(Effect.provide(effect, BookkeepingMemoryLive))
 }
 
-describe('ScrapedRecordIngestion', () => {
-  it('is idempotent by external key and keeps human edits', async () => {
+describe('수집 레코드 받기', () => {
+  it('같은 수집 키는 한 번만 받고 사람이 고친 값은 덮지 않습니다', async () => {
     const card: ScrapedRecord = {
       type: 'CARD_APPROVAL',
       cardNumberMasked: '9410-****-****-1234',
@@ -56,7 +56,7 @@ describe('ScrapedRecordIngestion', () => {
     })
   })
 
-  it('creates accounts before their transactions and reports rejected records by index', async () => {
+  it('계좌를 거래보다 먼저 만들고 받지 못한 레코드는 위치와 함께 알려 줍니다', async () => {
     const result = await run(
       Effect.gen(function* () {
         const ingestion = yield* ScrapedRecordIngestion
@@ -89,7 +89,7 @@ describe('ScrapedRecordIngestion', () => {
     })
   })
 
-  it('refreshes giro bills: new, seen paid and missing', async () => {
+  it('지로 고지서를 다시 읽으면 새 고지서, 납부된 고지서, 목록에서 빠진 고지서를 각각 반영합니다', async () => {
     const bill = (number: string, isPaid = false) => ({
       electronicPaymentNumber: number,
       taxKind: 'NATIONAL' as const,
@@ -113,8 +113,8 @@ describe('ScrapedRecordIngestion', () => {
   })
 })
 
-describe('VatEvidenceQuery', () => {
-  it('returns the demo October sales and purchases with raw VAT', async () => {
+describe('부가세 증빙 조회', () => {
+  it('데모 10월 매출·매입 증빙을 원천 세액 그대로 돌려줍니다', async () => {
     const evidence = await run(
       Effect.flatMap(VatEvidenceQuery, (query) =>
         query.forPeriod('cmp_01JBQ000000000000000000001' as Id<'company'>, { start: '2026-10-01', end: '2026-10-31' }),

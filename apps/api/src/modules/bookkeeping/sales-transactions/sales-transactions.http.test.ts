@@ -60,15 +60,15 @@ async function create(overrides: Record<string, unknown> = {}): Promise<{ id: st
   return (await response.json()) as { id: string; version: number }
 }
 
-describe('/v1/sales-transactions', () => {
-  it('creates a statement with an item summary', async () => {
+describe('거래명세서 /v1/sales-transactions', () => {
+  it('거래명세서를 만들면 품목 요약을 붙입니다', async () => {
     const response = await app.send('POST', '/v1/sales-transactions', { body: STATEMENT })
 
     expect(response.status).toBe(201)
     expect(await response.json()).toMatchObject({ itemSummary: '양극재 외 1건', issueStatus: 'ISSUE_REQUIRED' })
   })
 
-  it('reports every statement problem at once', async () => {
+  it('거래명세서의 문제를 한 번에 모두 알려 줍니다', async () => {
     const response = await app.send('POST', '/v1/sales-transactions', {
       body: { ...STATEMENT, invoiceKindCode: '03', totalAmount: 1 },
     })
@@ -83,14 +83,14 @@ describe('/v1/sales-transactions', () => {
     })
   })
 
-  it('refuses a partner of another company on create', async () => {
+  it('만들 때 다른 회사의 거래처는 거절합니다', async () => {
     const response = await app.send('POST', '/v1/sales-transactions', { token: 'other', body: STATEMENT })
 
     expect(response.status).toBe(404)
     expect(await response.json()).toMatchObject({ code: 'PARTNER_NOT_FOUND' })
   })
 
-  it('refuses an unknown or foreign partner on update', async () => {
+  it('고칠 때 없는 거래처나 다른 회사의 거래처는 거절합니다', async () => {
     const created = await create({ partnerId: null })
 
     const response = await app.send('PATCH', `/v1/sales-transactions/${created.id}`, {
@@ -102,15 +102,15 @@ describe('/v1/sales-transactions', () => {
   })
 })
 
-describe('POST /v1/tax-invoices', () => {
-  it('requires an Idempotency-Key', async () => {
+describe('전자세금계산서 발급 POST /v1/tax-invoices', () => {
+  it('Idempotency-Key가 있어야 합니다', async () => {
     const statement = await create()
     const response = await app.send('POST', '/v1/tax-invoices', { body: { salesTransactionId: statement.id } })
 
     expect(response.status).toBe(428)
   })
 
-  it('issues once per key, records sales evidence and locks the statement', async () => {
+  it('키마다 한 번만 발급하고 매출 증빙을 남기며 거래명세서를 잠급니다', async () => {
     const statement = await create()
     const headers = { 'idempotency-key': 'issue-1' }
     const first = await app.send('POST', '/v1/tax-invoices', { body: { salesTransactionId: statement.id }, headers })
@@ -136,7 +136,7 @@ describe('POST /v1/tax-invoices', () => {
     expect(rows.filter((row) => row.salesTransactionId === statement.id)).toHaveLength(1)
   })
 
-  it('keeps a failed attempt when Hometax rejects and allows a retry with a new key', async () => {
+  it('홈택스가 거절하면 실패 기록을 남기고 새 키로 다시 발급할 수 있습니다', async () => {
     const statement = await create({ buyer: party(FAKE_REJECTED_BUYER_NUMBER, '없는 회사') })
     const rejected = await app.send('POST', '/v1/tax-invoices', {
       body: { salesTransactionId: statement.id },
@@ -158,7 +158,7 @@ describe('POST /v1/tax-invoices', () => {
     expect(items.map((row) => row.status).sort()).toEqual(['FAILED', 'ISSUED'])
   })
 
-  it('refuses a key reused for another statement', async () => {
+  it('다른 거래명세서에 다시 쓴 키는 거절합니다', async () => {
     const a = await create()
     const b = await create()
     const headers = { 'idempotency-key': 'shared' }

@@ -48,7 +48,7 @@ export interface RealtimeProfitLoss {
   unclassifiedCount: { sales: number; purchase: number; bank: number }
 }
 
-const LINE_KEYS: Record<PlLine, keyof Omit<PlFigures, 'breakdown'>> = {
+const 손익줄별필드: Record<PlLine, keyof Omit<PlFigures, 'breakdown'>> = {
   REVENUE: 'revenueAmount',
   COGS: 'costOfSalesAmount',
   SGA: 'sgaAmount',
@@ -57,7 +57,8 @@ const LINE_KEYS: Record<PlLine, keyof Omit<PlFigures, 'breakdown'>> = {
   INCOME_TAX: 'incomeTaxAmount',
 }
 
-const INCOME_LINES: ReadonlySet<PlLine> = new Set(['REVENUE', 'NON_OPERATING_INCOME'])
+/** 수익 쪽(+)으로 더하는 손익 줄입니다. 나머지 줄은 비용 쪽입니다. */
+const 수익쪽줄: ReadonlySet<PlLine> = new Set(['REVENUE', 'NON_OPERATING_INCOME'])
 
 /**
  * 분류된 증빙과 입출금으로 한 해의 월별 실시간 손익을 만듭니다.
@@ -77,48 +78,51 @@ export function realtimeProfitLoss(input: {
   evidence: ReadonlyArray<PlEvidenceEntry>
   bank: ReadonlyArray<PlBankEntry>
 }): RealtimeProfitLoss {
-  const yearText = String(input.year)
-  const months = Array.from({ length: 12 }, () => new Map<string, number>())
+  const 연도 = String(input.year)
+  const 월별줄금액 = Array.from({ length: 12 }, () => new Map<string, number>())
   const unclassifiedCount = { sales: 0, purchase: 0, bank: 0 }
-  const add = (date: string, accountTitleId: string, amount: number, inflow: boolean): void => {
-    const info = input.titles.get(accountTitleId)
-    const bucket = months[Number(date.slice(5, 7)) - 1]
-    if (info === undefined || info.plCategory === 'NONE' || bucket === undefined) return
-    const signed = INCOME_LINES.has(info.plCategory) === inflow ? amount : -amount
-    const key = `${info.plCategory}\u0000${info.reportName}`
-    bucket.set(key, (bucket.get(key) ?? 0) + signed)
+  // 기준일: 증빙은 작성일자, 입출금은 거래일입니다. 수익쪽인가: 이 금액이 수익 쪽(매출 증빙·입금)에서 왔는지입니다
+  const 손익에더하기 = (기준일: string, 계정과목ID: string, 금액: number, 수익쪽인가: boolean): void => {
+    const 계정과목 = input.titles.get(계정과목ID)
+    const bucket = 월별줄금액[Number(기준일.slice(5, 7)) - 1]
+    if (계정과목 === undefined || 계정과목.plCategory === 'NONE' || bucket === undefined) return
+    const 부호붙은금액 = 수익쪽줄.has(계정과목.plCategory) === 수익쪽인가 ? 금액 : -금액
+    const key = `${계정과목.plCategory}\u0000${계정과목.reportName}`
+    bucket.set(key, (bucket.get(key) ?? 0) + 부호붙은금액)
   }
   for (const row of input.evidence) {
-    if (!row.date.startsWith(yearText)) continue
+    if (!row.date.startsWith(연도)) continue
     if (row.accountTitleId === null) {
       unclassifiedCount[row.side === 'SALES' ? 'sales' : 'purchase']++
       continue
     }
-    const amount = input.policy.basis === 'SUPPLY' ? row.supplyAmount : row.totalAmount
-    add(row.date, row.accountTitleId, amount, row.side === 'SALES')
+    const 넣을금액 = input.policy.basis === 'SUPPLY' ? row.supplyAmount : row.totalAmount
+    손익에더하기(row.date, row.accountTitleId, 넣을금액, row.side === 'SALES')
   }
   for (const row of input.bank) {
-    if (!row.date.startsWith(yearText)) continue
+    if (!row.date.startsWith(연도)) continue
     if (row.accountTitleId === null) {
       unclassifiedCount.bank++
       continue
     }
-    if (input.policy.includeBank) add(row.date, row.accountTitleId, row.amount, true)
+    if (input.policy.includeBank) 손익에더하기(row.date, row.accountTitleId, row.amount, true)
   }
-  const running = new Map<string, number>()
-  const output = months.map((bucket, index) => {
-    const month = `${yearText}-${String(index + 1).padStart(2, '0')}`
-    if (!input.cumulative) return { month, ...toFigures(bucket) }
-    for (const [key, amount] of bucket) running.set(key, (running.get(key) ?? 0) + amount)
-    return { month, ...toFigures(running) }
+  const 누계 = new Map<string, number>()
+  const 월별손익 = 월별줄금액.map((bucket, index) => {
+    const month = `${연도}-${String(index + 1).padStart(2, '0')}`
+    if (!input.cumulative) return { month, ...손익집계(bucket) }
+    for (const [key, amount] of bucket) 누계.set(key, (누계.get(key) ?? 0) + amount)
+    return { month, ...손익집계(누계) }
   })
-  const total = new Map<string, number>()
-  for (const bucket of months) for (const [key, amount] of bucket) total.set(key, (total.get(key) ?? 0) + amount)
-  return { months: output, total: toFigures(total), unclassifiedCount }
+  const 연간줄금액 = new Map<string, number>()
+  for (const bucket of 월별줄금액)
+    for (const [key, amount] of bucket) 연간줄금액.set(key, (연간줄금액.get(key) ?? 0) + amount)
+  return { months: 월별손익, total: 손익집계(연간줄금액), unclassifiedCount }
 }
 
-function toFigures(amounts: ReadonlyMap<string, number>): PlFigures {
-  const figures: PlFigures = {
+/** 줄금액: `손익 구분\0보고서 줄 이름` 키별 금액입니다. */
+function 손익집계(줄금액: ReadonlyMap<string, number>): PlFigures {
+  const 손익: PlFigures = {
     revenueAmount: 0,
     costOfSalesAmount: 0,
     grossProfitAmount: 0,
@@ -130,17 +134,14 @@ function toFigures(amounts: ReadonlyMap<string, number>): PlFigures {
     netIncomeAmount: 0,
     breakdown: [],
   }
-  for (const [key, amount] of amounts) {
+  for (const [key, amount] of 줄금액) {
     const [line, reportName] = key.split('\u0000') as [PlLine, string]
-    figures[LINE_KEYS[line]] += amount
-    figures.breakdown.push({ line, reportName, amount })
+    손익[손익줄별필드[line]] += amount
+    손익.breakdown.push({ line, reportName, amount })
   }
-  figures.grossProfitAmount = figures.revenueAmount - figures.costOfSalesAmount
-  figures.operatingProfitAmount = figures.grossProfitAmount - figures.sgaAmount
-  figures.netIncomeAmount =
-    figures.operatingProfitAmount +
-    figures.nonOperatingIncomeAmount -
-    figures.nonOperatingExpenseAmount -
-    figures.incomeTaxAmount
-  return figures
+  손익.grossProfitAmount = 손익.revenueAmount - 손익.costOfSalesAmount
+  손익.operatingProfitAmount = 손익.grossProfitAmount - 손익.sgaAmount
+  손익.netIncomeAmount =
+    손익.operatingProfitAmount + 손익.nonOperatingIncomeAmount - 손익.nonOperatingExpenseAmount - 손익.incomeTaxAmount
+  return 손익
 }

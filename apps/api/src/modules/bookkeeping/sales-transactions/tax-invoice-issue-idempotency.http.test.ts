@@ -164,8 +164,8 @@ function issue(app: HttpTestApp, key: string, salesTransactionId: string, token?
   return app.json('POST', '/tax-invoices', { idempotencyKey: key, body: { salesTransactionId }, token })
 }
 
-describe('POST /tax-invoices idempotency', () => {
-  it('issues once and replays the first response', async () => {
+describe('전자세금계산서 발급 멱등성 POST /tax-invoices', () => {
+  it('한 번만 발급하고 같은 키에는 첫 응답을 다시 돌려줍니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app)
 
@@ -180,7 +180,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.issued).toHaveLength(1)
   })
 
-  it('rejects the same key for another statement', async () => {
+  it('같은 키를 다른 거래명세서에 쓰면 거절합니다', async () => {
     const { app, issuer } = setUp()
     const a = await create(app)
     const b = await create(app)
@@ -193,7 +193,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.calls).toHaveLength(1)
   })
 
-  it('does not replay another user’s invoice and forgets the key after 24 hours', async () => {
+  it('다른 사용자의 발급은 다시 돌려주지 않고, 24시간이 지나면 키를 잊습니다', async () => {
     const { app, clock, issuer } = setUp()
     const statement = await create(app)
 
@@ -211,7 +211,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.issued).toHaveLength(1)
   })
 
-  it('issues once while the first request is still waiting for Hometax', async () => {
+  it('첫 요청이 홈택스 응답을 기다리는 동안에도 한 번만 발급합니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app)
     issuer.delayMs = 50
@@ -228,7 +228,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.issued).toHaveLength(1)
   })
 
-  it('asks Hometax again with the same key after a rejection', async () => {
+  it('거절된 뒤 같은 키로 보내면 홈택스에 다시 요청합니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app, { buyer: party(FAKE_REJECTED_BUYER_NUMBER, '없는 회사') })
 
@@ -245,7 +245,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(new Set(issuer.calls).size).toBe(2)
   })
 
-  it('finishes an issue whose result was lost with the same reference, without issuing twice', async () => {
+  it('결과를 잃은 발급은 같은 참조로 마무리하고 두 번 발급하지 않습니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app)
     issuer.dieAfterIssuing = true
@@ -268,7 +268,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.calls).toEqual([issuer.issued[0], issuer.issued[0]])
   })
 
-  it('keeps an unconfirmed issue past 24 hours and finishes it with the same reference', async () => {
+  it('확인되지 않은 발급은 24시간이 지나도 남겨 같은 참조로 마무리합니다', async () => {
     const { app, clock, issuer } = setUp()
     const statement = await create(app)
     issuer.dieAfterIssuing = true
@@ -286,7 +286,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(issuer.calls).toEqual([issuer.issued[0], issuer.issued[0]])
   })
 
-  it('lets another user with another key finish an unconfirmed issue instead of locking the statement', async () => {
+  it('확인되지 않은 발급은 다른 사용자가 다른 키로 마무리할 수 있고 거래명세서를 잠가 두지 않습니다', async () => {
     const { app, issuer } = setUp()
     const statement = await create(app)
     issuer.dieAfterIssuing = true
@@ -311,7 +311,7 @@ describe('POST /tax-invoices idempotency', () => {
     expect(rows).toHaveLength(1)
   })
 
-  it('creates the missing evidence when the issue stopped after the invoice was saved as issued', async () => {
+  it('발급 완료로 저장한 뒤 멈춘 발급은 빠진 매출 증빙을 만들어 마무리합니다', async () => {
     const { app, issuer, evidence } = setUp({ flakyEvidence: true })
     const statement = await create(app)
     evidence.dieOnSave = true
