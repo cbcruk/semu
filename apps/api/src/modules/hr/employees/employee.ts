@@ -3,7 +3,6 @@ import { HttpApiError } from 'effect/http-api'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import type { SeveranceSettlementStatus } from '../retirement/retirement.types.ts'
 import { DepartmentId, EmployeeId, PositionId, Violations } from '../shared/hr-schemas.ts'
 import type { IdentityNumberType } from '../shared/identity-number.types.ts'
 import type { EmployeeKind } from './employee-kind.types.ts'
@@ -50,7 +49,6 @@ export const Employee = Schema.Struct({
   nationalityCode: Schema.optionalKey(Schema.String),
   visaCode: Schema.optionalKey(Schema.String),
   resignation: Schema.optionalKey(Resignation),
-  severanceSettlementStatus: Schema.optionalKey(Schema.Literals(['IN_PROGRESS', 'COMPLETED', 'EXCLUDED'])),
   status: EmployeeStatusSchema,
   warnings: Schema.Array(EmployeeWarningSchema),
   version: Schema.Int,
@@ -121,7 +119,6 @@ export interface EmployeeRecord {
   nationalityCode?: string | undefined
   visaCode?: string | undefined
   resignation?: typeof Resignation.Type | undefined
-  severanceSettlementStatus?: SeveranceSettlementStatus | undefined
   version: number
   createdAt: string
   updatedAt: string

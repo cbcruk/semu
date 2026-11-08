@@ -75,6 +75,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Tax `PayrollLedgers` | Payroll `PayrollLedgerSummary` | 지급월 범위의 대장 수와 마감 수 |
 | Payroll `WithholdingFilingLock` | Tax `WithholdingFilingLock` | 지급월 원천세가 `FILED`·`SETTLED`인지. 참이면 대장 변경 409 |
 | Payroll `PayrollEmployeeDirectory` | HR `HrDirectory` | 기간 중 재직한 근로자, 계약·4대보험·공제 정보 |
+| HR `SeveranceSettlementLookup` | Payroll `SeveranceSettlementQuery` | 직원의 퇴직금 정산 상태 전부. `COMPLETED`가 있으면 직원 삭제·퇴사 취소·다시 퇴사 409 |
 | Documents (직접) | HR `HrDirectory` | 서명 요청 수신자, 증명서 대상 직원 |
 | Tax `VatEvidence` | Bookkeeping `VatEvidenceQuery` | 과세기간의 매출·매입 증빙 |
 | Bookkeeping `VatEstimateSource` | Tax 예상 부가세 | 홈 요약의 예상 납부세액과 기한 |

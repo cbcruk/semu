@@ -309,6 +309,7 @@ stateDiagram-v2
   - 완료한 정산의 지급일을 바꾸려면 `:reopen` 뒤 `PATCH`합니다. 다시 열어도 지급일은 남습니다
   - `?paymentMonth=YYYY-MM`은 지급일이 그 달인 정산만 줍니다. 원천세 요약은 `status=COMPLETED`와 함께 씁니다. 목록은 지금처럼 페이지 없이 회사 정산 전체입니다(퇴사자 수만큼)
   - 이 필드 전에 저장한 정산은 `paymentDate: null`이고 어느 지급월에도 들지 않습니다. 저장은 JSON 열이라 이관이 필요 없고, 다시 열고 완료하면 마지막 근무일로 채워집니다
+- **HR 가드.** 직원의 정산 중 하나라도 `COMPLETED`면 HR이 직원 삭제·퇴사 취소·다시 퇴사를 409 `RETIREMENT_COMPLETED`로 막습니다. HR은 `SeveranceSettlementQuery`로 묻습니다([열린 질문 16](#열린-질문))
 - 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
 ## 인건비
@@ -329,6 +330,7 @@ flowchart LR
   PAY -- payroll_pay_month.closed / reopened --> TAX[Tax]
   TAX -- WithholdingFilingLock.isFiled --> PAY
   PAY -- PayrollLedgerSummary.summaryFor --> TAX
+  PAY -- SeveranceSettlementQuery.statusesOf --> HR
   PAY -- PayrollLaborCost.monthly --> BK[Bookkeeping]
   PAY -- PayslipMailer.send --> INT[Integrations / 메일]
 ```
@@ -343,6 +345,7 @@ flowchart LR
 | 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, occurredAt }` |
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
+| 공개 조회 | `SeveranceSettlementQuery.statusesOf(companyId, employeeId)` | 그 직원의 정산 상태 전부(`CALCULATED`·`COMPLETED`·`EXCLUDED`). HR `SeveranceSettlementLookup`을 [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts)가 이것으로 구현 |
 
 - `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren { count, effectiveFrom } | null, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
 - `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수, 0–20)와 그 설정의 `effectiveFrom`이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`·`childcareChildrenEffectiveFrom`으로 들어갑니다. 엔진은 기준표의 보육수당 한도가 자녀 1명당(`perChild`)이면 월 비과세 한도를 20만원 × 이 값으로 잡습니다(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분). 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN`, 설정 연도가 귀속 연도와 다르면 값은 그대로 쓰고 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 법정 한도는 직원 한 명의 그달 유형별 합계이고 회사 한도는 항목마다 봅니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
@@ -549,7 +552,7 @@ flowchart LR
 | 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 이벤트의 `withholding[]`은 Tax가 쓰지 않음 |
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
 | 퇴직금 정산 (퇴직) | 구현 (메모리) |
-| 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary` | 구현 |
+| 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary`, `SeveranceSettlementQuery` | 구현 |
 | 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |
 | 지급·공제 항목 카탈로그, 근무 일정 정책 | 없음 |
@@ -582,7 +585,8 @@ flowchart LR
 13. **수습 감액과 최저임금 경고.** 급여 경고는 감액 없이 최저시급과 비교합니다. HR 포트가 수습 시작일과 감액 허용 여부(급여계약 검증 결과)를 주면, 그 달이 수습 3개월 안이고 허용된 경우에만 90%로 비교할 수 있습니다([규칙 결정](rule-decisions/payroll.md#minimum-wage-warning) 2)
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)
 15. **원천세 집계의 소비.** `payroll_pay_month.closed`는 `withholding[]`을 싣지만 Tax는 회사·지급월만 받아 마감 수만 다시 셉니다([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). Tax가 집계를 신고서 초안에 쓸지, 쓴다면 이벤트로 받을지(outbox 재전달·순서 문제) `PayrollLedgerSummary`처럼 조회로 받을지, 소득 종류를 신고서 코드로 바꾸는 표를 어디 둘지 정해야 합니다. 쓰지 않기로 하면 이벤트에서 `withholding[]`을 빼는 것도 방법입니다
-16. **퇴직금 정산 상태를 HR에 알리기.** HR 직원의 `severanceSettlementStatus`는 `IN_PROGRESS`·`COMPLETED`·`EXCLUDED`([retirement.types.ts](../../apps/api/src/modules/hr/retirement/retirement.types.ts))이고 Payroll 정산은 `CALCULATED`·`COMPLETED`·`EXCLUDED`([severance-settlement.types.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.types.ts))입니다. 둘을 잇는 이벤트도 HR이 받는 구독도 없어 HR 필드는 언제나 비어 있고, HR의 409 `RETIREMENT_COMPLETED` 가드(직원 삭제·퇴사 취소·다시 퇴사)는 지금 걸리지 않습니다([hr.md 퇴직](hr.md#퇴직)). 정할 것:
-    - 이벤트 이름과 모양. [events.md](events.md#이벤트-목록) 규칙대로면 `severance_settlement.status_changed`(또는 `.completed`·`.reopened`·`.excluded`·`.included`)이고 아직 목록에 없습니다
-    - 매핑. `CALCULATED` → `IN_PROGRESS`, 나머지는 같은 이름으로 보는 것이 자연스럽지만, 같은 직원에 정산이 여럿(재입사, 제외 후 새 정산)이면 HR 필드 하나에 무엇을 둘지 정해야 합니다
-    - 다른 길. HR이 상태를 저장하지 않고 삭제·퇴사 취소 때 Payroll에 묻는 포트(예: `SeveranceSettlementLookup`)를 두면 이벤트도 매핑도 필요 없습니다
+16. **퇴직금 정산 상태를 HR에 알리기.** ~~HR 필드 `severanceSettlementStatus`를 이벤트로 채울지, 상태 매핑을 어떻게 할지~~ **정함(2026-11-08):** 이벤트 대신 HR이 조회 포트로 묻습니다. HR은 정산 상태를 저장하지 않습니다
+    - HR 포트 `SeveranceSettlementLookup`([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts))을 [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts)가 Payroll 공개 조회 `SeveranceSettlementQuery`로 구현합니다. 그 직원의 정산 상태를 모두 돌려주고, 상태 값은 Payroll과 같아 매핑이 없습니다
+    - HR 직원 삭제·퇴사 취소·다시 퇴사가 이 포트에 묻고, 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가므로, 최신 정산이 아니어도 완료가 하나 있으면 퇴직 기록을 바꾸거나 지울 수 없습니다. `CALCULATED`는 지급 전이라(현행도 완료만 막음), `EXCLUDED`는 정산하지 않기로 한 것이라 막지 않습니다. 막히면 `:reopen`으로 계산됨으로 되돌린 뒤 합니다
+    - 이벤트를 쓰지 않은 이유: HR이 필요한 것은 커맨드 순간의 판정 하나뿐이라 조회로 충분하고, 이벤트로 받으면 outbox 재전달·순서와 한 직원의 여러 정산(제외 후 새 정산)을 필드 하나로 줄이는 매핑을 따로 정해야 합니다
+    - 남은 것: 퇴사 취소가 계산됨 정산을 남기고(마지막 근무일이 더는 퇴직일이 아님), 계산됨 정산이 있는 직원을 삭제하면 직원 없는 정산이 남습니다. 정산을 자동으로 제외할지, 완료 때 HR 퇴직일과 다시 맞출지는 정하지 않았습니다

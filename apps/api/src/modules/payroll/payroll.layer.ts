@@ -16,6 +16,7 @@ import { RateTableRepository } from './rate-tables/rate-table-repository.ts'
 import { PayrollCalculatorHttpLive, RateTablesHttpLive } from './rate-tables/rate-tables.http.ts'
 import { PayrollSettingRepository } from './settings/payroll-setting-repository.ts'
 import { PayrollSettingsHttpLive } from './settings/payroll-settings.http.ts'
+import { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
 import { SeveranceSettlementRepository } from './severance/severance-settlement-repository.ts'
 import { SeveranceSettlementsHttpLive } from './severance/severance-settlements.http.ts'
 
@@ -36,12 +37,14 @@ export const PayrollHttpLive = Layer.mergeAll(
 )
 
 /**
- * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황과 월별 인건비입니다.
+ * 다른 컨텍스트에 여는 서비스(`payroll.public.ts`)입니다. 지급일 구간의 급여대장 마감 현황, 월별 인건비, 직원별 퇴직금 정산 상태입니다.
  *
- * `PayrollLedgerRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
+ * `PayrollLedgerRepository`, `SeveranceSettlementRepository`와 HR 포트(`PayrollEmployeeDirectory`)가 필요합니다. 인건비 보고서 핸들러와 같은 Layer를 쓰므로
  * `Layer.fresh`로 따로 만듭니다. 그래야 테스트가 핸들러 쪽 포트만 바꿔 끼워도 이 서비스가 먼저 만든 인스턴스를 핸들러가 물려받지 않습니다.
  */
-export const PayrollPublicLive = Layer.fresh(Layer.mergeAll(PayrollLedgerSummary.layer, PayrollLaborCost.layer))
+export const PayrollPublicLive = Layer.fresh(
+  Layer.mergeAll(PayrollLedgerSummary.layer, PayrollLaborCost.layer, SeveranceSettlementQuery.layer),
+)
 
 /**
  * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산은

@@ -212,6 +212,90 @@ describe('근로계약', () => {
   })
 })
 
+describe('퇴직금 정산 가드(RETIREMENT_COMPLETED)', () => {
+  /** 퇴사한 직원과 Payroll에서 계산한 퇴직금 정산을 만듭니다. 정산은 계산됨(`CALCULATED`)으로 시작합니다. */
+  const resignWithSettlement = async () => {
+    const created = await hire()
+    const id: string = created.body.id
+    const resigned = await app.json('POST', `/employees/${id}:resign`, {
+      body: { leaveDate: '2026-06-30', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
+    })
+    expect(resigned.status).toBe(200)
+    const settlement = await app.json('POST', '/severance-settlements', {
+      body: { employeeId: id, input: { threeMonthWages: 9_000_000 } },
+    })
+    expect(settlement.status).toBe(201)
+    return { id, settlementId: settlement.body.id as string }
+  }
+
+  const complete = (settlementId: string) => app.json('POST', `/severance-settlements/${settlementId}:complete`)
+
+  it('정산을 완료하면 퇴사 취소·다시 퇴사·삭제를 409로 막습니다', async () => {
+    const { id, settlementId } = await resignWithSettlement()
+    expect((await complete(settlementId)).body.status).toBe('COMPLETED')
+
+    const canceled = await app.json('POST', `/employees/${id}:cancel-resignation`)
+    const reResigned = await app.json('POST', `/employees/${id}:resign`, {
+      body: { leaveDate: '2026-07-31', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
+    })
+    const removed = await app.json('DELETE', `/employees/${id}`)
+
+    for (const response of [canceled, reResigned, removed]) {
+      expect(response.status).toBe(409)
+      expect(response.body).toMatchObject({ code: 'RETIREMENT_COMPLETED' })
+    }
+    const employee = await app.json('GET', `/employees/${id}`)
+    expect(employee.body).toMatchObject({ status: 'RESIGNED', resignation: { leaveDate: '2026-06-30' } })
+  })
+
+  it('계산됨 정산은 지급 전이라 퇴사 취소를 막지 않습니다', async () => {
+    const { id } = await resignWithSettlement()
+
+    const canceled = await app.json('POST', `/employees/${id}:cancel-resignation`)
+
+    expect(canceled.status).toBe(200)
+    expect(canceled.body).not.toHaveProperty('resignation')
+  })
+
+  it('제외한 정산은 삭제를 막지 않습니다', async () => {
+    const { id, settlementId } = await resignWithSettlement()
+    const excluded = await app.json('POST', `/severance-settlements/${settlementId}:exclude`, {
+      body: { reason: '퇴직연금으로 지급' },
+    })
+    expect(excluded.body.status).toBe('EXCLUDED')
+
+    const removed = await app.request('DELETE', `/employees/${id}`)
+
+    expect(removed.status).toBe(204)
+  })
+
+  it('완료한 정산을 다시 열면 퇴사 취소를 허용합니다', async () => {
+    const { id, settlementId } = await resignWithSettlement()
+    await complete(settlementId)
+    expect((await app.json('POST', `/employees/${id}:cancel-resignation`)).status).toBe(409)
+
+    await app.json('POST', `/severance-settlements/${settlementId}:reopen`)
+    const canceled = await app.json('POST', `/employees/${id}:cancel-resignation`)
+
+    expect(canceled.status).toBe(200)
+  })
+
+  it('정산이 여럿이면 하나라도 완료면 막습니다', async () => {
+    const { id, settlementId } = await resignWithSettlement()
+    await app.json('POST', `/severance-settlements/${settlementId}:exclude`, { body: { reason: '다시 계산' } })
+    const second = await app.json('POST', '/severance-settlements', {
+      body: { employeeId: id, input: { threeMonthWages: 9_300_000 } },
+    })
+    expect(second.status).toBe(201)
+    await complete(second.body.id)
+
+    const removed = await app.json('DELETE', `/employees/${id}`)
+
+    expect(removed.status).toBe(409)
+    expect(removed.body).toMatchObject({ code: 'RETIREMENT_COMPLETED' })
+  })
+})
+
 describe('4대보험', () => {
   it('초단시간 근로자는 제외를 권합니다', async () => {
     const created = await hire()
