@@ -139,6 +139,15 @@ export class HrDirectory extends Context.Service<
       to: string,
       kinds?: ReadonlyArray<EmployeeKind>,
     ): Effect.Effect<ReadonlyArray<DirectoryEmployee>>
+    /**
+     * 여러 직원의 퇴직일(마지막 근무일)입니다. 재직 중이면 `null`이고, HR에 없는 직원은 맵에 없습니다.
+     *
+     * 직원 표만 한 번 읽습니다. 휴직·부서·계약은 읽지 않습니다.
+     */
+    listLeaveDates(
+      companyId: Id<'company'>,
+      employeeIds: ReadonlyArray<Id<'employee'>>,
+    ): Effect.Effect<ReadonlyMap<Id<'employee'>, string | null>>
     findWorkContract(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
@@ -262,6 +271,17 @@ export const HrDirectoryLive = Layer.effect(
                 wasEmployedBetween({ joinDate: employee.joinDate, leaveDate: employee.leaveDate }, from, to),
             ),
           ),
+        ),
+      listLeaveDates: (companyId, employeeIds) =>
+        employees.list(companyId).pipe(
+          Effect.map((records) => {
+            const wanted = new Set(employeeIds)
+            return new Map(
+              records
+                .filter((record) => wanted.has(record.id))
+                .map((record) => [record.id, record.resignation?.leaveDate ?? null] as const),
+            )
+          }),
         ),
       findWorkContract: (companyId, employeeId, asOf) =>
         contracts.list(companyId).pipe(
