@@ -127,6 +127,15 @@ export const ARTWORK_FULL_RATE_LIMIT = 100_000_000
  */
 export const DEFAULT_OTHER_INCOME_CODE = '76'
 
+/**
+ * 소득세법 제21조제1항제19호의 인적용역(일시적으로 제공하고 받는 대가)인 기타소득 지급사유입니다.
+ *
+ * 서식(별지 제23호서식(4)) 소득구분코드 표에서 `76`(강연료등)은 제19호 가목~라목의 인적용역을 그대로 옮긴 것이고,
+ * `79`(자문료등)는 "「소득세법」제21조 제1항 제19호에 해당하는 소득으로서 자문 또는 고문 활동"입니다. 원천징수이행상황신고서에서는
+ * 기타소득 "인적용역" 줄에 따로 적습니다(그 줄의 코드는 Tax가 정합니다). 다른 지급사유는 표에 제19호라는 근거가 없어 넣지 않습니다.
+ */
+export const PERSONAL_SERVICE_OTHER_INCOME_CODES: readonly string[] = ['76', '79']
+
 /** 그 달에 쓸 수 있는 코드만 남깁니다. */
 export function codesInForce(codes: readonly ReferenceCode[], month: string): ReferenceCode[] {
   return codes.filter((code) => code.effectiveFrom <= month && (code.effectiveTo === null || code.effectiveTo >= month))

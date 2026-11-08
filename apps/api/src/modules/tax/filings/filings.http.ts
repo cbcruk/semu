@@ -92,6 +92,11 @@ export const FilingsHttpLive = HttpApiBuilder.group(
           Effect.flatMap((actor) => filings.history(actor, params.filingId)),
           Effect.map((items) => ({ items })),
         ),
+      withholdingLines: ({ params }) =>
+        authorize(access('filing:read')).pipe(
+          Effect.flatMap((actor) => filings.withholdingLines(actor, params.filingId)),
+          Effect.map((items) => ({ items })),
+        ),
       request: ({ params, headers, payload }) =>
         command(params.filingId, { command: 'REQUEST', ...payload }, headers['if-match']).pipe(
           noPendingCheck,

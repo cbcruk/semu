@@ -29,6 +29,8 @@
 | 자료 제출 마감 | `submitDue` |
 | 제출 자료 항목 | `Requirement` (`code`, `response`: `PENDING`·`PROVIDED`·`NOT_APPLICABLE`) |
 | 자동 연계 항목 | `autoLinked` (급여대장 마감 `PAYROLL_LEDGER_CLOSED`) |
+| 원천세 합계 (지급월·소득 종류별) | `WithholdingTotal` (`incomeKind`: `WAGE`·`DAILY`·`BUSINESS`·`OTHER`·`RETIREMENT`, `otherIncomeCategory`: `PERSONAL_SERVICE`(인적용역)·`GENERAL`) |
+| 원천세 신고서 줄 / 소득구분 코드 / 가감계 | `WithholdingReturnLine` / `lineCode` / `subtotalCode` |
 | 매입매출장 / 신고서 / 납부서 / 고지서 | `FilingDocument.type`: `LEDGER` / `RETURN` / `PAYMENT_SLIP` / `NOTICE` |
 | 납부할 세액 | `payableAmount` (음수 = 환급) |
 | 종결 방식 | `settlement`: `PAID`, `REFUND`, `NO_PAYMENT` |
@@ -74,6 +76,7 @@ Filing                                   fil_
 GET    /filings?taxType=&status=&open=&limit=&cursor=     기간 끝 최근 순
 GET    /filings/{filingId}                                 ETag
 GET    /filings/{filingId}/history
+GET    /filings/{filingId}/withholding-lines               원천세 신고서 줄(지급월별)
 POST   /filings/{filingId}:{command}                       If-Match (선택)
 PATCH  /filings/{filingId}/requirements/{code}             { response: PENDING|NOT_APPLICABLE, note? }
 POST   /filings/{filingId}/requirements/{code}/files       { fileId }
@@ -187,6 +190,39 @@ stateDiagram-v2
 - `POST /documents`는 `PREPARING`·`FILED`에서만 받습니다(그 밖에는 409 `FILING_LOCKED`). `FILED`에서 납부서를 붙이면 `paymentSlipSentAt`을 남깁니다
 - 고객이 문서를 처음 열면 `firstViewedAt`을 남기고, 신고서·고지서면 결과 확인 카드를 닫습니다. 고객이 볼 수 없는 문서는 404 `FILING_DOCUMENT_NOT_FOUND`입니다
 
+### 원천세 신고서 줄
+
+```
+GET /filings/{filingId}/withholding-lines
+→ { items: [ { paymentMonth, ledgerCount, closedCount,
+               lines: [ { lineCode, subtotalCode, incomeKind, otherIncomeCategory,
+                          headcount, grossPay, taxablePay, incomeTax, localIncomeTax } ] } ] }
+```
+
+원천세 신고 건 기간의 지급월마다 Payroll의 소득 종류별 원천세 합계에 원천징수이행상황신고서의 소득구분 코드를 붙여 보여 줍니다(2026-11-08, [payroll.md 열린 질문 15](payroll.md#열린-질문)). 대리인이 신고서를 쓸 때 대장 합계를 어느 줄에 옮길지 보는 읽기 전용 조회이고, 신고서 초안을 만들거나 저장하지는 않습니다.
+
+- **합계는 조회 포트로 받습니다.** `WithholdingTotals.totalsFor(companyId, paymentMonth)`를 [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 Payroll의 `PayrollWithholdingTotals`로 구현합니다. 지급월 마감 이벤트는 금액을 싣지 않으므로 outbox 재전달·순서와 상관없이 부를 때의 값입니다
+- **마감된 대장만 더합니다.** 같은 달의 `ledgerCount`·`closedCount`(`PayrollLedgers.summaryFor`)를 함께 주어, 둘이 다르면 아직 바뀔 수 있는 합계임을 알 수 있습니다
+- 매월 신고 건은 지급월 하나, 반기 신고 건은 여섯 달을 하나씩 줍니다. 반기 신고서의 인원 규칙(간이세액은 마지막 달 인원, 일용근로는 월별 순인원 합계 등)은 계산하지 않습니다
+- 원천세가 아닌 신고 건은 `items`가 비어 있습니다. 접근 요건은 신고 건 조회(`filing:read`, `TAXATION`)와 같습니다
+- 코드 표는 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. 출처는 소득세법 시행규칙 [별지 제21호서식](https://www.law.go.kr/LSW/flDownload.do?flSeq=164450873) 원천징수이행상황신고서 <개정 2026. 5. 22.> 제1쪽 "원천징수 명세 및 납부세액"입니다
+
+| 소득 종류 `incomeKind` | 기타소득 구분 `otherIncomeCategory` | 줄 `lineCode` | 가감계 `subtotalCode` | 서식의 줄 |
+|---|---|---|---|---|
+| `WAGE` | `null` | A01 | A10 | 근로소득 간이세액 |
+| `DAILY` | `null` | A03 | A10 | 근로소득 일용근로 |
+| `RETIREMENT` | `null` | A22 | A20 | 퇴직소득 그 외. Payroll이 아직 집계하지 않음(#49) |
+| `BUSINESS` | `null` | A25 | A30 | 사업소득 매월징수 |
+| `OTHER` | `PERSONAL_SERVICE` | A59 | A40 | 기타소득 인적용역(소득세법 제21조제1항제19호) |
+| `OTHER` | `GENERAL` | A42 | A40 | 기타소득 그 외 |
+
+- 줄은 위 표 순서(서식 제1쪽의 차례)로 늘어놓습니다. 기타소득은 서식에서 인적용역(A59)이 그 외(A42)보다 위에 있어 코드 순서와 다릅니다
+- **기타소득의 인적용역.** 서식 제1쪽 참고사항 5는 제21조제1항제19호의 인적용역소득(A59)을 2024. 1. 1. 이후 지급분부터 적용한다고 합니다. 대장 행의 지급사유 중 `76`(강연료등, 제19호 가목~라목)과 `79`(자문료등, "제21조 제1항 제19호에 해당하는 소득")가 그렇습니다(별지 제23호서식(4) 소득구분코드 표). 행의 기본 지급사유가 `76`이므로 지급사유 없이 넣은 기타소득도 A59입니다. 어떤 지급사유가 인적용역인지는 Payroll 참조 데이터([reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts) `PERSONAL_SERVICE_OTHER_INCOME_CODES`)가, 구분을 어느 줄에 적을지는 Tax가 정합니다. 구분이 없는 기타소득은 그 외(A42)로 둡니다
+- 기타소득의 A40은 가감계이고, 대장 행은 연금계좌(A41)·종교인소득(A43·A44)·가상자산(A49)이 아닙니다. 인적용역이 아닌 지급사유(상금 `71`, 원고료 `75` 등)는 "그 외" A42 줄입니다. 납부할 세액은 가감계(A10·A30·A40)를 기준으로 계산합니다(서식 작성방법 3. 라.)
+- 퇴직소득의 A21은 연금계좌에서 지급한 금액으로 금융회사가 적습니다. 퇴직금과 확정급여형(DB) 퇴직연금의 퇴직소득은 A22입니다(작성방법 3. 가.)
+- 중도퇴사(A02)·연말정산(A04~A06)은 Payroll이 따로 집계하지 않아 근로 행은 모두 간이세액(A01)으로 봅니다
+- 지방소득세(`localIncomeTax`)는 이 신고서가 아니라 지방세 특별징수 신고에 적지만 함께 보여 줍니다
+
 ## 세무 일정
 
 ```
@@ -254,7 +290,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 | 엔드포인트 | 권한 | 플랜 | 약관 |
 |---|---|---|---|
-| 신고 건 조회, 문서 열람, 세무 일정 | `filing:read` | `TAXATION` | 필요 |
+| 신고 건 조회(원천세 신고서 줄 포함), 문서 열람, 세무 일정 | `filing:read` | `TAXATION` | 필요 |
 | 제출 자료 응답·파일 | `filing:update` | `TAXATION` | 필요 |
 | `:submit`, `:unsubmit` | `filing:submit` | `TAXATION` | 필요 |
 | `:confirm-ledger`, `:dispute-ledger` | `filing:confirm-ledger` | `TAXATION` | 필요 |
@@ -296,6 +332,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 flowchart LR
   PAY[Payroll] -- payroll_pay_month.closed / reopened (outbox) --> SYNC[Filings.syncPayrollLedger]
   SYNC -- PayrollLedgers.summaryFor --> PAY
+  LINES[withholding-lines] -- WithholdingTotals.totalsFor --> PAY
   BK[Bookkeeping] -- VatEvidence.sales / purchases --> VAT[VatEstimates]
   PAY -- WithholdingFilingLock.isFiled --> TAX[Tax]
   TAX -. "filing.status_changed (메모리 로그, 소비자 없음)" .-> OUT[단말·알림]
@@ -312,6 +349,7 @@ flowchart LR
 | 받음(인가) | Identity & Access `CurrentAgent`, `authorizeAgency` | 대리인 큐가 담당 회사(플랜 포함)를 받음. Tax는 배정을 읽지 않음 |
 | 공개 조회 | `WithholdingFilingLock.isFiled(companyId, paymentMonth)` | 그 지급월을 덮는 원천세(가장 큰 `revision`, 취소 제외)가 `FILED`·`SETTLED`인지. Payroll이 급여대장 잠금에 씀 |
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
+| 포트(Payroll 구현) | `WithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 마감 대장만. [원천세 신고서 줄](#원천세-신고서-줄)이 씀 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
 | 포트(Identity·Billing·Tax 설정) | `TaxProfiles.get/listTaxation` | 사업자 형태·플랜과 세무 설정을 합친 `TaxProfile` |
 | 포트(운영) | `PublicHolidays.between(from, to)` | 기한을 미루는 쉬는 날(주말 제외) |
@@ -375,7 +413,8 @@ flowchart LR
 | 일정 배치 | 서비스만 (`FilingSchedulerLive`). 매일 돌릴 실행기는 없음 |
 | 예상 부가세·추이 | 구현 ([vat-estimates.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimates.ts)) |
 | 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
-| 포트 연결(`PayrollLedgers`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
+| 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |
+| 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
 | 수정신고, 감사 로그 | 없음 |

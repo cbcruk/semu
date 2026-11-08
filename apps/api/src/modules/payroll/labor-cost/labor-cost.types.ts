@@ -1,4 +1,4 @@
-import type { WithholdingIncomeKind } from '../ports/payroll-events.types.ts'
+import type { WithholdingIncomeKind } from '../ledgers/pay-month.types.ts'
 
 /** 소득 구분별 금액입니다. */
 export type AmountsByKind = Record<'wage' | 'daily' | 'business' | 'other', number>

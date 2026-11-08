@@ -30,6 +30,7 @@ import {
   RequirementHasFiles,
   RequirementNotFound,
   TaxType,
+  WithholdingReturnMonth,
 } from './filing.ts'
 
 const params = { filingId: FilingId }
@@ -73,6 +74,15 @@ export class FilingsApi extends HttpApiGroup.make('filings')
     HttpApiEndpoint.get('history', '/:filingId/history', {
       params,
       success: Schema.Struct({ items: Schema.Array(FilingHistoryEntry) }),
+      error: [...accessErrors, FilingNotFound],
+    }),
+    /**
+     * 원천세 신고 건 기간의 지급월마다 Payroll의 소득 종류별 원천세 합계를 신고서 줄 코드와 함께 보여 줍니다.
+     * 원천세가 아닌 신고 건은 `items`가 비어 있습니다.
+     */
+    HttpApiEndpoint.get('withholdingLines', '/:filingId/withholding-lines', {
+      params,
+      success: Schema.Struct({ items: Schema.Array(WithholdingReturnMonth) }),
       error: [...accessErrors, FilingNotFound],
     }),
     HttpApiEndpoint.post('request', '/:filingId::request', {

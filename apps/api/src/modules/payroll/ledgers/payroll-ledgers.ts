@@ -41,7 +41,7 @@ import {
 } from './ledger-rules.ts'
 import { canEditInput, decideTransition } from './ledger-status.ts'
 import type { LedgerStatus, LedgerTransition } from './ledger-status.types.ts'
-import { payMonthChanges, withholdingSummary } from './pay-month.ts'
+import { payMonthChanges } from './pay-month.ts'
 import type {
   AddPayrollRow,
   CreatePayrollLedger,
@@ -581,7 +581,6 @@ function publishChanges(
         companyId,
         paymentMonth: change.paymentMonth,
         ledgerIds: ledgers.map((ledger) => ledger.id),
-        withholding: withholdingSummary(ledgers),
         occurredAt,
       })
     }
