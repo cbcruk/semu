@@ -29,7 +29,7 @@
 
 - 급여는 신고서 코드를 모릅니다. 소득 종류로 합계를 내고(`PayrollWithholdingTotals`) Tax가 별지 제21호서식의 소득구분 코드로 바꿉니다. 스펙의 "A40"은 기타소득 가감계입니다. 기타소득 행은 지급사유가 소득세법 제21조제1항제19호의 인적용역(`76` 강연료등·`79` 자문료등, 기본값 `76`)이면 A59, 그 밖이면 "그 외" A42 줄입니다. 그래서 합계는 기타소득을 `otherIncomeCategory`(`PERSONAL_SERVICE`·`GENERAL`)로 나눕니다([tax.md](../../design/tax.md#원천세-신고서-줄))
 - 마감·해제·새 대장·지급일 이동·삭제가 모두 같은 판정을 거칩니다. 이벤트는 같은 트랜잭션의 아웃박스로 냅니다
-- 퇴직금(A22, 퇴직소득 그 외)과 연말정산(A04)은 아직 집계하지 않습니다. 퇴직소득 줄 코드는 [severance-pay 근거](severance-pay.md#근거)에 있습니다
+- 연말정산(A04)은 아직 집계하지 않습니다. 퇴직금(A22, 퇴직소득 그 외)은 합계(`PayrollWithholdingTotals`)에 `RETIREMENT`로 들어가지만 대장이 아니라 완료 정산에서 오므로 이 마감 판정과 상관없습니다. 정산의 완료·다시 열기는 `payroll_pay_month.withholding_changed`를 냅니다([payroll.md 퇴직금 정산](../../design/payroll.md#퇴직금-정산)). 퇴직소득 줄 코드는 [severance-pay 근거](severance-pay.md#근거)에 있습니다
 
 ## 픽스처
 
