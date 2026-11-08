@@ -47,7 +47,7 @@
 | 수습 감액 | 수습 기간 동안 임금을 줄여 주는 것입니다. 1년 이상 계약에만 허용하고 단순노무 직종은 받지 않습니다 | 근로계약 `probation`과 검증 규칙입니다. 급여의 최저임금 경고는 아직 감액을 반영하지 않습니다 ([work-contract-validation](../reference/rules/work-contract-validation.md), [hr.md](hr.md#근로계약), [payroll.md 열린 질문 13](payroll.md#열린-질문)) | |
 | 기간제와 무기계약 전환 | 기간을 정한 근로계약이 이어져 2년을 넘으면 기간의 정함이 없는 근로계약으로 보는 제도입니다. 만 55세 이상 등 예외가 있습니다 | 직원 경고 `INDEFINITE_CONVERSION_TARGET`과 전환 조회입니다 ([indefinite-conversion-alert](../reference/rules/indefinite-conversion-alert.md), [hr.md](hr.md#근로계약)) | 기간제법 제4조 ([hr.md](hr.md#근로계약)) |
 | 근로계약서 서면 교부와 보존 | 근로조건을 서면으로 명시해 주고 계약 서류를 3년 보존해야 합니다 | 서명 완료 문서와 서명 증적을 지우지 않고 고정합니다 ([compliance.md](compliance.md#근로계약서와-임금명세서), [documents.md](documents.md#전자서명-요청)) | 근로기준법 제17조, 제42조 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
-| 임금명세서 | 임금을 줄 때 구성항목·계산방법·공제내역을 적어 근로자에게 주는 문서입니다 | `Payslip`은 마감된 대장 행의 보기이고, 발송 기록만 따로 저장합니다 ([payroll.md](payroll.md#급여명세서)) | 근로기준법 제48조제2항 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
+| 임금명세서 | 임금을 줄 때 구성항목·계산방법·공제내역을 적어 근로자에게 주는 문서입니다 | `Payslip`은 마감된 대장 행의 보기이고, 발송 기록만 따로 저장합니다. 받는 주소는 행의 소득자 사본(`earner.email`)이라 직원이 아닌 일용·사업·기타소득자도 받습니다 ([payroll.md](payroll.md#급여명세서)) | 근로기준법 제48조제2항 ([compliance.md](compliance.md#근로계약서와-임금명세서)) |
 | 휴직(출산전후휴가·육아휴직) | 근로관계를 유지한 채 일정 기간 일을 쉬는 것입니다. 육아휴직은 근속에 항상 포함합니다 | `Leave`와 `:return`입니다. 육아휴직 누적 365일 초과는 막지 않고 경고합니다 ([hr.md](hr.md#휴직), [leave-validation](../reference/rules/leave-validation.md)) | |
 
 ## 퇴직과 퇴직금
