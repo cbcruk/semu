@@ -6,7 +6,7 @@ import type {
   EsignTransitionResult,
 } from './esign-request-status.types.ts'
 
-/** 취소·만료·발송 실패 상태가 함께 받는 사건입니다. 재발송·초안으로 되돌리기·삭제입니다. */
+/** 취소·만료·발송 실패 상태가 함께 받는 사건입니다. 재발송·발송 거절·초안으로 되돌리기·삭제입니다. */
 const 취소만료발송실패의전이 = {
   RESEND: 'PENDING',
   SEND_REJECTED: 'SEND_FAILED',
