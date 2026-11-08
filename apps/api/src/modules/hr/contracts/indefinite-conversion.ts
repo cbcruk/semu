@@ -45,33 +45,31 @@ export function indefiniteConversion(
     firstIndex = index
   }
   const 사슬 = 기간제계약.slice(firstIndex)
-  const conversionDate = addMonthsToDate(사슬시작일, 24)
-  const 예외없는계약으로전환임 = 사슬.some(
-    (contract) => contract.exemption === undefined && contract.end >= conversionDate,
-  )
-  const exemptReason =
+  const 전환일 = addMonthsToDate(사슬시작일, 24)
+  const 예외없는계약으로전환임 = 사슬.some((contract) => contract.exemption === undefined && contract.end >= 전환일)
+  const 예외사유 =
     birthDate !== undefined && ageOn(birthDate, 사슬시작일) >= INDEFINITE_CONVERSION_EXEMPT_AGE
       ? ('AGED_55_OR_OVER' as const)
       : 예외없는계약으로전환임
         ? undefined
         : 최종계약.exemption
-  const isExempt = exemptReason !== undefined
-  const daysUntilConversion = daysBetween(asOf, conversionDate)
+  const 예외임 = 예외사유 !== undefined
+  const 전환일까지일수 = daysBetween(asOf, 전환일)
   const status =
-    사슬종료일 >= conversionDate
+    사슬종료일 >= 전환일
       ? 'EXCEEDED'
-      : 사슬종료일 >= asOf && daysUntilConversion <= INDEFINITE_CONVERSION_NOTICE_DAYS
+      : 사슬종료일 >= asOf && 전환일까지일수 <= INDEFINITE_CONVERSION_NOTICE_DAYS
         ? 'APPROACHING'
         : 'NONE'
   return {
-    isTarget: !isExempt && status !== 'NONE',
+    isTarget: !예외임 && status !== 'NONE',
     status,
-    isExempt,
-    ...(exemptReason === undefined ? {} : { exemptReason }),
+    isExempt: 예외임,
+    ...(예외사유 === undefined ? {} : { exemptReason: 예외사유 }),
     chainStartDate: 사슬시작일,
     chainEndDate: 사슬종료일,
     totalContractDays: daysBetween(사슬시작일, 사슬종료일) + 1,
-    conversionDate,
-    daysUntilConversion,
+    conversionDate: 전환일,
+    daysUntilConversion: 전환일까지일수,
   }
 }

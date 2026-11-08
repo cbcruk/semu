@@ -74,19 +74,17 @@ export function plannedPayments(input: {
   existing: ReadonlyArray<ScheduledKey>
   holidays: ReadonlySet<string>
 }): PaymentPlanItem[] {
-  const scheduledOn = billingDate(input.month, input.holidays)
+  const 출금일 = billingDate(input.month, input.holidays)
   return input.subscriptions
-    .filter((subscription) => subscription.monthlyFee > 0 && isEntitledOn(subscription, scheduledOn))
+    .filter((subscription) => subscription.monthlyFee > 0 && isEntitledOn(subscription, 출금일))
     .filter(
       (subscription) =>
-        !input.existing.some(
-          (key) => key.subscriptionId === subscription.subscriptionId && key.scheduledOn === scheduledOn,
-        ),
+        !input.existing.some((key) => key.subscriptionId === subscription.subscriptionId && key.scheduledOn === 출금일),
     )
     .map((subscription) => ({
       subscriptionId: subscription.subscriptionId,
       plan: subscription.plan,
       amount: subscription.monthlyFee,
-      scheduledOn,
+      scheduledOn: 출금일,
     }))
 }
