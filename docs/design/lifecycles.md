@@ -73,7 +73,7 @@ flowchart TD
   review -.-> file[":file → FILED<br/>filing.status_changed"]
   file -. "이후 대장 커맨드가 조회" .-> lock["WithholdingFilingLock.isFiled<br/>그 지급월 대장 금액 변경 409"]
   file -.-> pay[":pay(대행 가능) → SETTLED"]
-  judge -. "withholding[] 집계" .-> codes["Tax가 A01·A03·A25·A40으로 변환"]:::todo
+  sync -.-> codes["GET /filings/{id}/withholding-lines<br/>WithholdingTotals 조회 → A01·A03·A25·A42"]
   pay -.-> stmt["지급명세서·간이지급명세서"]:::todo
   classDef todo stroke-dasharray: 5 5
   classDef open stroke-width: 3px
@@ -81,9 +81,9 @@ flowchart TD
 
 - **대장 생성과 계산.** 귀속월의 첫 대장이 정기 대장이고, 임금산정 기간 중 하루라도 재직한 근로자로 근로 행을 채웁니다. 행을 저장하면 같은 요청에서 계산합니다([payroll.md](payroll.md#급여대장))
 - **확정.** 아웃소싱은 담당자가 승인을 요청하고 고객이 승인하며, 직접 운영은 `:close` 하나로 끝납니다([payroll.md](payroll.md#상태))
-- **자료 연계.** 마감·해제·생성·삭제·지급일 이동 모두가 지급월 판정을 다시 하고, 바뀐 지급월마다 `payroll_pay_month.closed`·`reopened`를 outbox에 씁니다. Tax는 회사와 지급월만 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md), [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). 이 자동 연계 항목은 급여 플랜 회사의 신고 건에만 있습니다([payroll.md 열린 질문 10](payroll.md#열린-질문))
+- **자료 연계.** 마감·해제·생성·삭제·지급일 이동 모두가 지급월 판정을 다시 하고, 바뀐 지급월마다 `payroll_pay_month.closed`·`reopened`를 outbox에 씁니다. Tax는 회사와 지급월만 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md), [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). 이 자동 연계 항목은 급여 플랜 회사의 신고 건에만 있습니다([payroll.md 열린 질문 10](payroll.md#열린-질문)). 원천세 금액은 이벤트에 싣지 않고, 신고서 줄이 필요할 때 Tax가 `WithholdingTotals`로 묻고 소득구분 코드로 바꿉니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
 - **신고와 잠금.** 원천세는 고객 커맨드를 대리인이 대행할 수 있습니다. `FILED`가 되면 Payroll은 이벤트가 아니라 조회(`WithholdingFilingLock`)로 그 지급월의 금액 변경을 막습니다([tax.md](tax.md#커맨드), [payroll.md](payroll.md#원천세-신고-잠금))
-- **구현되지 않은 것.** 일정 배치는 서비스만 있고 매일 돌리는 실행기가 없습니다([tax.md](tax.md#구현-상태)). 이벤트의 원천세 집계(`withholding[]`)는 Tax가 쓰지 않고, 신고서 코드로 바꾸는 단계도 없습니다. 지급명세서는 모델링하지 않았습니다. 엑셀 가져오기도 설계만 있습니다([payroll.md](payroll.md#엑셀-가져오기))
+- **구현되지 않은 것.** 일정 배치는 서비스만 있고 매일 돌리는 실행기가 없습니다([tax.md](tax.md#구현-상태)). 원천세 신고서 줄은 읽기 전용 조회뿐이고 신고서 초안을 만들거나 저장하지 않습니다. 지급명세서는 모델링하지 않았습니다. 엑셀 가져오기도 설계만 있습니다([payroll.md](payroll.md#엑셀-가져오기))
 - 통합 테스트: [payroll-tax.test.ts](../../apps/api/test/integration/payroll-tax.test.ts)
 
 ### 2. 입사부터 퇴직금 원천세까지
@@ -106,7 +106,7 @@ flowchart TD
   sev -.-> sevdone[":complete → COMPLETED<br/>paymentDate 없으면 마지막 근무일"]
   sevdone -- "정산 상태 이벤트" --> hrstatus["HR severanceSettlementStatus 갱신"]:::todo
   hrstatus -. "이후 HR 커맨드가 조회" .-> guard["COMPLETED면 직원 삭제·퇴사 취소·다시 퇴사 409<br/>RETIREMENT_COMPLETED"]
-  sevdone --> a21["지급월 원천세 A21로 집계"]:::open
+  sevdone --> a21["지급월 원천세 A22(퇴직 그 외)로 집계"]:::open
   resigned -.-> cert["POST /certificate-issuances<br/>퇴직증명서 ISSUED"]
   classDef todo stroke-dasharray: 5 5
   classDef open stroke-width: 3px
@@ -116,7 +116,7 @@ flowchart TD
 - **HR 반영.** 서명 완료로 근로·급여계약과 직원을 만드는 소비자는 설계만 있습니다(현행 R29). 지금은 직원과 계약을 직접 등록합니다([hr.md](hr.md#이벤트), [hr.md](hr.md#구현-상태))
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
-- **열린 질문.** 퇴직금 지급월을 원천세 A21로 센다고 정했지만(2026-11-07), 지급월 마감 이벤트에 퇴직소득을 실을지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
+- **열린 질문.** 퇴직금 지급월을 원천세 퇴직소득 줄(서식상 A22, 결정 때는 A21로 적음)로 센다고 정했지만(2026-11-07), Payroll의 원천세 합계(`PayrollWithholdingTotals`)에 퇴직소득을 더할지, 대장이 없는 달은 어떻게 할지, 신고된 지급월의 정산 변경을 막을지는 남았습니다([payroll.md 열린 질문 2](payroll.md#열린-질문))
 - **구현되지 않은 것.** HR 이벤트(`employee.resigned` 등) 발행·구독이 없고, 정산 상태를 HR에 알리는 이벤트도 없습니다. HR의 `RETIREMENT_COMPLETED` 가드(409)는 구현됐지만 상태를 채우는 구독이 없어 지금은 걸리지 않습니다([hr.md](hr.md#구현-상태)). 상태 값도 HR(`IN_PROGRESS`·`COMPLETED`·`EXCLUDED`)과 Payroll(`CALCULATED`·`COMPLETED`·`EXCLUDED`)이 달라 매핑을 정해야 합니다([hr.md 열린 질문 10](hr.md#열린-질문), [payroll.md 열린 질문 16](payroll.md#열린-질문)). 중간정산과 퇴직 후보 목록도 없습니다
 
 ### 3. 수집에서 부가세 신고까지

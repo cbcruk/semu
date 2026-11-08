@@ -27,7 +27,7 @@
 
 - **이름은 `<resource>.<event>`이고 둘 다 snake_case입니다.** 예: `filing.status_changed`, `esign_request.completed`
 - `data`에는 소비자가 바로 반응하는 데 필요한 최소 필드만 넣습니다. 전체 리소스는 넣지 않고, 소비자가 ID로 다시 조회합니다
-- 주민등록번호·계좌번호·개인별 급여 금액은 이벤트에 넣지 않습니다 ([compliance.md](compliance.md#개인정보-최소-노출)). 원천세 집계처럼 회사 단위 합계는 넣을 수 있습니다
+- 주민등록번호·계좌번호·개인별 급여 금액은 이벤트에 넣지 않습니다 ([compliance.md](compliance.md#개인정보-최소-노출)). 회사 단위 합계는 넣을 수 있지만, 소비자가 언제 받아도 지금 값이 필요하면 조회로 줍니다. 예: 지급월 마감 이벤트는 원천세 합계를 싣지 않고 Tax가 `WithholdingTotals`로 묻습니다(2026-11-08, [payroll.md 열린 질문 15](payroll.md#열린-질문))
 
 ## 전달
 
@@ -73,6 +73,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Identity & Access `CompanyPlans` | Billing 구독 | 회사의 유효 플랜. `Actor.plans`의 원천 |
 | Tax `TaxProfiles` | Identity & Access 회사 + Billing 플랜 | 사업자 형태, 플랜, 결산월 등 신고 일정 계산 입력 |
 | Tax `PayrollLedgers` | Payroll `PayrollLedgerSummary` | 지급월 범위의 대장 수와 마감 수 |
+| Tax `WithholdingTotals` | Payroll `PayrollWithholdingTotals` | 지급월의 마감 대장 소득 종류별 원천세 합계. Tax가 신고서 줄 코드로 바꿈 |
 | Payroll `WithholdingFilingLock` | Tax `WithholdingFilingLock` | 지급월 원천세가 `FILED`·`SETTLED`인지. 참이면 대장 변경 409 |
 | Payroll `PayrollEmployeeDirectory` | HR `HrDirectory` | 기간 중 재직한 근로자, 계약·4대보험·공제 정보 |
 | Documents (직접) | HR `HrDirectory` | 서명 요청 수신자, 증명서 대상 직원 |
