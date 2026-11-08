@@ -150,3 +150,64 @@ describe('급여계약(/v1/payroll-contracts/{payrollContractId})', () => {
     expect((await app.request('DELETE', `/payroll-contracts/${created.body.id}`, { token: 'viewer' })).status).toBe(403)
   })
 })
+
+describe('고정수당 자동계산의 사업장 규모(Payroll 급여 설정)', () => {
+  const autoContract = {
+    startDate: '2026-01-02',
+    wageType: 'MONTHLY',
+    amount: 5_250_000,
+    monthlyWorkHours: 209,
+    fixedAllowanceAutoCalc: true,
+    fixedAllowances: {
+      overtime: { enabled: true, hours: 30, amount: 0 },
+      night: { enabled: true, hours: 5, amount: 0 },
+    },
+  }
+
+  it('급여 설정을 저장한 적이 없으면 상시 5명 이상으로 보고 근로기준법 제56조 가산을 붙입니다', async () => {
+    const employeeId = await hire()
+    const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: autoContract })
+
+    // 고정 시간 209 + 30 × 1.5 + 5 × 0.5 = 256.5시간
+    expect(created.status).toBe(201)
+    expect(created.body.derived).toMatchObject({
+      baseSalary: 4_277_777,
+      ordinaryHourlyWage: 20467.84,
+      fixedAllowanceAmounts: { overtime: 921_053, night: 51_170, holiday: 0, holidayOvertime: 0 },
+    })
+  })
+
+  it('급여 설정이 5인 미만이면 가산 없이 연장 1배, 야간 0배로 계산합니다', async () => {
+    const patched = await app.json('PATCH', '/payroll-settings', { body: { underFiveEmployees: true } })
+    expect(patched.status).toBe(200)
+
+    const employeeId = await hire()
+    const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: autoContract })
+
+    // 고정 시간 209 + 30 = 239시간
+    expect(created.status).toBe(201)
+    expect(created.body.derived).toMatchObject({
+      baseSalary: 4_591_004,
+      ordinaryHourlyWage: 21966.53,
+      fixedAllowanceAmounts: { overtime: 658_996, night: 0, holiday: 0, holidayOvertime: 0 },
+    })
+  })
+
+  it('사업장 규모가 바뀌면 저장한 파생 금액은 그대로이고 다시 저장할 때 새 배수를 씁니다', async () => {
+    await app.json('PATCH', '/payroll-settings', { body: { underFiveEmployees: true } })
+    const employeeId = await hire()
+    const created = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, { body: autoContract })
+    expect(created.body.derived.fixedAllowanceAmounts.night).toBe(0)
+
+    await app.json('PATCH', '/payroll-settings', { body: { underFiveEmployees: false } })
+    const fetched = await app.json('GET', `/payroll-contracts/${created.body.id}`)
+    expect(fetched.body.derived.fixedAllowanceAmounts.night).toBe(0)
+
+    const replaced = await app.json('PUT', `/payroll-contracts/${created.body.id}`, {
+      body: autoContract,
+      ifMatch: '"1"',
+    })
+    expect(replaced.status).toBe(200)
+    expect(replaced.body.derived.fixedAllowanceAmounts).toMatchObject({ overtime: 921_053, night: 51_170 })
+  })
+})

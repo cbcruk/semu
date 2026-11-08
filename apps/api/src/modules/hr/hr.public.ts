@@ -400,3 +400,6 @@ export const HrDirectoryLive = Layer.effect(
     })
   }),
 )
+
+/** HR이 쓰고 Payroll이 `src/wiring/hr-payroll.ts`로 구현하는 포트입니다. 급여계약 고정수당의 가산 여부를 정합니다. */
+export { CompanyWorkforceSize } from './ports/company-workforce-size.ts'

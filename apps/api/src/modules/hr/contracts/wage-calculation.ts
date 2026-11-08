@@ -1,3 +1,4 @@
+import type { PremiumMultipliers } from '../../payroll/payroll.public.ts'
 import type { FixedAllowanceKind, WageInput, WageResult } from './wage-calculation.types.ts'
 
 /**
@@ -11,22 +12,26 @@ export const MINIMUM_HOURLY_WAGE_2026 = 10_320
 const 고정수당종류: ReadonlyArray<FixedAllowanceKind> = ['overtime', 'night', 'holiday', 'holidayOvertime']
 
 /**
- * 고정 수당 1시간에 곱하는 통상시급 배율입니다.
+ * 고정수당 종류마다 1시간에 곱하는 통상시급 배율입니다. Payroll 지급배수(ppm)를 배율로 바꿉니다.
  *
- * 화면 값이 가산 없이 `통상시급 × 시간`이라(spec R10 검증 메모) 모두 1.0입니다. Payroll과 맞출 때까지 바꾸지 않습니다.
+ * 상시 5명 이상이면 근로기준법 제56조의 가산(연장·야간·휴일 50%, 휴일 8시간 초과 100%)을 넣은 연장 1.5, 야간 0.5(가산분),
+ * 휴일 1.5, 휴일연장 2이고, 4명 이하면 제56조가 적용되지 않아(제11조 ②, 시행령 제7조 별표 1) 연장·휴일·휴일연장 1, 야간 0입니다.
  */
-export const FIXED_ALLOWANCE_MULTIPLIER: Record<FixedAllowanceKind, number> = {
-  overtime: 1,
-  night: 1,
-  holiday: 1,
-  holidayOvertime: 1,
+function 지급배율(multipliers: PremiumMultipliers, kind: FixedAllowanceKind): number {
+  const 지급배수ppm: Record<FixedAllowanceKind, number> = {
+    overtime: multipliers.overtimeRatePpm,
+    night: multipliers.nightRatePpm,
+    holiday: multipliers.holidayRatePpm,
+    holidayOvertime: multipliers.holidayOvertimeRatePpm,
+  }
+  return 지급배수ppm[kind] / 1_000_000
 }
 
 /**
  * 급여계약 입력에서 기본급·기준시급·통상시급·수습시급·고정수당과 최저임금 판정을 계산합니다.
  *
  * 월급 + 자동계산이면 통상시급과 고정수당이 서로에 기대므로, `A` 월급, `P` 켜진 지급항목 합,
- * `Pₒ` 그중 통상임금, `B` 통상임금에 넣는 연 상여, `M` 월 소정근로시간, `H` 배율을 곱한 고정 시간으로
+ * `Pₒ` 그중 통상임금, `B` 통상임금에 넣는 연 상여, `M` 월 소정근로시간, `H` 지급배율(`premiumMultipliers`)을 곱한 고정 시간으로
  * `o = (A − P + Pₒ + B/12) / (M + H)`를 풉니다. 기본급은 `A − P − 고정수당`입니다.
  * 일급·시급은 시급 × 월 소정근로시간을 기본급으로 봅니다.
  *
@@ -53,7 +58,7 @@ export function calculateWage(input: WageInput): WageResult {
       const 가산율적용고정시간 = sum(
         고정수당종류.map((kind) =>
           input.fixedAllowances[kind].enabled
-            ? input.fixedAllowances[kind].hours * FIXED_ALLOWANCE_MULTIPLIER[kind]
+            ? input.fixedAllowances[kind].hours * 지급배율(input.premiumMultipliers, kind)
             : 0,
         ),
       )
@@ -62,7 +67,7 @@ export function calculateWage(input: WageInput): WageResult {
       for (const kind of 고정수당종류) {
         const 고정수당설정 = input.fixedAllowances[kind]
         if (고정수당설정.enabled)
-          고정수당[kind] = Math.round(통상시급 * 고정수당설정.hours * FIXED_ALLOWANCE_MULTIPLIER[kind])
+          고정수당[kind] = Math.round(통상시급 * 고정수당설정.hours * 지급배율(input.premiumMultipliers, kind))
       }
       baseSalary = input.amount - 지급항목합계 - sum(Object.values(고정수당))
     } else {

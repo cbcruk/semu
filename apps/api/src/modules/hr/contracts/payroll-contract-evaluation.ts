@@ -1,4 +1,5 @@
 import type { Violation } from '../../../shared/problem/problem.types.ts'
+import type { PremiumMultipliers } from '../../payroll/payroll.public.ts'
 import { calculateWage } from './wage-calculation.ts'
 import type { FixedAllowanceInput, FixedAllowanceKind } from './wage-calculation.types.ts'
 import type {
@@ -18,6 +19,7 @@ const 꺼진고정수당: FixedAllowanceInput = { enabled: false, hours: 0, amou
  *
  * - 종료일은 시작일 이후(`END_BEFORE_START`)
  * - 월급제에서 지급항목과 고정수당이 월급보다 크면 기본급이 음수가 되어 거부(`BASE_SALARY_NEGATIVE`)
+ * - 자동계산 고정수당은 `premiumMultipliers`(사업장 규모에 맞는 Payroll 지급배수)로 가산합니다
  * - 최저임금 미달은 거부하지 않고 `warnings`에 `BELOW_MINIMUM_WAGE`로 담습니다
  * - 수습이 3개월을 넘고 수습 시급(최저임금 산입 시급 × 지급률)이 최저시급보다 낮으면 `PROBATION_BELOW_MINIMUM_WAGE`입니다.
  *   3개월 안의 감액(90% 이상)은 근로계약 검증이 허용 조건을 봅니다
@@ -26,6 +28,7 @@ const 꺼진고정수당: FixedAllowanceInput = { enabled: false, hours: 0, amou
  * ```ts
  * evaluatePayrollContract({ startDate: '2026-01-01', wageType: 'MONTHLY', amount: 2_000_000, monthlyWorkHours: 209 }, {
  *   minimumHourlyWage: 10_320,
+ *   premiumMultipliers: MULTIPLIERS_FIVE_OR_MORE,
  * }).warnings // ['BELOW_MINIMUM_WAGE']
  * ```
  */
@@ -33,6 +36,7 @@ export function evaluatePayrollContract(
   terms: PayrollContractTerms,
   context: {
     minimumHourlyWage: number
+    premiumMultipliers: PremiumMultipliers
     probationPayRatePpm?: number | undefined
     probationMonths?: number | undefined
   },
@@ -52,6 +56,7 @@ export function evaluatePayrollContract(
     paymentItems: terms.paymentItems ?? [],
     fixedAllowanceAutoCalc: terms.fixedAllowanceAutoCalc ?? false,
     fixedAllowances,
+    premiumMultipliers: context.premiumMultipliers,
     bonus: terms.bonus,
     probationPayRatePpm: context.probationPayRatePpm,
     minimumHourlyWage: context.minimumHourlyWage,

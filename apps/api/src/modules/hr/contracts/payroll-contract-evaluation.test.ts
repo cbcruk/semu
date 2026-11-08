@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { MULTIPLIERS_FIVE_OR_MORE } from '../../payroll/payroll.public.ts'
 import { evaluatePayrollContract } from './payroll-contract-evaluation.ts'
 import { MINIMUM_HOURLY_WAGE_2026 } from './wage-calculation.ts'
 
-const context = { minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026 }
+const context = { minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026, premiumMultipliers: MULTIPLIERS_FIVE_OR_MORE }
 const monthly = { startDate: '2026-01-01', wageType: 'MONTHLY', amount: 3_000_000, monthlyWorkHours: 209 } as const
 
 describe('급여계약 검사', () => {

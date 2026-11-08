@@ -37,6 +37,7 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
  * `TaxWithholdingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`.
+ * 급여계약은 Payroll이 구현하는 포트 `CompanyWorkforceSize`(`src/wiring/hr-payroll.ts`)도 씁니다.
  */
 export const HrHttpLive = Layer.mergeAll(
   EmployeesHttpLive,

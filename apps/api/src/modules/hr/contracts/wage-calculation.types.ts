@@ -1,3 +1,5 @@
+import type { PremiumMultipliers } from '../../payroll/payroll.public.ts'
+
 /** 임금 산정 방식입니다. */
 export type WageType = 'MONTHLY' | 'DAILY' | 'HOURLY'
 
@@ -31,6 +33,11 @@ export interface WageInput {
   paymentItems: ReadonlyArray<PaymentItemAmount>
   fixedAllowanceAutoCalc: boolean
   fixedAllowances: Record<FixedAllowanceKind, FixedAllowanceInput>
+  /**
+   * 자동계산 고정수당 1시간에 곱하는 지급배수(ppm)입니다. Payroll과 같은 값을 씁니다. 상시 5명 이상이면
+   * `MULTIPLIERS_FIVE_OR_MORE`(연장 1.5, 야간 0.5, 휴일 1.5, 휴일연장 2), 4명 이하면 `MULTIPLIERS_UNDER_FIVE`(가산 없음)입니다.
+   */
+  premiumMultipliers: PremiumMultipliers
   /** 연 상여금입니다. `inOrdinaryWage`면 12로 나눠 통상임금에 넣습니다. */
   bonus?: { amount: number; inOrdinaryWage: boolean } | undefined
   /** 수습 지급률(ppm)입니다. 수습이 없으면 없습니다. */

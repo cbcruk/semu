@@ -4,7 +4,7 @@
  * - Tax: 지급월 마감 이벤트(`payroll_pay_month.closed`·`payroll_pay_month.reopened`)를 구독하고,
  *   `PayrollLedgerSummary`로 지급일 구간의 마감 현황을 읽고, `WithholdingFilingLock` 포트를 구현합니다
  * - Bookkeeping: `PayrollLaborCost`로 월별 인건비를 읽습니다
- * - HR: `PayrollEmployeeDirectory` 포트를 구현합니다
+ * - HR: `PayrollEmployeeDirectory` 포트를 구현하고, `PayrollSettingQuery`로 사업장 규모를 읽습니다
  */
 export type {
   PayMonthClosed,
@@ -24,3 +24,7 @@ export {
 } from './ports/payroll-employee-directory.ts'
 export { WithholdingFilingLock } from './ports/withholding-filing-lock.ts'
 export { PayslipMailer, type PayslipMailResult } from './ports/payslip-mailer.ts'
+/** HR: `PayrollSettingQuery`로 사업장 규모를 읽고, 급여계약 고정수당에 같은 지급배수를 씁니다. */
+export { PayrollSettingQuery } from './settings/payroll-setting-query.ts'
+export { MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE } from './engine/working-time.ts'
+export type { PremiumMultipliers } from './engine/engine.types.ts'
