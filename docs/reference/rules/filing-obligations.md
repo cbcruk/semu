@@ -68,7 +68,7 @@ export function scheduleFilings(db: DatabaseSync, clock: Clock, horizonDays = 12
 - 개인 일반과세자는 `vat_preliminary_mode`가 `filing`이어도 예정고지입니다. 서버는 이 모드 대신 예정신고기간마다 법인·개인, 직전 과세기간 공급가액(1억 5천만 원 미만), 예정신고 선택 사유로 판정합니다([rule-decisions/tax.md](../../design/rule-decisions/tax.md#filing-obligations) 2). 픽스처 테스트는 고지 모드 법인을 공급가액 1억 원으로 옮겨 맞춥니다
 - 예정고지 건의 납부 기한을 법정 25일로 미리 채웁니다. 실제 고지서 기한은 대리인이 `recordNotice`로 넣습니다
 - 간이과세자, 법인세 중간예납, 연말정산은 일정에 없습니다
-- 대리인이 취소한 신고 건은 의무가 남아 있어도 다시 만들지 않습니다
+- 대리인이 취소한 신고 건은 의무가 남아 있어도 다시 만들지 않습니다. 현행은 배치가 취소한 건도 구분하지 않고 다시 만들지 않습니다. 서버는 배치가 취소한 건을 되살립니다([rule-decisions/tax.md](../../design/rule-decisions/tax.md#filing-obligations) 5)
 - `requested` 이후 신고 건은 의무가 사라져도 자동 취소하지 않습니다
 
 ## 픽스처

@@ -138,6 +138,8 @@ describe('신고 의무 픽스처(filing-obligations)', () => {
       ...fromLegacyPeriodKey(filing['taxType'], filing['taxPeriodKey']),
       id: filing['id'],
       status: LEGACY_FILING_STATUS[filing['status']]!,
+      // 현행은 취소 주체를 구분하지 않습니다. 픽스처의 취소 건은 대리인이 취소한 건(결정 5)으로 봅니다
+      canceledBy: filing['status'] === 'cancelled' ? ('USER' as const) : null,
       dueDate: filing['dueDate'],
       paymentDue: filing['paymentDue'],
     }))
