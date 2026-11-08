@@ -22,7 +22,7 @@ export interface SeveranceSettlementRecord {
   joinDate: string
   lastWorkDate: string
   /**
-   * 퇴직금 지급일(`YYYY-MM-DD`)입니다. 원천세 퇴직소득(A21)을 이 날짜의 달(지급월)에 셉니다. 마지막 근무일보다 앞설 수 없습니다.
+   * 퇴직금 지급일(`YYYY-MM-DD`)입니다. 원천세 퇴직소득 그 외(A22)를 이 날짜의 달(지급월)에 셉니다. 마지막 근무일보다 앞설 수 없습니다.
    * 계산됨 상태에서는 없어도 되고, 완료할 때 없으면 마지막 근무일로 채웁니다(현행 `complete`). 이 필드가 생기기 전에 저장한
    * 정산에는 없습니다.
    */
