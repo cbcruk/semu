@@ -83,13 +83,21 @@ export class WageIncomeDuplicated extends HttpApiError.Problem<WageIncomeDuplica
   { code: Schema.tag('WAGE_INCOME_DUPLICATED'), ledgerId: Schema.String },
 ) {}
 
-/** 행의 소득자 정보가 맞지 않습니다. 근로 행은 직원 ID, 그 밖의 행은 소득자 이름이 필요하고 소득 구분은 바꿀 수 없습니다. */
+/**
+ * 행의 소득자 정보가 맞지 않습니다. 근로 행은 직원 ID, 그 밖의 행은 소득자 이름이 필요하고 소득 구분은 바꿀 수 없습니다.
+ * 직원이 연결된 행의 소득자 사본(`earner`)은 HR에서 복사하므로 입력할 수 없습니다(`EARNER_FROM_EMPLOYEE`).
+ */
 export class PayrollRowPayeeInvalid extends HttpApiError.Problem<PayrollRowPayeeInvalid>()(
   'PayrollRowPayeeInvalid',
   { type: problemType('PAYROLL_ROW_PAYEE_INVALID'), status: 422, title: 'Payroll row payee is invalid' },
   {
     code: Schema.tag('PAYROLL_ROW_PAYEE_INVALID'),
-    reason: Schema.Literals(['EMPLOYEE_REQUIRED', 'PAYEE_NAME_REQUIRED', 'INCOME_TYPE_CHANGED']),
+    reason: Schema.Literals([
+      'EMPLOYEE_REQUIRED',
+      'PAYEE_NAME_REQUIRED',
+      'INCOME_TYPE_CHANGED',
+      'EARNER_FROM_EMPLOYEE',
+    ]),
   },
 ) {}
 

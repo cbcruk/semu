@@ -25,6 +25,7 @@
 | 임금산정 기간 | `wagePeriod { start, end }` |
 | 대장 행 (근로·일용·사업·기타) | `PayrollRow` (`pyr_`), `input.incomeType`: `WAGE_MONTHLY`·`WAGE_HOURLY`·`WAGE_DAILY`·`DAILY`·`BUSINESS`·`OTHER` |
 | 직원 정보 사본 | `snapshot` |
+| 소득자 사본 (수신 주소·가린 주민등록번호·부서) | `earner { email, registrationNumberMasked, departmentName }` |
 | 계산 결과 / 근거 | `result` / `result.breakdown[] { code, label, amount, formula }` |
 | 기준표 (요율·간이세액·최저임금) | `RateTable` (`rtb_`), `effectiveFrom` |
 | 미확인 값 | `unverifiedPaths` |
@@ -154,6 +155,7 @@ PayrollLedger                              pyl_
 └─ rows[] (별도 경로)
     PayrollRow                             pyr_
     ├─ employeeId | null, payeeName, incomeType
+    ├─ earner { email, registrationNumberMasked, departmentName }   # 소득자 사본
     ├─ input                               # incomeType별 판별 유니온
     ├─ snapshot                            # 계산에 쓴 HR 정보
     └─ result
@@ -166,8 +168,8 @@ GET    /payroll-ledgers/{ledgerId}                                              
 PATCH  /payroll-ledgers/{ledgerId}           { paymentDate?, title? }                            If-Match
 DELETE /payroll-ledgers/{ledgerId}                                                               If-Match, 204
 GET    /payroll-ledgers/{ledgerId}/rows
-POST   /payroll-ledgers/{ledgerId}/rows      { employeeId? | payeeName?, input }                 If-Match
-PATCH  /payroll-ledgers/{ledgerId}/rows/{rowId}  { payeeName?, input? }                         If-Match
+POST   /payroll-ledgers/{ledgerId}/rows      { employeeId? | payeeName?, earner?, input }        If-Match
+PATCH  /payroll-ledgers/{ledgerId}/rows/{rowId}  { payeeName?, earner?, input? }               If-Match
 DELETE /payroll-ledgers/{ledgerId}/rows/{rowId}                                                  If-Match
 POST   /payroll-ledgers/{ledgerId}:recalculate                                                   If-Match
 POST   /payroll-ledgers/{ledgerId}:{transition}                                                  If-Match
@@ -179,6 +181,11 @@ POST   /payroll-ledgers/{ledgerId}:approve | :reject { reason }                 
 - **행은 대장을 통해서만 바뀝니다.** 행을 저장하면 같은 요청에서 계산하고 대장 `version`을 올립니다. 행의 `If-Match`는 대장 버전입니다
 - 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 이름 중 하나가 필수입니다. 이름과 함께 `employeeId`를 주어도 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`)
 - `:recalculate`는 HR 정보를 다시 받아 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
+- **행마다 소득자 사본(`earner`)을 둡니다.** 명세서 머리(가린 주민등록번호·부서)와 발송 주소가 이 값을 씁니다
+  - 직원이 연결된 행은 HR의 이메일·가린 주민등록번호·부서를 복사합니다. 행을 만들 때(정기 대장 생성, 행 추가) 복사하고 `:recalculate` 때 다시 복사합니다. 입력으로 주면 422 `PAYROLL_ROW_PAYEE_INVALID`(`EARNER_FROM_EMPLOYEE`)입니다
+  - 직원이 없는 행(일용·사업·기타)은 행 추가·수정 때 입력받습니다. 빠진 값은 `null`이고, 수정의 `earner`는 사본을 통째로 바꿉니다
+  - 주민등록번호는 가린 형식(`900101-1******`)만 받습니다(400 `VALIDATION_FAILED`). HR 포트처럼 급여는 원문을 받지도 저장하지도 않습니다. 원천세 신고 파일처럼 원문이 필요한 곳은 HR의 열람 기록이 남는 조회(`revealRegistrationNumber`)를 씁니다. 직원이 없는 소득자의 원문은 아직 둘 곳이 없습니다
+  - **복사 시점은 계산 입력(`snapshot`)과 같습니다.** 마감 때 따로 복사하지 않습니다. 사본은 행의 다른 HR 값과 같은 때에 같은 방법(`:recalculate`)으로 갱신되어야 담당자가 한 번에 맞출 수 있고, 마감된 대장은 고칠 수 없으므로 명세서는 마감한 그대로의 주소로 갑니다. 마감 뒤 HR 이메일이 바뀌면 마감을 풀고 다시 계산해야 반영됩니다. 발송할 때 HR을 다시 읽던 방식은 마감 기록과 받는 사람이 어긋날 수 있어 버렸습니다
 - 정기 대장은 추가 대장이 있으면 지울 수 없습니다(409 `PAYROLL_LEDGER_HAS_ADDITIONAL`). 대장 삭제는 입력 상태에서만 됩니다
 
 ### 상태
@@ -254,11 +261,12 @@ POST /payslips:send     { payslipIds[] }      Idempotency-Key 필수(없으면 4
 ```
 
 - 명세서는 **마감된 대장 행의 보기**입니다. 따로 저장하는 것은 발송 기록(`deliveries[] { sentAt, status: SENT|FAILED, reason }`)뿐이라 계산이 바뀌면 명세서도 바로 바뀝니다. 마감 전 대장의 행은 404 `PAYSLIP_NOT_FOUND`입니다
-- 발송은 `PayslipMailer` 포트로 하고 결과를 `Job`(`SUCCEEDED`·`PARTIALLY_SUCCEEDED`·`FAILED`)에 담습니다. 이메일이 없으면 `NO_EMAIL`로 실패합니다
+- 명세서는 행의 소득자 사본(`earner`)을 싣습니다
+- 발송은 `PayslipMailer` 포트로 하고 결과를 `Job`(`SUCCEEDED`·`PARTIALLY_SUCCEEDED`·`FAILED`)에 담습니다. 받는 주소는 행의 `earner.email`이라 직원이 없는 일용·사업·기타소득자도 받습니다. 사본에 이메일이 없을 때만 `NO_EMAIL`로 실패합니다. 발송은 HR을 읽지 않습니다
 - 멱등성은 [공통 규칙](conventions.md#멱등성)을 따릅니다. 키는 회사·행위자마다 따로이고 24시간 동안 기억합니다
   - 같은 키·같은 본문이면 처음 작업을 그대로 돌려줍니다. 본문이 다르면 422 `IDEMPOTENCY_KEY_REUSED`, 앞 요청이 아직 보내는 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`입니다
   - 메일을 보내기 전에 발송 요청 기록(`payroll_payslip_sends`, ID `<회사>:<사용자>:<키>`)을 `IN_PROGRESS`로 예약합니다. 확인과 예약은 저장소의 `claimSend` 한 번으로 합니다. 명세서를 한 건 보낼 때마다 그 결과를 기록의 `items`에 더하고, 끝나면 `COMPLETED`로 바꿉니다
-  - 명세서 한 건의 HR 조회·메일 발송·저장 중 결함이 나면 503 `PAYSLIP_SEND_INTERRUPTED`입니다. 한 건이라도 보냈으면 `keepChanges`를 불러, 요청이 503이나 중단(연결 끊김)으로 끝나도 보낸 명세서의 발송 기록과 요청 기록(`INTERRUPTED`)을 커밋합니다. 같은 키·같은 본문으로 다시 보내면 결과가 있는 명세서는 건너뛰고 나머지만 보내며, 작업 ID는 처음 것입니다
+  - 명세서 한 건의 메일 발송·저장 중 결함이 나면 503 `PAYSLIP_SEND_INTERRUPTED`입니다. 한 건이라도 보냈으면 `keepChanges`를 불러, 요청이 503이나 중단(연결 끊김)으로 끝나도 보낸 명세서의 발송 기록과 요청 기록(`INTERRUPTED`)을 커밋합니다. 같은 키·같은 본문으로 다시 보내면 결과가 있는 명세서는 건너뛰고 나머지만 보내며, 작업 ID는 처음 것입니다
   - 아무것도 보내기 전에 실패하면(명세서 없음 등) 예약을 남기지 않아, 같은 키로 본문을 고쳐 다시 보낼 수 있습니다
   - 시작한 발송은 연결이 끊겨도 끝까지 갑니다(중단 불가). 끝난 뒤 요청은 중단되지만 기록은 커밋되어, 재시도가 처음 작업을 돌려받습니다
   - **프로세스가 죽으면:** SQLite에서는 요청 전체가 트랜잭션 하나라 건별 기록도 커밋 전입니다. 발송 도중 프로세스가 죽으면 그 요청에서 보낸 **모든** 명세서의 기록이 사라지고, 같은 키로 재시도하면 전부 다시 보냅니다. 건별 기록이 도움이 되는 것은 프로세스가 살아 있는 채로 결함이 난 경우(503)뿐입니다. 메일 연동이 생기면 포트에 건별 멱등 키를 넘겨 막습니다
@@ -390,7 +398,7 @@ flowchart LR
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
 | 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` | 같은 키의 명세서 발송이 아직 처리 중 | |
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
-| 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음, 이름 없음, 소득 종류 변경 | `reason` |
+| 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음(`EMPLOYEE_REQUIRED`), 이름 없음(`PAYEE_NAME_REQUIRED`), 소득 종류 변경(`INCOME_TYPE_CHANGED`), 직원이 연결된 행에 소득자 사본 입력(`EARNER_FROM_EMPLOYEE`) | `reason` |
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
 | 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
@@ -424,7 +432,7 @@ flowchart LR
 | 16 | `GET /cards/:c/inquire-wage-employees-change/` | 미구현. 대장 `warnings`에 명부 변동(`ROSTER_CHANGED`)을 넣는 안 ([열린 질문](#열린-질문)) |
 | 17 | `GET /cards/:c/can-create-additional-card/` | 없앰. `POST /payroll-ledgers`가 409 `ADDITIONAL_LEDGER_BLOCKED`(`reason`)로 답함 |
 | 18 | `GET /cards/:c/payslip/` | `GET /payslips?ledgerId=` |
-| 19 | `POST /cards/:c/payslip/` | 없앰. 계산식은 `breakdown[].formula`, 이메일은 HR 직원 정보 |
+| 19 | `POST /cards/:c/payslip/` | 없앰. 계산식은 `breakdown[].formula`, 이메일은 행의 소득자 사본(`earner`) |
 | 20 | `GET /cards/:c/payslip/wage-salary/notifications/` | `GET /payslips?ledgerId=`의 `deliveries`, `GET /jobs/{jobId}` |
 | 21 | `POST /cards/:c/payslip/wage-salary/notifications/` | `POST /payslips:send` (Idempotency-Key) |
 | 22 | `POST /cards/:c/payslip/wage-salary/copy-payment-formulas/` | 없앰. 계산식은 엔진이 만듦 |
@@ -568,7 +576,7 @@ flowchart LR
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
 10. **기장 회사의 "급여대장 마감분".** 급여대장을 기장(`TAXATION`)에도 열었지만 원천세의 "급여대장 마감분" 자동 연계 항목은 급여 플랜 회사에만 넣습니다([접근 요건](#접근-요건)). 대장을 쓰는 기장 회사에도 넣으려면 "신고 기간에 대장이 있으면 마감 여부로, 없으면 `NOT_APPLICABLE`" 같은 규칙이 필요합니다. 지금 판정(`payrollLedgerResponse`)은 대장이 없으면 `PENDING`이라, 그대로 넣으면 대장을 쓰지 않는 기장 회사의 화면에 끝나지 않는 대기 항목이 남습니다(제출은 막지 않음). 기간 중에 대장이 생기거나 지워질 때 항목을 넣고 빼는 것도 함께 정합니다
-11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** 명세서는 HR 직원 이메일로만 보내는데, 일용·사업·기타소득 행은 직원 없이 이름만 둘 수 있어 그런 소득자의 명세서는 언제나 `NO_EMAIL`로 실패합니다. 현행 BPO는 대장 행에 저장한 주소로 사업·기타소득자에게도 보냈습니다. 명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지 정해야 합니다
+11. **근로 외 소득자의 명세서 수신 주소와 소득자 사본.** ~~명세서별 수신 주소를 둘지, 행(또는 `Payslip`)에 소득자 사본(수신 주소, 가린 주민등록번호, 부서)을 둘지~~ **정함(2026-11-08):** 대장 행에 소득자 사본(`earner { email, registrationNumberMasked, departmentName }`)을 둡니다([급여대장](#급여대장)). 직원이 연결된 행은 HR 값을 행 생성·`:recalculate` 때 복사하고, 직원이 없는 일용·사업·기타 행은 입력받습니다. 명세서 발송은 행의 주소를 써서 근로 외 소득자도 받고, 주소가 없을 때만 `NO_EMAIL`입니다([급여명세서](#급여명세서)). 현행 BPO가 대장 행에 저장한 주소로 보내던 방식과 같습니다. 남은 것: 직원이 없는 소득자의 주민등록번호 원문(지급명세서용)은 둘 곳이 없습니다
 12. **고정 연장근로 초과분.** 지금은 담당자가 약정 시간을 넘은 연장 분만 행에 넣습니다. 행에 고정 연장 약정 분을 받아 `max(0, 실제 − 약정)`을 가산하려면 HR 급여계약의 고정수당 시간을 `PayrollEmployee`로 넘겨야 합니다(7번의 계약 지급항목과 함께, [규칙 결정](rule-decisions/payroll.md#overtime-multipliers) 1)
 13. **수습 감액과 최저임금 경고.** 급여 경고는 감액 없이 최저시급과 비교합니다. HR 포트가 수습 시작일과 감액 허용 여부(급여계약 검증 결과)를 주면, 그 달이 수습 3개월 안이고 허용된 경우에만 90%로 비교할 수 있습니다([규칙 결정](rule-decisions/payroll.md#minimum-wage-warning) 2)
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)

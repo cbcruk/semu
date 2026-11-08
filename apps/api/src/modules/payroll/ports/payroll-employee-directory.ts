@@ -16,9 +16,9 @@ export type RetirementBenefitType = 'SEVERANCE_PAY' | 'DEFINED_BENEFIT' | 'DEFIN
 export interface PayrollEmployee {
   id: Id<'employee'>
   name: string
-  /** `900101-1******` 형식입니다. 원문은 급여가 받지 않습니다. */
+  /** `900101-1******` 형식입니다. 원문은 급여가 받지 않습니다. 대장 행의 소득자 사본으로 복사합니다. */
   registrationNumberMasked: string
-  /** 명세서를 보낼 주소입니다. 없으면 발송이 `NO_EMAIL`로 실패합니다. */
+  /** 명세서를 보낼 주소입니다. 대장 행의 소득자 사본(`earner`)으로 복사합니다. */
   email: string | null
   departmentName: string | null
   joinDate: string

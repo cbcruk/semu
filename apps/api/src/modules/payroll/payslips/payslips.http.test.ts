@@ -20,6 +20,13 @@ beforeAll(async () => {
   await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
     body: { payeeName: '박프리', input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
   })
+  await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
+    body: {
+      payeeName: '이강사',
+      earner: { email: 'lecturer@example.com', registrationNumberMasked: '800303-2******' },
+      input: { incomeType: 'OTHER', payAmount: 500_000 },
+    },
+  })
 })
 
 describe('/payslips', () => {
@@ -34,13 +41,28 @@ describe('/payslips', () => {
     const response = await app.request('GET', '/payslips?paymentMonth=2026-03')
 
     expect(response.status).toBe(200)
-    expect(response.body.items).toHaveLength(2)
+    expect(response.body.items).toHaveLength(3)
     expect(response.body.items[1]).toMatchObject({
       payeeName: '박프리',
+      earner: { email: null, registrationNumberMasked: null, departmentName: null },
       incomeType: 'BUSINESS',
       grossPay: 1_000_000,
       netPay: 967_000,
       delivery: { status: 'NOT_SENT', attempts: 0 },
+    })
+  })
+
+  it('급여명세서에 행의 소득자 사본을 싣습니다', async () => {
+    const response = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
+
+    expect(response.body.items[0].earner).toEqual({
+      email: 'hana@example.com',
+      registrationNumberMasked: '900101-1******',
+      departmentName: null,
+    })
+    expect(response.body.items[2].earner).toMatchObject({
+      email: 'lecturer@example.com',
+      registrationNumberMasked: '800303-2******',
     })
   })
 
@@ -54,7 +76,7 @@ describe('/payslips', () => {
     expect(response.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REQUIRED' })
   })
 
-  it('이메일로 보내고 주소가 없는 수령인은 실패로 둡니다', async () => {
+  it('행의 수신 주소로 보내 직원이 아닌 소득자도 받고, 주소가 없는 수령인은 실패로 둡니다', async () => {
     const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
     const ids = list.body.items.map((item: { id: string }) => item.id)
     const first = await app.request('POST', '/payslips:send', {
@@ -69,6 +91,7 @@ describe('/payslips', () => {
         items: [
           { payslipId: ids[0], status: 'SENT', failureReason: null },
           { payslipId: ids[1], status: 'FAILED', failureReason: 'NO_EMAIL' },
+          { payslipId: ids[2], status: 'SENT', failureReason: null },
         ],
       },
     })
@@ -81,6 +104,8 @@ describe('/payslips', () => {
 
     const detail = await app.request('GET', `/payslips/${ids[0]}`)
     expect(detail.body.delivery).toMatchObject({ status: 'SENT', attempts: 1 })
+    const lecturer = await app.request('GET', `/payslips/${ids[2]}`)
+    expect(lecturer.body).toMatchObject({ employeeId: null, delivery: { status: 'SENT', attempts: 1 } })
   })
 
   it('보낸 뒤에도 급여대장은 마감 상태입니다', async () => {
