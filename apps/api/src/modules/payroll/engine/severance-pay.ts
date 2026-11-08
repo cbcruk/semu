@@ -41,27 +41,21 @@ export function retirementIncomeTax(
   rates: PayrollRateTable,
 ): RetirementIncomeTaxResult {
   const 퇴직소득세기준 = rates.retirementIncomeTax
-  const serviceYears = Math.max(1, Math.ceil(serviceDays / 365))
-  const serviceYearDeduction = Math.min(
-    evaluatePerUnit(퇴직소득세기준.serviceYearDeduction, serviceYears),
-    severancePay,
-  )
-  const convertedPay = mulDiv(severancePay - serviceYearDeduction, 12, serviceYears)
-  const convertedPayDeduction = Math.min(
-    evaluateLinear(퇴직소득세기준.convertedPayDeduction, convertedPay),
-    convertedPay,
-  )
-  const taxBase = convertedPay - convertedPayDeduction
-  const 환산산출세액 = progressiveTax(taxBase, rates)
-  const incomeTax = truncateTo(mulDiv(환산산출세액, serviceYears, 12), rates.wageIncomeTax.taxRoundingUnit)
+  const 근속연수 = Math.max(1, Math.ceil(serviceDays / 365))
+  const 근속연수공제 = Math.min(evaluatePerUnit(퇴직소득세기준.serviceYearDeduction, 근속연수), severancePay)
+  const 환산급여 = mulDiv(severancePay - 근속연수공제, 12, 근속연수)
+  const 환산급여공제 = Math.min(evaluateLinear(퇴직소득세기준.convertedPayDeduction, 환산급여), 환산급여)
+  const 과세표준 = 환산급여 - 환산급여공제
+  const 환산산출세액 = progressiveTax(과세표준, rates)
+  const 퇴직소득세 = truncateTo(mulDiv(환산산출세액, 근속연수, 12), rates.wageIncomeTax.taxRoundingUnit)
   return {
-    serviceYears,
-    serviceYearDeduction,
-    convertedPay,
-    convertedPayDeduction,
-    taxBase,
-    incomeTax,
-    localIncomeTax: localIncomeTaxOf(incomeTax, rates),
+    serviceYears: 근속연수,
+    serviceYearDeduction: 근속연수공제,
+    convertedPay: 환산급여,
+    convertedPayDeduction: 환산급여공제,
+    taxBase: 과세표준,
+    incomeTax: 퇴직소득세,
+    localIncomeTax: localIncomeTaxOf(퇴직소득세, rates),
   }
 }
 
@@ -81,56 +75,56 @@ export function retirementIncomeTax(
  * ```
  */
 export function calculateSeverancePay(input: SeveranceInput, rates: PayrollRateTable): SeveranceResult {
-  const serviceDays = daysBetween(input.joinDate, input.lastWorkDate) + 1
+  const 재직일수 = daysBetween(input.joinDate, input.lastWorkDate) + 1
   const 산정기간일수 = input.threeMonthDays ?? averageWagePeriodDays(input.lastWorkDate)
   const 임금총액 =
     input.threeMonthWages + mulDiv(input.annualBonus ?? 0, 3, 12) + mulDiv(input.annualLeavePay ?? 0, 3, 12)
-  const 일평균임금 = mulDiv(임금총액, 1, 산정기간일수)
-  const usedOrdinaryWage = input.ordinaryDailyWage !== undefined && input.ordinaryDailyWage * 산정기간일수 > 임금총액
-  const eligible = serviceDays >= 365
-  const severancePay = !eligible
+  const 평균임금 = mulDiv(임금총액, 1, 산정기간일수)
+  const 통상임금적용인가 = input.ordinaryDailyWage !== undefined && input.ordinaryDailyWage * 산정기간일수 > 임금총액
+  const 퇴직금대상인가 = 재직일수 >= 365
+  const 퇴직금 = !퇴직금대상인가
     ? 0
-    : usedOrdinaryWage
-      ? mulDiv((input.ordinaryDailyWage ?? 0) * 30, serviceDays, 365)
-      : mulDiv(임금총액 * 30, serviceDays, 산정기간일수 * 365)
-  const 퇴직소득세 = retirementIncomeTax(severancePay, serviceDays, rates)
-  const incomeTax = eligible ? 퇴직소득세.incomeTax : 0
-  const localIncomeTax = eligible ? 퇴직소득세.localIncomeTax : 0
+    : 통상임금적용인가
+      ? mulDiv((input.ordinaryDailyWage ?? 0) * 30, 재직일수, 365)
+      : mulDiv(임금총액 * 30, 재직일수, 산정기간일수 * 365)
+  const 퇴직소득세계산 = retirementIncomeTax(퇴직금, 재직일수, rates)
+  const 퇴직소득세 = 퇴직금대상인가 ? 퇴직소득세계산.incomeTax : 0
+  const 지방소득세 = 퇴직금대상인가 ? 퇴직소득세계산.localIncomeTax : 0
   const breakdown: TraceEntry[] = [
     {
       code: 'AVERAGE_DAILY_WAGE',
-      label: usedOrdinaryWage ? '통상임금(일)' : '평균임금(일)',
-      amount: usedOrdinaryWage ? (input.ordinaryDailyWage ?? 0) : 일평균임금,
+      label: 통상임금적용인가 ? '통상임금(일)' : '평균임금(일)',
+      amount: 통상임금적용인가 ? (input.ordinaryDailyWage ?? 0) : 평균임금,
       formula: `${formatWon(임금총액)} ÷ ${산정기간일수}일`,
     },
     {
       code: 'SEVERANCE_PAY',
       label: '퇴직금',
-      amount: severancePay,
-      formula: `평균임금 × 30 × ${serviceDays}일 ÷ 365`,
+      amount: 퇴직금,
+      formula: `평균임금 × 30 × ${재직일수}일 ÷ 365`,
     },
     {
       code: 'RETIREMENT_INCOME_TAX',
       label: '퇴직소득세',
-      amount: incomeTax,
-      formula: `근속 ${퇴직소득세.serviceYears}년, 환산급여 ${formatWon(퇴직소득세.convertedPay)} − 공제 ${formatWon(퇴직소득세.convertedPayDeduction)} → 과세표준 ${formatWon(퇴직소득세.taxBase)}`,
+      amount: 퇴직소득세,
+      formula: `근속 ${퇴직소득세계산.serviceYears}년, 환산급여 ${formatWon(퇴직소득세계산.convertedPay)} − 공제 ${formatWon(퇴직소득세계산.convertedPayDeduction)} → 과세표준 ${formatWon(퇴직소득세계산.taxBase)}`,
     },
     {
       code: 'LOCAL_INCOME_TAX',
       label: '지방소득세',
-      amount: localIncomeTax,
-      formula: `퇴직소득세 ${formatWon(incomeTax)} × 10%`,
+      amount: 지방소득세,
+      formula: `퇴직소득세 ${formatWon(퇴직소득세)} × 10%`,
     },
   ]
   return {
-    eligible,
-    serviceDays,
-    averageDailyWage: usedOrdinaryWage ? (input.ordinaryDailyWage ?? 0) : 일평균임금,
-    usedOrdinaryWage,
-    severancePay,
-    retirementIncomeTax: incomeTax,
-    localIncomeTax,
-    netPay: severancePay - incomeTax - localIncomeTax,
+    eligible: 퇴직금대상인가,
+    serviceDays: 재직일수,
+    averageDailyWage: 통상임금적용인가 ? (input.ordinaryDailyWage ?? 0) : 평균임금,
+    usedOrdinaryWage: 통상임금적용인가,
+    severancePay: 퇴직금,
+    retirementIncomeTax: 퇴직소득세,
+    localIncomeTax: 지방소득세,
+    netPay: 퇴직금 - 퇴직소득세 - 지방소득세,
     breakdown,
   }
 }

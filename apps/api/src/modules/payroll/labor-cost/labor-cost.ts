@@ -62,21 +62,21 @@ export function buildLaborCost(
       business: new Set<string>(),
       other: new Set<string>(),
     }
-    let employerInsurance = 0
+    let 사업주보험료 = 0
     for (const row of rows.filter((candidate) => candidate.attributionMonth === month)) {
       const 금액키 = 소득구분키[row.incomeKind]
       amounts[금액키] += row.grossPay
-      employerInsurance += row.employerInsurance
+      사업주보험료 += row.employerInsurance
       월소득자[금액키].add(row.payeeKey)
       연간소득자[금액키].add(row.payeeKey)
     }
-    const total = amounts.wage + amounts.daily + amounts.business + amounts.other
+    const 지급총액 = amounts.wage + amounts.daily + amounts.business + amounts.other
     return {
       month,
       amounts,
-      total,
-      employerInsurance,
-      totalWithEmployerInsurance: total + employerInsurance,
+      total: 지급총액,
+      employerInsurance: 사업주보험료,
+      totalWithEmployerInsurance: 지급총액 + 사업주보험료,
       headcount: {
         wage: 월소득자.wage.size,
         daily: 월소득자.daily.size,

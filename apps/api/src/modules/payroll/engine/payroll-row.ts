@@ -179,11 +179,11 @@ export function calculateWageRow(
   }
 
   if (input.incomeType === 'WAGE_MONTHLY') {
-    const 공제분 = (근무시간.absenceMinutes ?? 0) + (근무시간.weeklyHolidayDeductionDays ?? 0) * 하루주휴분
-    const 근태공제 = payForMinutes(통상임금단가, 공제분)
+    const 근태공제분 = (근무시간.absenceMinutes ?? 0) + (근무시간.weeklyHolidayDeductionDays ?? 0) * 하루주휴분
+    const 근태공제 = payForMinutes(통상임금단가, 근태공제분)
     if (근태공제 > 0) {
       계산된지급항목.push({ code: 'ATTENDANCE_DEDUCTION', name: '근태공제', amount: -근태공제 })
-      계산식.set('ATTENDANCE_DEDUCTION', `−통상시급 × ${formatHours(공제분)}시간`)
+      계산식.set('ATTENDANCE_DEDUCTION', `−통상시급 × ${formatHours(근태공제분)}시간`)
     }
   }
 
@@ -203,7 +203,7 @@ export function calculateWageRow(
     const formula = 계산식.get(line.code)
     return formula === undefined ? line : { ...line, formula }
   })
-  const taxablePay = Math.max(0, sum(payments.map((line) => line.taxableAmount)))
+  const 과세급여 = Math.max(0, sum(payments.map((line) => line.taxableAmount)))
 
   if (isBelowMinimumWage(최저임금단가, rates)) {
     warnings.push({
@@ -212,18 +212,18 @@ export function calculateWageRow(
     })
   }
 
-  const insurance = calculateSocialInsurance({ ...input.insurance, insurablePay: taxablePay }, rates)
-  const 근로소득세 = calculateWageIncomeTax(taxablePay, input.incomeTax, rates, options.simpleTax ?? MIDPOINT_FORMULA)
+  const 사회보험료 = calculateSocialInsurance({ ...input.insurance, insurablePay: 과세급여 }, rates)
+  const 근로소득세계산 = calculateWageIncomeTax(과세급여, input.incomeTax, rates, options.simpleTax ?? MIDPOINT_FORMULA)
   return 결과조립({
     incomeType: input.incomeType,
     attributionMonth: input.attributionMonth,
     rates,
     payments,
-    taxablePay,
-    insurance,
-    taxTrace: 근로소득세.trace,
-    incomeTax: 근로소득세.incomeTax,
-    localIncomeTax: 근로소득세.localIncomeTax,
+    taxablePay: 과세급여,
+    insurance: 사회보험료,
+    taxTrace: 근로소득세계산.trace,
+    incomeTax: 근로소득세계산.incomeTax,
+    localIncomeTax: 근로소득세계산.localIncomeTax,
     withholdTax: input.incomeTax.method !== 'NONE',
     otherDeductions: input.otherDeductions ?? [],
     extraBreakdown: [],
@@ -259,7 +259,7 @@ export function calculateDailyWorkerRow(input: DailyWorkerRowInput, rates: Payro
       formula: `${formatWon(input.payAmount)} (${input.workDays}일)`,
     },
   ]
-  const insurance = calculateSocialInsurance({ ...input.insurance, insurablePay: input.payAmount }, rates)
+  const 사회보험료 = calculateSocialInsurance({ ...input.insurance, insurablePay: input.payAmount }, rates)
   const 원천징수 = withholdDailyWorker(input.payAmount, input.workDays, input.dailyPays, rates)
   return 원천징수결과조립(
     input.incomeType,
@@ -267,7 +267,7 @@ export function calculateDailyWorkerRow(input: DailyWorkerRowInput, rates: Payro
     rates,
     payments,
     input.payAmount,
-    insurance,
+    사회보험료,
     원천징수,
     input.otherDeductions ?? [],
     warnings,
@@ -415,8 +415,8 @@ function 원천징수결과조립(
 
 /** 지급·공제 항목을 모아 행 결과를 만듭니다. */
 function 결과조립(input: FinalizeInput): PayrollRowResult {
-  const grossPay = sum(input.payments.map((line) => line.amount))
-  const nonTaxablePay = sum(input.payments.map((line) => line.nonTaxableAmount))
+  const 지급총액 = sum(input.payments.map((line) => line.amount))
+  const 비과세급여 = sum(input.payments.map((line) => line.nonTaxableAmount))
   const deductions: DeductionLine[] = input.insurance.trace.map((entry) => ({
     code: entry.code,
     name: entry.label,
@@ -431,7 +431,7 @@ function 결과조립(input: FinalizeInput): PayrollRowResult {
   for (const item of input.otherDeductions) {
     deductions.push({ code: item.code, name: item.name, amount: item.amount, formula: formatWon(item.amount) })
   }
-  const deductionTotal = sum(deductions.map((line) => line.amount))
+  const 공제총액 = sum(deductions.map((line) => line.amount))
   const breakdown: TraceEntry[] = [
     ...input.payments.map((line) => ({
       code: line.code,
@@ -442,20 +442,21 @@ function 결과조립(input: FinalizeInput): PayrollRowResult {
     ...input.extraBreakdown,
     ...deductions.map((line) => ({ code: line.code, label: line.name, amount: line.amount, formula: line.formula })),
   ]
+  const 차인지급액 = 지급총액 - 공제총액
   return {
     incomeType: input.incomeType,
     attributionMonth: input.attributionMonth,
     rateTable: input.rates.effectiveFrom,
     payments: input.payments,
-    grossPay,
+    grossPay: 지급총액,
     taxablePay: input.taxablePay,
-    nonTaxablePay,
+    nonTaxablePay: 비과세급여,
     insurance: input.insurance,
     incomeTax: input.withholdTax ? input.incomeTax : 0,
     localIncomeTax: input.withholdTax ? input.localIncomeTax : 0,
     deductions,
-    deductionTotal,
-    netPay: grossPay - deductionTotal,
+    deductionTotal: 공제총액,
+    netPay: 차인지급액,
     employerInsuranceTotal: input.insurance.employer.total,
     breakdown,
     warnings: input.warnings,

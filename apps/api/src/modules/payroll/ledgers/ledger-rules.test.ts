@@ -25,7 +25,7 @@ describe('급여대장 상태 전이', () => {
     })
   })
 
-  it('승인은 고객만, 승인 요청은 수임 사무소만 할 수 있습니다', () => {
+  it('승인은 고객만, 승인 요청은 대리인만 할 수 있습니다', () => {
     const base = { workflow: 'CLIENT_APPROVAL', withholdingFiled: false } as const
     expect(decideTransition('APPROVE', { ...base, status: 'PENDING_APPROVAL', actor: 'AGENCY' }).ok).toBe(false)
     expect(decideTransition('REQUEST_APPROVAL', { ...base, status: 'SUBMITTED', actor: 'CLIENT' }).ok).toBe(false)

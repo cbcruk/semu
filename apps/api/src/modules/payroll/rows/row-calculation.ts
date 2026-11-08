@@ -224,14 +224,14 @@ function 지급월세액반영(귀속월계산: PayrollRowResult, 지급월계�
   const deductions = 귀속월계산.deductions
     .map(금액교체('INCOME_TAX', 지급월계산.incomeTax))
     .map(금액교체('LOCAL_INCOME_TAX', 지급월계산.localIncomeTax))
-  const deductionTotal = deductions.reduce((total, line) => total + line.amount, 0)
+  const 공제총액 = deductions.reduce((total, line) => total + line.amount, 0)
   return {
     ...귀속월계산,
     incomeTax: 지급월계산.incomeTax,
     localIncomeTax: 지급월계산.localIncomeTax,
     deductions,
-    deductionTotal,
-    netPay: 귀속월계산.grossPay - deductionTotal,
+    deductionTotal: 공제총액,
+    netPay: 귀속월계산.grossPay - 공제총액,
     breakdown: 귀속월계산.breakdown
       .map(금액교체('INCOME_TAX', 지급월계산.incomeTax))
       .map(금액교체('LOCAL_INCOME_TAX', 지급월계산.localIncomeTax)),

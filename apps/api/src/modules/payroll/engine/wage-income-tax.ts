@@ -45,32 +45,32 @@ export function annualSimpleTaxSteps(
   rates: PayrollRateTable,
 ): AnnualSimpleTaxSteps {
   const 근로소득세기준 = rates.wageIncomeTax
-  const annualPay = monthlyPay * 12
-  const earnedIncomeDeduction = Math.min(
-    evaluateLinear(근로소득세기준.earnedIncomeDeduction, annualPay),
+  const 총급여액 = monthlyPay * 12
+  const 근로소득공제 = Math.min(
+    evaluateLinear(근로소득세기준.earnedIncomeDeduction, 총급여액),
     근로소득세기준.earnedIncomeDeductionCap,
   )
-  const earnedIncome = Math.max(0, annualPay - earnedIncomeDeduction)
-  const personalDeduction = 근로소득세기준.personalDeductionPerDependant * Math.max(1, dependants)
+  const 근로소득금액 = Math.max(0, 총급여액 - 근로소득공제)
+  const 인적공제 = 근로소득세기준.personalDeductionPerDependant * Math.max(1, dependants)
   const 국민연금기준 = rates.nationalPension
   // 국민연금 기준소득월액의 상하한만 적용한 월 급여(천원 미만 절사 전)
   const 상하한적용월급 = Math.min(Math.max(monthlyPay, 국민연금기준.baseMin), 국민연금기준.baseMax)
-  const pensionDeduction = applyPpm(상하한적용월급 * 12, 국민연금기준.employeeRatePpm)
-  const specialDeduction = 특별소득공제추정(annualPay, dependants, rates)
-  const taxBase = Math.max(0, earnedIncome - personalDeduction - pensionDeduction - specialDeduction)
-  const calculatedTax = progressiveTax(taxBase, rates)
-  const earnedIncomeCredit = Math.min(근로소득세액공제(calculatedTax, rates), 근로소득세액공제한도(annualPay, rates))
+  const 연금보험료공제 = applyPpm(상하한적용월급 * 12, 국민연금기준.employeeRatePpm)
+  const 특별소득공제 = 특별소득공제추정(총급여액, dependants, rates)
+  const 과세표준 = Math.max(0, 근로소득금액 - 인적공제 - 연금보험료공제 - 특별소득공제)
+  const 산출세액 = progressiveTax(과세표준, rates)
+  const 근로소득세액공제 = Math.min(상한전근로소득세액공제(산출세액, rates), 근로소득세액공제한도(총급여액, rates))
   return {
-    annualPay,
-    earnedIncomeDeduction,
-    earnedIncome,
-    personalDeduction,
-    pensionDeduction,
-    specialDeduction,
-    taxBase,
-    calculatedTax,
-    earnedIncomeCredit,
-    annualTax: Math.max(0, calculatedTax - earnedIncomeCredit),
+    annualPay: 총급여액,
+    earnedIncomeDeduction: 근로소득공제,
+    earnedIncome: 근로소득금액,
+    personalDeduction: 인적공제,
+    pensionDeduction: 연금보험료공제,
+    specialDeduction: 특별소득공제,
+    taxBase: 과세표준,
+    calculatedTax: 산출세액,
+    earnedIncomeCredit: 근로소득세액공제,
+    annualTax: Math.max(0, 산출세액 - 근로소득세액공제),
   }
 }
 
@@ -181,11 +181,11 @@ export function calculateWageIncomeTax(
 ): WageIncomeTaxResult {
   const 절사단위 = rates.wageIncomeTax.taxRoundingUnit
   if (setting.method === 'NONE') return { incomeTax: 0, localIncomeTax: 0, trace: [] }
-  let incomeTax: number
-  let formula: string
+  let 소득세: number
+  let 계산식: string
   if (setting.method === 'MANUAL') {
-    incomeTax = setting.manualAmount ?? 0
-    formula = '직접 입력'
+    소득세 = setting.manualAmount ?? 0
+    계산식 = '직접 입력'
   } else {
     const 간이세액 = strategy.monthlyTax(
       { monthlyTaxablePay, dependants: setting.dependants, childrenAged8To20: setting.childrenAged8To20 },
@@ -195,20 +195,20 @@ export function calculateWageIncomeTax(
       setting.reduction === undefined
         ? 0
         : Math.min(applyPpm(간이세액, setting.reduction.ratePpm), setting.reduction.remainingAnnualLimit)
-    incomeTax = truncateTo(mulDiv(Math.max(0, 간이세액 - 감면세액), setting.withholdingRatePpm, 1_000_000), 절사단위)
-    formula = `간이세액(${strategy.name}) ${formatWon(간이세액)}${감면세액 > 0 ? ` − 감면 ${formatWon(감면세액)}` : ''} × ${formatPpm(setting.withholdingRatePpm)} (공제대상가족 ${setting.dependants}명, 8~20세 자녀 ${setting.childrenAged8To20}명, ${절사단위}원 미만 절사)`
+    소득세 = truncateTo(mulDiv(Math.max(0, 간이세액 - 감면세액), setting.withholdingRatePpm, 1_000_000), 절사단위)
+    계산식 = `간이세액(${strategy.name}) ${formatWon(간이세액)}${감면세액 > 0 ? ` − 감면 ${formatWon(감면세액)}` : ''} × ${formatPpm(setting.withholdingRatePpm)} (공제대상가족 ${setting.dependants}명, 8~20세 자녀 ${setting.childrenAged8To20}명, ${절사단위}원 미만 절사)`
   }
-  const localIncomeTax = localIncomeTaxOf(incomeTax, rates)
+  const 지방소득세 = localIncomeTaxOf(소득세, rates)
   return {
-    incomeTax,
-    localIncomeTax,
+    incomeTax: 소득세,
+    localIncomeTax: 지방소득세,
     trace: [
-      { code: 'INCOME_TAX', label: '소득세', amount: incomeTax, formula },
+      { code: 'INCOME_TAX', label: '소득세', amount: 소득세, formula: 계산식 },
       {
         code: 'LOCAL_INCOME_TAX',
         label: '지방소득세',
-        amount: localIncomeTax,
-        formula: `소득세 ${formatWon(incomeTax)} × 10% (${rates.localIncomeTax.roundingUnit}원 미만 절사)`,
+        amount: 지방소득세,
+        formula: `소득세 ${formatWon(소득세)} × 10% (${rates.localIncomeTax.roundingUnit}원 미만 절사)`,
       },
     ],
   }
@@ -223,6 +223,7 @@ function 산식월세액(월급여: number, input: SimpleTaxInput, rates: Payrol
   const 근로소득세기준 = rates.wageIncomeTax
   let 월세액: number
   if (월급여 > 근로소득세기준.highIncomeThreshold) {
+    // 고소득 구간이 시작하는 월급여(highIncomeThreshold, 10,000,000원) 지점의 월 세액
     const 고소득기준월세액 = Math.floor(
       annualSimpleTaxSteps(근로소득세기준.highIncomeThreshold, input.dependants, rates).annualTax / 12,
     )
@@ -249,33 +250,33 @@ function 행중간값(월급여: number, rates: PayrollRateTable): number {
   return 행하한 + 행구간.step / 2
 }
 
-function 특별소득공제추정(연간급여: number, 공제대상가족수: number, rates: PayrollRateTable): number {
+function 특별소득공제추정(총급여액: number, 공제대상가족수: number, rates: PayrollRateTable): number {
   const 가족수별구간 = [...rates.wageIncomeTax.specialDeductionByDependants].sort(
     (a, b) => b.minDependants - a.minDependants,
   )
   const 가족수구간 = 가족수별구간.find((candidate) => 공제대상가족수 >= candidate.minDependants)
-  const 급여구간 = 가족수구간?.brackets.find((candidate) => candidate.upTo === null || 연간급여 <= candidate.upTo)
+  const 급여구간 = 가족수구간?.brackets.find((candidate) => candidate.upTo === null || 총급여액 <= candidate.upTo)
   if (급여구간 === undefined) return 0
-  let 공제액 = 급여구간.base + applyPpm(연간급여, 급여구간.ratePpm)
+  let 공제액 = 급여구간.base + applyPpm(총급여액, 급여구간.ratePpm)
   for (const adjustment of 급여구간.adjustments) {
-    공제액 += applyPpm(Math.max(0, 연간급여 - adjustment.over), adjustment.ratePpm)
+    공제액 += applyPpm(Math.max(0, 총급여액 - adjustment.over), adjustment.ratePpm)
   }
   return Math.max(0, 공제액)
 }
 
-function 근로소득세액공제(산출세액: number, rates: PayrollRateTable): number {
+function 상한전근로소득세액공제(산출세액: number, rates: PayrollRateTable): number {
   const 세액공제기준 = rates.wageIncomeTax.earnedIncomeCredit
   if (산출세액 <= 세액공제기준.threshold) return applyPpm(산출세액, 세액공제기준.lowRatePpm)
   return 세액공제기준.baseAbove + applyPpm(산출세액 - 세액공제기준.threshold, 세액공제기준.highRatePpm)
 }
 
-function 근로소득세액공제한도(연간급여: number, rates: PayrollRateTable): number {
+function 근로소득세액공제한도(총급여액: number, rates: PayrollRateTable): number {
   const 한도구간 = rates.wageIncomeTax.earnedIncomeCreditLimits.find(
-    (candidate) => candidate.upTo === null || 연간급여 <= candidate.upTo,
+    (candidate) => candidate.upTo === null || 총급여액 <= candidate.upTo,
   )
   if (한도구간 === undefined) return 0
   return Math.max(
     한도구간.floor,
-    한도구간.base - applyPpm(Math.max(0, 연간급여 - 한도구간.over), 한도구간.reductionPpm),
+    한도구간.base - applyPpm(Math.max(0, 총급여액 - 한도구간.over), 한도구간.reductionPpm),
   )
 }

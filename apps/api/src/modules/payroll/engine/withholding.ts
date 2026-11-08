@@ -39,12 +39,12 @@ export function withholdDailyWorker(
   const 세액공제 = applyPpm(산출세액, 일용기준.creditPpm)
   const 결정세액 = truncateTo(산출세액 - 세액공제, rates.wageIncomeTax.taxRoundingUnit)
   const 소액부징수임 = 결정세액 < rates.smallAmountExemption
-  const incomeTax = 소액부징수임 ? 0 : 결정세액
-  return 지방소득세추가(incomeTax, 소액부징수임, rates, [
+  const 소득세 = 소액부징수임 ? 0 : 결정세액
+  return 지방소득세추가(소득세, 소액부징수임, rates, [
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
+      amount: 소득세,
       formula: `(지급액 ${formatWon(payAmount)} − ${formatWon(일용기준.dailyDeduction)} × ${근로일수}일 = ${formatWon(과세표준)}) × ${formatPpm(일용기준.ratePpm)} − 근로소득세액공제 ${formatPpm(일용기준.creditPpm)}${소액부징수임 ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
     },
   ])
@@ -56,14 +56,17 @@ export function withholdDailyWorker(
  * 소득세는 10원 미만 절사하고, 1,000원 미만이면 0입니다(소액부징수).
  */
 export function withholdBusinessIncome(payAmount: number, rates: PayrollRateTable): WithholdingResult {
-  const 산출세액 = truncateTo(applyPpm(payAmount, rates.businessIncome.ratePpm), rates.wageIncomeTax.taxRoundingUnit)
-  const 소액부징수임 = 산출세액 < rates.smallAmountExemption
-  const incomeTax = 소액부징수임 ? 0 : 산출세액
-  return 지방소득세추가(incomeTax, 소액부징수임, rates, [
+  const 원천징수세액 = truncateTo(
+    applyPpm(payAmount, rates.businessIncome.ratePpm),
+    rates.wageIncomeTax.taxRoundingUnit,
+  )
+  const 소액부징수임 = 원천징수세액 < rates.smallAmountExemption
+  const 소득세 = 소액부징수임 ? 0 : 원천징수세액
+  return 지방소득세추가(소득세, 소액부징수임, rates, [
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
+      amount: 소득세,
       formula: `${formatWon(payAmount)} × ${formatPpm(rates.businessIncome.ratePpm)}${소액부징수임 ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)` : ''}`,
     },
   ])
@@ -97,18 +100,18 @@ export function withholdOtherIncome(
   const 기타소득금액 = payAmount - 필요경비
   const 세율ppm = taxRatePpm ?? rates.otherIncome.ratePpm
   const 과세최저한이하인가 = 기타소득금액 <= rates.otherIncome.minimumTaxableIncome
-  const 산출세액 = 과세최저한이하인가
+  const 원천징수세액 = 과세최저한이하인가
     ? 0
     : truncateTo(applyPpm(기타소득금액, 세율ppm), rates.wageIncomeTax.taxRoundingUnit)
-  const 소액부징수임 = 산출세액 < rates.smallAmountExemption
-  const exempt = 과세최저한이하인가 || 소액부징수임
-  const incomeTax = exempt ? 0 : 산출세액
+  const 소액부징수임 = !과세최저한이하인가 && 원천징수세액 < rates.smallAmountExemption
+  const 징수하지않음 = 과세최저한이하인가 || 소액부징수임
+  const 소득세 = 징수하지않음 ? 0 : 원천징수세액
   const 면제문구 = 과세최저한이하인가
     ? ` → 과세최저한(${formatWon(rates.otherIncome.minimumTaxableIncome)}원 이하)`
     : 소액부징수임
       ? ` → 소액부징수(${formatWon(rates.smallAmountExemption)}원 미만)`
       : ''
-  return 지방소득세추가(incomeTax, exempt, rates, [
+  return 지방소득세추가(소득세, 징수하지않음, rates, [
     {
       code: 'NECESSARY_EXPENSE',
       label: '필요경비',
@@ -118,7 +121,7 @@ export function withholdOtherIncome(
     {
       code: 'INCOME_TAX',
       label: '소득세',
-      amount: incomeTax,
+      amount: 소득세,
       formula: `(${formatWon(payAmount)} − ${formatWon(필요경비)}) × ${formatPpm(세율ppm)}${면제문구}`,
     },
   ])
@@ -149,19 +152,19 @@ export function grossUpFromNet(netAmount: number, netOf: (gross: number) => numb
 }
 
 function 지방소득세추가(
-  incomeTax: number,
-  exempt: boolean,
+  소득세: number,
+  징수하지않음: boolean,
   rates: PayrollRateTable,
   trace: TraceEntry[],
 ): WithholdingResult {
-  const localIncomeTax = localIncomeTaxOf(incomeTax, rates)
+  const 지방소득세 = localIncomeTaxOf(소득세, rates)
   trace.push({
     code: 'LOCAL_INCOME_TAX',
     label: '지방소득세',
-    amount: localIncomeTax,
-    formula: `소득세 ${formatWon(incomeTax)} × 10%`,
+    amount: 지방소득세,
+    formula: `소득세 ${formatWon(소득세)} × 10%`,
   })
-  return { incomeTax, localIncomeTax, exempt, trace }
+  return { incomeTax: 소득세, localIncomeTax: 지방소득세, exempt: 징수하지않음, trace }
 }
 
 function splitEvenly(total: number, days: number): number[] {

@@ -49,9 +49,9 @@ export function splitNonTaxable(
   rates: PayrollRateTable,
   context: NonTaxableContext = {},
 ): NonTaxableSplit {
-  const 유형별남은한도 = new Map<NonTaxableCategory, number>()
+  const 유형별남은법정한도 = new Map<NonTaxableCategory, number>()
   const warnings: PayrollWarning[] = []
-  const 자녀수 = context.childcareChildren === undefined ? 1 : 유효자녀수(context.childcareChildren)
+  const 보육대상자녀수 = context.childcareChildren === undefined ? 1 : 유효보육대상자녀수(context.childcareChildren)
   const 자녀당한도항목이있는가 = items.some(
     (item) =>
       item.nonTaxableCategory !== undefined &&
@@ -68,7 +68,7 @@ export function splitNonTaxable(
   if (자녀당한도항목이있는가 && context.childcareChildren !== undefined && context.childcareChildrenStale === true) {
     warnings.push({
       code: 'CHILDCARE_CHILDREN_STALE',
-      message: `The childcare child count (${자녀수}) was set for another tax year; recheck it.`,
+      message: `The childcare child count (${보육대상자녀수}) was set for another tax year; recheck it.`,
     })
   }
   const lines = items.map((item): PaymentLine => {
@@ -93,15 +93,15 @@ export function splitNonTaxable(
         formula: `${formatWon(item.amount)} (과세)`,
       }
     }
-    const 남은법정한도 = 유형별남은한도.get(비과세유형) ?? 법정한도(item, 비과세유형, rates, 자녀수)
+    const 남은법정한도 = 유형별남은법정한도.get(비과세유형) ?? 남은법정한도계산(item, 비과세유형, rates, 보육대상자녀수)
     const 항목한도 = Math.min(남은법정한도, item.companyNonTaxableLimit ?? Number.POSITIVE_INFINITY)
-    const nonTaxableAmount = Math.min(item.amount, 항목한도)
-    유형별남은한도.set(비과세유형, 남은법정한도 - nonTaxableAmount)
-    const taxableAmount = item.amount - nonTaxableAmount
-    if (taxableAmount > 0) {
+    const 비과세금액 = Math.min(item.amount, 항목한도)
+    유형별남은법정한도.set(비과세유형, 남은법정한도 - 비과세금액)
+    const 과세금액 = item.amount - 비과세금액
+    if (과세금액 > 0) {
       warnings.push({
         code: 'NON_TAXABLE_LIMIT_EXCEEDED',
-        message: `${item.name}: ${formatWon(taxableAmount)} won over the non-taxable limit is taxed.`,
+        message: `${item.name}: ${formatWon(과세금액)} won over the non-taxable limit is taxed.`,
       })
     }
     const 한도문구 = Number.isFinite(항목한도) ? `한도 ${formatWon(항목한도)}` : '한도 없음'
@@ -109,9 +109,9 @@ export function splitNonTaxable(
       code: item.code,
       name: item.name,
       amount: item.amount,
-      taxableAmount,
-      nonTaxableAmount,
-      formula: `비과세 ${formatWon(nonTaxableAmount)} (${한도문구}), 과세 ${formatWon(taxableAmount)}`,
+      taxableAmount: 과세금액,
+      nonTaxableAmount: 비과세금액,
+      formula: `비과세 ${formatWon(비과세금액)} (${한도문구}), 과세 ${formatWon(과세금액)}`,
     }
   })
   return { lines, warnings }
@@ -123,16 +123,16 @@ export function statutoryMonthlyLimit(category: NonTaxableCategory, rates: Payro
 }
 
 /** 유형 하나의 남은 법정 한도(직원 한 명의 합계)입니다. 회사 한도는 항목마다 따로 봅니다. */
-function 법정한도(
+function 남은법정한도계산(
   item: PaymentItemInput,
   비과세유형: NonTaxableCategory,
   rates: PayrollRateTable,
-  자녀수: number,
+  보육대상자녀수: number,
 ): number {
   const 법정기준 = rates.nonTaxable[비과세유형]
   const 한도후보: number[] = []
   if (법정기준.monthlyLimit !== null) {
-    한도후보.push(법정기준.perChild === true ? 법정기준.monthlyLimit * 자녀수 : 법정기준.monthlyLimit)
+    한도후보.push(법정기준.perChild === true ? 법정기준.monthlyLimit * 보육대상자녀수 : 법정기준.monthlyLimit)
   }
   if (법정기준.annualLimit !== null) {
     한도후보.push(Math.max(0, 법정기준.annualLimit - (item.annualNonTaxableUsed ?? 0)))
@@ -141,6 +141,6 @@ function 법정한도(
 }
 
 /** 자녀 수를 0 이상 정수로 맞춥니다. 음수·NaN 같은 잘못된 값은 0명입니다. */
-function 유효자녀수(자녀수: number): number {
-  return Number.isInteger(자녀수) && 자녀수 > 0 ? 자녀수 : 0
+function 유효보육대상자녀수(보육대상자녀수: number): number {
+  return Number.isInteger(보육대상자녀수) && 보육대상자녀수 > 0 ? 보육대상자녀수 : 0
 }

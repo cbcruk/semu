@@ -47,9 +47,9 @@ export function calculateSocialInsurance(input: SocialInsuranceInput, rates: Pay
     })
   } else if (국민연금.mode === 'RATE') {
     const 국민연금기준 = rates.nationalPension
-    const 신고소득월액 = 국민연금.baseMonthlyIncome ?? input.insurablePay
+    const 소득월액 = 국민연금.baseMonthlyIncome ?? input.insurablePay
     const 기준소득월액 = truncateTo(
-      Math.min(Math.max(신고소득월액, 국민연금기준.baseMin), 국민연금기준.baseMax),
+      Math.min(Math.max(소득월액, 국민연금기준.baseMin), 국민연금기준.baseMax),
       국민연금기준.baseRoundingUnit,
     )
     근로자부담.nationalPension = truncateTo(

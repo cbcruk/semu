@@ -31,7 +31,7 @@ describe('calculateSeverancePay', () => {
     expect(result).toMatchObject({ usedOrdinaryWage: true, serviceDays: 365, severancePay: 3_000_000 })
   })
 
-  it('계속근로 1년 미만이면 거절합니다', () => {
+  it('계속근로 1년 미만이면 퇴직금이 0원입니다', () => {
     const result = calculateSeverancePay(
       { joinDate: '2025-01-02', lastWorkDate: '2025-12-31', threeMonthWages: 9_000_000 },
       rates,
