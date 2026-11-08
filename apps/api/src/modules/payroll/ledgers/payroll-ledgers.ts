@@ -41,7 +41,7 @@ import {
 } from './ledger-rules.ts'
 import { canEditInput, decideTransition } from './ledger-status.ts'
 import type { LedgerStatus, LedgerTransition } from './ledger-status.types.ts'
-import { payMonthChanges } from './pay-month.ts'
+import { ledgerMonthsTouched, payMonthChanges } from './pay-month.ts'
 import type {
   AddPayrollRow,
   CreatePayrollLedger,
@@ -200,7 +200,10 @@ export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<Ledg
     return yield* respond(actor, ledger)
   })
 
-/** 대장 머리(제목·지급일)를 고칩니다. 지급일을 신고가 끝난 달로 옮기거나 그런 달에서 빼낼 수 없습니다. */
+/**
+ * 대장 머리(제목·지급일)를 고칩니다. 신고 잠금은 변경이 건드리는 지급월({@link ledgerMonthsTouched})을 봅니다.
+ * 신고된 달로 지급일을 옮기거나 신고된 달 안에서 고칠 수 없지만, 마감 전 대장을 신고된 달에서 빼낼 수는 있습니다.
+ */
 export const updateLedger = (
   id: Id<'payrollLedger'>,
   patch: typeof UpdatePayrollLedger.Type,
@@ -208,14 +211,11 @@ export const updateLedger = (
 ): Run<LedgerResponse> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
+    const { ledger, before } = yield* inputEditable(actor, id, expected)
     const now = yield* nowIso
     let next: PayrollLedgerRecord = { ...ledger, ...patch, version: ledger.version + 1, updatedAt: now }
-    if (patch.paymentDate !== undefined && paymentMonthOf(patch.paymentDate) !== paymentMonthOf(ledger.paymentDate)) {
-      const target = paymentMonthOf(patch.paymentDate)
-      if (yield* (yield* WithholdingFilingLock).isFiled(actor.companyId, target)) {
-        return yield* new WithholdingFiled({ paymentMonth: target })
-      }
+    yield* rejectFiledMonths(actor.companyId, ledgerMonthsTouched(ledger, next))
+    if (paymentMonthOf(next.paymentDate) !== paymentMonthOf(ledger.paymentDate)) {
       next = yield* calculateAll(next, now)
     }
     yield* saveWithEvents(actor.companyId, before, next)
@@ -428,17 +428,43 @@ function editable(
   PayrollLedgerRepository | WithholdingFilingLock
 > {
   return Effect.gen(function* () {
+    const found = yield* inputEditable(actor, id, expected)
+    yield* rejectFiledMonths(actor.companyId, [paymentMonthOf(found.ledger.paymentDate)])
+    return found
+  })
+}
+
+/** 행위자가 지금 입력을 고칠 수 있는 대장을 읽습니다. 버전·상태만 보고, 신고 잠금은 부르는 쪽이 건드리는 달로 봅니다. */
+function inputEditable(
+  actor: Actor,
+  id: Id<'payrollLedger'>,
+  expected: number | undefined,
+): Effect.Effect<
+  { ledger: PayrollLedgerRecord; before: ReadonlyArray<PayrollLedgerRecord> },
+  PayrollLedgerNotFound | VersionMismatch | PayrollLedgerReadOnly,
+  PayrollLedgerRepository
+> {
+  return Effect.gen(function* () {
     const before = yield* (yield* PayrollLedgerRepository).list(actor.companyId)
     const ledger = before.find((candidate) => candidate.id === id)
     if (ledger === undefined) return yield* new PayrollLedgerNotFound({})
     yield* checkVersion(ledger.version, expected)
     if (!canEditInput(ledger.status, actor.kind))
       return yield* new PayrollLedgerReadOnly({ ledgerStatus: ledger.status })
-    const paymentMonth = paymentMonthOf(ledger.paymentDate)
-    if (yield* (yield* WithholdingFilingLock).isFiled(actor.companyId, paymentMonth)) {
-      return yield* new WithholdingFiled({ paymentMonth })
-    }
     return { ledger, before }
+  })
+}
+
+/** 지급월 중 원천세가 신고된 첫 달이 있으면 409 `WITHHOLDING_FILED`로 거부합니다. */
+function rejectFiledMonths(
+  companyId: Id<'company'>,
+  paymentMonths: readonly string[],
+): Effect.Effect<void, WithholdingFiled, WithholdingFilingLock> {
+  return Effect.gen(function* () {
+    const lock = yield* WithholdingFilingLock
+    for (const paymentMonth of paymentMonths) {
+      if (yield* lock.isFiled(companyId, paymentMonth)) return yield* new WithholdingFiled({ paymentMonth })
+    }
   })
 }
 

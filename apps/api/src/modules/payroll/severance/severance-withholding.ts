@@ -62,8 +62,8 @@ export function severanceWithholdingMonthsChanged(
  * 옮겨 갈 달이 듭니다. 그래서 신고된 달에는 나중에 완료할 정산이 새로 들어가지 않습니다.
  *
  * 계산됨 정산을 신고된 달에서 빼내거나 지급일을 지우는 것은 막지 않습니다. 합계에 들지 않아 신고와 어긋나지 않고, 막으면
- * 지급일을 정한 뒤 그 달이 신고된 정산이 완료도 이동도 못 하고 갇히기 때문입니다. 급여대장은 미마감 대장도 신고된 달에서
- * 빼낼 수 없는데(대장 편집 전체를 막음), 정산은 이 점이 다릅니다. 완료한 정산을 빼내는 것은 다시 열기라 막힙니다.
+ * 지급일을 정한 뒤 그 달이 신고된 정산이 완료도 이동도 못 하고 갇히기 때문입니다. 마감 전 급여대장도 같은 까닭으로 빼낼 수
+ * 있습니다(`ledgerMonthsTouched`). 완료한 정산을 빼내는 것은 다시 열기라 막힙니다.
  */
 export function severanceMonthsTouched(
   before: SeveranceSettlementRecord | undefined,
