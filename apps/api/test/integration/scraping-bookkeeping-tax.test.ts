@@ -18,10 +18,10 @@ async function get(path: string): Promise<any> {
   return response.json()
 }
 
-describe('Integrations → Bookkeeping → Tax', () => {
+describe('Integrations → Bookkeeping → Tax 연결', () => {
   let before: any
 
-  it('sends a Hometax scrap batch into the bookkeeping evidence ledger', async () => {
+  it('홈택스 수집 묶음을 Bookkeeping의 증빙 원장에 넣습니다', async () => {
     before = await get(`/v1/vat-estimates/current?on=${ON}`)
 
     const accepted = await app.request('POST', '/v1/scrap-requests', {
@@ -42,14 +42,14 @@ describe('Integrations → Bookkeeping → Tax', () => {
     ).toEqual([10_000, 20_000])
   })
 
-  it('feeds the ingested evidence into the VAT estimate', async () => {
+  it('들어온 증빙을 부가세 예상 세액에 반영합니다', async () => {
     const after = await get(`/v1/vat-estimates/current?on=${ON}`)
 
     expect(after.period).toEqual({ start: '2026-10-01', end: '2026-12-31', unit: 'QUARTER' })
     expect(after.outputTax - before.outputTax).toBe(910 + 1_819)
   })
 
-  it('shows the Tax estimate and its rolled-forward due date on the bookkeeping home card', async () => {
+  it('Bookkeeping 홈 카드에 Tax의 예상 세액·과세기간·신고 기한을 그대로 보여 줍니다', async () => {
     const estimate = await get(`/v1/vat-estimates/current?on=${ON}`)
     const home = await get(`/v1/reports/home-summary?date=${ON}`)
 
@@ -62,8 +62,8 @@ describe('Integrations → Bookkeeping → Tax', () => {
   })
 })
 
-describe('Bookkeeping → Integrations', () => {
-  it('checks a new partner against the Integrations business status lookup', async () => {
+describe('Bookkeeping → Integrations 연결', () => {
+  it('새 거래처를 Integrations의 사업자 상태 조회로 확인합니다', async () => {
     const created = await app.request('POST', '/v1/partners', {
       token: owner,
       body: {

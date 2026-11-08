@@ -19,15 +19,15 @@ function request(path: string): Promise<Response> {
   return app.handler(new Request(`http://localhost${path}`))
 }
 
-describe('AppLive', () => {
-  it('serves the health check under /v1', async () => {
+describe('앱 계층', () => {
+  it('/v1 아래에서 상태 확인에 200으로 응답합니다', async () => {
     const response = await request('/v1/health')
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: 'ok' })
   })
 
-  it('renders unknown routes as problem details', async () => {
+  it('없는 경로는 404 문제 상세(RFC 9457)로 응답합니다', async () => {
     const response = await request('/v1/missing')
 
     expect(response.status).toBe(404)
@@ -40,7 +40,7 @@ describe('AppLive', () => {
     })
   })
 
-  it('renders defects as an internal problem without leaking the cause', async () => {
+  it('결함은 원인을 드러내지 않고 500 내부 오류 문제 상세로 응답합니다', async () => {
     const response = await request('/v1/defect')
 
     expect(response.status).toBe(500)

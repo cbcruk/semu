@@ -18,11 +18,11 @@ import { DataKey } from './shared/crypto/data-key.ts'
 
 const REGISTRATION_NUMBER = '900101-1234567'
 
-describe('CiphersLive', () => {
+describe('암호화 계층', () => {
   const run = <A>(program: Effect.Effect<A, never, PersonalDataCipher | AccountNumberCipher | CredentialVault>) =>
     Effect.runSync(program.pipe(Effect.provide(CiphersLive.pipe(Layer.provide(DataKey.layerRandom())))))
 
-  it('round-trips personal data and refuses a tampered value', () => {
+  it('개인정보를 암호화했다가 복호화하면 원래 값이 되고 변조된 값은 거부합니다', () => {
     const { token, plain, hashes } = run(
       Effect.gen(function* () {
         const cipher = yield* PersonalDataCipher
@@ -45,7 +45,7 @@ describe('CiphersLive', () => {
     ).toThrow()
   })
 
-  it('round-trips account numbers and refuses a tampered value', () => {
+  it('계좌번호를 암호화했다가 복호화하면 원래 값이 되고 변조된 값은 거부합니다', () => {
     const { token, plain } = run(
       Effect.map(AccountNumberCipher, (cipher) => {
         const token = cipher.encrypt('partnerAccount', '110123456789')
@@ -63,7 +63,7 @@ describe('CiphersLive', () => {
     ).toThrow()
   })
 
-  it('binds each account number field, so a ciphertext moved to another field does not open', () => {
+  it('계좌번호 필드마다 암호문을 묶어 두므로 다른 필드로 옮긴 암호문은 열리지 않습니다', () => {
     const failures = run(
       Effect.map(AccountNumberCipher, (cipher) => {
         const fields = ['companyAccount', 'partnerAccount', 'giroAccount'] as const
@@ -86,7 +86,7 @@ describe('CiphersLive', () => {
     expect(failures).toEqual(Array(6).fill('DecryptionFailed'))
   })
 
-  it('seals credentials with a key derived from the data key', () => {
+  it('자격 증명을 데이터 키에서 파생한 키로 봉인합니다', () => {
     const opened = run(
       Effect.gen(function* () {
         const vault = yield* CredentialVault
@@ -145,14 +145,14 @@ function storedRows(filename: string): Array<{ table: string; data: string }> {
   }
 }
 
-describe('SqliteLive stores personal data and tokens only as ciphertext or hashes', () => {
+describe('SQLite 저장소는 개인정보와 토큰을 암호문이나 해시로만 저장합니다', () => {
   const opened: Array<{ dispose(): Promise<void> }> = []
   afterEach(async () => {
     for (const app of opened.splice(0)) await app.dispose()
   })
   const tempDatabase = () => join(mkdtempSync(join(tmpdir(), 'semu-sqlite-')), 'semu.sqlite')
 
-  it('keeps a resident registration number saved over HTTP out of the stored row', async () => {
+  it('HTTP로 저장한 개인정보가 저장된 행에 평문으로 남지 않고, 같은 키로 다시 열면 원문을 꺼냅니다(200)', async () => {
     const filename = tempDatabase()
     const key = new Uint8Array(randomBytes(32))
     const app = sqliteApp(filename, key)
@@ -192,7 +192,7 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
     expect(revealed).toMatchObject({ status: 200, body: { registrationNumber: '9001011234567' } })
   })
 
-  it('logs why decryption failed when the database is opened with another key', async () => {
+  it('다른 키로 데이터베이스를 열면 복호화에 실패한 사유를 로그에 남깁니다', async () => {
     const filename = tempDatabase()
     const app = sqliteApp(filename, new Uint8Array(randomBytes(32)))
     opened.push(app)
@@ -225,7 +225,7 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
     expect(logged).not.toContain('1234567')
   })
 
-  it('logs a record decode failure without the stored values in its message', async () => {
+  it('기록 디코딩 실패를 저장된 값이 빠진 메시지로 로그에 남깁니다', async () => {
     const filename = tempDatabase()
     const key = new Uint8Array(randomBytes(32))
     const app = sqliteApp(filename, key)
@@ -256,7 +256,7 @@ describe('SqliteLive stores personal data and tokens only as ciphertext or hashe
     expect(logged).not.toContain('홍길동')
   })
 
-  it('stores access and onboarding tokens only as hashes and expires the onboarding token', async () => {
+  it('접근 토큰과 온보딩 토큰은 해시로만 저장하고, 재시작한 앱은 만료된 온보딩 토큰을 거부합니다(401)', async () => {
     const filename = tempDatabase()
     const key = new Uint8Array(randomBytes(32))
     const app = sqliteApp(filename, key)

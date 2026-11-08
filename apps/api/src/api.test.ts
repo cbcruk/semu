@@ -22,15 +22,15 @@ const CONTEXT_APIS = [
   BookkeepingApi,
 ]
 
-describe('Api', () => {
-  it('keeps every context group, since addHttpApi silently replaces a group with the same name', () => {
+describe('API 정의', () => {
+  it('addHttpApi는 같은 이름의 그룹을 조용히 덮어쓰므로 컨텍스트 그룹이 하나도 빠지지 않았는지 봅니다', () => {
     const names = CONTEXT_APIS.flatMap((api) => Object.keys(api.groups))
 
     expect(names.filter((name, index) => names.indexOf(name) !== index)).toEqual([])
     expect(Object.keys(Api.groups).length).toBe(names.length + 1)
   })
 
-  it('maps each method and path to one endpoint', () => {
+  it('메서드와 경로마다 엔드포인트가 하나뿐입니다', () => {
     const routes = Object.values(Api.groups).flatMap((group) =>
       Object.values(group.endpoints).map((endpoint) => `${endpoint.method} ${endpoint.path}`),
     )

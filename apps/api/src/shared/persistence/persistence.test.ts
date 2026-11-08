@@ -62,8 +62,8 @@ function sqliteWithTransactionHooks() {
   return { hooks, layer }
 }
 
-describe('json codec', () => {
-  it('keeps sets, maps, bigints and drops undefined fields', () => {
+describe('JSON 코덱', () => {
+  it('Set·Map·bigint는 보존하고 undefined 필드는 버립니다', () => {
     const value = { set: new Set([1, 2]), map: new Map([['k', 1]]), big: 10n, gone: undefined, list: [1] }
     expect(decodeRecord(encodeRecord(value))).toEqual({
       set: new Set([1, 2]),
@@ -74,8 +74,8 @@ describe('json codec', () => {
   })
 })
 
-describe('json codec with $-prefixed user keys', () => {
-  it('keeps keys that look like tags as plain data', () => {
+describe('$로 시작하는 사용자 키와 JSON 코덱', () => {
+  it('태그처럼 보이는 키도 일반 데이터로 보존합니다', () => {
     const value = {
       keys: { $bigint: 'not-a-number' },
       other: { $set: ['a'], $$x: 1, plain: 2 },
@@ -85,8 +85,8 @@ describe('json codec with $-prefixed user keys', () => {
   })
 })
 
-describe.each(backends)('tenant table (%s)', (_name, layer) => {
-  it('scopes reads to the company, keeps id order and round-trips records', () =>
+describe.each(backends)('회사별 표 (%s)', (_name, layer) => {
+  it('회사 범위 안에서만 읽고, 식별자 순서를 지키며, 기록을 저장한 그대로 읽어 옵니다', () =>
     run(
       layer,
       Effect.gen(function* () {
@@ -107,10 +107,10 @@ describe.each(backends)('tenant table (%s)', (_name, layer) => {
     ))
 })
 
-describe('sqlite unit of work', () => {
+describe('SQLite 작업 단위', () => {
   const layer = PersistenceSqliteLive(':memory:')
 
-  it('rolls back writes when the effect fails or commitIf is false', () =>
+  it('effect가 실패하거나 commitIf가 false이면 쓰기를 롤백합니다', () =>
     run(
       layer,
       Effect.gen(function* () {
@@ -125,7 +125,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('commits a failing request after keepChanges, but still rolls back defects', () =>
+  it('keepChanges 뒤에는 실패한 요청도 커밋하지만 결함(defect)은 여전히 롤백합니다', () =>
     run(
       layer,
       Effect.gen(function* () {
@@ -153,7 +153,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('delivers outbox events after commit, drops them on rollback and redelivers failures on relay', () =>
+  it('outbox 이벤트를 커밋 뒤에 전달하고, 롤백하면 버리며, 전달에 실패한 이벤트는 릴레이가 다시 전달합니다', () =>
     run(
       layer,
       Effect.gen(function* () {
@@ -191,7 +191,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('records only a defect summary in last_error and keeps relaying past a broken row', () =>
+  it('last_error에는 결함 요약만 기록하고 깨진 행을 지나 릴레이를 이어 갑니다', () =>
     run(
       PersistenceSqliteLive(':memory:'),
       Effect.gen(function* () {
@@ -233,7 +233,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('logs a relay defect as a summary instead of failing', () =>
+  it('릴레이 결함은 실패시키지 않고 요약으로 로그에 남깁니다', () =>
     Effect.runPromise(
       Effect.gen(function* () {
         const logs: string[] = []
@@ -254,7 +254,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('marks an event dead after the attempt limit, stops retrying it, logs it once and keeps delivering others', () =>
+  it('시도 한도에 이른 이벤트는 dead로 표시해 재시도를 멈추고 로그를 한 번 남기며 다른 이벤트는 계속 전달합니다', () =>
     run(
       PersistenceSqliteLive(':memory:'),
       Effect.gen(function* () {
@@ -314,7 +314,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('does not hand over an event that died after the relay read its pending list', () =>
+  it('릴레이가 대기 목록을 읽은 뒤 dead가 된 이벤트는 넘기지 않습니다', () =>
     run(
       PersistenceSqliteLive(':memory:'),
       Effect.gen(function* () {
@@ -358,7 +358,7 @@ describe('sqlite unit of work', () => {
       }),
     ))
 
-  it('does not count a failure on an event that died while the consumer was failing', () => {
+  it('소비자가 실패하는 사이 dead가 된 이벤트에는 시도 횟수를 더하지 않습니다', () => {
     const { hooks, layer } = sqliteWithTransactionHooks()
     return run(
       layer,
@@ -396,7 +396,7 @@ describe('sqlite unit of work', () => {
     )
   })
 
-  it('does not count an attempt when the delivery transaction cannot start', () => {
+  it('전달 트랜잭션을 시작하지 못하면 시도 횟수를 더하지 않습니다', () => {
     const { hooks, layer } = sqliteWithTransactionHooks()
     return run(
       layer,
@@ -457,7 +457,7 @@ describe('sqlite unit of work', () => {
   } as const
 
   it.each(Object.entries(outboxBefore))(
-    'adds the missing retry columns to an outbox table %s and keeps its pending events',
+    '재시도 열이 빠진 outbox 표(%s)에 열을 더하고 대기 중이던 이벤트를 전달합니다',
     (_name, before) =>
       Effect.runPromise(
         Effect.gen(function* () {
@@ -512,7 +512,7 @@ describe('sqlite unit of work', () => {
       ),
   )
 
-  it('does not let the relay deliver an event from a transaction that later rolls back, and delivers once', () =>
+  it('나중에 롤백되는 트랜잭션의 이벤트는 릴레이가 전달하지 않고, 커밋된 이벤트는 한 번만 전달합니다', () =>
     run(
       PersistenceSqliteLive(':memory:'),
       Effect.gen(function* () {
@@ -595,7 +595,7 @@ function startChild(body: string) {
   return { reached, exit, send: (value: number) => child.stdin.write(`${value}\n`) }
 }
 
-describe('sqlite seeds', () => {
+describe('SQLite 시드', () => {
   afterEach(() => {
     for (const child of running) child.kill()
   })
@@ -606,7 +606,7 @@ describe('sqlite seeds', () => {
       .all()
       .map((row) => row['id'])
 
-  it('fails on a duplicate seed ID and leaves the table unseeded and unmarked', () => {
+  it('시드 ID가 중복되면 실패하고 표에 시드 행도 시드 기록도 남기지 않습니다', () => {
     const db = new DatabaseSync(':memory:')
     const duplicated = [...seed, { ...seed[0]!, amount: 9 }]
 
@@ -616,7 +616,7 @@ describe('sqlite seeds', () => {
     expect(db.isTransaction).toBe(false)
   })
 
-  it('lets processes that open one new file together seed each table once without failing', async () => {
+  it('새 파일 하나를 함께 연 프로세스들이 실패 없이 표마다 시드를 한 번만 넣습니다', async () => {
     const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
     const tables = 10
     const rows = 200
@@ -650,7 +650,7 @@ describe('sqlite seeds', () => {
     expect(mode).toBe('wal')
   }, 30_000)
 
-  it('waits for another process seeding the same table and does not seed it again', async () => {
+  it('같은 표에 시드를 넣는 다른 프로세스를 기다리고 다시 넣지 않습니다', async () => {
     const filename = join(mkdtempSync(join(tmpdir(), 'semu-seed-')), 'semu.sqlite')
     // 다른 프로세스가 표를 만들어 두고, 시드와 표시를 넣은 트랜잭션을 커밋하지 않은 채 쥐고 있습니다.
     const holder = startChild(
@@ -679,7 +679,7 @@ describe('sqlite seeds', () => {
     await holder.exit
   }, 30_000)
 
-  it('seeds a table once, so deleted seed rows do not come back on restart', async () => {
+  it('표마다 시드를 한 번만 넣어 지운 시드 행이 재시작 뒤 되살아나지 않습니다', async () => {
     const db = new DatabaseSync(':memory:')
     const table = makeSqliteRecordTable<Row>(db, 'test_seeded', { seed })
     expect(ids(db)).toEqual(['r1', 'r2'])
@@ -696,7 +696,7 @@ describe('sqlite seeds', () => {
     ).toEqual(['seeded:test_seeded'])
   })
 
-  it('does not mark a table without a seed, so a seed added later still arrives', () => {
+  it('시드가 없는 표는 시드 기록을 남기지 않아 나중에 더한 시드가 들어옵니다', () => {
     const db = new DatabaseSync(':memory:')
     makeSqliteRecordTable<Row>(db, 'test_seeded')
     expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'semu_meta'`).get()).toBeUndefined()
@@ -706,7 +706,7 @@ describe('sqlite seeds', () => {
     expect(ids(db)).toEqual(['r1', 'r2'])
   })
 
-  it('marks a table that predates the marker without seeding it, and keeps it unseeded after it empties', () => {
+  it('시드 기록이 생기기 전부터 있던 표는 시드 없이 기록만 남기고, 비워진 뒤에도 시드를 넣지 않습니다', () => {
     const db = new DatabaseSync(':memory:')
     db.exec(`CREATE TABLE test_seeded (id TEXT PRIMARY KEY, company_id TEXT, data TEXT NOT NULL) STRICT`)
     db.prepare(`INSERT INTO test_seeded (id, company_id, data) VALUES ('r9', NULL, ?)`).run(encodeRecord({ id: 'r9' }))
