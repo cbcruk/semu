@@ -59,6 +59,8 @@ export class PersonalDataCipher extends Context.Service<
         accountNumber: dataKey.subkey(PURPOSES.accountNumber),
         earnerRegistrationNumber: dataKey.subkey(PURPOSES.earnerRegistrationNumber),
       }
+      // 중복 판정 HMAC 키입니다. 공유 서비스로 옮기기 전 용도 문자열(`hr/` 앞자리)을 그대로 써야 HR에 이미 저장한
+      // `registrationNumberHash`가 같은 값으로 다시 나옵니다. Payroll 소득자 명부도 이 키를 쓰되 입력에 종류를 붙입니다.
       const hashKey = dataKey.subkey('hr/personal-data/hmac-sha256')
       return PersonalDataCipher.of({
         encrypt: (field, plain) => Effect.sync(() => encryptString(keys[field], PURPOSES[field], plain)),

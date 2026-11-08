@@ -47,12 +47,13 @@ export const getEarner = (id: Id<'earner'>): Run<Response, EarnerNotFound> =>
 export const createEarner = (payload: typeof CreateEarner.Type): Run<Response, EarnerInvalid | EarnerDuplicate> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'earner:create', plans: LEDGER_PLANS, requiresTerms: true })
+    const name = yield* nameOf(payload.name)
     const identity = yield* identityOf(actor, undefined, payload.identityType, payload.registrationNumber)
     const now = yield* nowIso
     const record: EarnerRecord = {
       id: newId('earner'),
       companyId: actor.companyId,
-      name: payload.name.trim(),
+      name,
       ...identity,
       email: payload.email ?? null,
       departmentName: payload.departmentName ?? null,
@@ -74,6 +75,7 @@ export const updateEarner = (
     const actor = yield* authorize({ permission: 'earner:update', plans: LEDGER_PLANS, requiresTerms: true })
     const record = yield* findOrFail(actor, id)
     yield* checkVersion(record.version, expected)
+    const name = patch.name === undefined ? record.name : yield* nameOf(patch.name)
     if (patch.identityType !== undefined && patch.registrationNumber === undefined) {
       return yield* new EarnerInvalid({ violations: [{ field: 'registrationNumber', code: 'REQUIRED' }] })
     }
@@ -84,7 +86,7 @@ export const updateEarner = (
     const next: EarnerRecord = {
       ...record,
       ...identity,
-      name: patch.name?.trim() ?? record.name,
+      name,
       email: patch.email === undefined ? record.email : patch.email,
       departmentName: patch.departmentName === undefined ? record.departmentName : patch.departmentName,
       version: record.version + 1,
@@ -129,6 +131,14 @@ export const revealEarnerRegistrationNumber = (
     return { identityType: record.identityType, registrationNumber }
   })
 
+/** 앞뒤 공백을 뺀 이름입니다. 빈 이름은 422 `EARNER_INVALID`(`name`·`REQUIRED`)입니다. */
+function nameOf(value: string): Effect.Effect<string, EarnerInvalid> {
+  const name = value.trim()
+  return name === ''
+    ? Effect.fail(new EarnerInvalid({ violations: [{ field: 'name', code: 'REQUIRED' }] }))
+    : Effect.succeed(name)
+}
+
 function findOrFail(actor: Actor, id: Id<'earner'>): Effect.Effect<EarnerRecord, EarnerNotFound, EarnerRepository> {
   return Effect.gen(function* () {
     const found = yield* (yield* EarnerRepository).find(actor.companyId, id)
@@ -157,7 +167,8 @@ function identityOf(
       return yield* new EarnerInvalid({ violations: [{ field: 'registrationNumber', code: 'INVALID_FORMAT' }] })
     }
     const cipher = yield* PersonalDataCipher
-    const hash = yield* cipher.hash(normalized)
+    // 종류를 붙여 해시합니다. 여권번호와 등록번호가 같은 문자열이어도 같은 사람으로 보지 않습니다.
+    const hash = yield* cipher.hash(`${identityType}:${normalized}`)
     const others = yield* (yield* EarnerRepository).list(actor.companyId)
     const duplicate = others.find((other) => other.id !== selfId && other.registrationNumberHash === hash)
     if (duplicate !== undefined) return yield* new EarnerDuplicate({ duplicateEarnerId: duplicate.id })

@@ -209,6 +209,25 @@ describe('소득자 명부', () => {
     expect(response.body).toMatchObject({ code: 'ENTITLEMENT_REQUIRED' })
   })
 
+  it('공백뿐인 이름은 올리거나 고칠 때 422입니다', async () => {
+    const created = await create({ name: '   ', identityType: 'PASSPORT', registrationNumber: 'B00000001' })
+    const valid = await create({ name: '공백', identityType: 'PASSPORT', registrationNumber: 'B00000002' })
+    const updated = await app.request('PATCH', `/earners/${valid.body.id}`, { body: { name: ' ' } })
+
+    expect(created.status).toBe(422)
+    expect(created.body).toMatchObject({ code: 'EARNER_INVALID', violations: [{ field: 'name', code: 'REQUIRED' }] })
+    expect(updated.status).toBe(422)
+    expect(updated.body).toMatchObject({ code: 'EARNER_INVALID', violations: [{ field: 'name', code: 'REQUIRED' }] })
+  })
+
+  it('번호 문자열이 같아도 종류가 다르면 다른 소득자로 봅니다', async () => {
+    const resident = await create({ name: '같은번호', identityType: 'RESIDENT', registrationNumber: '7101011234567' })
+    const passport = await create({ name: '같은번호', identityType: 'PASSPORT', registrationNumber: '7101011234567' })
+
+    expect(resident.status).toBe(201)
+    expect(passport.status).toBe(201)
+  })
+
   it('쓰이지 않는 소득자는 지우고, 지운 소득자는 404입니다', async () => {
     const created = await create({ name: '삭제', identityType: 'PASSPORT', registrationNumber: 'D00000001' })
     const removed = await app.request('DELETE', `/earners/${created.body.id}`)

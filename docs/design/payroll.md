@@ -219,9 +219,10 @@ POST   /earners/{earnerId}/registration-number:reveal     X-Access-Reason       
 
 - **원문은 암호화해서만 둡니다.** HR 직원과 같은 공유 서비스 `PersonalDataCipher`(`src/shared/personal-data/`)로 암호화하고, 필드(`earnerRegistrationNumber`)마다 키와 AAD가 달라 HR 주민등록번호 암호문과 서로 열리지 않습니다. 응답·대장 행·로그에는 가린 값만 나갑니다
 - **원문 열람.** `:reveal`은 `X-Access-Reason`을 필수로 받고(없으면 400) HR과 같은 열람 기록 `PersonalDataAccessLog`에 `earner:{earnerId}:registrationNumber`로 남깁니다. 권한은 `earner:reveal-rrn`으로 따로 둡니다
+- **`GET`이 아니라 `POST …:reveal`입니다.** 열람 기록을 쓰는 커맨드라 안전한 조회(`GET`)로 두지 않고, 응답이 캐시·프리페치·로그의 URL로 새지 않게 합니다. HR 직원 원문 열람도 구현은 같은 `POST /employees/{id}/registration-number:reveal`입니다. HR 급여계약 계좌번호만 아직 `GET …/account-number`입니다
 - **번호 검사(순수 규칙 [earner-identity.ts](../../apps/api/src/modules/payroll/earners/earner-identity.ts)).** 주민등록번호·외국인등록번호는 13자리(하이픈 있어도 됨)이고 7번째 자리가 종류와 맞아야 합니다(내국인 1·2·3·4·9·0, 외국인 5·6·7·8). 앞 6자리는 그 세기의 실제 날짜여야 합니다. 끝자리 검증번호는 보지 않습니다. 2020년 10월부터 새로 주는 주민등록번호는 검증 공식을 따르지 않고, HR 직원도 검사하지 않습니다. 여권번호는 영문·숫자 5~20자이고 대문자로 바꿉니다. 틀리면 422 `EARNER_INVALID`(`registrationNumber`·`INVALID_FORMAT`)입니다
 - **종류를 바꾸려면 번호도 함께 줍니다**(없으면 422 `EARNER_INVALID`, `registrationNumber`·`REQUIRED`). 원문을 다시 열지 않고는 새 종류로 검사할 수 없기 때문입니다
-- **중복.** 같은 회사에 같은 번호의 소득자가 있으면 409 `EARNER_DUPLICATE`(`duplicateEarnerId`)입니다. 암호문은 비교할 수 없어 HR과 같은 HMAC 해시로 찾습니다. 다른 회사는 같은 사람을 따로 올립니다
+- **중복.** 같은 회사에 같은 종류·같은 번호의 소득자가 있으면 409 `EARNER_DUPLICATE`(`duplicateEarnerId`)입니다. 암호문은 비교할 수 없어 HR과 같은 HMAC 키로 `종류:번호`를 해시해 찾습니다. 종류를 붙이므로 여권번호가 등록번호와 같은 문자열이어도 겹치지 않습니다. 다른 회사는 같은 사람을 따로 올립니다
 - **삭제.** 대장 행이 가리키는 소득자는 지울 수 없습니다(409 `EARNER_IN_USE`). 행에는 가린 값만 있어 지급명세서에 쓸 원문이 명부에만 있기 때문입니다
 - **명부를 고쳐도 이미 만든 행은 그대로입니다.** 직원 정보와 같이 `:recalculate` 때 다시 복사하고, 마감된 대장은 마감한 그대로입니다
 - 플랜·권한은 대장과 같습니다(`PAYROLL` 또는 `TAXATION`, [접근 요건](#접근-요건))
