@@ -10,8 +10,8 @@ import type {
 /** 감액한 최저임금을 적용할 수 있는 수습 개월 수입니다(최저임금법 제5조 ②: 수습 시작일부터 3개월 이내). */
 export const REDUCED_MINIMUM_WAGE_PROBATION_MONTHS = 3
 
-/** 입력에서 빠진 고정수당을 채우는 값입니다. 끈(`enabled: false`) 고정수당이라는 뜻으로 지은 이름입니다. */
-const 미사용고정수당: FixedAllowanceInput = { enabled: false, hours: 0, amount: 0 }
+/** 입력에서 빠진 고정수당을 채우는 값입니다. 꺼진(`enabled: false`) 고정수당이라는 뜻으로 지은 이름입니다. */
+const 꺼진고정수당: FixedAllowanceInput = { enabled: false, hours: 0, amount: 0 }
 
 /**
  * 급여계약을 검사하고 파생 금액(`docs/reference/rules/payroll-contract-wage.md`)을 계산합니다.
@@ -39,10 +39,10 @@ export function evaluatePayrollContract(
 ): PayrollContractEvaluation {
   const 고정수당입력 = terms.fixedAllowances ?? {}
   const fixedAllowances: Record<FixedAllowanceKind, FixedAllowanceInput> = {
-    overtime: 고정수당입력.overtime ?? 미사용고정수당,
-    night: 고정수당입력.night ?? 미사용고정수당,
-    holiday: 고정수당입력.holiday ?? 미사용고정수당,
-    holidayOvertime: 고정수당입력.holidayOvertime ?? 미사용고정수당,
+    overtime: 고정수당입력.overtime ?? 꺼진고정수당,
+    night: 고정수당입력.night ?? 꺼진고정수당,
+    holiday: 고정수당입력.holiday ?? 꺼진고정수당,
+    holidayOvertime: 고정수당입력.holidayOvertime ?? 꺼진고정수당,
   }
   const 파생금액 = calculateWage({
     wageType: terms.wageType,

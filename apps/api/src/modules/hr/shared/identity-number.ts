@@ -34,8 +34,8 @@ export function normalizeIdentityNumber(value: string, type: IdentityNumberType)
 export function birthDateFromRegistrationNumber(value: string): string | null {
   const digits = value.replace('-', '')
   if (!/^\d{13}$/.test(digits)) return null
-  const 성별자리 = Number(digits[6])
-  const 출생세기 = [1, 2, 5, 6].includes(성별자리) ? 1900 : [3, 4, 7, 8].includes(성별자리) ? 2000 : 1800
+  const 세기자리 = Number(digits[6])
+  const 출생세기 = [1, 2, 5, 6].includes(세기자리) ? 1900 : [3, 4, 7, 8].includes(세기자리) ? 2000 : 1800
   const 생년월일 = `${출생세기 + Number(digits.slice(0, 2))}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`
   return isCalendarDate(생년월일) ? 생년월일 : null
 }

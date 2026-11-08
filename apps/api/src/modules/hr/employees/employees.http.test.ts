@@ -74,7 +74,7 @@ describe('직원 등록(POST /v1/employees)', () => {
 })
 
 describe('직원 커맨드', () => {
-  it('퇴직 처리하고 재직 상태로 거르고 퇴직을 취소합니다', async () => {
+  it('퇴직 처리하고 퇴직 상태로 거르고 퇴직을 취소합니다', async () => {
     const created = await hire()
     const resigned = await app.request('POST', `/employees/${created.body.id}:resign`, {
       body: { leaveDate: '2025-01-31', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },

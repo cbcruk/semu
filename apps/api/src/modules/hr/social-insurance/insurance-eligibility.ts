@@ -87,8 +87,8 @@ export function determineEligibility(
       iais: { ...current.iais },
     },
   }
-  const 가입제외 = (보험: Insurance, 제외사유: InsuranceExclusionReason): void => {
-    result.recommended[보험] = { enrolled: false, exclusionReason: 제외사유 }
+  const 가입제외 = (insurance: Insurance, reason: InsuranceExclusionReason): void => {
+    result.recommended[insurance] = { enrolled: false, exclusionReason: reason }
   }
   if (facts.birthDate !== undefined) {
     const 입사일만나이 = facts.joinDate === undefined ? undefined : ageOn(facts.birthDate, facts.joinDate)
