@@ -45,7 +45,11 @@ function controlledMailer(control: MailerControl) {
   )
 }
 
-/** 명세서 저장소 가짜입니다. `dieOnSave`번째 `save`(켠 뒤부터 셈)가 결함으로 죽습니다. */
+/**
+ * 명세서 저장소 가짜입니다. `dieOnSave`번째 `save`(켠 뒤부터 셈)가 결함으로 죽습니다.
+ *
+ * `test:sqlite`에서도 메모리 표를 씁니다. SQLite의 되돌림과 `keepChanges`는 `dieOnCall`(메일러 결함) 테스트가 봅니다.
+ */
 function controlledRepository(control: { dieOnSave: number | null }) {
   return Layer.effect(
     PayslipRepository,
