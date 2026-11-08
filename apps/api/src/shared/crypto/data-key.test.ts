@@ -140,7 +140,9 @@ describe('키 파일', () => {
     expect(results.filter((result) => result.created)).toHaveLength(1)
     expect(new Set(results.map((result) => result.key)).size).toBe(1)
     expect(readdirSync(join(path, '..'))).toEqual(['semu.key'])
-  })
+    // 노드 프로세스 여섯 개를 띄우는 시간이 대부분입니다. 혼자 돌면 0.5초쯤이지만 전체 테스트와 함께 돌면
+    // 프로세스 시작이 밀려 기본 제한(5초)을 넘길 수 있어, 경쟁 자체가 아닌 시작 비용에 맞춰 제한을 늘립니다 (#42).
+  }, 30_000)
 
   it('그룹이나 다른 사용자가 읽을 수 있는 키 파일은 거부합니다', () => {
     const path = join(tempDir(), 'semu.key')

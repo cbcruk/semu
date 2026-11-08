@@ -7,6 +7,8 @@ import { payrollTestApp, type PayrollTestApp } from '../payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from '../payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayslipMailer } from '../ports/payslip-mailer.ts'
+import { TableFactory } from '../../../shared/persistence/record-table.ts'
+import { PayslipRepository } from './payslip-repository.ts'
 import { PayrollSettingRepository } from '../settings/payroll-setting-repository.ts'
 
 const OTHER_TOKEN = 'other-client-token'
@@ -43,33 +45,37 @@ function controlledMailer(control: MailerControl) {
   )
 }
 
-/** HR 조회 가짜입니다. `dieOnFind`가 참이면 다음 `find` 한 번이 결함으로 죽습니다. */
-function controlledDirectory(control: { dieOnFind: boolean }) {
+/**
+ * 명세서 저장소 가짜입니다. `dieOnSave`번째 `save`(켠 뒤부터 셈)가 결함으로 죽습니다.
+ *
+ * `test:sqlite`에서도 메모리 표를 씁니다. SQLite의 되돌림과 `keepChanges`는 `dieOnCall`(메일러 결함) 테스트가 봅니다.
+ */
+function controlledRepository(control: { dieOnSave: number | null }) {
   return Layer.effect(
-    PayrollEmployeeDirectory,
+    PayslipRepository,
     Effect.map(
       Effect.gen(function* () {
-        return yield* PayrollEmployeeDirectory
+        return yield* PayslipRepository
       }),
       (inner) =>
-        PayrollEmployeeDirectory.of({
+        PayslipRepository.of({
           ...inner,
-          find: (companyId, employeeId, asOf) => {
-            if (!control.dieOnFind) return inner.find(companyId, employeeId, asOf)
-            control.dieOnFind = false
-            return Effect.die(new Error('HR lookup failed'))
+          save: (record) => {
+            if (control.dieOnSave === null) return inner.save(record)
+            control.dieOnSave -= 1
+            if (control.dieOnSave > 0) return inner.save(record)
+            control.dieOnSave = null
+            return Effect.die(new Error('payslip store went away'))
           },
         }),
     ),
-  ).pipe(
-    Layer.provide(PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }])),
-  )
+  ).pipe(Layer.provide(PayslipRepository.layer()), Layer.provide(TableFactory.layerMemory))
 }
 
 interface Fixture {
   app: PayrollTestApp
   mailer: MailerControl
-  directory: { dieOnFind: boolean }
+  repository: { dieOnSave: number | null }
   clock: { ms: number }
   /** 주소가 있는 직원의 명세서입니다. */
   withEmail: string
@@ -86,11 +92,12 @@ afterEach(async () => {
 
 async function setUp(): Promise<Fixture> {
   const mailer: MailerControl = { sent: [], delayMs: 0, ackDelayMs: 0, dieOnCall: null }
-  const directory = { dieOnFind: false }
+  const repository: { dieOnSave: number | null } = { dieOnSave: null }
   const clock = { ms: 0 }
   const app = payrollTestApp(
     [
-      controlledDirectory(directory),
+      PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee() }]),
+      controlledRepository(repository),
       PayrollSettingRepository.layerMemory([{ companyId: TEST_COMPANY_ID, setting: rateBasedSetting() }]),
       controlledMailer(mailer),
       shiftableClock(clock),
@@ -105,7 +112,7 @@ async function setUp(): Promise<Fixture> {
   await app.request('POST', `/payroll-ledgers/${ledgerId}:close`)
   const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)
   const [withEmail, withoutEmail] = list.body.items.map((item: { id: string }) => item.id)
-  fixture = { app, mailer, directory, clock, withEmail, withoutEmail }
+  fixture = { app, mailer, repository, clock, withEmail, withoutEmail }
   return fixture
 }
 
@@ -184,18 +191,19 @@ describe('POST /payslips:send 멱등성', () => {
     expect(detail.body.delivery).toMatchObject({ status: 'SENT', attempts: 1 })
   })
 
-  it('메일을 보낸 뒤 메일 발송 외의 곳에서 실패해도 다시 보내지 않습니다', async () => {
-    const { app, mailer, directory, withEmail, withoutEmail } = await setUp()
-    // 사업소득자(주소 없음)는 HR을 조회하지 않고, 직원은 조회합니다. 첫 건을 보낸 뒤 HR 조회가 죽습니다.
-    directory.dieOnFind = true
+  it('메일 발송 외의 곳에서 실패해도 앞서 기록한 급여명세서는 다시 보내지 않습니다', async () => {
+    const { app, mailer, repository, withEmail, withoutEmail } = await setUp()
+    // 첫 건은 보내고 기록합니다. 둘째 건은 메일을 보낸 뒤 발송 기록 저장이 죽습니다.
+    repository.dieOnSave = 2
 
-    const failed = await send(app, 'k-hr', [withoutEmail, withEmail])
-    const retried = await send(app, 'k-hr', [withoutEmail, withEmail])
+    const failed = await send(app, 'k-store', [withoutEmail, withEmail])
+    const retried = await send(app, 'k-store', [withoutEmail, withEmail])
 
     expect(failed.status).toBe(503)
     expect(failed.body).toMatchObject({ code: 'PAYSLIP_SEND_INTERRUPTED' })
     expect(retried.status).toBe(202)
-    expect(mailer.sent).toEqual([withoutEmail, withEmail])
+    // 기록하지 못한 둘째 건만 다시 보냅니다. 메일 연동에 건별 멱등 키가 생기기 전의 알려진 제약입니다.
+    expect(mailer.sent).toEqual([withoutEmail, withEmail, withEmail])
     const detail = await app.request('GET', `/payslips/${withoutEmail}`)
     expect(detail.body.delivery).toMatchObject({ status: 'FAILED', attempts: 1 })
   })

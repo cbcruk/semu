@@ -5,7 +5,7 @@
  *   `PayrollLedgerSummary`로 지급일 구간의 마감 현황을, `PayrollWithholdingTotals`로 지급월의 소득 종류별 원천세 합계를
  *   읽고, `WithholdingFilingLock` 포트를 구현합니다
  * - Bookkeeping: `PayrollLaborCost`로 월별 인건비를 읽습니다
- * - HR: `PayrollEmployeeDirectory` 포트를 구현합니다
+ * - HR: `PayrollEmployeeDirectory` 포트를 구현하고, `SeveranceSettlementQuery`로 직원의 퇴직금 정산 상태를 묻습니다
  */
 export type {
   PayMonthClosed,
@@ -25,4 +25,6 @@ export {
   type PayrollEmployee,
 } from './ports/payroll-employee-directory.ts'
 export { WithholdingFilingLock } from './ports/withholding-filing-lock.ts'
+export { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
+export type { SeveranceStatus } from './severance/severance-settlement.types.ts'
 export { PayslipMailer, type PayslipMailResult } from './ports/payslip-mailer.ts'

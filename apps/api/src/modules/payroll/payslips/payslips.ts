@@ -15,13 +15,12 @@ import { PayrollLedgerRepository } from '../ledgers/payroll-ledger-repository.ts
 import type { PayrollLedgerRecord, PayrollRowRecord } from '../ledgers/payroll-ledger.types.ts'
 import { LEDGER_PLANS } from '../payroll-access.ts'
 import { PayslipNotFound, PayslipSendInterrupted } from '../payroll-problems.ts'
-import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayslipMailer } from '../ports/payslip-mailer.ts'
 import type { Payslip, PayslipSendJob } from './payslip.ts'
 import { PayslipRepository, payslipSendId, type PayslipRecord, type PayslipSendRecord } from './payslip-repository.ts'
 
 /** 명세서 유스케이스가 쓰는 저장소와 포트입니다. */
-export type PayslipDeps = PayrollLedgerRepository | PayslipRepository | PayrollEmployeeDirectory | PayslipMailer
+export type PayslipDeps = PayrollLedgerRepository | PayslipRepository | PayslipMailer
 
 type PayslipResponse = typeof Payslip.Type
 type JobResponse = typeof PayslipSendJob.Type
@@ -64,8 +63,8 @@ export const getPayslip = (
   })
 
 /**
- * 명세서를 메일로 보냅니다. `Idempotency-Key`가 필수이고 키는 회사·행위자마다 따로입니다. 주소가 없는 소득자는 `NO_EMAIL`로
- * 실패하고 나머지는 보냅니다(`PARTIALLY_SUCCEEDED`).
+ * 명세서를 메일로 보냅니다. `Idempotency-Key`가 필수이고 키는 회사·행위자마다 따로입니다. 받는 주소는 행의 소득자 사본(`earner.email`)이라
+ * 직원이 없는 일용·사업·기타소득자도 받습니다. 사본에 주소가 없으면 `NO_EMAIL`로 실패하고 나머지는 보냅니다(`PARTIALLY_SUCCEEDED`).
  *
  * 같은 키로 24시간 안에 다시 오면:
  * - 본문이 다르면 422 `IDEMPOTENCY_KEY_REUSED`
@@ -144,7 +143,7 @@ type Claim =
  * 예약한 발송 요청을 이어서 보냅니다. `record.items`에 결과가 있는 명세서는 건너뜁니다.
  *
  * 명세서마다 발송 기록과 요청 기록을 함께 저장합니다. 끝나면 `COMPLETED`, 실패하면 결과가 하나라도 있을 때 `INTERRUPTED`로 남기고
- * (없으면 예약을 지웁니다) 실패를 돌려줍니다. 한 건을 처리하다 난 결함(HR 조회·메일 연동·저장)은 503으로 바꿉니다.
+ * (없으면 예약을 지웁니다) 실패를 돌려줍니다. 한 건을 처리하다 난 결함(메일 연동·저장)은 503으로 바꿉니다.
  * 한 건이라도 보내면 `keepChanges`를 불러, 요청이 503이나 중단으로 끝나도 보낸 기록을 커밋합니다.
  */
 function deliver(
@@ -162,21 +161,16 @@ function deliver(
     return yield* Effect.gen(function* () {
       const targets = []
       for (const id of payslipIds) targets.push(yield* findClosed(progress.companyId, id))
-      const directory = yield* PayrollEmployeeDirectory
       const mailer = yield* PayslipMailer
       for (const [index, { ledger, row, record }] of targets.entries()) {
         if (index < progress.items.length) continue
-        // 한 건의 조회·발송·저장 전체를 감쌉니다. 앞 건을 보낸 뒤 어디서든 결함이 나면 그대로 두면 SQLite가 요청 전체를
+        // 한 건의 발송·저장 전체를 감쌉니다. 앞 건을 보낸 뒤 어디서든 결함이 나면 그대로 두면 SQLite가 요청 전체를
         // 되돌려, 같은 키의 재시도가 이미 보낸 명세서를 다시 보냅니다.
         const item = yield* Effect.exit(
           Effect.gen(function* () {
-            const employee =
-              row.employeeId === null
-                ? Option.none()
-                : yield* directory.find(progress.companyId, row.employeeId, ledger.wagePeriod.end)
             const sent = yield* mailer.send({
               payslipId: record.id,
-              to: Option.isSome(employee) ? employee.value.email : null,
+              to: row.earner.email,
               subject: `${ledger.title} 명세서`,
             })
             const attemptedAt = new Date(yield* Clock.currentTimeMillis).toISOString()
@@ -278,6 +272,7 @@ function payslipResponse(ledger: PayrollLedgerRecord, row: PayrollRowRecord, rec
     rowId: row.id,
     employeeId: row.employeeId,
     payeeName: row.payeeName,
+    earner: row.earner,
     incomeType: row.input.incomeType,
     attributionMonth: ledger.attributionMonth,
     paymentDate: ledger.paymentDate,
