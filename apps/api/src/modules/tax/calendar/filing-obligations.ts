@@ -2,6 +2,7 @@ import { addMonths, lastDayOfMonth } from '../../../shared/time/calendar.ts'
 import type { FilingKind, TaxType } from '../tax.types.ts'
 import type { FilingObligation, FilingObligationQuery, TaxCalendarProfile } from './filing-calendar.types.ts'
 import { rollForwardDeadline } from './filing-deadline.ts'
+import { decideVatPreliminaryKind } from './vat-preliminary-notice.ts'
 
 interface ObligationDraft {
   taxType: TaxType
@@ -26,7 +27,7 @@ interface ObligationDraft {
  * - 법인 중간예납: 신설법인의 최초 사업연도, 사업연도 6개월 이하, 직전 사업연도 중소기업으로서 계산액 50만원 미만
  *   (법인세법 제63조 ①. 50만원 기준은 중소기업에만 적용합니다)
  * - 개인 중간예납: 그 해 신규 사업자, 중간예납세액 50만원 미만(소득세법 제65조 ①·제86조)
- * - 부가세 예정고지·예정부과: 징수할 금액 50만원 미만(부가가치세법 제48조 ③·제66조 ①)
+ * - 부가세 예정고지·예정부과: 징수할 금액 50만원 미만 등(부가가치세법 제48조 ③ 단서·제66조 ①)
  *
  * 중간예납기준액이 없는 개인 복식부기의무자가 11월에 중간예납추계액을 신고해야 하는 경우(소득세법 제65조 ⑤)는
  * 고지 건으로 두고 대리인이 바꿉니다. 연말정산은 2월분 원천세(3월 10일)에 들어가므로 따로 만들지 않습니다
@@ -68,11 +69,23 @@ function 기한이월적용(draft: ObligationDraft, 공휴일: ReadonlySet<strin
   }
 }
 
+/**
+ * 일반과세자 부가세입니다. 예정신고기간마다 예정고지인지 예정신고인지 {@link decideVatPreliminaryKind}로 정합니다.
+ * 직전 과세기간 공급가액은 세무 설정의 과세기간별 값(`vatSupplyAmounts`)에서, 예정신고 선택은 그 과세기간의
+ * `vatPreliminaryElections`에서 읽습니다. 예정신고했으면 확정 신고는 남은 3개월, 아니면 과세기간 전체입니다(제49조 ①).
+ */
 function 부가세의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   if (profile.businessType === 'INDIVIDUAL' && profile.vatTaxpayerType === 'SIMPLIFIED')
     return 간이과세자부가세의무(연도, profile.vatSimplifiedInvoiceIssuer === true)
-  const 예정신고대상임 = profile.businessType === 'CORPORATION' && profile.vatPreliminaryMode === 'FILING'
   return ([1, 2] as const).flatMap((반기): ObligationDraft[] => {
+    const 과세기간 = `${연도}-H${반기}`
+    const 직전과세기간 = 반기 === 1 ? `${연도 - 1}-H2` : `${연도}-H1`
+    const 예정신고대상임 =
+      decideVatPreliminaryKind({
+        businessType: profile.businessType,
+        priorPeriodSupplyAmount: profile.vatSupplyAmounts[직전과세기간] ?? null,
+        election: profile.vatPreliminaryElections[과세기간] ?? null,
+      }) === 'PRELIMINARY'
     const 과세기간시작월 = monthOf(연도, 반기 === 1 ? 1 : 7)
     const 예정신고기간종료월 = addMonths(과세기간시작월, 2)
     const 확정신고기간시작월 = 예정신고대상임 ? addMonths(과세기간시작월, 3) : 과세기간시작월
@@ -81,7 +94,7 @@ function 부가세의무(profile: TaxCalendarProfile, 연도: number): Obligatio
       {
         taxType: 'VAT',
         kind: 예정신고대상임 ? 'PRELIMINARY' : 'NOTICE',
-        periodKey: `${연도}-H${반기}`,
+        periodKey: 과세기간,
         periodStart: `${과세기간시작월}-01`,
         periodEnd: lastDayOfMonth(예정신고기간종료월),
         statutoryDue: `${addMonths(예정신고기간종료월, 1)}-25`,
@@ -89,7 +102,7 @@ function 부가세의무(profile: TaxCalendarProfile, 연도: number): Obligatio
       {
         taxType: 'VAT',
         kind: 'FINAL',
-        periodKey: `${연도}-H${반기}`,
+        periodKey: 과세기간,
         periodStart: `${확정신고기간시작월}-01`,
         periodEnd: lastDayOfMonth(과세기간종료월),
         statutoryDue: `${addMonths(과세기간종료월, 1)}-25`,

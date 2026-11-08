@@ -8,12 +8,13 @@ const corporation: TaxCalendarProfile = {
   businessType: 'CORPORATION',
   fiscalYearEndMonth: 12,
   withholdingCycle: 'MONTHLY',
-  vatPreliminaryMode: 'FILING',
   sincereFilingTarget: false,
   vatTaxpayerType: 'GENERAL',
+  vatSupplyAmounts: {},
+  vatPreliminaryElections: {},
 }
 
-const individual: TaxCalendarProfile = { ...corporation, businessType: 'INDIVIDUAL', vatPreliminaryMode: 'NOTICE' }
+const individual: TaxCalendarProfile = { ...corporation, businessType: 'INDIVIDUAL' }
 
 function resolve(profile: TaxCalendarProfile, from: string, to: string) {
   return resolveFilingObligations({ profile, from, to, holidays: new Set() })
