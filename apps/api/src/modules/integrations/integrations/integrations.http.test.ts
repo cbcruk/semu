@@ -212,7 +212,7 @@ describe('공동인증서', () => {
     signPassword: 'sign-1234',
   }
 
-  it('인증서마다 만료일로 파생한 상태와 연동할 수 있는 기관을 함께 보여 주고 서명 비밀번호는 내보내지 않습니다', async () => {
+  it('인증서마다 만료일·삭제 여부로 정한 상태와 연동할 수 있는 기관을 함께 보여 주고 서명 비밀번호는 내보내지 않습니다', async () => {
     const body = await (await app.request('GET', '/v1/certificates', { token })).json()
 
     expect(body.items).toEqual([
