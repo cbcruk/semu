@@ -1,4 +1,4 @@
-import { Layer } from 'effect'
+import { Effect, Layer } from 'effect'
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
@@ -417,5 +417,127 @@ describe('/severance-settlements 원천세 연계 (지급월 신호와 신고 �
     const completed = await linked.request('POST', `/severance-settlements/${FILED_CALCULATED_ID}:complete`)
     expect(completed.status).toBe(200)
     expect(changedMonths()).toEqual(['2027-01'])
+  })
+})
+
+describe('/severance-settlements HR 퇴직일 대조 (목록은 HR에 한 번 묻기)', () => {
+  const MATCHED = 'emp_01JBQ000000000000000000041' as Id<'employee'>
+  const RE_RESIGNED = 'emp_01JBQ000000000000000000042' as Id<'employee'>
+  const CANCELLED = 'emp_01JBQ000000000000000000043' as Id<'employee'>
+  const DELETED = 'emp_01JBQ000000000000000000044' as Id<'employee'>
+  const record = (suffix: string, employeeId: Id<'employee'>): SeveranceSettlementRecord => ({
+    id: `sev_01JBQ0000000000000000000P${suffix}` as Id<'severanceSettlement'>,
+    companyId: TEST_COMPANY_ID,
+    employeeId,
+    employeeName: '김대조',
+    joinDate: '2024-01-01',
+    lastWorkDate: '2026-10-31',
+    status: 'CALCULATED',
+    input: { threeMonthWages: 9_000_000 },
+    result: {
+      eligible: true,
+      serviceDays: 1_035,
+      averageDailyWage: 97_826,
+      usedOrdinaryWage: false,
+      severancePay: 8_321_917,
+      retirementIncomeTax: 79_720,
+      localIncomeTax: 7_970,
+      netPay: 8_234_227,
+      breakdown: [],
+    },
+    rateTable: '2026-01',
+    version: 1,
+    createdAt: '2026-11-01T00:00:00.000Z',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  })
+  const calls = { leaveDatesOf: 0, find: 0 }
+  /** HR 조회 횟수를 세는 명부입니다. */
+  const counting = Layer.effect(
+    PayrollEmployeeDirectory,
+    Effect.gen(function* () {
+      const inner = yield* PayrollEmployeeDirectory
+      return PayrollEmployeeDirectory.of({
+        ...inner,
+        leaveDatesOf: (companyId, employeeIds) =>
+          Effect.sync(() => calls.leaveDatesOf++).pipe(Effect.andThen(inner.leaveDatesOf(companyId, employeeIds))),
+        find: (companyId, employeeId, asOf) =>
+          Effect.sync(() => calls.find++).pipe(Effect.andThen(inner.find(companyId, employeeId, asOf))),
+      })
+    }),
+  ).pipe(
+    Layer.provide(
+      PayrollEmployeeDirectory.layerMemory([
+        { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: MATCHED, leaveDate: '2026-10-31' }) },
+        { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: RE_RESIGNED, leaveDate: '2026-11-30' }) },
+        { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: CANCELLED }) },
+      ]),
+    ),
+  )
+  const checked = payrollTestApp([
+    counting,
+    SeveranceSettlementRepository.layer([
+      record('1', MATCHED),
+      record('2', RE_RESIGNED),
+      record('3', CANCELLED),
+      record('4', DELETED),
+      // 같은 직원의 정산이 둘이어도 한 번에 묻습니다.
+      { ...record('5', MATCHED), status: 'EXCLUDED' },
+    ]).pipe(Layer.provide(TableFactory.layerMemory)),
+  ])
+  afterAll(() => checked.dispose())
+
+  it('직원이 여럿인 목록도 HR에 한 번만 묻고 정산마다 어긋남을 붙입니다', async () => {
+    calls.leaveDatesOf = 0
+    calls.find = 0
+
+    const list = await checked.request('GET', '/severance-settlements')
+
+    expect(list.status).toBe(200)
+    expect(calls).toEqual({ leaveDatesOf: 1, find: 0 })
+    const mismatchOf = Object.fromEntries(
+      list.body.items.map((item: { id: string; retirementMismatch: string | null }) => [
+        item.id.slice(-1),
+        item.retirementMismatch,
+      ]),
+    )
+    expect(mismatchOf).toEqual({
+      '1': null,
+      '2': 'LEAVE_DATE_CHANGED',
+      '3': 'NOT_LEFT',
+      '4': 'EMPLOYEE_NOT_FOUND',
+      '5': null,
+    })
+  })
+
+  it('상세와 완료도 퇴직일만 묻고 어긋나면 완료를 거절합니다', async () => {
+    calls.leaveDatesOf = 0
+    calls.find = 0
+
+    const detail = await checked.request('GET', '/severance-settlements/sev_01JBQ0000000000000000000P2')
+    const completed = await checked.request('POST', '/severance-settlements/sev_01JBQ0000000000000000000P2:complete')
+    const matched = await checked.request('POST', '/severance-settlements/sev_01JBQ0000000000000000000P1:complete')
+
+    expect(detail.body).toMatchObject({
+      retirementMismatch: 'LEAVE_DATE_CHANGED',
+      allowedActions: ['UPDATE', 'EXCLUDE'],
+    })
+    expect(completed.status).toBe(409)
+    expect(completed.body).toMatchObject({
+      code: 'SEVERANCE_RETIREMENT_MISMATCH',
+      reason: 'LEAVE_DATE_CHANGED',
+      lastWorkDate: '2026-10-31',
+      leaveDate: '2026-11-30',
+    })
+    expect(matched.body).toMatchObject({ status: 'COMPLETED', retirementMismatch: null })
+    expect(calls).toEqual({ leaveDatesOf: 3, find: 0 })
+  })
+
+  it('정산이 없으면 HR에 묻지 않습니다', async () => {
+    calls.leaveDatesOf = 0
+
+    const list = await checked.request('GET', '/severance-settlements?paymentMonth=2030-01')
+
+    expect(list.body.items).toEqual([])
+    expect(calls.leaveDatesOf).toBe(0)
   })
 })

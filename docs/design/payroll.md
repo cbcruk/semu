@@ -368,9 +368,9 @@ stateDiagram-v2
   - **Tax의 처리.** Tax는 세 이벤트를 모두 같은 다시 맞춤(`PayrollLedgerSync`)으로 받습니다. 퇴직금만 바뀐 달은 대장 현황이 그대로라 "급여대장 마감" 항목도 그대로입니다(대장이 없는 달이면 `PENDING`으로 남고 제출은 막지 않음, [열린 질문 10](#열린-질문)). A22 줄은 Tax가 신고서 줄을 만들 때 합계 조회로 읽으므로 따로 저장할 것이 없습니다
   - **잠금.** 정산 변경이 건드리는 지급월 중 원천세가 신고된(`WithholdingFilingLock.isFiled`) 달이 있으면 저장하지 않고 409 `WITHHOLDING_FILED`(`paymentMonth`)입니다. 건드리는 달은 합계가 바뀐 달(완료·다시 열기)과, 지급일이 옮겨 갈 달(만들 때 정한 지급일, `PATCH`로 정하거나 옮긴 지급일, 완료 때 채운 마지막 근무일)입니다. 그래서 신고된 달에는 나중에 완료할 정산이 새로 들어가지 않습니다. 계산됨 정산을 신고된 달에서 빼내거나 지급일을 지우는 것과 같은 달 안의 입력 수정은 받습니다(합계와 상관없음, 대장과 다른 점은 [원천세 신고 잠금](#원천세-신고-잠금))
 - **HR 가드.** 직원의 정산 중 하나라도 `COMPLETED`면 HR이 직원 삭제·퇴사 취소·다시 퇴사를 409 `RETIREMENT_COMPLETED`로 막습니다. HR은 `SeveranceSettlementQuery`로 묻습니다([열린 질문 16](#열린-질문))
-- **완료 때 HR 퇴직일 대조(2026-11-08, [열린 질문 16](#열린-질문)).** 계산됨 정산은 HR 가드가 막지 않아, 그 뒤 HR에서 퇴사를 취소하거나 직원을 지우거나 다른 날로 다시 퇴사할 수 있습니다. 그래서 Payroll이 지급을 확정하는 `:complete` 때 `PayrollEmployeeDirectory.find`로 HR 퇴직일을 다시 읽어 정산의 마지막 근무일과 맞춰 봅니다. 판정은 순수 규칙 [severance-retirement.ts](../../apps/api/src/modules/payroll/severance/severance-retirement.ts) `retirementMismatchOf`입니다
+- **완료 때 HR 퇴직일 대조(2026-11-08, [열린 질문 16](#열린-질문)).** 계산됨 정산은 HR 가드가 막지 않아, 그 뒤 HR에서 퇴사를 취소하거나 직원을 지우거나 다른 날로 다시 퇴사할 수 있습니다. 그래서 Payroll이 지급을 확정하는 `:complete` 때 `PayrollEmployeeDirectory.leaveDatesOf`로 HR 퇴직일을 다시 읽어 정산의 마지막 근무일과 맞춰 봅니다. 판정은 순수 규칙 [severance-retirement.ts](../../apps/api/src/modules/payroll/severance/severance-retirement.ts) `retirementMismatchOf`입니다
   - 어긋나면 저장하지 않고 409 `SEVERANCE_RETIREMENT_MISMATCH`(`reason`, `lastWorkDate`, `leaveDate`)입니다. `reason`은 직원이 HR에 없음(`EMPLOYEE_NOT_FOUND`), 퇴직일이 없음(`NOT_LEFT`), 퇴직일이 다름(`LEAVE_DATE_CHANGED`)이고 `leaveDate`는 HR의 지금 퇴직일(없으면 `null`)입니다. 409로 둔 것은 요청 자체는 맞지만 다른 컨텍스트의 지금 상태와 부딪히는 것이라 `WITHHOLDING_FILED`와 같은 성격이어서입니다. 상태 검사(`SEVERANCE_TRANSITION_INVALID`) 뒤, 신고 잠금(`WITHHOLDING_FILED`) 앞에 봅니다
-  - 목록·상세·커맨드 응답에는 같은 판정을 `retirementMismatch`(맞으면 `null`)로 붙입니다. 저장하지 않고 읽을 때마다 HR에 묻습니다(목록은 직원별로 한 번). 어긋난 정산은 `allowedActions`에 `COMPLETE`가 없습니다. 대리인은 이 값으로 낡은 정산을 골라 `:exclude`하고 지금 퇴직일로 새 정산을 만듭니다(같은 마지막 근무일이 아니므로 `SEVERANCE_SETTLEMENT_EXISTS`에 걸리지 않음)
+  - 목록·상세·커맨드 응답에는 같은 판정을 `retirementMismatch`(맞으면 `null`)로 붙입니다. 저장하지 않고 읽을 때마다 HR에 묻습니다. 목록은 정산의 직원 전체를 `leaveDatesOf` 한 번으로 묻고, 이 메서드는 직원 표만 읽어(HR `listLeaveDates`) 휴직·부서·계약·공제·보험을 읽는 `find`보다 가볍습니다(2026-11-08, #70). 어긋난 정산은 `allowedActions`에 `COMPLETE`가 없습니다. 대리인은 이 값으로 낡은 정산을 골라 `:exclude`하고 지금 퇴직일로 새 정산을 만듭니다(같은 마지막 근무일이 아니므로 `SEVERANCE_SETTLEMENT_EXISTS`에 걸리지 않음)
   - 모든 상태에 붙입니다. 제외한 정산도 옛 퇴직일이면 표시되고, 완료한 정산은 HR 가드가 퇴직 변경을 막아 보통 `null`입니다
   - 입사일은 대조하지 않습니다. 계산됨 정산의 `PATCH`(다시 계산)도 막지 않습니다. 입력을 고쳐도 완료할 수 없어서입니다
   - HR이 Payroll 정산에 쓰는 명령(자동 제외 등)은 두지 않습니다
@@ -402,7 +402,7 @@ flowchart LR
 
 | 방향 | 이름 | 형태 |
 |---|---|---|
-| 포트(HR 구현) | `PayrollEmployeeDirectory` | `listWageEarners(companyId, { start, end })`, `find(companyId, employeeId, asOf) → Option`, `employmentTrend(companyId, month) → { employed, joined, left }` |
+| 포트(HR 구현) | `PayrollEmployeeDirectory` | `listWageEarners(companyId, { start, end })`, `find(companyId, employeeId, asOf) → Option`, `leaveDatesOf(companyId, employeeIds) → Map<employeeId, { leaveDate }>`(HR에 없는 직원은 키 없음), `employmentTrend(companyId, month) → { employed, joined, left }` |
 | 포트(Tax 구현) | `WithholdingFilingLock` | `isFiled(companyId, paymentMonth) → boolean`. 급여대장과 퇴직금 정산이 씀 |
 | 포트(메일 구현) | `PayslipMailer` | `send({ payslipId, to, subject }) → { ok: true } \| { ok: false, reason: NO_EMAIL \| REJECTED }` |
 | 포트(아웃박스) | `PayrollEventPublisher` | `publish(event)`. 앱은 [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)의 `PayrollEventsToTax`로 outbox 채널(`payroll_pay_month->tax`)에 씀. `layerMemory`는 Payroll만 시험할 때 쓰는 배열 |

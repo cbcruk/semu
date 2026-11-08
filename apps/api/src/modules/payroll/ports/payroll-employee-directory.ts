@@ -80,6 +80,15 @@ export class PayrollEmployeeDirectory extends Context.Service<
       employeeId: Id<'employee'>,
       asOf: string,
     ): Effect.Effect<Option.Option<PayrollEmployee>>
+    /**
+     * 여러 직원의 지금 퇴직일입니다. 재직 중이면 `leaveDate: null`이고, HR에 없는 직원은 맵에 없습니다.
+     *
+     * 퇴직금 정산의 HR 퇴직일 대조(`retirementMismatch`)에 씁니다. 정산 목록이 직원 수만큼 `find`를 부르지 않게 한 번에 묻습니다.
+     */
+    leaveDatesOf(
+      companyId: Id<'company'>,
+      employeeIds: ReadonlyArray<Id<'employee'>>,
+    ): Effect.Effect<ReadonlyMap<Id<'employee'>, { leaveDate: string | null }>>
     /** 한 달(`YYYY-MM`)의 재직·입사·퇴사 인원입니다. */
     employmentTrend(companyId: Id<'company'>, month: string): Effect.Effect<EmploymentTrend>
   }
@@ -104,6 +113,14 @@ export class PayrollEmployeeDirectory extends Context.Service<
           Effect.succeed(
             Option.fromNullishOr(
               seed.find((entry) => entry.companyId === companyId && entry.employee.id === employeeId)?.employee,
+            ),
+          ),
+        leaveDatesOf: (companyId, employeeIds) =>
+          Effect.succeed(
+            new Map(
+              seed
+                .filter((entry) => entry.companyId === companyId && employeeIds.includes(entry.employee.id))
+                .map((entry) => [entry.employee.id, { leaveDate: entry.employee.leaveDate }] as const),
             ),
           ),
         employmentTrend: (companyId, month) => {

@@ -67,7 +67,7 @@ const PLANS = ['PAYROLL'] as const
  *
  * `paymentMonth`(`YYYY-MM`)를 주면 지급일이 그 달인 정산만 줍니다. 원천세 퇴직소득 그 외(A22)는 `status=COMPLETED`와 함께 읽습니다.
  * 지급일이 없는 정산(계산됨에서 아직 정하지 않았거나 지급일이 생기기 전에 완료한 정산)은 어느 달에도 들지 않습니다.
- * 정산마다 HR 퇴직일과 대조한 `retirementMismatch`를 붙입니다(직원별로 한 번 묻습니다).
+ * 정산마다 HR 퇴직일과 대조한 `retirementMismatch`를 붙입니다(목록 전체를 HR에 한 번 묻습니다).
  */
 export const listSettlements = (filter: {
   readonly status?: SeveranceStatus
@@ -222,7 +222,7 @@ export const transitionSettlement = (
     if (record.status !== rule.from) {
       return yield* new SeveranceTransitionInvalid({ settlementStatus: record.status, action: command })
     }
-    const employee = yield* currentEmployee(record.companyId, record.employeeId)
+    const employee = yield* currentLeaveDate(record.companyId, record.employeeId)
     const mismatch = retirementMismatchOf(record.lastWorkDate, employee)
     if (command === 'COMPLETE' && mismatch !== null) {
       return yield* new SeveranceRetirementMismatch({
@@ -245,35 +245,27 @@ export const transitionSettlement = (
 
 /** 정산 응답입니다. HR 퇴직일을 지금 읽어 `retirementMismatch`를 붙입니다. */
 function respond(record: SeveranceSettlementRecord): Effect.Effect<Response, never, PayrollEmployeeDirectory> {
-  return currentEmployee(record.companyId, record.employeeId).pipe(
+  return currentLeaveDate(record.companyId, record.employeeId).pipe(
     Effect.map((employee) => severanceResponse(record, retirementMismatchOf(record.lastWorkDate, employee))),
   )
 }
 
-/** HR의 지금 직원 정보에서 퇴직일만 꺼냅니다. HR에 없으면 `undefined`입니다. */
-function currentEmployee(
+/** HR의 지금 퇴직일입니다. HR에 없으면 `undefined`입니다. */
+function currentLeaveDate(
   companyId: Id<'company'>,
   employeeId: Id<'employee'>,
 ): Effect.Effect<{ leaveDate: string | null } | undefined, never, PayrollEmployeeDirectory> {
-  return Effect.gen(function* () {
-    const today = companyDate(yield* Clock.currentTimeMillis)
-    const found = yield* (yield* PayrollEmployeeDirectory).find(companyId, employeeId, today)
-    return Option.match(found, { onNone: () => undefined, onSome: (employee) => ({ leaveDate: employee.leaveDate }) })
-  })
+  return currentLeaveDates(companyId, [employeeId]).pipe(Effect.map((leaveDates) => leaveDates.get(employeeId)))
 }
 
-/** 직원별 지금 퇴직일입니다. 같은 직원은 한 번만 묻고, HR에 없는 직원은 맵에 없습니다. */
+/** 직원별 지금 퇴직일입니다. HR에 한 번만 묻고, HR에 없는 직원은 맵에 없습니다. */
 function currentLeaveDates(
   companyId: Id<'company'>,
   employeeIds: ReadonlyArray<Id<'employee'>>,
-): Effect.Effect<Map<Id<'employee'>, { leaveDate: string | null }>, never, PayrollEmployeeDirectory> {
+): Effect.Effect<ReadonlyMap<Id<'employee'>, { leaveDate: string | null }>, never, PayrollEmployeeDirectory> {
   return Effect.gen(function* () {
-    const leaveDates = new Map<Id<'employee'>, { leaveDate: string | null }>()
-    for (const employeeId of new Set(employeeIds)) {
-      const employee = yield* currentEmployee(companyId, employeeId)
-      if (employee !== undefined) leaveDates.set(employeeId, employee)
-    }
-    return leaveDates
+    if (employeeIds.length === 0) return new Map()
+    return yield* (yield* PayrollEmployeeDirectory).leaveDatesOf(companyId, [...new Set(employeeIds)])
   })
 }
 

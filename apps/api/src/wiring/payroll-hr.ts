@@ -43,6 +43,8 @@ export const PAYROLL_DEFAULTS_WITHOUT_HR = {
 /**
  * Payroll의 `PayrollEmployeeDirectory` 포트를 HR의 `HrDirectory`로 구현합니다.
  *
+ * `leaveDatesOf`는 HR `listLeaveDates` 한 번으로 퇴직일만 읽습니다. 계약·공제·보험은 읽지 않습니다.
+ *
  * HR에서 그대로 옮기는 값: 이름, 가린 주민번호, 이메일, 부서 이름, 입사일, 퇴직일(마지막 근무일), 근로소득자(`WAGE`) 여부,
  * 근로계약의 주 소정근로시간에서 구한 월 소정근로시간·1일 주휴시간, 4대보험 자격 판정에서 구한 가입 여부.
  *
@@ -109,6 +111,15 @@ export const PayrollEmployeeDirectoryFromHr: Layer.Layer<PayrollEmployeeDirector
             }),
           ),
         ),
+      leaveDatesOf: (companyId, employeeIds) =>
+        hr
+          .listLeaveDates(companyId, employeeIds)
+          .pipe(
+            Effect.map(
+              (leaveDates) =>
+                new Map([...leaveDates].map(([employeeId, leaveDate]) => [employeeId, { leaveDate }] as const)),
+            ),
+          ),
       employmentTrend: (companyId, month) =>
         hr
           .listEmployeesEmployedBetween(companyId, `${month}-01`, lastDayOfMonth(month), ['WAGE'])
