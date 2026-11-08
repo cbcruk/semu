@@ -90,6 +90,80 @@ describe('신고 건 상세 조회(GET /v1/filings/{filingId})', () => {
   })
 })
 
+describe('원천세 신고서 줄(GET /v1/filings/{filingId}/withholding-lines)', () => {
+  const wage = { headcount: 2, grossPay: 6_400_000, taxablePay: 6_000_000, incomeTax: 120_760, localIncomeTax: 12_070 }
+  const other = { headcount: 1, grossPay: 500_000, taxablePay: 200_000, incomeTax: 40_000, localIncomeTax: 4_000 }
+
+  it('지급월의 소득 종류별 합계를 신고서 소득구분 코드 순서로 보여 줍니다', async () => {
+    app = taxTestApp({
+      filings: [withholding()],
+      payrollLedgers: { '2026-10': { ledgerCount: 2, closedCount: 2 } },
+      withholdingTotals: {
+        '2026-10': [
+          { incomeKind: 'OTHER', ...other },
+          { incomeKind: 'WAGE', ...wage },
+        ],
+      },
+    })
+
+    const response = await app.send(`/filings/${WHT_ID}/withholding-lines`)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      items: [
+        {
+          paymentMonth: '2026-10',
+          ledgerCount: 2,
+          closedCount: 2,
+          lines: [
+            { lineCode: 'A01', subtotalCode: 'A10', incomeKind: 'WAGE', ...wage },
+            { lineCode: 'A42', subtotalCode: 'A40', incomeKind: 'OTHER', ...other },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('반기 신고 건은 기간의 여섯 지급월을 하나씩 보여 줍니다', async () => {
+    app = taxTestApp({
+      filings: [
+        withholding({ kind: 'SEMIANNUAL', periodKey: '2026-H2', periodStart: '2026-07-01', periodEnd: '2026-12-31' }),
+      ],
+      payrollLedgers: { '2026-08': { ledgerCount: 1, closedCount: 0 } },
+    })
+
+    const items = (await (await app.send(`/filings/${WHT_ID}/withholding-lines`)).json()).items
+
+    expect(items.map((item: { paymentMonth: string }) => item.paymentMonth)).toEqual([
+      '2026-07',
+      '2026-08',
+      '2026-09',
+      '2026-10',
+      '2026-11',
+      '2026-12',
+    ])
+    expect(items[1]).toEqual({ paymentMonth: '2026-08', ledgerCount: 1, closedCount: 0, lines: [] })
+  })
+
+  it('원천세가 아닌 신고 건은 줄이 없습니다', async () => {
+    app = taxTestApp({ filings: [vat()], withholdingTotals: { '2026-10': [{ incomeKind: 'WAGE', ...wage }] } })
+
+    const response = await app.send(`/filings/${VAT_ID}/withholding-lines`)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ items: [] })
+  })
+
+  it('세무 플랜이 없으면 403 ENTITLEMENT_REQUIRED입니다', async () => {
+    app = taxTestApp({ filings: [withholding()] })
+
+    const response = await app.send(`/filings/${WHT_ID}/withholding-lines`, { token: 'free' })
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED' })
+  })
+})
+
 describe('자료 제출(POST /v1/filings/{filingId}:submit)', () => {
   it('고객이 답하지 않은 항목이 남았으면 거절하고 그 항목을 알려 줍니다', async () => {
     app = taxTestApp({ filings: [vat()] })

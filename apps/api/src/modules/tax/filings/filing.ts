@@ -166,6 +166,33 @@ export const FilingHistoryEntry = Schema.Struct({
   occurredAt: Schema.String,
 })
 
+/**
+ * 원천징수이행상황신고서(소득세법 시행규칙 별지 제21호서식) 제1쪽의 한 줄입니다. Payroll의 지급월 합계에 소득구분 코드를 붙였습니다.
+ */
+export const WithholdingReturnLine = Schema.Struct({
+  /** 소득구분 코드입니다. `A01` 근로 간이세액, `A03` 일용근로, `A22` 퇴직 그 외, `A25` 사업 매월징수, `A42` 기타 그 외 */
+  lineCode: Schema.Literals(['A01', 'A03', 'A22', 'A25', 'A42']),
+  /** 그 소득의 가감계 코드입니다. `A10` 근로, `A20` 퇴직, `A30` 사업, `A40` 기타 */
+  subtotalCode: Schema.Literals(['A10', 'A20', 'A30', 'A40']),
+  incomeKind: Schema.Literals(['WAGE', 'DAILY', 'BUSINESS', 'OTHER', 'RETIREMENT']),
+  headcount: Schema.Int,
+  /** 총지급액(원)입니다. 비과세를 포함합니다. */
+  grossPay: Schema.Int,
+  taxablePay: Schema.Int,
+  incomeTax: Schema.Int,
+  /** 지방소득세(특별징수)입니다. 이 신고서가 아니라 지방세 신고에 적지만 함께 보여 줍니다. */
+  localIncomeTax: Schema.Int,
+})
+
+/** 신고 기간 안의 지급월 하나의 신고서 줄입니다. `lines`는 마감된 급여대장만 더합니다. */
+export const WithholdingReturnMonth = Schema.Struct({
+  paymentMonth: Schema.String,
+  ledgerCount: Schema.Int,
+  /** 마감된 급여대장 수입니다. `ledgerCount`와 다르면 아직 바뀔 수 있는 합계입니다. */
+  closedCount: Schema.Int,
+  lines: Schema.Array(WithholdingReturnLine),
+})
+
 /** 요청한 ID의 신고 건이 없습니다. 다른 회사의 신고 건도 없는 것으로 봅니다. */
 export class FilingNotFound extends HttpApiError.Problem<FilingNotFound>()(
   'FilingNotFound',

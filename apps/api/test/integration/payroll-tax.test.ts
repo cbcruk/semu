@@ -156,6 +156,33 @@ describe('Payroll → Tax 연결', () => {
     await app.request('POST', `/v1/payroll-ledgers/${ledgerId}:close`, { token: owner })
     expect(await payrollRequirement()).toBe('PROVIDED')
   })
+
+  it('원천세 신고 건은 마감된 급여대장의 원천세 합계를 신고서 A01 줄로 묻습니다', async () => {
+    const rows = await (await app.request('GET', `/v1/payroll-ledgers/${ledgerId}/rows`, { token: owner })).json()
+    const wageRows = rows.items.filter(
+      (row: { incomeType: string; result: unknown }) => row.incomeType.startsWith('WAGE_') && row.result !== null,
+    )
+    const sum = (key: string) =>
+      wageRows.reduce((total: number, row: { result: Record<string, number> }) => total + row.result[key]!, 0)
+
+    const response = await app.request('GET', `/v1/filings/${WITHHOLDING_2026_10}/withholding-lines`, { token: owner })
+
+    expect(response.status).toBe(200)
+    const [october] = (await response.json()).items
+    expect(october).toMatchObject({ paymentMonth: '2026-10', ledgerCount: 1, closedCount: 1 })
+    expect(october.lines).toEqual([
+      {
+        lineCode: 'A01',
+        subtotalCode: 'A10',
+        incomeKind: 'WAGE',
+        headcount: wageRows.length,
+        grossPay: sum('grossPay'),
+        taxablePay: sum('taxablePay'),
+        incomeTax: sum('incomeTax'),
+        localIncomeTax: sum('localIncomeTax'),
+      },
+    ])
+  })
 })
 
 describe('Tax → Payroll 연결', () => {

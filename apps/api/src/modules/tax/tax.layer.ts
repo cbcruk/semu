@@ -20,6 +20,8 @@ import { FilingRepository } from './filings/filing-repository.ts'
 import { Filings } from './filings/filings.ts'
 import { FilingsHttpLive } from './filings/filings.http.ts'
 import { PayrollLedgers } from './filings/payroll-ledgers.ts'
+import type { WithholdingTotal } from './filings/withholding-return.types.ts'
+import { WithholdingTotals } from './filings/withholding-totals.ts'
 import { DEMO_FILINGS, DEMO_HOLIDAYS, DEMO_TAX_PROFILE, DEMO_VAT_EVIDENCE } from './tax-demo.ts'
 import {
   AgencyWorkloadQuery,
@@ -41,8 +43,8 @@ const FilingsLive = Filings.layer.pipe(Layer.provide(ActionCardsLive))
 /**
  * 세무 신고 건·세무 일정·할 일 카드·예상 부가세 컨텍스트의 핸들러 전체입니다.
  *
- * 저장소(`FilingRepository`·`ActionCardRepository`)와 포트(`TaxEvents`·`PayrollLedgers`·`TaxProfiles`·
- * `PublicHolidays`·`VatEvidence`)는 호출하는 쪽이 넣습니다.
+ * 저장소(`FilingRepository`·`ActionCardRepository`)와 포트(`TaxEvents`·`PayrollLedgers`·`WithholdingTotals`·
+ * `TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 호출하는 쪽이 넣습니다.
  */
 export const TaxHttpLive = Layer.mergeAll(
   FilingsHttpLive.pipe(Layer.provide(FilingsLive)),
@@ -134,6 +136,8 @@ export interface TaxMemorySeed {
   profiles?: ReadonlyArray<TaxProfile>
   holidays?: ReadonlyArray<string>
   payrollLedgers?: Readonly<Record<string, PayrollLedgerSummary>>
+  /** 지급월(`YYYY-MM`)별 원천세 합계입니다. */
+  withholdingTotals?: Readonly<Record<string, ReadonlyArray<WithholdingTotal>>>
   vatEvidence?: { sales?: ReadonlyArray<SalesEvidence>; purchases?: ReadonlyArray<PurchaseEvidence> }
   /** 내보낸 이벤트를 쌓을 배열입니다. */
   events?: TaxEvent[]
@@ -146,6 +150,7 @@ export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
     ActionCardRepository.layerMemory(seed.actionCards),
     TaxEvents.layerMemory(seed.events),
     PayrollLedgers.layerMemory(seed.payrollLedgers),
+    WithholdingTotals.layerMemory(seed.withholdingTotals),
     TaxProfiles.layerMemory(seed.profiles),
     PublicHolidays.layerMemory(seed.holidays),
     VatEvidence.layerMemory(seed.vatEvidence),
@@ -155,7 +160,7 @@ export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
 /**
  * 세무 컨텍스트가 소유한 저장소와 이벤트 포트입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다. 데모 회사에 신고 건 두 건이 있습니다.
  *
- * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
+ * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`WithholdingTotals`·`TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
 export const TaxStoreLive = Layer.mergeAll(
   FilingRepository.layer(DEMO_FILINGS),
@@ -172,5 +177,17 @@ export const TaxMemoryLive = taxMemoryLayer({
   profiles: [DEMO_TAX_PROFILE],
   holidays: DEMO_HOLIDAYS,
   payrollLedgers: { '2026-10': { ledgerCount: 1, closedCount: 1 } },
+  withholdingTotals: {
+    '2026-10': [
+      {
+        incomeKind: 'WAGE',
+        headcount: 1,
+        grossPay: 3_200_000,
+        taxablePay: 3_000_000,
+        incomeTax: 60_380,
+        localIncomeTax: 6_030,
+      },
+    ],
+  },
   vatEvidence: DEMO_VAT_EVIDENCE,
 })

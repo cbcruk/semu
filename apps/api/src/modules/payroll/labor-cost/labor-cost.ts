@@ -1,7 +1,7 @@
 import { countsAsCalculated } from '../ledgers/ledger-status.ts'
 import { withholdingKindOf } from '../ledgers/pay-month.ts'
 import type { PayrollLedgerRecord } from '../ledgers/payroll-ledger.types.ts'
-import type { WithholdingIncomeKind } from '../ports/payroll-events.types.ts'
+import type { WithholdingIncomeKind } from '../ledgers/pay-month.types.ts'
 import type { AmountsByKind, LaborCostMonth, LaborCostReport, LaborCostRow } from './labor-cost.types.ts'
 
 const 소득구분키: Record<WithholdingIncomeKind, keyof AmountsByKind> = {

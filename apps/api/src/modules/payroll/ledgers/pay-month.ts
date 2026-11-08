@@ -1,4 +1,4 @@
-import type { WithholdingIncomeKind, WithholdingSummaryLine } from '../ports/payroll-events.types.ts'
+import type { WithholdingIncomeKind, WithholdingSummaryLine } from './pay-month.types.ts'
 import { paymentMonthOf } from './ledger-rules.ts'
 import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
@@ -34,6 +34,21 @@ export function payMonthChanges(
 export function withholdingKindOf(incomeType: string): WithholdingIncomeKind {
   if (incomeType === 'DAILY' || incomeType === 'BUSINESS' || incomeType === 'OTHER') return incomeType
   return 'WAGE'
+}
+
+/**
+ * 지급월(`YYYY-MM`)에 지급일이 있는 **마감된** 대장들의 원천세 집계입니다. Tax의 원천세 신고서 줄이 씁니다.
+ *
+ * 마감 전 대장의 금액은 아직 바뀔 수 있어 넣지 않습니다. 그 달이 모두 마감됐는지는 {@link isPayMonthClosed}로 따로 봅니다.
+ */
+export function withholdingTotalsPaidIn(
+  ledgers: readonly PayrollLedgerRecord[],
+  paymentMonth: string,
+): WithholdingSummaryLine[] {
+  const 마감된지급월대장 = ledgers.filter(
+    (ledger) => ledger.status === 'CLOSED' && paymentMonthOf(ledger.paymentDate) === paymentMonth,
+  )
+  return withholdingSummary(마감된지급월대장)
 }
 
 /**

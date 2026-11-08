@@ -38,6 +38,9 @@ import type { RequirementAnswer, RequirementCode } from './filing-requirements.t
 import { CLIENT_EDITABLE_STATUSES, transitionFiling } from './filing-status.ts'
 import { filingStatusChanged, toFiling, toFilingSummary, transitionFacts } from './filing-view.ts'
 import { PayrollLedgers } from './payroll-ledgers.ts'
+import { monthsBetween, withholdingReturnLines } from './withholding-return.ts'
+import type { WithholdingReturnMonth } from './withholding-return.types.ts'
+import { WithholdingTotals } from './withholding-totals.ts'
 
 /** 커맨드마다 함께 받는 입력입니다. */
 export type FilingCommandInput =
@@ -91,6 +94,15 @@ export class Filings extends Context.Service<
     list(actor: Actor, query: FilingListQuery): Effect.Effect<PageOf<FilingSummary>>
     get(actor: Actor, id: Id<'filing'>): Effect.Effect<Filing, FilingNotFound>
     history(actor: Actor, id: Id<'filing'>): Effect.Effect<ReadonlyArray<FilingHistoryRecord>, FilingNotFound>
+    /**
+     * 원천세 신고 건 기간의 지급월마다 Payroll의 원천세 합계(`WithholdingTotals`)에 신고서 줄 코드를 붙여 돌려줍니다.
+     *
+     * 그 달 급여대장의 마감 현황(`PayrollLedgers`)도 함께 넣습니다. 원천세가 아닌 신고 건은 비어 있습니다.
+     */
+    withholdingLines(
+      actor: Actor,
+      id: Id<'filing'>,
+    ): Effect.Effect<ReadonlyArray<WithholdingReturnMonth>, FilingNotFound>
     /**
      * 커맨드를 적용하고 저장합니다. 저장할 때마다 `version`이 1 오릅니다.
      *
@@ -152,6 +164,7 @@ export class Filings extends Context.Service<
       const cards = yield* ActionCards
       const events = yield* TaxEvents
       const payrollLedgers = yield* PayrollLedgers
+      const withholdingTotals = yield* WithholdingTotals
 
       const find = (actor: Actor, id: Id<'filing'>) =>
         repository
@@ -186,6 +199,22 @@ export class Filings extends Context.Service<
       const history = Effect.fn('Filings.history')(function* (actor: Actor, id: Id<'filing'>) {
         const filing = yield* find(actor, id)
         return filing.history
+      })
+
+      const withholdingLines = Effect.fn('Filings.withholdingLines')(function* (actor: Actor, id: Id<'filing'>) {
+        const filing = yield* find(actor, id)
+        if (filing.taxType !== 'WITHHOLDING_TAX') return []
+        return yield* Effect.forEach(monthsBetween(filing.periodStart, filing.periodEnd), (paymentMonth) =>
+          Effect.gen(function* () {
+            const ledgers = yield* payrollLedgers.summaryFor(
+              actor.companyId,
+              `${paymentMonth}-01`,
+              lastDayOfMonth(paymentMonth),
+            )
+            const totals = yield* withholdingTotals.totalsFor(actor.companyId, paymentMonth)
+            return { paymentMonth, ...ledgers, lines: withholdingReturnLines(totals) }
+          }),
+        )
       })
 
       const apply = Effect.fn('Filings.apply')(function* (
@@ -430,6 +459,7 @@ export class Filings extends Context.Service<
         list,
         get,
         history,
+        withholdingLines,
         apply,
         answerRequirement: answer,
         attachRequirementFile,
