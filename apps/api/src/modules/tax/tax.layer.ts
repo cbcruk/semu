@@ -181,6 +181,7 @@ export const TaxMemoryLive = taxMemoryLayer({
     '2026-10': [
       {
         incomeKind: 'WAGE',
+        otherIncomeCategory: null,
         headcount: 1,
         grossPay: 3_200_000,
         taxablePay: 3_000_000,

@@ -170,11 +170,16 @@ export const FilingHistoryEntry = Schema.Struct({
  * 원천징수이행상황신고서(소득세법 시행규칙 별지 제21호서식) 제1쪽의 한 줄입니다. Payroll의 지급월 합계에 소득구분 코드를 붙였습니다.
  */
 export const WithholdingReturnLine = Schema.Struct({
-  /** 소득구분 코드입니다. `A01` 근로 간이세액, `A03` 일용근로, `A22` 퇴직 그 외, `A25` 사업 매월징수, `A42` 기타 그 외 */
-  lineCode: Schema.Literals(['A01', 'A03', 'A22', 'A25', 'A42']),
+  /**
+   * 소득구분 코드입니다. `A01` 근로 간이세액, `A03` 일용근로, `A22` 퇴직 그 외, `A25` 사업 매월징수, `A59` 기타 인적용역,
+   * `A42` 기타 그 외
+   */
+  lineCode: Schema.Literals(['A01', 'A03', 'A22', 'A25', 'A59', 'A42']),
   /** 그 소득의 가감계 코드입니다. `A10` 근로, `A20` 퇴직, `A30` 사업, `A40` 기타 */
   subtotalCode: Schema.Literals(['A10', 'A20', 'A30', 'A40']),
   incomeKind: Schema.Literals(['WAGE', 'DAILY', 'BUSINESS', 'OTHER', 'RETIREMENT']),
+  /** 기타소득의 구분입니다. `PERSONAL_SERVICE`(소득세법 제21조제1항제19호 인적용역), `GENERAL`. 다른 소득은 `null` */
+  otherIncomeCategory: Schema.NullOr(Schema.Literals(['PERSONAL_SERVICE', 'GENERAL'])),
   headcount: Schema.Int,
   /** 총지급액(원)입니다. 비과세를 포함합니다. */
   grossPay: Schema.Int,

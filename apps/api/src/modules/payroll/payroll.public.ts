@@ -8,7 +8,7 @@
  * - HR: `PayrollEmployeeDirectory` 포트를 구현합니다
  */
 export type { PayMonthClosed, PayMonthReopened, PayrollEvent } from './ports/payroll-events.types.ts'
-export type { WithholdingIncomeKind, WithholdingSummaryLine } from './ledgers/pay-month.types.ts'
+export type { OtherIncomeCategory, WithholdingIncomeKind, WithholdingSummaryLine } from './ledgers/pay-month.types.ts'
 export { PayrollEventPublisher } from './ports/payroll-events.ts'
 export { PayrollLaborCost } from './labor-cost/payroll-labor-cost.ts'
 export { PayrollLedgerSummary, type PayrollLedgerCount } from './ledgers/payroll-ledger-summary.ts'

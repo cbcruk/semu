@@ -6,7 +6,11 @@ import type { FilingKind, FilingStatus, TaxType } from './tax.types.ts'
 export { PayrollLedgers } from './filings/payroll-ledgers.ts'
 export type { PayrollLedgerSummary } from './filings/filing-requirements.types.ts'
 export { WithholdingTotals } from './filings/withholding-totals.ts'
-export type { WithholdingIncomeKind, WithholdingTotal } from './filings/withholding-return.types.ts'
+export type {
+  OtherIncomeCategory,
+  WithholdingIncomeKind,
+  WithholdingTotal,
+} from './filings/withholding-return.types.ts'
 export { PublicHolidays } from './calendar/public-holidays.ts'
 export { TaxProfiles, type TaxProfile } from './calendar/tax-profiles.ts'
 export { VatEvidence } from './vat-estimates/vat-evidence.ts'

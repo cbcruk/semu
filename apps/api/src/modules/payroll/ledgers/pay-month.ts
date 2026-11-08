@@ -1,4 +1,6 @@
-import type { WithholdingIncomeKind, WithholdingSummaryLine } from './pay-month.types.ts'
+import { DEFAULT_OTHER_INCOME_CODE, PERSONAL_SERVICE_OTHER_INCOME_CODES } from '../rate-tables/reference-codes.ts'
+import type { PayrollRowInputValue } from '../rows/payroll-row-input.ts'
+import type { OtherIncomeCategory, WithholdingIncomeKind, WithholdingSummaryLine } from './pay-month.types.ts'
 import { paymentMonthOf } from './ledger-rules.ts'
 import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
 
@@ -52,17 +54,35 @@ export function withholdingTotalsPaidIn(
 }
 
 /**
- * 지급월 대장들의 원천세 집계입니다. 인원은 직원 ID(없으면 이름) 기준으로 중복 없이 셉니다.
- * 행이 없는 구분은 빼고, 구분 순서는 근로·일용·사업·기타입니다.
+ * 기타소득 행의 구분입니다. 지급사유가 소득세법 제21조제1항제19호의 인적용역(`76`·`79`)이면 `PERSONAL_SERVICE`입니다.
+ * 지급사유가 없으면 계산과 같은 기본값(`76`)으로 봅니다. 기타소득이 아닌 행은 `null`입니다.
  */
-export function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): WithholdingSummaryLine[] {
-  const 소득구분순서: WithholdingIncomeKind[] = ['WAGE', 'DAILY', 'BUSINESS', 'OTHER']
-  const 소득구분별합계 = new Map<WithholdingIncomeKind, WithholdingSummaryLine & { people: Set<string> }>()
+export function otherIncomeCategoryOf(input: PayrollRowInputValue): OtherIncomeCategory | null {
+  if (input.incomeType !== 'OTHER') return null
+  const 지급사유코드 = input.otherIncomeCode ?? DEFAULT_OTHER_INCOME_CODE
+  return PERSONAL_SERVICE_OTHER_INCOME_CODES.includes(지급사유코드) ? 'PERSONAL_SERVICE' : 'GENERAL'
+}
+
+/**
+ * 지급월 대장들의 원천세 집계입니다. 인원은 직원 ID(없으면 이름) 기준으로 중복 없이 셉니다.
+ * 기타소득은 인적용역과 그 밖으로 나눕니다. 행이 없는 구분은 빼고, 순서는 근로·일용·사업·기타(인적용역, 그 밖)입니다.
+ */
+function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): WithholdingSummaryLine[] {
+  const 집계순서: ReadonlyArray<[WithholdingIncomeKind, OtherIncomeCategory | null]> = [
+    ['WAGE', null],
+    ['DAILY', null],
+    ['BUSINESS', null],
+    ['OTHER', 'PERSONAL_SERVICE'],
+    ['OTHER', 'GENERAL'],
+  ]
+  const 구분별합계 = new Map<string, WithholdingSummaryLine & { people: Set<string> }>()
   for (const row of ledgers.flatMap((ledger) => ledger.rows)) {
     if (row.result === null) continue
     const 소득구분 = withholdingKindOf(row.input.incomeType)
-    const line = 소득구분별합계.get(소득구분) ?? {
+    const 기타소득구분 = otherIncomeCategoryOf(row.input)
+    const line = 구분별합계.get(`${소득구분}:${기타소득구분}`) ?? {
       incomeKind: 소득구분,
+      otherIncomeCategory: 기타소득구분,
       headcount: 0,
       grossPay: 0,
       taxablePay: 0,
@@ -75,10 +95,10 @@ export function withholdingSummary(ledgers: readonly PayrollLedgerRecord[]): Wit
     line.taxablePay += row.result.taxablePay
     line.incomeTax += row.result.incomeTax
     line.localIncomeTax += row.result.localIncomeTax
-    소득구분별합계.set(소득구분, line)
+    구분별합계.set(`${소득구분}:${기타소득구분}`, line)
   }
-  return 소득구분순서.flatMap((소득구분) => {
-    const line = 소득구분별합계.get(소득구분)
+  return 집계순서.flatMap(([소득구분, 기타소득구분]) => {
+    const line = 구분별합계.get(`${소득구분}:${기타소득구분}`)
     if (line === undefined) return []
     const { people, ...rest } = line
     return [{ ...rest, headcount: people.size }]

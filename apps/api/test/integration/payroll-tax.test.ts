@@ -175,6 +175,7 @@ describe('Payroll → Tax 연결', () => {
         lineCode: 'A01',
         subtotalCode: 'A10',
         incomeKind: 'WAGE',
+        otherIncomeCategory: null,
         headcount: wageRows.length,
         grossPay: sum('grossPay'),
         taxablePay: sum('taxablePay'),

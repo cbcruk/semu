@@ -73,7 +73,7 @@ flowchart TD
   review -.-> file[":file → FILED<br/>filing.status_changed"]
   file -. "이후 대장 커맨드가 조회" .-> lock["WithholdingFilingLock.isFiled<br/>그 지급월 대장 금액 변경 409"]
   file -.-> pay[":pay(대행 가능) → SETTLED"]
-  sync -.-> codes["GET /filings/{id}/withholding-lines<br/>WithholdingTotals 조회 → A01·A03·A25·A42"]
+  sync -.-> codes["GET /filings/{id}/withholding-lines<br/>WithholdingTotals 조회 → A01·A03·A25·A59·A42"]
   pay -.-> stmt["지급명세서·간이지급명세서"]:::todo
   classDef todo stroke-dasharray: 5 5
   classDef open stroke-width: 3px

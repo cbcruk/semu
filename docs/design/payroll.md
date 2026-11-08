@@ -35,6 +35,7 @@
 | 퇴직금 정산 | `SeveranceSettlement` (`sev_`), `status`: `CALCULATED`·`COMPLETED`·`EXCLUDED` |
 | 인건비 내역 | `LaborCostReport` |
 | 원천세 신고 잠금 | `withholdingFiled` |
+| 기타소득 구분 (인적용역 / 그 밖) | `otherIncomeCategory`: `PERSONAL_SERVICE` / `GENERAL` |
 
 ## 계산 엔진
 
@@ -335,12 +336,12 @@ flowchart LR
 | 내보냄(이벤트) | `payroll_pay_month.reopened` | `{ eventId, companyId, paymentMonth, occurredAt }` |
 | 공개 조회 | `PayrollLaborCost.monthly(companyId, year)` | `LaborCostReport` |
 | 공개 조회 | `PayrollLedgerSummary.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
-| 공개 조회 | `PayrollWithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 **마감된** 대장만, 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)별 |
+| 공개 조회 | `PayrollWithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 **마감된** 대장만, 소득 종류(`WAGE`·`DAILY`·`BUSINESS`·`OTHER`)별, 기타소득은 인적용역(`PERSONAL_SERVICE`)·그 밖(`GENERAL`)으로 나눔 |
 
 - `PayrollEmployee`는 `{ id, name, registrationNumberMasked, email, departmentName, joinDate, leaveDate, paymentUnit, basePay, hourlyWage, dailyWage, monthlyStandardHours, dailyRestMinutes, socialInsurance { nationalPension, healthInsurance, employmentInsurance }, incomeTax { dependants, childrenAged8To20, childcareChildren { count, effectiveFrom } | null, withholdingRatePpm, manualAmount }, retirementBenefitType }`입니다. 4대보험 가입 판정(60세, 월 60시간 등)은 HR이 하고 급여는 결과만 받습니다
 - `incomeTax.childcareChildren`은 HR 소득세 공제 설정의 `childcareChildrenCount`(과세기간 개시일 현재 6세 이하 자녀 수, 0–20)와 그 설정의 `effectiveFrom`이고, 값이 없으면 `null`입니다. 행 스냅숏에는 값이 있을 때만 `childcareChildren`·`childcareChildrenEffectiveFrom`으로 들어갑니다. 엔진은 기준표의 보육수당 한도가 자녀 1명당(`perChild`)이면 월 비과세 한도를 20만원 × 이 값으로 잡습니다(소득세법 제12조제3호머목2), 2026. 1. 1. 이후 지급분). 값이 없으면 1명으로 보고 `CHILDCARE_CHILDREN_UNKNOWN`, 설정 연도가 귀속 연도와 다르면 값은 그대로 쓰고 `CHILDCARE_CHILDREN_STALE` 경고를 붙입니다. 법정 한도는 직원 한 명의 그달 유형별 합계이고 회사 한도는 항목마다 봅니다. 근로 행은 직원·귀속월마다 하나라 이 한도가 직원 한 명의 그달 한도입니다([non-taxable-limits](../reference/rules/non-taxable-limits.md#서버-이전-시-주의))
 - **지급월 마감 판정**은 지급일이 그 달인 대장이 하나 이상이고 모두 `CLOSED`일 때 참입니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md)). 마감·해제·생성·삭제·지급일 이동 요청 모두가 변경 전후를 비교해 바뀐 지급월마다 이벤트 하나를 냅니다
-- **원천세 합계는 이벤트가 아니라 조회로 줍니다**(2026-11-08, [열린 질문 15](#열린-질문)). 지급월 마감 이벤트는 "그 지급월이 바뀌었다"만 알리고, Tax가 신고서 줄이 필요할 때 `PayrollWithholdingTotals.totalsFor`로 소득 종류별 합계를 묻습니다. 그래서 outbox 재전달·마감과 해제의 순서와 상관없이 Tax는 언제나 Payroll의 지금 값을 봅니다. 합계는 지급일이 그 달인 **마감된** 대장의 행만 더합니다([pay-month.ts](../../apps/api/src/modules/payroll/ledgers/pay-month.ts) `withholdingTotalsPaidIn`). 급여는 신고서 코드를 모르고, 소득 종류를 원천징수이행상황신고서의 줄 코드(A01·A03·A25·A42)로 바꾸는 것은 Tax입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
+- **원천세 합계는 이벤트가 아니라 조회로 줍니다**(2026-11-08, [열린 질문 15](#열린-질문)). 지급월 마감 이벤트는 "그 지급월이 바뀌었다"만 알리고, Tax가 신고서 줄이 필요할 때 `PayrollWithholdingTotals.totalsFor`로 소득 종류별 합계를 묻습니다. 그래서 outbox 재전달·마감과 해제의 순서와 상관없이 Tax는 언제나 Payroll의 지금 값을 봅니다. 합계는 지급일이 그 달인 **마감된** 대장의 행만 더합니다([pay-month.ts](../../apps/api/src/modules/payroll/ledgers/pay-month.ts) `withholdingTotalsPaidIn`). 기타소득은 지급사유가 소득세법 제21조제1항제19호의 인적용역(`76` 강연료등, `79` 자문료등, [reference-codes.ts](../../apps/api/src/modules/payroll/rate-tables/reference-codes.ts) `PERSONAL_SERVICE_OTHER_INCOME_CODES`)이면 `otherIncomeCategory: PERSONAL_SERVICE`, 그 밖이면 `GENERAL`로 나눠 더합니다. 지급사유가 없는 행은 계산과 같은 기본값 `76`으로 봅니다. 급여는 신고서 코드를 모르고, 소득 종류와 기타소득 구분을 원천징수이행상황신고서의 줄 코드(A01·A03·A25·A59·A42)로 바꾸는 것은 Tax입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
 - Tax는 지급월 변화를 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다. [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)가 `payroll_pay_month.*`를 outbox 채널 `payroll_pay_month->tax`로 받아 `PayrollLedgerChanged { companyId, paymentMonth }`로 바꿔 Tax의 `PayrollLedgerSync`에 넘기고(SQLite는 대장 커맨드가 커밋된 뒤 자기 트랜잭션에서, 실패하면 릴레이가 다시), [tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)가 `PayrollLedgerSummary`·`PayrollWithholdingTotals`로 Tax 포트(`PayrollLedgers`·`WithholdingTotals`)를 구현합니다
 - 다른 컨텍스트는 [payroll.public.ts](../../apps/api/src/modules/payroll/payroll.public.ts)만 가져옵니다. 급여는 HR·Tax 저장소를 읽지 않습니다
 
@@ -576,7 +577,7 @@ flowchart LR
 14. **예술인 고용보험 보수.** 고시 필요경비(재단 안내 25%), 기준보수 하한(80만원), 월평균소득 50만원 미만 적용 제외를 고시 원문으로 확인하면 기준표에 함께 넣습니다. 지금은 지급액 전체에 0.8%를 곱합니다(학습용 가정, [규칙 결정](rule-decisions/payroll.md#business-income-withholding) 2)
 15. **원천세 집계의 소비.** ~~`payroll_pay_month.closed`가 싣는 `withholding[]`을 Tax가 쓸지, 이벤트로 받을지 조회로 받을지, 신고서 코드 표를 어디 둘지~~ **정함(2026-11-08):** Tax가 조회 포트로 받습니다(#44, #48). 한 것:
     - Tax 포트 `WithholdingTotals.totalsFor(companyId, paymentMonth)`를 Payroll 공개 조회 `PayrollWithholdingTotals`로 구현했습니다([tax-payroll.ts](../../apps/api/src/wiring/tax-payroll.ts)). 지급월의 마감된 대장만 더합니다. 이벤트로 받지 않아 outbox 재전달·순서 문제가 없습니다
-    - 소득 종류 → 원천징수이행상황신고서(별지 제21호서식) 소득구분 코드 표는 Tax의 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. `WAGE` A01, `DAILY` A03, `BUSINESS` A25, `OTHER` A42(가감계 A40), `RETIREMENT` A22(표만, 집계는 #49). 기타소득은 서식에서 A40이 가감계이고 대장 행이 적힐 줄은 "그 외" A42라 A42로 정했습니다
+    - 소득 종류 → 원천징수이행상황신고서(별지 제21호서식) 소득구분 코드 표는 Tax의 순수 규칙 모듈 [withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)에 있습니다. `WAGE` A01, `DAILY` A03, `BUSINESS` A25, `OTHER`는 인적용역(`PERSONAL_SERVICE`) A59와 그 외(`GENERAL`) A42(둘 다 가감계 A40), `RETIREMENT` A22(표만, 집계는 #49). 서식에서 A40은 기타소득의 가감계이고, 제21조제1항제19호 인적용역은 2024. 1. 1. 이후 지급분부터 A59 줄입니다. 어떤 지급사유가 인적용역인지는 Payroll 참조 데이터가, 어느 줄에 적을지는 Tax가 정합니다
     - 쓰는 곳은 `GET /filings/{filingId}/withholding-lines` 하나입니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄)). 신고서 초안을 만들거나 저장하지는 않습니다
     - `payroll_pay_month.closed`에서 `withholding[]`을 뺐습니다
 16. **퇴직금 정산 상태를 HR에 알리기.** HR 직원의 `severanceSettlementStatus`는 `IN_PROGRESS`·`COMPLETED`·`EXCLUDED`([retirement.types.ts](../../apps/api/src/modules/hr/retirement/retirement.types.ts))이고 Payroll 정산은 `CALCULATED`·`COMPLETED`·`EXCLUDED`([severance-settlement.types.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.types.ts))입니다. 둘을 잇는 이벤트도 HR이 받는 구독도 없어 HR 필드는 언제나 비어 있고, HR의 409 `RETIREMENT_COMPLETED` 가드(직원 삭제·퇴사 취소·다시 퇴사)는 지금 걸리지 않습니다([hr.md 퇴직](hr.md#퇴직)). 정할 것:

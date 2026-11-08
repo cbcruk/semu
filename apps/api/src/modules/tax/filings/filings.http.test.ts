@@ -91,19 +91,41 @@ describe('신고 건 상세 조회(GET /v1/filings/{filingId})', () => {
 })
 
 describe('원천세 신고서 줄(GET /v1/filings/{filingId}/withholding-lines)', () => {
-  const wage = { headcount: 2, grossPay: 6_400_000, taxablePay: 6_000_000, incomeTax: 120_760, localIncomeTax: 12_070 }
-  const other = { headcount: 1, grossPay: 500_000, taxablePay: 200_000, incomeTax: 40_000, localIncomeTax: 4_000 }
+  const wage = {
+    incomeKind: 'WAGE',
+    otherIncomeCategory: null,
+    headcount: 2,
+    grossPay: 6_400_000,
+    taxablePay: 6_000_000,
+    incomeTax: 120_760,
+    localIncomeTax: 12_070,
+  } as const
+  /** 강연료(지급사유 76)는 소득세법 제21조제1항제19호의 인적용역입니다. */
+  const lectureFee = {
+    incomeKind: 'OTHER',
+    otherIncomeCategory: 'PERSONAL_SERVICE',
+    headcount: 1,
+    grossPay: 500_000,
+    taxablePay: 200_000,
+    incomeTax: 40_000,
+    localIncomeTax: 4_000,
+  } as const
+  /** 상금(지급사유 71)은 인적용역이 아닌 기타소득입니다. */
+  const prize = {
+    incomeKind: 'OTHER',
+    otherIncomeCategory: 'GENERAL',
+    headcount: 1,
+    grossPay: 1_000_000,
+    taxablePay: 200_000,
+    incomeTax: 40_000,
+    localIncomeTax: 4_000,
+  } as const
 
-  it('지급월의 소득 종류별 합계를 신고서 소득구분 코드 순서로 보여 줍니다', async () => {
+  it('지급월의 소득 종류별 합계를 신고서 소득구분 코드와 서식의 줄 순서로 보여 줍니다', async () => {
     app = taxTestApp({
       filings: [withholding()],
       payrollLedgers: { '2026-10': { ledgerCount: 2, closedCount: 2 } },
-      withholdingTotals: {
-        '2026-10': [
-          { incomeKind: 'OTHER', ...other },
-          { incomeKind: 'WAGE', ...wage },
-        ],
-      },
+      withholdingTotals: { '2026-10': [prize, wage, lectureFee] },
     })
 
     const response = await app.send(`/filings/${WHT_ID}/withholding-lines`)
@@ -116,8 +138,9 @@ describe('원천세 신고서 줄(GET /v1/filings/{filingId}/withholding-lines)'
           ledgerCount: 2,
           closedCount: 2,
           lines: [
-            { lineCode: 'A01', subtotalCode: 'A10', incomeKind: 'WAGE', ...wage },
-            { lineCode: 'A42', subtotalCode: 'A40', incomeKind: 'OTHER', ...other },
+            { lineCode: 'A01', subtotalCode: 'A10', ...wage },
+            { lineCode: 'A59', subtotalCode: 'A40', ...lectureFee },
+            { lineCode: 'A42', subtotalCode: 'A40', ...prize },
           ],
         },
       ],
@@ -146,12 +169,24 @@ describe('원천세 신고서 줄(GET /v1/filings/{filingId}/withholding-lines)'
   })
 
   it('원천세가 아닌 신고 건은 줄이 없습니다', async () => {
-    app = taxTestApp({ filings: [vat()], withholdingTotals: { '2026-10': [{ incomeKind: 'WAGE', ...wage }] } })
+    app = taxTestApp({ filings: [vat()], withholdingTotals: { '2026-10': [wage] } })
 
     const response = await app.send(`/filings/${VAT_ID}/withholding-lines`)
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ items: [] })
+  })
+
+  it('다른 회사의 신고 건은 찾을 수 없다고 답합니다(404)', async () => {
+    app = taxTestApp({
+      filings: [withholding({ companyId: 'cmp_01JBQ000000000000000000009' as Id<'company'> })],
+      withholdingTotals: { '2026-10': [wage] },
+    })
+
+    const response = await app.send(`/filings/${WHT_ID}/withholding-lines`)
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'FILING_NOT_FOUND' })
   })
 
   it('세무 플랜이 없으면 403 ENTITLEMENT_REQUIRED입니다', async () => {
