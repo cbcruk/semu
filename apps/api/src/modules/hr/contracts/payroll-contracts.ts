@@ -9,8 +9,8 @@ import { MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE } from '../../payroll/
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
 import { CompanyWorkforceSize } from '../ports/company-workforce-size.ts'
-import { PersonalDataAccessLog } from '../shared/personal-data-access-log.ts'
-import { PersonalDataCipher } from '../shared/personal-data-cipher.ts'
+import { PersonalDataAccessLog } from '../../../shared/personal-data/personal-data-access-log.ts'
+import { PersonalDataCipher } from '../../../shared/personal-data/personal-data-cipher.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { evaluatePayrollContract } from './payroll-contract-evaluation.ts'
 import {

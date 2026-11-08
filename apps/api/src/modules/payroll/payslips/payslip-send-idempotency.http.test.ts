@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { DAY_MS, shiftableClock } from '../../../shared/testing/shiftable-clock.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
-import { payrollTestApp, type PayrollTestApp } from '../payroll-testing.ts'
+import { addEarner, payrollTestApp, type PayrollTestApp } from '../payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from '../payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayslipMailer } from '../ports/payslip-mailer.ts'
@@ -107,7 +107,10 @@ async function setUp(): Promise<Fixture> {
   const created = await app.request('POST', '/payroll-ledgers', { body: { attributionMonth: '2026-03' } })
   const ledgerId = created.body.id
   await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
-    body: { payeeName: '박프리', input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
+    body: {
+      earnerId: await addEarner(app, { name: '박프리' }),
+      input: { incomeType: 'BUSINESS', payAmount: 1_000_000 },
+    },
   })
   await app.request('POST', `/payroll-ledgers/${ledgerId}:close`)
   const list = await app.request('GET', `/payslips?ledgerId=${ledgerId}`)

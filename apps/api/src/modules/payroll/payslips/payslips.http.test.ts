@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { TEST_COMPANY_ID } from '../../identity-access/testing.ts'
-import { payrollTestApp } from '../payroll-testing.ts'
+import { addEarner, payrollTestApp } from '../payroll-testing.ts'
 import { rateBasedSetting, testEmployee } from '../payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayrollSettingRepository } from '../settings/payroll-setting-repository.ts'
@@ -18,14 +18,19 @@ beforeAll(async () => {
   const created = await app.request('POST', '/payroll-ledgers', { body: { attributionMonth: '2026-03' } })
   ledgerId = created.body.id
   await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
-    body: { payeeName: '박프리', input: { incomeType: 'BUSINESS', payAmount: 1_000_000 } },
+    body: {
+      earnerId: await addEarner(app, { name: '박프리' }),
+      input: { incomeType: 'BUSINESS', payAmount: 1_000_000 },
+    },
+  })
+  const lecturerId = await addEarner(app, {
+    name: '이강사',
+    identityType: 'RESIDENT',
+    registrationNumber: '800303-2234567',
+    email: 'lecturer@example.com',
   })
   await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
-    body: {
-      payeeName: '이강사',
-      earner: { email: 'lecturer@example.com', registrationNumberMasked: '800303-2******' },
-      input: { incomeType: 'OTHER', payAmount: 500_000 },
-    },
+    body: { earnerId: lecturerId, input: { incomeType: 'OTHER', payAmount: 500_000 } },
   })
 })
 
@@ -44,7 +49,7 @@ describe('/payslips', () => {
     expect(response.body.items).toHaveLength(3)
     expect(response.body.items[1]).toMatchObject({
       payeeName: '박프리',
-      earner: { email: null, registrationNumberMasked: null, departmentName: null },
+      earner: { email: null, registrationNumberMasked: expect.stringMatching(/^\*{6}\d{3}$/), departmentName: null },
       incomeType: 'BUSINESS',
       grossPay: 1_000_000,
       netPay: 967_000,

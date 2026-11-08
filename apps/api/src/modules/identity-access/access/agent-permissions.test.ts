@@ -71,6 +71,7 @@ describe('세무 대리인의 권한 집합 (D5)', () => {
         "consultation:*",
         "corporate-tax-filing:*",
         "document-form:*",
+        "earner:*",
         "employee:*",
         "esign-request:*",
         "esign-template:*",

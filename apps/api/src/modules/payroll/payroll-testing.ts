@@ -39,6 +39,40 @@ export function payrollTestApp(
   return { request: app.json, dispose: app.dispose }
 }
 
+let earnerSequence = 0
+
+/**
+ * 소득자 명부에 소득자를 올리고 ID를 돌려줍니다. 신원번호를 주지 않으면 겹치지 않는 여권번호를 씁니다.
+ *
+ * @example
+ * ```ts
+ * const earnerId = await addEarner(app, { name: '박프리', email: 'free@example.com' })
+ * ```
+ */
+export async function addEarner(
+  app: PayrollTestApp,
+  body: {
+    name: string
+    identityType?: 'RESIDENT' | 'ALIEN' | 'PASSPORT'
+    registrationNumber?: string
+    email?: string
+    departmentName?: string
+  },
+  token?: string,
+): Promise<string> {
+  earnerSequence += 1
+  const response = await app.request('POST', '/earners', {
+    body: {
+      identityType: 'PASSPORT',
+      registrationNumber: `T${String(earnerSequence).padStart(8, '0')}`,
+      ...body,
+    },
+    ...(token === undefined ? {} : { token }),
+  })
+  if (response.status !== 201) throw new Error(`소득자를 올리지 못했습니다: ${response.status}`)
+  return response.body.id
+}
+
 /**
  * `at`에서 시작해 실제 시간만큼 흐르는 시계입니다. 오늘 날짜에 따라 갈리는 규칙(추가 대장의 원천세 기한 등)을 벽시계와 떼어 놓습니다.
  * 시각이 계속 흐르므로 시각으로 만드는 ID의 순서는 실제와 같습니다. `payrollTestApp`의 `layers`에 넘깁니다.

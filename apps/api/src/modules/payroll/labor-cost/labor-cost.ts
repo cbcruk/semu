@@ -26,7 +26,7 @@ export function laborCostRowsOf(ledgers: readonly PayrollLedgerRecord[], year: n
               {
                 attributionMonth: ledger.attributionMonth,
                 incomeKind: withholdingKindOf(row.input.incomeType),
-                payeeKey: row.employeeId ?? `name:${row.payeeName}`,
+                payeeKey: row.employeeId ?? row.earnerId ?? `name:${row.payeeName}`,
                 grossPay: row.result.grossPay,
                 employerInsurance: row.result.employerInsurance.total,
                 calculatedAt: ledger.calculatedAt,

@@ -50,6 +50,7 @@ export const ID_PREFIXES = {
   documentForm: 'dfm',
   payrollLedger: 'pyl',
   payrollRow: 'pyr',
+  earner: 'ern',
   payslip: 'psl',
   paymentItem: 'pit',
   deductionItem: 'dit',

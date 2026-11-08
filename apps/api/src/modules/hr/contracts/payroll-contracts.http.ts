@@ -4,7 +4,7 @@ import { Api } from '../../../api.ts'
 import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import { authorize } from '../../identity-access/authorization.ts'
 import { hrAccess } from '../shared/hr-access.ts'
-import { decodeHeaderText } from '../shared/hr-schemas.ts'
+import { decodeHeaderText } from '../../../shared/personal-data/access-reason.ts'
 import { PayrollContracts } from './payroll-contracts.ts'
 
 /** 급여계약 핸들러입니다. 계좌번호 원문은 `employee:reveal-account` 권한과 열람 사유가 필요합니다. */

@@ -84,8 +84,9 @@ export class WageIncomeDuplicated extends HttpApiError.Problem<WageIncomeDuplica
 ) {}
 
 /**
- * 행의 소득자 정보가 맞지 않습니다. 근로 행은 직원 ID, 그 밖의 행은 소득자 이름이 필요하고 소득 구분은 바꿀 수 없습니다.
- * 직원이 연결된 행의 소득자 사본(`earner`)은 HR에서 복사하므로 입력할 수 없습니다(`EARNER_FROM_EMPLOYEE`).
+ * 행의 소득자가 맞지 않습니다. 근로 행은 직원(`EMPLOYEE_REQUIRED`), 그 밖의 행은 직원이나 소득자 명부의 소득자 하나
+ * (`PAYEE_REQUIRED`, 둘 다 주면 `PAYEE_AMBIGUOUS`)가 필요합니다. 명부에 없는 소득자는 `EARNER_NOT_FOUND`이고,
+ * 소득 구분은 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`).
  */
 export class PayrollRowPayeeInvalid extends HttpApiError.Problem<PayrollRowPayeeInvalid>()(
   'PayrollRowPayeeInvalid',
@@ -94,11 +95,43 @@ export class PayrollRowPayeeInvalid extends HttpApiError.Problem<PayrollRowPayee
     code: Schema.tag('PAYROLL_ROW_PAYEE_INVALID'),
     reason: Schema.Literals([
       'EMPLOYEE_REQUIRED',
-      'PAYEE_NAME_REQUIRED',
+      'PAYEE_REQUIRED',
+      'PAYEE_AMBIGUOUS',
+      'EARNER_NOT_FOUND',
       'INCOME_TYPE_CHANGED',
-      'EARNER_FROM_EMPLOYEE',
     ]),
   },
+) {}
+
+/** 소득자 명부에 없는 소득자이거나 다른 회사의 것입니다. */
+export class EarnerNotFound extends HttpApiError.Problem<EarnerNotFound>()(
+  'EarnerNotFound',
+  { type: problemType('EARNER_NOT_FOUND'), status: 404, title: 'Earner not found' },
+  { code: Schema.tag('EARNER_NOT_FOUND') },
+) {}
+
+/** 소득자 입력이 규칙에 맞지 않습니다. 신원번호 형식이 틀리면 `registrationNumber`·`INVALID_FORMAT`입니다. */
+export class EarnerInvalid extends HttpApiError.Problem<EarnerInvalid>()(
+  'EarnerInvalid',
+  { type: problemType('EARNER_INVALID'), status: 422, title: 'Earner input violates a rule' },
+  {
+    code: Schema.tag('EARNER_INVALID'),
+    violations: Schema.Array(Schema.Struct({ field: Schema.String, code: Schema.String })),
+  },
+) {}
+
+/** 같은 신원번호의 소득자가 명부에 이미 있습니다. */
+export class EarnerDuplicate extends HttpApiError.Problem<EarnerDuplicate>()(
+  'EarnerDuplicate',
+  { type: problemType('EARNER_DUPLICATE'), status: 409, title: 'Earner with this identity number exists' },
+  { code: Schema.tag('EARNER_DUPLICATE'), duplicateEarnerId: Schema.String },
+) {}
+
+/** 급여대장 행이 가리키는 소득자라 지울 수 없습니다. 지급명세서에 신원번호 원문이 필요하기 때문입니다. */
+export class EarnerInUse extends HttpApiError.Problem<EarnerInUse>()(
+  'EarnerInUse',
+  { type: problemType('EARNER_IN_USE'), status: 409, title: 'Earner is referenced by payroll rows' },
+  { code: Schema.tag('EARNER_IN_USE') },
 ) {}
 
 /** 정기 대장에 추가 대장이 딸려 있어 지울 수 없습니다. */
