@@ -5,6 +5,7 @@
  * - Identity & Access는 {@link CompanyProfiles}를 구현해 사업자번호·대표자 이름을 줍니다
  * - Bookkeeping은 {@link BusinessStatusClient}(사업자 상태조회), {@link HometaxInvoiceClient}(세금계산서 발급),
  *   {@link GiroPaymentClient}(지로 납부)를 `app.ts`의 어댑터로 씁니다
+ * - Identity & Access는 회사 등록 전 폐업 확인에 {@link BusinessStatusClient}를 씁니다(`wiring/identity-access-integrations.ts`)
  */
 export { CompanyProfiles } from './ports/company-profiles.ts'
 export type { CertificateCompany } from './certificates/certificate-eligibility.types.ts'

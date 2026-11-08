@@ -9,6 +9,7 @@ import {
 } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../authentication.ts'
 import {
+  BusinessClosed,
   BusinessNumberInvalid,
   Company,
   CompanyAlreadyRegistered,
@@ -44,6 +45,6 @@ export class CompanyRegistrationsApi extends HttpApiGroup.make('companyRegistrat
     headers: { authorization: Schema.optionalKey(Schema.String) },
     payload: CompanyRegistration,
     success: Company.pipe(HttpApiSchema.status(201)),
-    error: [Unauthenticated, BusinessNumberInvalid, CompanyAlreadyRegistered],
+    error: [Unauthenticated, BusinessNumberInvalid, CompanyAlreadyRegistered, BusinessClosed],
   }),
 ) {}

@@ -98,6 +98,13 @@ export class BusinessNumberInvalid extends HttpApiError.Problem<BusinessNumberIn
   { code: Schema.tag('BUSINESS_NUMBER_INVALID') },
 ) {}
 
+/** 국세청 사업자 상태조회에서 폐업으로 나온 사업자등록번호입니다. 휴업·알 수 없음·조회 실패는 등록을 허용합니다. */
+export class BusinessClosed extends HttpApiError.Problem<BusinessClosed>()(
+  'BusinessClosed',
+  { type: problemType('BUSINESS_CLOSED'), status: 422, title: 'Business is closed' },
+  { code: Schema.tag('BUSINESS_CLOSED') },
+) {}
+
 /** 같은 사업자등록번호로 등록된 회사가 있습니다. */
 export class CompanyAlreadyRegistered extends HttpApiError.Problem<CompanyAlreadyRegistered>()(
   'CompanyAlreadyRegistered',
