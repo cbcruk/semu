@@ -13,6 +13,8 @@ export interface TaxSettingRecord {
   /** 사업연도 종료 월(1–12)입니다. 개인사업자는 12입니다. */
   fiscalYearEndMonth: number
   withholdingCycle: WithholdingCycle
+  /** 반기별 납부를 적용하기 시작하는 반기(`2027-H1`)입니다. 반기 납부면 필수이고 매월 납부면 `null`입니다. */
+  withholdingSemiannualFrom: string | null
   sincereFilingTarget: boolean
   vatTaxpayerType: VatTaxpayerType
   /** 간이과세자가 예정부과기간에 세금계산서를 발급했는지입니다. 간이과세자만 참일 수 있습니다. */
@@ -30,14 +32,16 @@ export interface TaxSettingRecord {
 /** 세무 설정이 규칙에 맞지 않는 이유입니다. 422 `TAX_SETTING_INVALID`의 `reason`입니다. */
 export type TaxSettingInvalidReason =
   | 'FISCAL_YEAR_END_MONTH_OUT_OF_RANGE'
+  | 'SEMIANNUAL_START_REQUIRED'
+  | 'SEMIANNUAL_START_NOT_ALLOWED'
   | 'INDIVIDUAL_FISCAL_YEAR_NOT_CALENDAR'
   | 'CORPORATION_CANNOT_BE_SIMPLIFIED'
   | 'INVOICE_ISSUER_REQUIRES_SIMPLIFIED'
   | 'TAXABLE_CARD_RATIO_OUT_OF_RANGE'
-  | 'VAT_PERIOD_KEY_INVALID'
+  | 'PERIOD_KEY_INVALID'
   | 'VAT_SUPPLY_AMOUNT_INVALID'
 
-/** 규칙 위반 하나입니다. `field`는 위반한 필드이고, 과세기간 키 위반이면 `vatSupplyAmounts.2026-H3`처럼 키를 붙입니다. */
+/** 규칙 위반 하나입니다. `field`는 위반한 필드이고, 과세기간별 값의 키 위반이면 `vatSupplyAmounts.2026-H3`처럼 키를 붙입니다. */
 export interface TaxSettingViolation {
   reason: TaxSettingInvalidReason
   field: string

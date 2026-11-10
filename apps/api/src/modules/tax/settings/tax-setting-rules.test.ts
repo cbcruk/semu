@@ -20,6 +20,35 @@ describe('세무 설정 검증(validateTaxSetting)', () => {
     })
   })
 
+  it('원천세 반기 납부면 적용 시작 반기가 있어야 합니다', () => {
+    expect(validateTaxSetting(setting({ withholdingCycle: 'SEMIANNUAL' }), 'CORPORATION')).toEqual({
+      reason: 'SEMIANNUAL_START_REQUIRED',
+      field: 'withholdingSemiannualFrom',
+    })
+  })
+
+  it('원천세 매월 납부면 적용 시작 반기를 둘 수 없습니다', () => {
+    expect(validateTaxSetting(setting({ withholdingSemiannualFrom: '2027-H1' }), 'CORPORATION')).toEqual({
+      reason: 'SEMIANNUAL_START_NOT_ALLOWED',
+      field: 'withholdingSemiannualFrom',
+    })
+  })
+
+  it('반기 납부 적용 시작은 반기 키여야 합니다', () => {
+    expect(
+      validateTaxSetting(
+        setting({ withholdingCycle: 'SEMIANNUAL', withholdingSemiannualFrom: '2027-01' }),
+        'CORPORATION',
+      ),
+    ).toEqual({ reason: 'PERIOD_KEY_INVALID', field: 'withholdingSemiannualFrom' })
+    expect(
+      validateTaxSetting(
+        setting({ withholdingCycle: 'SEMIANNUAL', withholdingSemiannualFrom: '2027-H2' }),
+        'CORPORATION',
+      ),
+    ).toBeUndefined()
+  })
+
   it('법인은 3월 결산을 둘 수 있습니다', () => {
     expect(validateTaxSetting(setting({ fiscalYearEndMonth: 3 }), 'CORPORATION')).toBeUndefined()
   })
@@ -65,7 +94,7 @@ describe('세무 설정 검증(validateTaxSetting)', () => {
 
   it.each(['2026-H3', '2026-Q1', '26-H1', '2026-h1'])('공급가액의 과세기간 키 %s는 거절합니다', (key) => {
     expect(validateTaxSetting(setting({ vatSupplyAmounts: { [key]: 1 } }), 'CORPORATION')).toEqual({
-      reason: 'VAT_PERIOD_KEY_INVALID',
+      reason: 'PERIOD_KEY_INVALID',
       field: `vatSupplyAmounts.${key}`,
     })
   })
@@ -73,7 +102,7 @@ describe('세무 설정 검증(validateTaxSetting)', () => {
   it('예정신고 선택의 과세기간 키도 같은 형식이어야 합니다', () => {
     expect(
       validateTaxSetting(setting({ vatPreliminaryElections: { '2027-04': 'EARLY_REFUND' } }), 'CORPORATION'),
-    ).toEqual({ reason: 'VAT_PERIOD_KEY_INVALID', field: 'vatPreliminaryElections.2027-04' })
+    ).toEqual({ reason: 'PERIOD_KEY_INVALID', field: 'vatPreliminaryElections.2027-04' })
   })
 
   it.each([-1, 0.5])('공급가액 %s원은 0 이상의 정수가 아니라 거절합니다', (amount) => {

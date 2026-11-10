@@ -102,3 +102,49 @@ describe('간이과세자 부가세', () => {
     expect(flagged).toEqual(general)
   })
 })
+
+describe('원천세 반기 납부 적용 시작', () => {
+  function withholdingKeys(profile: TaxCalendarProfile, from: string, to: string) {
+    return resolve(profile, from, to)
+      .filter((item) => item.taxType === 'WITHHOLDING_TAX')
+      .map((item) => `${item.kind}:${item.periodKey}`)
+  }
+
+  it('적용 시작 반기 앞은 매월, 그 반기부터는 반기로 계산합니다', () => {
+    const profile: TaxCalendarProfile = {
+      ...corporation,
+      withholdingCycle: 'SEMIANNUAL',
+      withholdingSemiannualFrom: '2027-H1',
+    }
+
+    expect(withholdingKeys(profile, '2026-11-01', '2027-07-31')).toEqual([
+      'MONTHLY:2026-10',
+      'MONTHLY:2026-11',
+      'MONTHLY:2026-12',
+      'SEMIANNUAL:2027-H1',
+    ])
+  })
+
+  it('2기부터 적용하면 같은 해 1–6월분은 매월이고 7–12월분은 이듬해 1월 10일에 한 번 냅니다', () => {
+    const profile: TaxCalendarProfile = {
+      ...corporation,
+      withholdingCycle: 'SEMIANNUAL',
+      withholdingSemiannualFrom: '2026-H2',
+    }
+
+    const keys = withholdingKeys(profile, '2026-06-01', '2027-01-31')
+
+    expect(keys).toEqual(['MONTHLY:2026-05', 'MONTHLY:2026-06', 'SEMIANNUAL:2026-H2'])
+    expect(resolve(profile, '2027-01-01', '2027-01-31').find((item) => item.periodKey === '2026-H2')).toMatchObject({
+      periodStart: '2026-07-01',
+      periodEnd: '2026-12-31',
+      statutoryDue: '2027-01-10',
+    })
+  })
+
+  it('매월 납부면 적용 시작 반기를 보지 않습니다', () => {
+    expect(
+      withholdingKeys({ ...corporation, withholdingSemiannualFrom: '2026-H1' }, '2026-07-01', '2026-07-31'),
+    ).toEqual(['MONTHLY:2026-06'])
+  })
+})

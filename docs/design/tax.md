@@ -38,10 +38,11 @@
 | 기한 경과 | `isOverdue` |
 | 오늘의 할 일 카드 | `ActionCard` (`kind`: `SUBMIT_MATERIALS`, `CONFIRM_LEDGER`, `REVIEW_FILING_RESULT`, `PAY_TAX`) |
 | 넘어가기 | `completion: SKIP` → `SKIPPED_OVERDUE`(마감 후) |
-| 세무 설정 | `TaxSetting` (`fiscalYearEndMonth`, `withholdingCycle`, `sincereFilingTarget`, `vatTaxpayerType`, `vatSimplifiedInvoiceIssuer`, `taxableCardRatioPpm`, `vatSupplyAmounts`, `vatPreliminaryElections`) |
+| 세무 설정 | `TaxSetting` (`fiscalYearEndMonth`, `withholdingCycle`, `withholdingSemiannualFrom`, `sincereFilingTarget`, `vatTaxpayerType`, `vatSimplifiedInvoiceIssuer`, `taxableCardRatioPpm`, `vatSupplyAmounts`, `vatPreliminaryElections`) |
 | 세무 프로필 (회사 사실 + 세무 설정) | `TaxProfile` (`companyId`, `businessType`, `plans` + 세무 설정) |
 | 사업연도 종료 월 (결산월) | `fiscalYearEndMonth` (1–12) |
 | 원천세 납부 주기 | `withholdingCycle`: `MONTHLY`(매월), `SEMIANNUAL`(반기별 납부 승인) |
+| 반기 납부 적용 시작 반기 | `withholdingSemiannualFrom` (`2027-H1`, 반기 납부일 때만) |
 | 성실신고확인 대상 | `sincereFilingTarget` |
 | 부가세 과세 유형 | `vatTaxpayerType`: `GENERAL`(일반과세자), `SIMPLIFIED`(간이과세자) |
 | 간이과세자의 세금계산서 발급 | `vatSimplifiedInvoiceIssuer` |
@@ -301,7 +302,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 ```
 GET   /tax-settings    → TaxSetting (ETag)
-PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?, sincereFilingTarget?, vatTaxpayerType?,
+PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?, withholdingSemiannualFrom?, sincereFilingTarget?, vatTaxpayerType?,
                        vatSimplifiedInvoiceIssuer?, taxableCardRatioPpm?, vatSupplyAmounts?, vatPreliminaryElections? }
 ```
 
@@ -310,7 +311,8 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 ```jsonc
 {
   "fiscalYearEndMonth": 12,
-  "withholdingCycle": "MONTHLY",
+  "withholdingCycle": "SEMIANNUAL",
+  "withholdingSemiannualFrom": "2027-H1",
   "sincereFilingTarget": false,
   "vatTaxpayerType": "GENERAL",
   "vatSimplifiedInvoiceIssuer": false,
@@ -322,24 +324,28 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 }
 ```
 
-- 저장한 적 없는 회사는 기본 설정(`version: 0`, `updatedAt: null`)입니다. 12월 결산, 매월 원천세, 성실신고확인 대상 아님, 일반과세자, 카드 매출 전부 과세, 과세기간별 값 없음입니다. 저장소가 생기기 전 모든 회사가 쓰던 값과 같아 저장소를 들여도 일정이 바뀌지 않습니다
+- 저장한 적 없는 회사는 기본 설정(`version: 0`, `updatedAt: null`)입니다. 12월 결산, 매월 원천세(`withholdingSemiannualFrom: null`), 성실신고확인 대상 아님, 일반과세자, 카드 매출 전부 과세, 과세기간별 값 없음입니다. 저장소가 생기기 전 모든 회사가 쓰던 값과 같아 저장소를 들여도 일정이 바뀌지 않습니다
 - `PATCH`는 보낸 필드만 바꿉니다. 과세기간별 값(`vatSupplyAmounts`·`vatPreliminaryElections`)은 맵 전체를 보낸 값으로 바꿉니다. 응답의 `ETag`를 `If-Match`로 보내면 버전을 검사하고, 다르면 412 `VERSION_MISMATCH`입니다
+- **원천세 반기 납부의 적용 시작(2026-11-11 결정).** 반기별 납부는 승인을 받은 반기의 다음 반기부터 적용합니다(소득세법 제128조 ②, 시행령 제186조). 그래서 `withholdingCycle: SEMIANNUAL`에는 적용 시작 반기 `withholdingSemiannualFrom`(`YYYY-H1`·`YYYY-H2`)을 함께 넣고, 의무 계산은 그 반기 앞은 매월, 그 반기부터는 반기로 합니다([filing-obligations.ts](../../apps/api/src/modules/tax/calendar/filing-obligations.ts)). 매월로 되돌릴 때는 `withholdingSemiannualFrom: null`을 같이 보냅니다
+- `vatSupplyAmounts`·`vatPreliminaryElections`는 일반과세자의 예정고지 판정(부가가치세법 제48조 ③·④) 입력입니다. 간이과세자는 과세기간이 1년이고(제5조 ① 1호) 예정부과로 판정하므로 이 값을 쓰지 않습니다. 남아 있어도 거절하지 않고 무시합니다
 - 고친 결과 전체를 회사의 사업자 형태로 검증하고([tax-setting-rules.ts](../../apps/api/src/modules/tax/settings/tax-setting-rules.ts)), 어긋나면 422 `TAX_SETTING_INVALID`(`reason`, `field`)입니다. 정수가 아닌 값처럼 스키마를 어기면 400 `VALIDATION_FAILED`입니다
 
 | `reason` | 언제 | 근거 |
 |---|---|---|
 | `FISCAL_YEAR_END_MONTH_OUT_OF_RANGE` | 결산월이 1–12 밖 | |
+| `SEMIANNUAL_START_REQUIRED` | 원천세 반기 납부인데 `withholdingSemiannualFrom`이 없음 | 승인받은 반기의 다음 반기부터 적용(소득세법 제128조 ②, 시행령 제186조) |
+| `SEMIANNUAL_START_NOT_ALLOWED` | 매월 납부인데 `withholdingSemiannualFrom`이 있음 | |
 | `INDIVIDUAL_FISCAL_YEAR_NOT_CALENDAR` | 개인사업자의 결산월이 12가 아님 | 소득세 과세기간은 1월 1일–12월 31일(소득세법 제5조 ①) |
 | `CORPORATION_CANNOT_BE_SIMPLIFIED` | 법인의 `vatTaxpayerType: SIMPLIFIED` | 간이과세는 개인사업자만(부가가치세법 제61조 ①) |
-| `INVOICE_ISSUER_REQUIRES_SIMPLIFIED` | 간이과세자가 아닌데 `vatSimplifiedInvoiceIssuer: true` | 예정부과 대신 예정신고를 정하는 값(제66조 ③) |
+| `INVOICE_ISSUER_REQUIRES_SIMPLIFIED` | 간이과세자가 아닌데 `vatSimplifiedInvoiceIssuer: true`. 간이과세자에서 일반과세자로 바꿀 때 발급 여부가 참이면 같은 요청에 `vatSimplifiedInvoiceIssuer: false`를 보냄 | 예정부과 대신 예정신고를 정하는 값(제66조 ③) |
 | `TAXABLE_CARD_RATIO_OUT_OF_RANGE` | 카드 과세 비율이 0–1,000,000ppm 밖 | |
-| `VAT_PERIOD_KEY_INVALID` | 과세기간별 값의 키가 `YYYY-H1`·`YYYY-H2`가 아님(`field`에 키를 붙임) | 일반과세자 과세기간(제5조 ①) |
+| `PERIOD_KEY_INVALID` | 과세기간별 값의 키(`field`에 키를 붙임)나 `withholdingSemiannualFrom`이 `YYYY-H1`·`YYYY-H2`가 아님 | 일반과세자 과세기간(부가가치세법 제5조 ①), 원천세 반기 |
 | `VAT_SUPPLY_AMOUNT_INVALID` | 공급가액이 음수이거나 정수가 아님 | |
 
 **프로필 합치기(2026-11-11 결정).** 일정 배치·세무 달력·예상 부가세는 전처럼 `TaxProfiles`로 `TaxProfile`을 읽습니다. 다른 컨텍스트 포트는 Tax가 모르는 회사 사실만 받는 `TaxCompanies`(`{ companyId, businessType, plans }`, [tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts))로 줄였고, `TaxProfiles`는 그 포트와 `TaxSettingRepository`를 Tax 안에서 합치는 내부 서비스가 됐습니다([tax-profiles.ts](../../apps/api/src/modules/tax/calendar/tax-profiles.ts)). 어댑터가 Tax의 설정 공개 조회를 읽어 합치는 방법도 있었지만, 그러면 Tax의 저장소가 다른 컨텍스트 어댑터를 거쳐 Tax로 돌아오고, Tax만 띄운 테스트에서는 저장한 설정이 일정에 보이지 않습니다. 합치기를 설정을 가진 쪽에 두어 프로필을 쓰는 코드는 바뀌지 않았습니다.
 
-**이미 만든 신고 건(2026-11-11 결정).** 설정을 고쳐도 이미 있는 신고 건을 그 자리에서 고치지 않고, 일정 배치를 바로 돌리지도 않습니다. 다음 `FilingScheduler.run`이 새 설정으로 의무를 계산하고, 배치의 원래 규칙대로만 맞춥니다([세무 일정](#세무-일정)). 배치 기간 안에서 의무에서 빠진 `SCHEDULED` 건은 취소되고 새 의무의 건이 만들어집니다. 같은 자리(세목·종류·기간 키)에 이미 있는 `SCHEDULED`·`REQUESTED` 건은 기한만 새로 맞추고 기간은 다시 계산하지 않으며, 의무에서 빠진 `REQUESTED` 이후 건은 그대로 두어 대리인이 정리합니다. 그래서 결산월을 바꾸면 기간 키가 같은 법인세 건의 기간(`periodStart`·`periodEnd`)은 대리인이 고칩니다. 예를 들어 원천세를 반기 납부로 바꾸면 다음 실행에서 `SCHEDULED`인 매월 건이 취소되고 반기 건이 생깁니다.
-- 가정: 설정은 대리인이 드물게(반기 납부 승인, 확정 신고 뒤 공급가액 입력, 결산월 변경) 고치고, 매일 배치가 하루 안에 따라잡으면 충분합니다. 고친 직후의 세무 달력(`GET /tax-calendar`)은 그때 계산하므로 바로 새 설정을 보여 줍니다
+**이미 만든 신고 건(2026-11-11 결정).** 설정을 고쳐도 이미 있는 신고 건을 그 자리에서 고치지 않고, 일정 배치를 바로 돌리지도 않습니다. 다음 `FilingScheduler.run`이 새 설정으로 의무를 계산하고, 배치의 원래 규칙대로만 맞춥니다([세무 일정](#세무-일정)). 배치 기간 안에서 의무에서 빠진 `SCHEDULED` 건은 취소되고 새 의무의 건이 만들어집니다. 같은 자리(세목·종류·기간 키)에 이미 있는 `SCHEDULED`·`REQUESTED` 건은 기한만 새로 맞추고 기간은 다시 계산하지 않으며, 의무에서 빠진 `REQUESTED` 이후 건은 그대로 두어 대리인이 정리합니다. 그래서 결산월을 바꾸면 기간 키가 같은 법인세 건의 기간(`periodStart`·`periodEnd`)은 대리인이 고칩니다. 예를 들어 2026-11-11에 원천세를 2027년 1기부터 반기 납부(`withholdingSemiannualFrom: 2027-H1`)로 저장하면, 다음 실행은 2026년 11·12월분 매월 건을 그대로 두고 배치 기간 안의 2027년 1·2월분 `SCHEDULED` 매월 건을 취소합니다. 2027년 1기 반기 건(`SEMIANNUAL:2027-H1`, 7월 10일)은 납부 기한이 배치 기간(120일)에 들 때 만들어집니다. 적용 시작이 없는 설정 둘(반기 납부 포기, 결산월 변경)은 지난 기간까지 바꿔 계산하므로 [열린 질문 10](#열린-질문)에 적었습니다.
+- 가정: 설정은 대리인이 드물게(반기 납부 승인과 적용 반기, 확정 신고 뒤 공급가액 입력, 결산월 변경) 고치고, 매일 배치가 하루 안에 따라잡으면 충분합니다. 고친 직후의 세무 달력(`GET /tax-calendar`)은 그때 계산하므로 바로 새 설정을 보여 줍니다
 - 다시 볼 때: 매일 돌릴 실행기가 생기지 않은 채 설정 변경이 신고 건에 바로 보여야 하거나, 고객이 직접 설정을 고치게 되어 변경 직후의 신고 건 목록이 어긋나는 일이 잦아지면 `PATCH` 뒤 그 회사만 `runFor`로 돌리거나 이벤트로 배치를 깨웁니다
 
 **이벤트를 내지 않습니다.** 같은 싱글턴 설정인 급여 설정(`PATCH /payroll-settings`)도 이벤트를 내지 않고, `tax_settings.changed`를 받을 소비자가 없습니다(일정 배치는 다음 실행에서 설정을 다시 읽음). 설정 변경을 다른 컨텍스트나 단말이 알아야 하거나, 위의 즉시 반영이 필요해지면 `tax_settings.changed`를 [events.md](events.md#이벤트-목록) 규약대로 더합니다.
@@ -494,3 +500,7 @@ flowchart LR
 7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
 8. **대행 커맨드의 발견.** `allowedActions`는 차례인 행위자의 커맨드만 넣어서, 대리인이 보는 원천세 신고 건에는 대행할 수 있는 `SUBMIT`·`UNSUBMIT`·`PAY`가 없습니다. `/v1`의 대리인 화면이 이 버튼을 켜려면 별도 목록(예: `proxyActions`)을 둘지, 클라이언트가 세목·상태로 고를지 정해야 합니다
 9. **결산 기반 세무 보고서.** [bookkeeping.md](bookkeeping.md#실시간-보고서)가 결산 스냅샷 기반 보고서(손익계산서·재무상태표·현금흐름·미수/미지급)와 담당자 결산 업로드([현행 매핑](bookkeeping.md#현행-엔드포인트-대응))를 Tax 몫으로 넘겼지만, 이 문서에는 모델도 API도 없습니다. Tax 안에 결산 하위 모듈을 둘지, 별도 컨텍스트로 뺄지 정해야 합니다. 열린 질문 5의 법인세·종합소득세 결산 자료와 함께 다룹니다([#75](https://github.com/cbcruk/semu/issues/75))
+10. **적용 시점이 없는 세무 설정.** 원천세 반기 납부의 시작은 `withholdingSemiannualFrom`으로 적용 반기를 두었지만, 나머지 설정은 저장하면 모든 기간에 같은 값으로 계산합니다. 알려진 두 경우가 있습니다.
+    - **반기 납부 포기:** 매월 납부로 되돌리면(`withholdingSemiannualFrom: null`) 지난 반기까지 매월로 계산합니다. 실제로는 포기한 뒤의 기간부터 매월 납부로 돌아가므로, 지난 반기는 반기 납부로 남아야 합니다. 배치는 기간 안의 `SCHEDULED` 반기 건을 취소하고 매월 건을 만들므로, 이미 지난 반기의 건은 대리인이 정리합니다
+    - **결산월 변경:** 결산월을 바꾸면 지난 사업연도까지 새 결산월로 계산합니다. 실제로는 직전 사업연도 종료일부터 3개월 안에 변경 신고를 하고, 종전 사업연도 개시일부터 변경된 사업연도 개시일 전날까지를 한 사업연도로 봅니다(법인세법 제7조). 이미 만든 법인세 건의 기간은 대리인이 고칩니다
+    - 두 경우 모두 설정에 적용 시작(반기·사업연도)을 두거나 설정 이력을 기간별로 저장하면 풀립니다. 대리인이 고치는 일이 잦아지면 정합니다

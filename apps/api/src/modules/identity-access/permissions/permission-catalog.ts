@@ -250,6 +250,7 @@ export const ROLE_TEMPLATES: ReadonlyArray<RoleTemplate> = [
       'income-tax-filing:*',
       'estimated-vat:read',
       'settlement-report:read',
+      'tax-setting:read',
     ],
   },
   { code: 'SETTINGS', name: '설정', permissions: ['company:update', 'member:read', 'role:read', 'invitation:read'] },

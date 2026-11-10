@@ -262,9 +262,9 @@ describe('배치가 되살린 원천세 신고 건의 체크리스트(FilingSche
 })
 
 describe('저장한 세무 설정과 일정 배치(FilingScheduler.run)', () => {
-  it('원천세를 반기 납부로 저장하면 다음 실행이 매월 건을 취소하고 반기 건을 만듭니다', async () => {
+  it('2027년 1기부터 반기 납부로 저장하면 그 앞의 매월 건은 두고 적용 반기부터 반기 건을 만듭니다', async () => {
     const memory = taxMemoryLayer({ profiles: [DEMO_TAX_PROFILE], payrollLedgers: closedLedgers() })
-    const [before, after] = await Effect.runPromise(
+    const [before, afterSaving, inApril] = await Effect.runPromise(
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.UTC(2026, 10, 11))
         const scheduler = yield* FilingScheduler
@@ -282,14 +282,21 @@ describe('저장한 세무 설정과 일정 배치(FilingScheduler.run)', () => 
         yield* scheduler.run()
         const before = yield* withholdingKinds
         const current = yield* settings.get(TEST_COMPANY_ID)
-        yield* settings.save(TEST_COMPANY_ID, { ...current, withholdingCycle: 'SEMIANNUAL' })
+        yield* settings.save(TEST_COMPANY_ID, {
+          ...current,
+          withholdingCycle: 'SEMIANNUAL',
+          withholdingSemiannualFrom: '2027-H1',
+        })
         yield* scheduler.run()
-        return [before, yield* withholdingKinds] as const
+        const afterSaving = yield* withholdingKinds
+        yield* TestClock.setTime(Date.UTC(2027, 3, 1))
+        yield* scheduler.run()
+        return [before, afterSaving, yield* withholdingKinds] as const
       }).pipe(Effect.provide(Layer.provideMerge(FilingSchedulerLive, memory)), Effect.provide(TestClock.layer())),
     )
 
-    expect(before.length).toBeGreaterThan(0)
-    expect(before.every((key) => key.startsWith('MONTHLY:'))).toBe(true)
-    expect(after).toEqual(['SEMIANNUAL:2026-H2'])
+    expect(before).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12', 'MONTHLY:2027-01', 'MONTHLY:2027-02'])
+    expect(afterSaving).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12'])
+    expect(inApril).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12', 'SEMIANNUAL:2027-H1'])
   })
 })

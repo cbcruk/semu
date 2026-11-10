@@ -17,6 +17,11 @@ export const TaxSetting = Schema.Struct({
   fiscalYearEndMonth: Schema.Int,
   /** 원천세 납부 주기입니다. 반기별 납부 승인을 받은 사업장만 `SEMIANNUAL`입니다. */
   withholdingCycle: WithholdingCycle,
+  /**
+   * 반기별 납부를 적용하기 시작하는 반기(`2027-H1`)입니다. 승인받은 날이 속한 반기의 다음 반기이고(소득세법 제128조 ②,
+   * 시행령 제186조), 그 앞은 매월 납부로 계산합니다. 반기 납부면 필수, 매월 납부면 `null`입니다.
+   */
+  withholdingSemiannualFrom: Schema.NullOr(Schema.String),
   /** 성실신고확인 대상이면 법인세·종합소득세 기한이 한 달 늦습니다. */
   sincereFilingTarget: Schema.Boolean,
   /** 부가세 과세 유형입니다. 간이과세자(`SIMPLIFIED`)는 개인사업자만 됩니다. */
@@ -37,6 +42,7 @@ export const TaxSetting = Schema.Struct({
 export const TaxSettingPatch = Schema.Struct({
   fiscalYearEndMonth: Schema.optionalKey(Schema.Int),
   withholdingCycle: Schema.optionalKey(WithholdingCycle),
+  withholdingSemiannualFrom: Schema.optionalKey(Schema.NullOr(Schema.String)),
   sincereFilingTarget: Schema.optionalKey(Schema.Boolean),
   vatTaxpayerType: Schema.optionalKey(VatTaxpayerType),
   vatSimplifiedInvoiceIssuer: Schema.optionalKey(Schema.Boolean),
@@ -53,11 +59,13 @@ export class TaxSettingInvalid extends HttpApiError.Problem<TaxSettingInvalid>()
     code: Schema.tag('TAX_SETTING_INVALID'),
     reason: Schema.Literals([
       'FISCAL_YEAR_END_MONTH_OUT_OF_RANGE',
+      'SEMIANNUAL_START_REQUIRED',
+      'SEMIANNUAL_START_NOT_ALLOWED',
       'INDIVIDUAL_FISCAL_YEAR_NOT_CALENDAR',
       'CORPORATION_CANNOT_BE_SIMPLIFIED',
       'INVOICE_ISSUER_REQUIRES_SIMPLIFIED',
       'TAXABLE_CARD_RATIO_OUT_OF_RANGE',
-      'VAT_PERIOD_KEY_INVALID',
+      'PERIOD_KEY_INVALID',
       'VAT_SUPPLY_AMOUNT_INVALID',
     ]),
     field: Schema.String,
@@ -74,6 +82,7 @@ export function defaultTaxSetting(): TaxSettingRecord {
   return {
     fiscalYearEndMonth: 12,
     withholdingCycle: 'MONTHLY',
+    withholdingSemiannualFrom: null,
     sincereFilingTarget: false,
     vatTaxpayerType: 'GENERAL',
     vatSimplifiedInvoiceIssuer: false,

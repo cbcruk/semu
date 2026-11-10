@@ -69,6 +69,7 @@ export function mergeProfile(company: TaxCompany, setting: TaxSettingRecord): Ta
     plans: [...company.plans].toSorted(),
     fiscalYearEndMonth: setting.fiscalYearEndMonth,
     withholdingCycle: setting.withholdingCycle,
+    withholdingSemiannualFrom: setting.withholdingSemiannualFrom,
     sincereFilingTarget: setting.sincereFilingTarget,
     vatTaxpayerType: setting.vatTaxpayerType,
     vatSimplifiedInvoiceIssuer: setting.vatSimplifiedInvoiceIssuer,
@@ -88,6 +89,7 @@ export function splitProfile(
     setting: {
       fiscalYearEndMonth: profile.fiscalYearEndMonth,
       withholdingCycle: profile.withholdingCycle,
+      withholdingSemiannualFrom: profile.withholdingSemiannualFrom ?? null,
       sincereFilingTarget: profile.sincereFilingTarget,
       vatTaxpayerType: profile.vatTaxpayerType,
       vatSimplifiedInvoiceIssuer: profile.vatSimplifiedInvoiceIssuer ?? false,

@@ -18,6 +18,7 @@ describe('세무 설정 조회(GET /v1/tax-settings)', () => {
     expect(await response.json()).toEqual({
       fiscalYearEndMonth: 12,
       withholdingCycle: 'MONTHLY',
+      withholdingSemiannualFrom: null,
       sincereFilingTarget: false,
       vatTaxpayerType: 'GENERAL',
       vatSimplifiedInvoiceIssuer: false,
@@ -44,7 +45,11 @@ describe('세무 설정 수정(PATCH /v1/tax-settings)', () => {
 
     const response = await app.send('/tax-settings', {
       method: 'PATCH',
-      body: { withholdingCycle: 'SEMIANNUAL', vatSupplyAmounts: { '2026-H2': 140_000_000 } },
+      body: {
+        withholdingCycle: 'SEMIANNUAL',
+        withholdingSemiannualFrom: '2027-H1',
+        vatSupplyAmounts: { '2026-H2': 140_000_000 },
+      },
     })
     const body = await response.json()
 
@@ -53,6 +58,7 @@ describe('세무 설정 수정(PATCH /v1/tax-settings)', () => {
     expect(body).toMatchObject({
       fiscalYearEndMonth: 12,
       withholdingCycle: 'SEMIANNUAL',
+      withholdingSemiannualFrom: '2027-H1',
       vatSupplyAmounts: { '2026-H2': 140_000_000 },
       version: 1,
     })
@@ -102,6 +108,27 @@ describe('세무 설정 수정(PATCH /v1/tax-settings)', () => {
   it.each([
     ['CORPORATION', 'client', { fiscalYearEndMonth: 13 }, 'FISCAL_YEAR_END_MONTH_OUT_OF_RANGE', 'fiscalYearEndMonth'],
     [
+      'CORPORATION',
+      'client',
+      { withholdingCycle: 'SEMIANNUAL' },
+      'SEMIANNUAL_START_REQUIRED',
+      'withholdingSemiannualFrom',
+    ],
+    [
+      'CORPORATION',
+      'client',
+      { withholdingSemiannualFrom: '2027-H1' },
+      'SEMIANNUAL_START_NOT_ALLOWED',
+      'withholdingSemiannualFrom',
+    ],
+    [
+      'CORPORATION',
+      'client',
+      { withholdingCycle: 'SEMIANNUAL', withholdingSemiannualFrom: '2027-07' },
+      'PERIOD_KEY_INVALID',
+      'withholdingSemiannualFrom',
+    ],
+    [
       'INDIVIDUAL',
       'individual',
       { fiscalYearEndMonth: 3 },
@@ -123,18 +150,12 @@ describe('세무 설정 수정(PATCH /v1/tax-settings)', () => {
       'TAXABLE_CARD_RATIO_OUT_OF_RANGE',
       'taxableCardRatioPpm',
     ],
-    [
-      'CORPORATION',
-      'client',
-      { vatSupplyAmounts: { '2026-Q4': 1 } },
-      'VAT_PERIOD_KEY_INVALID',
-      'vatSupplyAmounts.2026-Q4',
-    ],
+    ['CORPORATION', 'client', { vatSupplyAmounts: { '2026-Q4': 1 } }, 'PERIOD_KEY_INVALID', 'vatSupplyAmounts.2026-Q4'],
     [
       'CORPORATION',
       'client',
       { vatPreliminaryElections: { '2027-1': 'EARLY_REFUND' } },
-      'VAT_PERIOD_KEY_INVALID',
+      'PERIOD_KEY_INVALID',
       'vatPreliminaryElections.2027-1',
     ],
     [
@@ -224,17 +245,24 @@ describe('세무 설정 접근 요건', () => {
 })
 
 describe('저장한 세무 설정과 세무 달력(GET /v1/tax-calendar)', () => {
-  it('원천세를 반기 납부로 저장하면 달력의 원천세가 반기 의무가 됩니다', async () => {
+  it('2027년 1기부터 반기 납부로 저장하면 그 앞은 매월, 그 반기부터 반기 의무입니다', async () => {
     app = taxTestApp({ profiles: [DEMO_TAX_PROFILE], holidays: DEMO_HOLIDAYS })
+    const withholdingOf = async (year: number) => {
+      const { items } = await (await app.send(`/tax-calendar?year=${year}`)).json()
+      return items
+        .filter((item: { taxType: string }) => item.taxType === 'WITHHOLDING_TAX')
+        .map((item: { kind: string; periodKey: string }) => `${item.kind}:${item.periodKey}`)
+    }
 
-    await app.send('/tax-settings', { method: 'PATCH', body: { withholdingCycle: 'SEMIANNUAL' } })
-    const { items } = await (await app.send('/tax-calendar?year=2026')).json()
+    const saved = await app.send('/tax-settings', {
+      method: 'PATCH',
+      body: { withholdingCycle: 'SEMIANNUAL', withholdingSemiannualFrom: '2027-H1' },
+    })
 
-    const withholding = items.filter((item: { taxType: string }) => item.taxType === 'WITHHOLDING_TAX')
-    expect(withholding.map((item: { kind: string; periodKey: string }) => `${item.kind}:${item.periodKey}`)).toEqual([
-      'SEMIANNUAL:2025-H2',
-      'SEMIANNUAL:2026-H1',
-    ])
+    expect(saved.status).toBe(200)
+    expect(await withholdingOf(2026)).toHaveLength(12)
+    expect((await withholdingOf(2026)).every((key: string) => key.startsWith('MONTHLY:'))).toBe(true)
+    expect(await withholdingOf(2027)).toEqual(['MONTHLY:2026-12', 'SEMIANNUAL:2027-H1'])
   })
 
   it('3월 결산으로 저장하면 법인세 확정 신고가 6월 말로 옮겨 갑니다', async () => {
