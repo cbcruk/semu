@@ -234,7 +234,7 @@ stateDiagram-v2
 - 손익: [realtime-pl-inclusion](../reference/rules/realtime-pl-inclusion.md). 정책은 공급가액·입출금 포함 고정
 - 자금: [cash-status-other-change](../reference/rules/cash-status-other-change.md)
 - 홈 부가세 기한: [vat-due-date-approximation](../reference/rules/vat-due-date-approximation.md)
-- 결산 기반 세무 보고서(재무상태표·손익계산서·현금흐름·미수미지급)는 Tax에 넘겼지만, tax.md에는 아직 설계가 없어 맡은 곳이 정해지지 않았습니다([tax.md 열린 질문 9](tax.md#열린-질문), [#75](https://github.com/cbcruk/semu/issues/75)). 인건비만 Payroll 데이터라 여기 둡니다
+- 결산 기반 세무 보고서(재무상태표·손익계산서·현금흐름·미수미지급)는 Tax 몫으로 정했지만, tax.md에는 아직 설계가 없습니다([tax.md 열린 질문 9](tax.md#열린-질문), [#75](https://github.com/cbcruk/semu/issues/75)). 인건비만 Payroll 데이터라 여기 둡니다
 
 ## 수집 반영 (Integrations → Bookkeeping)
 
