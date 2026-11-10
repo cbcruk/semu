@@ -77,7 +77,7 @@ stateDiagram-v2
 
 | 커맨드 | 허용 상태 | 결과 | 비고 |
 |---|---|---|---|
-| `PATCH` | `DRAFT` | 그대로 | 발송 뒤 문서는 바꿀 수 없음(R25) |
+| `PUT` | `DRAFT` | 그대로 | 생성과 같은 본문 전체로 바꿉니다. 발송 뒤 문서는 바꿀 수 없음(R25) |
 | `:send` | `DRAFT` | `PENDING` / `SEND_FAILED` | `Idempotency-Key` 필수, `{ dueDate? }` |
 | `:resend` | `CANCELED`, `EXPIRED`, `SEND_FAILED` | `PENDING` / `SEND_FAILED` | 새 링크 토큰, 새 기한. 현행 "재발송"(되돌리기 + 발송)을 한 요청으로 |
 | `:revert-to-draft` | `CANCELED`, `EXPIRED`, `SEND_FAILED` | `DRAFT` | 고쳐서 보낼 때 |
@@ -110,7 +110,7 @@ GET    /esign-requests?status=&category=&employeeId=&q=&dateField=REQUESTED|SIGN
 GET    /esign-requests:count?groupBy=status
 POST   /esign-requests                               { documents[{templateId}], recipient, workplaceSize?, wageType?, fieldValues?, companySealId? }
 GET    /esign-requests/{esignRequestId}
-PATCH  /esign-requests/{esignRequestId}              If-Match
+PUT    /esign-requests/{esignRequestId}              If-Match { 생성과 같은 본문 전체 }
 DELETE /esign-requests/{esignRequestId}              If-Match
 POST   /esign-requests/{esignRequestId}:send         If-Match, Idempotency-Key { dueDate? }
 POST   /esign-requests/{esignRequestId}:resend       If-Match, Idempotency-Key { dueDate? }
@@ -311,7 +311,7 @@ GET /document-forms/{documentFormCode}/file
 | 13 | `PATCH …/settings/e-sign-templates/:id/` | `PATCH /esign-templates/{esignTemplateId}` | |
 | 75 | `GET …/e-sign-requests/` | `GET /esign-requests` | |
 | 76 | `POST …/e-sign-requests/` (`send` 플래그) | `POST /esign-requests` + `:send` | 생성은 항상 `DRAFT` |
-| 77–79 | `GET/PATCH/DELETE …/e-sign-requests/:id/` | `GET/PATCH/DELETE /esign-requests/{esignRequestId}` | |
+| 77–79 | `GET/PATCH/DELETE …/e-sign-requests/:id/` | `GET/PUT/DELETE /esign-requests/{esignRequestId}` | 초안은 문서·수신자·필드값을 한 덩어리로 다시 검증하므로 부분 수정 대신 전체 교체 |
 | — | `POST …/e-sign-requests/:id/send` (레거시 구현이 추가) | `POST /esign-requests/{esignRequestId}:send` | |
 | 80 | `POST …/e-sign-requests/:id/cancel/` | `:cancel` | `IN_PROGRESS`도 허용 |
 | 81 | `POST …/e-sign-requests/:id/void/` | `:void` | 사유 필수 |

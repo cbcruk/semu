@@ -8,7 +8,6 @@ import { IfMatchHeaders } from '../common/wire.ts'
 import { PartnerNotFound } from '../evidence/evidence.ts'
 import {
   BusinessNumber,
-  BusinessStatusResult,
   Partner,
   PartnerBusinessNumberDuplicate,
   PartnerBusinessNumberRequired,
