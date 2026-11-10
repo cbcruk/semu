@@ -234,7 +234,7 @@ stateDiagram-v2
 - 손익: [realtime-pl-inclusion](../reference/rules/realtime-pl-inclusion.md). 정책은 공급가액·입출금 포함 고정
 - 자금: [cash-status-other-change](../reference/rules/cash-status-other-change.md)
 - 홈 부가세 기한: [vat-due-date-approximation](../reference/rules/vat-due-date-approximation.md)
-- 결산 기반 세무 보고서(재무상태표·손익계산서·현금흐름·미수미지급)는 Tax가 맡습니다. 인건비만 Payroll 데이터라 여기 둡니다
+- 결산 기반 세무 보고서(재무상태표·손익계산서·현금흐름·미수미지급)는 Tax에 넘겼지만, tax.md에는 아직 설계가 없어 맡은 곳이 정해지지 않았습니다([tax.md 열린 질문 9](tax.md#열린-질문), [#75](https://github.com/cbcruk/semu/issues/75)). 인건비만 Payroll 데이터라 여기 둡니다
 
 ## 수집 반영 (Integrations → Bookkeeping)
 
@@ -404,7 +404,7 @@ Payroll이 제출 이후(`DRAFT`가 아닌) 급여대장의 행을 귀속월별�
 - 끝남: 위 리소스 표의 엔드포인트 전부, `ScrapedRecordIngestion`, `VatEvidenceQuery`, 포트 6개와 가짜, 메모리 저장소, 데모 시드(현행 데모 숫자 재현)
 - 규칙 14개의 픽스처가 순수 함수로 돌아갑니다(`bookkeeping-rules.fixtures.test.ts`)
 - 안 함: 규칙 미리보기, 매출·매입 현황, 기간별 자금 추이, 엑셀 내보내기, 거래처 정산 이력, 입출금 `partnerId` 필터, 출금 계좌 목록, 상태조회 결과로 거래처 `businessStatus` 갱신, 회사별 손익 정책 설정, `/v1/jobs/{id}`
-- 저장소는 메모리뿐입니다. 실제 DB 어댑터와 앱 조립(`BookkeepingPublicLive`에 실제 저장소 제공)은 공유 작업입니다
+- 저장소는 메모리와 SQLite 둘 다 `TableFactory`로 돕니다([common/table.ts](../../apps/api/src/modules/bookkeeping/common/table.ts)). `pnpm test:sqlite`가 SQLite로 같은 테스트를 돌립니다
 
 ## 열린 질문
 
