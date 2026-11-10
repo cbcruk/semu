@@ -26,7 +26,7 @@ export const TaxCalendarEntry = Schema.Struct({
 
 export type TaxCalendarEntry = typeof TaxCalendarEntry.Type
 
-/** 세무 설정이 없는 회사입니다. 세무 기장을 시작하면 만들어집니다. */
+/** 세무 프로필을 만들 회사 사실(`TaxCompanies`)이 없는 회사입니다. 세무 설정을 저장하지 않은 회사는 기본 설정이라 여기 해당하지 않습니다. */
 export class TaxProfileNotFound extends HttpApiError.Problem<TaxProfileNotFound>()(
   'TaxProfileNotFound',
   { type: problemType('TAX_PROFILE_NOT_FOUND'), status: 404, title: 'Tax profile not found' },

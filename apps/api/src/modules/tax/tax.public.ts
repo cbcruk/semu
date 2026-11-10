@@ -12,7 +12,7 @@ export type {
   WithholdingTotal,
 } from './filings/withholding-return.types.ts'
 export { PublicHolidays } from './calendar/public-holidays.ts'
-export { TaxProfiles, type TaxProfile } from './calendar/tax-profiles.ts'
+export { TaxCompanies, type TaxCompany } from './calendar/tax-companies.ts'
 export { VatEvidence } from './vat-estimates/vat-evidence.ts'
 export type {
   PurchaseEvidence,

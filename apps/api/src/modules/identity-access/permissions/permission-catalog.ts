@@ -99,6 +99,7 @@ export const PERMISSION_CATALOG = {
   },
   'estimated-vat': { area: 'TAX', actions: ['read'] },
   'action-card': { area: 'TAX', actions: ['read', 'update', 'complete'] },
+  'tax-setting': { area: 'TAX', actions: ['read', 'update'], plans: ['TAXATION'] },
 } as const satisfies Record<string, ResourcePermissions>
 
 /** 카탈로그의 리소스 이름입니다. */
