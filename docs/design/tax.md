@@ -1,6 +1,6 @@
 # Tax: 신고 건·세무 일정·할 일 카드·예상 부가세
 
-세무 기장 고객과 세무 대리인이 함께 다루는 신고 건(부가세·원천세·법인세·종합소득세)의 진행, 그 일정을 만드는 세무 달력, 홈의 할 일 카드, 증빙으로 계산하는 예상 부가세를 다룹니다. 코드는 [`apps/api/src/modules/tax/`](../../apps/api/src/modules/tax/)에 있습니다.
+세무 기장 고객과 세무 대리인이 함께 다루는 신고 건(부가세·원천세·법인세·종합소득세)의 진행, 그 일정을 만드는 세무 달력, 홈의 할 일 카드, 증빙으로 계산하는 예상 부가세, 그리고 일정을 정하는 회사 세무 설정을 다룹니다. 코드는 [`apps/api/src/modules/tax/`](../../apps/api/src/modules/tax/)에 있습니다.
 
 ## 현행에서 고칠 점
 
@@ -38,7 +38,14 @@
 | 기한 경과 | `isOverdue` |
 | 오늘의 할 일 카드 | `ActionCard` (`kind`: `SUBMIT_MATERIALS`, `CONFIRM_LEDGER`, `REVIEW_FILING_RESULT`, `PAY_TAX`) |
 | 넘어가기 | `completion: SKIP` → `SKIPPED_OVERDUE`(마감 후) |
-| 세무 설정 | `TaxProfile` (`fiscalYearEndMonth`, `withholdingCycle`, `vatTaxpayerType`, `vatSupplyAmounts`, `vatPreliminaryElections`, `sincereFilingTarget`, `taxableCardRatioPpm`) |
+| 세무 설정 | `TaxSetting` (`fiscalYearEndMonth`, `withholdingCycle`, `sincereFilingTarget`, `vatTaxpayerType`, `vatSimplifiedInvoiceIssuer`, `taxableCardRatioPpm`, `vatSupplyAmounts`, `vatPreliminaryElections`) |
+| 세무 프로필 (회사 사실 + 세무 설정) | `TaxProfile` (`companyId`, `businessType`, `plans` + 세무 설정) |
+| 사업연도 종료 월 (결산월) | `fiscalYearEndMonth` (1–12) |
+| 원천세 납부 주기 | `withholdingCycle`: `MONTHLY`(매월), `SEMIANNUAL`(반기별 납부 승인) |
+| 성실신고확인 대상 | `sincereFilingTarget` |
+| 부가세 과세 유형 | `vatTaxpayerType`: `GENERAL`(일반과세자), `SIMPLIFIED`(간이과세자) |
+| 간이과세자의 세금계산서 발급 | `vatSimplifiedInvoiceIssuer` |
+| 카드 매출 과세 비율 | `taxableCardRatioPpm` (ppm, 100% = 1,000,000) |
 | 과세기간별 공급가액 합계 | `vatSupplyAmounts` (과세기간 키 `2026-H2` → 원) |
 | 예정신고 선택 사유 | `vatPreliminaryElections` (과세기간 키 → `BUSINESS_DECLINE`(휴업·사업 부진), `EARLY_REFUND`(조기환급)) |
 | 예상 부가세 | `VatEstimate` (`outputTax`, `inputTax`, `estimatedTax`) |
@@ -50,7 +57,7 @@
 - **직전 과세기간 공급가액:** `vatSupplyAmounts`의 직전 과세기간 값(1기는 전년 2기, 2기는 같은 해 1기)입니다. 확정 신고서의 값을 대리인이 확정 신고 뒤 넣습니다. 신고 건에 기록하지 않고 세무 설정에 둔 것은 일정 배치가 다음 기 예정 건을 120일 전(확정 신고 기한보다 앞)에 만들기 때문입니다. 값이 바뀌어 판정이 달라지면 배치가 `SCHEDULED`인 예정 건을 취소하고 다른 종류를 만들며, 되돌리면 배치가 취소한 건을 되살립니다. 예정고지와 예정 신고는 예정신고기간마다 한 자리라, 예정 건이 이미 `SCHEDULED`를 지났거나 대리인이 취소했으면 판정이 바뀌어도 다른 종류를 만들지 않고 대리인이 정리합니다. 이미 만든 확정 건의 기간(반기 전체 또는 남은 3개월)은 다시 계산하지 않으므로 대리인이 고칩니다. 법인은 값이 없으면(신설 법인, 아직 넣지 않음) 고지 대상인지 알 수 없어 원칙대로 예정신고입니다. 개인은 값과 상관없이 예정고지입니다
 - **예정신고 선택:** `vatPreliminaryElections`에 그 과세기간과 사유를 넣으면 예정신고입니다. 1/3 미달 여부는 대리인이 판단하고 사유만 받습니다
 
-50만 원 미만 등 고지하지 않는 경우는 직전 과세기간 납부세액을 받지 않아 판정하지 않고, 고지 건으로 두고 대리인이 취소합니다. 회사 세무 설정 저장소가 없어 두 값은 지금 비어 있습니다(법인 예정신고, 개인 예정고지. 이전 고정 분기와 같은 결과)
+50만 원 미만 등 고지하지 않는 경우는 직전 과세기간 납부세액을 받지 않아 판정하지 않고, 고지 건으로 두고 대리인이 취소합니다. 두 값은 대리인이 [세무 설정](#세무-설정)(`PATCH /tax-settings`)으로 넣습니다. 넣지 않은 회사는 비어 있어 법인 예정신고, 개인 예정고지입니다(이전 고정 분기와 같은 결과)
 
 ## 신고 건
 
@@ -234,8 +241,8 @@ GET /tax-calendar?year=2026    → { items: [{ taxType, kind, periodKey, periodS
 ```
 
 - 저장하지 않고 회사 세무 설정(`TaxProfile`)과 공휴일표로 그때 계산합니다([filing-obligations](../reference/rules/filing-obligations.md), [filing-deadline-rollover](../reference/rules/filing-deadline-rollover.md)). 납부 기한이 그 해 안인 의무를 기한 순으로 주고, 만들어진 신고 건(가장 큰 `revision`)을 붙입니다
-- 세무 설정이 없는 회사는 404 `TAX_PROFILE_NOT_FOUND`입니다
-- **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 매일, 그리고 공휴일표·세무 설정이 바뀐 뒤 돕니다. 오늘부터 120일 안의 의무에 대해
+- 회사(`TaxCompanies`)를 찾지 못하면 404 `TAX_PROFILE_NOT_FOUND`입니다. 세무 설정을 저장하지 않은 회사는 기본 설정으로 계산합니다
+- **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 매일, 그리고 공휴일표가 바뀐 뒤 돕니다. 세무 설정을 고쳐도 바로 돌지 않고 다음 실행이 새 설정을 씁니다([세무 설정](#세무-설정)). 오늘부터 120일 안의 의무에 대해
   - 신고 건이 없으면 `SCHEDULED`로 만들고 체크리스트를 복사합니다. 급여 플랜 회사의 원천세는 `PAYROLL_LEDGER_CLOSED`를 바로 맞춥니다
   - 있으면 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
   - 사람이 취소한 건은 다시 만들지 않습니다. 배치가 취소한 건(이력 `SCHEDULE_CANCELED`)은 의무가 다시 생기면 `SCHEDULED`로 되살리고 기한을 맞춥니다(이력 `SCHEDULE_RESTORED`, 이벤트)
@@ -285,10 +292,57 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 
 - 규칙은 [estimated-vat](../reference/rules/estimated-vat.md)이고 계산은 [vat-estimate.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimate.ts)의 순수 함수입니다
 - `on`(기본 회사 시간대 오늘)이 속한 기간(법인 분기, 개인 반기)을 기간 시작부터 `on`까지의 증빙으로 계산합니다
-- 카드 과세 비율은 `taxableCardRatioPpm`(ppm)입니다. 세무 설정이 없으면 100%입니다
+- 카드 과세 비율은 [세무 설정](#세무-설정)의 `taxableCardRatioPpm`(ppm)입니다. 저장하지 않았으면 100%입니다
 - `estimatedTax < 0`이면 환급 예상입니다. `isRefund`는 두지 않습니다
 - `breakdown[]`은 출처별 `vatAmount`, `includedInTotal`, `lastSyncedAt`입니다. 수집 작업 상태는 Integrations의 수집 요청에서 봅니다
 - 추이는 세무 기장(`TAXATION`) 고객이면 확정 신고한 반기에 신고 세액(예정고지 제외)을 씁니다
+
+## 세무 설정
+
+```
+GET   /tax-settings    → TaxSetting (ETag)
+PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?, sincereFilingTarget?, vatTaxpayerType?,
+                       vatSimplifiedInvoiceIssuer?, taxableCardRatioPpm?, vatSupplyAmounts?, vatPreliminaryElections? }
+```
+
+회사마다 한 건인 싱글턴 리소스이고, Tax가 소유합니다(`tax_settings` 표, [settings/](../../apps/api/src/modules/tax/settings/)). 신고 일정·예상 부가세가 쓰는 세무 사실 중 Tax가 정하는 값입니다. 사업자 형태와 플랜은 회사·구독의 사실이라 여기 두지 않습니다.
+
+```jsonc
+{
+  "fiscalYearEndMonth": 12,
+  "withholdingCycle": "MONTHLY",
+  "sincereFilingTarget": false,
+  "vatTaxpayerType": "GENERAL",
+  "vatSimplifiedInvoiceIssuer": false,
+  "taxableCardRatioPpm": 1000000,
+  "vatSupplyAmounts": { "2026-H1": 120000000 },
+  "vatPreliminaryElections": { "2027-H1": "EARLY_REFUND" },
+  "version": 3,
+  "updatedAt": "2026-11-11T01:02:03.000Z"
+}
+```
+
+- 저장한 적 없는 회사는 기본 설정(`version: 0`, `updatedAt: null`)입니다. 12월 결산, 매월 원천세, 성실신고확인 대상 아님, 일반과세자, 카드 매출 전부 과세, 과세기간별 값 없음입니다. 저장소가 생기기 전 모든 회사가 쓰던 값과 같아 저장소를 들여도 일정이 바뀌지 않습니다
+- `PATCH`는 보낸 필드만 바꿉니다. 과세기간별 값(`vatSupplyAmounts`·`vatPreliminaryElections`)은 맵 전체를 보낸 값으로 바꿉니다. 응답의 `ETag`를 `If-Match`로 보내면 버전을 검사하고, 다르면 412 `VERSION_MISMATCH`입니다
+- 고친 결과 전체를 회사의 사업자 형태로 검증하고([tax-setting-rules.ts](../../apps/api/src/modules/tax/settings/tax-setting-rules.ts)), 어긋나면 422 `TAX_SETTING_INVALID`(`reason`, `field`)입니다. 정수가 아닌 값처럼 스키마를 어기면 400 `VALIDATION_FAILED`입니다
+
+| `reason` | 언제 | 근거 |
+|---|---|---|
+| `FISCAL_YEAR_END_MONTH_OUT_OF_RANGE` | 결산월이 1–12 밖 | |
+| `INDIVIDUAL_FISCAL_YEAR_NOT_CALENDAR` | 개인사업자의 결산월이 12가 아님 | 소득세 과세기간은 1월 1일–12월 31일(소득세법 제5조 ①) |
+| `CORPORATION_CANNOT_BE_SIMPLIFIED` | 법인의 `vatTaxpayerType: SIMPLIFIED` | 간이과세는 개인사업자만(부가가치세법 제61조 ①) |
+| `INVOICE_ISSUER_REQUIRES_SIMPLIFIED` | 간이과세자가 아닌데 `vatSimplifiedInvoiceIssuer: true` | 예정부과 대신 예정신고를 정하는 값(제66조 ③) |
+| `TAXABLE_CARD_RATIO_OUT_OF_RANGE` | 카드 과세 비율이 0–1,000,000ppm 밖 | |
+| `VAT_PERIOD_KEY_INVALID` | 과세기간별 값의 키가 `YYYY-H1`·`YYYY-H2`가 아님(`field`에 키를 붙임) | 일반과세자 과세기간(제5조 ①) |
+| `VAT_SUPPLY_AMOUNT_INVALID` | 공급가액이 음수이거나 정수가 아님 | |
+
+**프로필 합치기(2026-11-11 결정).** 일정 배치·세무 달력·예상 부가세는 전처럼 `TaxProfiles`로 `TaxProfile`을 읽습니다. 다른 컨텍스트 포트는 Tax가 모르는 회사 사실만 받는 `TaxCompanies`(`{ companyId, businessType, plans }`, [tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts))로 줄였고, `TaxProfiles`는 그 포트와 `TaxSettingRepository`를 Tax 안에서 합치는 내부 서비스가 됐습니다([tax-profiles.ts](../../apps/api/src/modules/tax/calendar/tax-profiles.ts)). 어댑터가 Tax의 설정 공개 조회를 읽어 합치는 방법도 있었지만, 그러면 Tax의 저장소가 다른 컨텍스트 어댑터를 거쳐 Tax로 돌아오고, Tax만 띄운 테스트에서는 저장한 설정이 일정에 보이지 않습니다. 합치기를 설정을 가진 쪽에 두어 프로필을 쓰는 코드는 바뀌지 않았습니다.
+
+**이미 만든 신고 건(2026-11-11 결정).** 설정을 고쳐도 이미 있는 신고 건을 그 자리에서 고치지 않고, 일정 배치를 바로 돌리지도 않습니다. 다음 `FilingScheduler.run`이 새 설정으로 의무를 계산하고, 배치의 원래 규칙대로만 맞춥니다([세무 일정](#세무-일정)). 배치 기간 안에서 의무에서 빠진 `SCHEDULED` 건은 취소되고 새 의무의 건이 만들어집니다. 같은 자리(세목·종류·기간 키)에 이미 있는 `SCHEDULED`·`REQUESTED` 건은 기한만 새로 맞추고 기간은 다시 계산하지 않으며, 의무에서 빠진 `REQUESTED` 이후 건은 그대로 두어 대리인이 정리합니다. 그래서 결산월을 바꾸면 기간 키가 같은 법인세 건의 기간(`periodStart`·`periodEnd`)은 대리인이 고칩니다. 예를 들어 원천세를 반기 납부로 바꾸면 다음 실행에서 `SCHEDULED`인 매월 건이 취소되고 반기 건이 생깁니다.
+- 가정: 설정은 대리인이 드물게(반기 납부 승인, 확정 신고 뒤 공급가액 입력, 결산월 변경) 고치고, 매일 배치가 하루 안에 따라잡으면 충분합니다. 고친 직후의 세무 달력(`GET /tax-calendar`)은 그때 계산하므로 바로 새 설정을 보여 줍니다
+- 다시 볼 때: 매일 돌릴 실행기가 생기지 않은 채 설정 변경이 신고 건에 바로 보여야 하거나, 고객이 직접 설정을 고치게 되어 변경 직후의 신고 건 목록이 어긋나는 일이 잦아지면 `PATCH` 뒤 그 회사만 `runFor`로 돌리거나 이벤트로 배치를 깨웁니다
+
+**이벤트를 내지 않습니다.** 같은 싱글턴 설정인 급여 설정(`PATCH /payroll-settings`)도 이벤트를 내지 않고, `tax_settings.changed`를 받을 소비자가 없습니다(일정 배치는 다음 실행에서 설정을 다시 읽음). 설정 변경을 다른 컨텍스트나 단말이 알아야 하거나, 위의 즉시 반영이 필요해지면 `tax_settings.changed`를 [events.md](events.md#이벤트-목록) 규약대로 더합니다.
 
 ## 접근 요건
 
@@ -304,9 +358,11 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 | 대리인 큐 `GET /agency/filings` | `filing:read`(대리인 범위) | `TAXATION`인 담당 회사만 남김 | 건너뜀 |
 | 대리인 큐 `GET /agency/action-cards` | `action-card:read`(대리인 범위) | 카드마다 | 건너뜀 |
 | 예상 부가세 | `estimated-vat:read` | | |
+| 세무 설정 조회 / 수정 | `tax-setting:read` / `tax-setting:update` | `TAXATION` | 필요 |
 
 - 권한을 통과해도 행위자가 틀리면 403 `FILING_ACTOR_NOT_ALLOWED`(`action`, `requiredActorKind`)입니다. 권한은 "이 사용자가 할 수 있는가", 행위자는 "이 신고 건에서 누구 차례인가"입니다. 원천세의 고객 커맨드는 대리인도 대행할 수 있습니다([커맨드](#커맨드))
 - `filing:process`는 대리인 전용(D5)이라 고객 관리자의 `*`에도 없습니다. 신고 건을 볼 수 있는(`filing:read`) 고객이 대리인 커맨드나 문서 붙이기를 부르면 `PERMISSION_DENIED` 대신 같은 403 `FILING_ACTOR_NOT_ALLOWED`(`requiredActorKind: AGENCY`)로 돌려줍니다. 플랜·약관 재동의·데모 쓰기 검사는 D5 전처럼 각자의 오류를 먼저 줍니다. 권한 검사에서 바로 거절하므로 신고 건이 없거나 `If-Match`가 달라도 이 오류가 먼저입니다
+- 세무 설정은 고객 관리자(`*`)와 배정된 세무 대리인(대리인 기본 권한의 `tax-setting:*`)이 읽고 고칩니다. 데모 계정은 읽기만 합니다
 - 예상 부가세는 플랜 없이 열고(현행 무료 고객도 봄), 확정 세액을 쓸지만 플랜으로 정합니다
 
 ## 오류 코드
@@ -321,7 +377,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 | 404 | `REQUIREMENT_FILE_NOT_FOUND` | 항목에 붙지 않은 파일 떼기 | |
 | 404 | `FILING_DOCUMENT_NOT_FOUND` | 없거나 고객이 지금 볼 수 없는 문서 | |
 | 404 | `ACTION_CARD_NOT_FOUND` | 없거나 볼 수 없는 카드 | |
-| 404 | `TAX_PROFILE_NOT_FOUND` | 세무 설정이 없는 회사의 세무 일정 | |
+| 404 | `TAX_PROFILE_NOT_FOUND` | 회사 사실(`TaxCompanies`)이 없는 회사의 세무 일정 | |
 | 409 | `FILING_TRANSITION_INVALID` | 상태·세목·종류·세액 부호가 커맨드와 맞지 않음 | `currentStatus`, `command` |
 | 409 | `FILING_LOCKED` | `REQUESTED` 밖의 자료 변경, `PREPARING`·`FILED` 밖의 문서 붙이기 | `currentStatus` |
 | 409 | `REQUIREMENT_AUTO_LINKED` | 자동 연계 항목 변경 | |
@@ -329,6 +385,7 @@ GET /vat-estimates?years=3                  → { items: [{ year, half, amount, 
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
 | 422 | `FILING_REQUIREMENTS_PENDING` | 남은 항목이 있는 `:submit` | `requirementCodes` |
 | 422 | `REQUIREMENT_HAS_FILES` | 파일이 붙은 항목에 `NOT_APPLICABLE` | |
+| 422 | `TAX_SETTING_INVALID` | 사업자 형태나 법령에 맞지 않는 세무 설정([세무 설정](#세무-설정)) | `reason`, `field` |
 
 ## 다른 컨텍스트와의 연결
 
@@ -355,7 +412,7 @@ flowchart LR
 | 포트(Payroll 구현) | `PayrollLedgers.summaryFor(companyId, paidFrom, paidTo)` | `{ ledgerCount, closedCount }`, 지급일 기준 |
 | 포트(Payroll 구현) | `WithholdingTotals.totalsFor(companyId, paymentMonth)` | `{ incomeKind, otherIncomeCategory, headcount, grossPay, taxablePay, incomeTax, localIncomeTax }[]`, 지급월의 마감 대장과 완료 퇴직금 정산(`RETIREMENT`)만. [원천세 신고서 줄](#원천세-신고서-줄)이 씀 |
 | 포트(Bookkeeping 구현) | `VatEvidence.sales/purchases(companyId, from, to)` | 매출 `{ id, source, issuedOn, totalAmount, vatAmount, dedupeGroup, syncedAt }`(발행일·ID 순), 매입 `{ id, source, issuedOn, vatAmount, deductible, syncedAt }` |
-| 포트(Identity·Billing·Tax 설정) | `TaxProfiles.get/listTaxation` | 사업자 형태·플랜과 세무 설정을 합친 `TaxProfile` |
+| 포트(Identity·Billing) | `TaxCompanies.get/listTaxation` | `{ companyId, businessType, plans }`. Tax의 `TaxProfiles`가 세무 설정 저장소와 합쳐 `TaxProfile`을 만듦([세무 설정](#세무-설정)) |
 | 포트(운영) | `PublicHolidays.between(from, to)` | 기한을 미루는 쉬는 날(주말 제외) |
 | 포트(아웃박스) | `TaxEvents.publish(events)` | 지금은 메모리. 아웃박스가 생기면 같은 트랜잭션에 씀 |
 
@@ -418,7 +475,8 @@ flowchart LR
 | 예상 부가세·추이 | 구현 ([vat-estimates.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimates.ts)) |
 | 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
 | 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |
-| 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxProfiles`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결. 세무 설정(결산월·원천세 주기·예정 신고 방식·성실신고·카드 과세 비율)은 저장소가 없어 기본값([tax-identity-access.ts](../../apps/api/src/wiring/tax-identity-access.ts)) |
+| 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxCompanies`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결 |
+| 세무 설정(`GET/PATCH /tax-settings`) | 구현 (`tax_settings` 표, [settings/](../../apps/api/src/modules/tax/settings/)). `TaxProfiles`가 `TaxCompanies`와 합침. 바꾸면 다음 일정 배치부터 반영 |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
 | 수정신고, 감사 로그 | 없음 |
@@ -432,7 +490,7 @@ flowchart LR
 3. **문서 열람 기록의 경로.** `GET /filings/{filingId}/documents/{documentId}`가 첫 열람을 기록합니다(GET에 부수효과). 다운로드 URL 발급을 `POST .../documents/{documentId}:open`으로 바꿀지 파일 저장소 설계와 함께 정합니다
 4. **수정신고.** `revision`은 있지만 만드는 커맨드(`POST /filings/{filingId}:amend`)와 원 신고 건과의 관계를 정하지 않았습니다
 5. **법인세·종합소득세 자료.** 체크리스트가 없어 고객 흐름이 비어 있습니다. 결산 자료(재고·가지급금 등) 항목을 만들지 업무 확인이 필요합니다
-6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 회사 세무 설정 저장소가 없어 프로필의 `vatTaxpayerType`은 지금 `GENERAL`, `vatSimplifiedInvoiceIssuer`는 없음(거짓), `vatSupplyAmounts`·`vatPreliminaryElections`는 비어 있습니다. 사업자 상태조회의 과세 유형으로 채울지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
+6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 세무 설정 저장소(`GET/PATCH /tax-settings`)가 생겨 과세 유형·세금계산서 발급 여부·과세기간별 공급가액·예정신고 선택을 대리인이 넣습니다. 넣지 않은 회사는 일반과세자이고 나머지는 비어 있습니다. 남은 것: `vatTaxpayerType`을 사업자 상태조회(Integrations `BusinessStatusClient`)의 과세 유형으로 처음 채우거나 어긋남을 알려 줄지, `vatSupplyAmounts`를 확정 신고(`:file`)의 신고서 값에서 바로 넣을지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
 7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
 8. **대행 커맨드의 발견.** `allowedActions`는 차례인 행위자의 커맨드만 넣어서, 대리인이 보는 원천세 신고 건에는 대행할 수 있는 `SUBMIT`·`UNSUBMIT`·`PAY`가 없습니다. `/v1`의 대리인 화면이 이 버튼을 켜려면 별도 목록(예: `proxyActions`)을 둘지, 클라이언트가 세목·상태로 고를지 정해야 합니다
 9. **결산 기반 세무 보고서.** [bookkeeping.md](bookkeeping.md#실시간-보고서)가 결산 스냅샷 기반 보고서(손익계산서·재무상태표·현금흐름·미수/미지급)와 담당자 결산 업로드([현행 매핑](bookkeeping.md#현행-엔드포인트-대응))를 Tax 몫으로 넘겼지만, 이 문서에는 모델도 API도 없습니다. Tax 안에 결산 하위 모듈을 둘지, 별도 컨텍스트로 뺄지 정해야 합니다. 열린 질문 5의 법인세·종합소득세 결산 자료와 함께 다룹니다([#75](https://github.com/cbcruk/semu/issues/75))
