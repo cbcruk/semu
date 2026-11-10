@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { PartnerId } from '../common/ids.ts'
-import { CalendarDate, Won } from '../common/wire.ts'
+import { Won } from '../common/wire.ts'
 
 /** 국세청 사업자 상태입니다. */
 export const BusinessStatus = Schema.Literals(['REGISTERED', 'SUSPENDED', 'CLOSED', 'UNKNOWN'])
@@ -57,15 +57,6 @@ export const Partner = Schema.Struct({
 })
 
 export type Partner = typeof Partner.Type
-
-/** 사업자 상태조회 결과입니다. 같은 날 조회한 결과는 다시 씁니다. */
-export const BusinessStatusResult = Schema.Struct({
-  businessNumber: Schema.String,
-  status: BusinessStatus,
-  taxationType: Schema.NullOr(Schema.String),
-  closedOn: Schema.NullOr(CalendarDate),
-  checkedAt: Schema.String,
-})
 
 /** 같은 사업자번호의 거래처가 이미 있습니다. */
 export class PartnerBusinessNumberDuplicate extends HttpApiError.Problem<PartnerBusinessNumberDuplicate>()(
