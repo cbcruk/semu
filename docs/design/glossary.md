@@ -99,6 +99,7 @@
 | 증빙 연결(대사) | 통장 입출금 한 건이 어느 증빙의 대금인지 맞추는 일입니다 | `:link`로 맞추고 연결 상태는 읽을 때 계산합니다 ([bookkeeping.md](bookkeeping.md#증빙-연결-상태), [settlement-match-status](../reference/rules/settlement-match-status.md)) | |
 | 사업자등록번호와 사업자 상태 | 10자리 사업자번호에는 검증 숫자가 있고, 국세청에서 계속·휴업·폐업 상태를 조회할 수 있습니다 | 번호 검증 규칙과 `GET /business-statuses/{businessNumber}`입니다 ([business-number-checksum](../reference/rules/business-number-checksum.md), [integrations.md](integrations.md#사업자-상태조회), [business-status-cache](../reference/rules/business-status-cache.md)) | |
 | 결산과 손익계산서 | 결산은 사업연도(또는 그 일부)의 장부를 마감해 손익과 재산 상태를 확정하는 일이고, 손익계산서는 그 기간의 수익과 비용을 매출액 → 매출총이익 → 영업이익 → 당기순이익 순으로 보여 주는 표입니다 | 세무 대리인이 ERP에서 결산한 손익을 결산 스냅샷으로 올리고(`PUT /settlement-reports/profit-loss/{fiscalYear}`), 계산 섹션과 당기 누계는 서버가 채웁니다. 실시간 손익(분류한 증빙 집계)과 숫자가 다를 수 있습니다 ([tax.md 결산 보고서](tax.md#결산-보고서)) | |
+| 현금성 계정과 보유자금 | 현금성 계정은 바로 쓸 수 있는 돈을 담는 계정(현금, 당좌예금, 보통예금, 그 밖의 예금)이고, 보유자금은 그 잔액의 합입니다. 월말 잔액은 전월 말 잔액에 유입을 더하고 유출을 뺀 값입니다 | 결산 자금 흐름(`/settlement-reports/cash-flow/{fiscalYear}`)이 계정별 유입·유출·잔액을 받고 잔액이 이어지는지 봅니다. 실시간 자금 현황(통장 입출금)과 숫자가 다를 수 있습니다 ([tax.md 결산 보고서](tax.md#결산-보고서)) | |
 | 지로 | 공과금·보험료 등을 금융결제원 인터넷지로로 내는 고지서입니다 | `Giro`와 `:pay`·`:mark-paid`·`:hide`입니다. 수집한 목록으로 상태를 다시 맞춥니다 ([bookkeeping.md](bookkeeping.md#지로-고지서), [giro-status-transitions](../reference/rules/giro-status-transitions.md)) | |
 
 ## 세무 대리인과 기관 연동
