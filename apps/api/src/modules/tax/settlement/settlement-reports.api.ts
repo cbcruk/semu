@@ -8,6 +8,8 @@ import {
 } from '../../../shared/problem/problem.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
 import {
+  CashFlowReport,
+  CashFlowUploadBody,
   ProfitLossReport,
   ProfitLossUploadBody,
   SettlementReportList,
@@ -20,11 +22,12 @@ const FiscalYear = Schema.NumberFromString.pipe(
 )
 const params = { fiscalYear: FiscalYear }
 const WithEtag = HttpApiSchema.WithHeaders(ProfitLossReport, { etag: Schema.String })
+const CashFlowWithEtag = HttpApiSchema.WithHeaders(CashFlowReport, { etag: Schema.String })
 const ACCESS_ERRORS = [PermissionDenied, EntitlementRequired, TermsReagreementRequired] as const
 
 /**
  * 결산 기반 세무 보고서입니다. 담당자가 ERP에서 결산한 뒤 올린 스냅샷을 보여 줍니다. 실시간 보고서(`/reports/*`, Bookkeeping)와
- * 숫자가 다를 수 있습니다. 지금은 손익계산서만 있습니다.
+ * 숫자가 다를 수 있습니다. 지금은 손익계산서와 자금 흐름이 있습니다.
  */
 export class SettlementReportsApi extends HttpApiGroup.make('settlement-reports')
   .add(
@@ -39,6 +42,18 @@ export class SettlementReportsApi extends HttpApiGroup.make('settlement-reports'
       headers: { 'if-match': Schema.optionalKey(Schema.String) },
       payload: ProfitLossUploadBody,
       success: WithEtag,
+      error: [...ACCESS_ERRORS, VersionMismatch, SettlementSnapshotInvalid],
+    }),
+    HttpApiEndpoint.get('getCashFlow', '/settlement-reports/cash-flow/:fiscalYear', {
+      params,
+      success: CashFlowWithEtag,
+      error: [...ACCESS_ERRORS, SettlementReportNotFound],
+    }),
+    HttpApiEndpoint.put('putCashFlow', '/settlement-reports/cash-flow/:fiscalYear', {
+      params,
+      headers: { 'if-match': Schema.optionalKey(Schema.String) },
+      payload: CashFlowUploadBody,
+      success: CashFlowWithEtag,
       error: [...ACCESS_ERRORS, VersionMismatch, SettlementSnapshotInvalid],
     }),
   )
