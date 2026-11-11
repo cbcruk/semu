@@ -49,6 +49,24 @@ export function fiscalPeriod(fiscalYear: number, fiscalYearEndMonth: number): Fi
 }
 
 /**
+ * 결산 기준일이 맞는지 봅니다. 사업연도 안이고, 오늘보다 늦지 않으며, 월말입니다. 월 목록이 없는 보고서(미수·미지급)도 씁니다.
+ */
+export function validateClosedThrough(
+  closedThrough: string,
+  period: FiscalPeriod,
+  today: string,
+): SettlementSnapshotViolation | undefined {
+  if (closedThrough < period.start || closedThrough > period.end) {
+    return { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
+  }
+  if (closedThrough > today) return { reason: 'CLOSED_THROUGH_IN_FUTURE', field: 'closedThrough' }
+  if (closedThrough !== lastDayOfMonth(closedThrough.slice(0, 7))) {
+    return { reason: 'CLOSED_THROUGH_NOT_MONTH_END', field: 'closedThrough' }
+  }
+  return undefined
+}
+
+/**
  * 결산 스냅샷의 결산 기준일과 월 목록이 맞는지 봅니다. 모든 결산 보고서가 같이 씁니다. 맞으면 `undefined`입니다.
  *
  * - 결산 기준일은 사업연도 안이고 오늘보다 늦지 않습니다. 아직 오지 않은 날까지 결산할 수 없습니다
@@ -61,13 +79,8 @@ export function validateSnapshotMonths(
   period: FiscalPeriod,
   today: string,
 ): SettlementSnapshotViolation | undefined {
-  if (upload.closedThrough < period.start || upload.closedThrough > period.end) {
-    return { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
-  }
-  if (upload.closedThrough > today) return { reason: 'CLOSED_THROUGH_IN_FUTURE', field: 'closedThrough' }
-  if (upload.closedThrough !== lastDayOfMonth(upload.closedThrough.slice(0, 7))) {
-    return { reason: 'CLOSED_THROUGH_NOT_MONTH_END', field: 'closedThrough' }
-  }
+  const closedThroughViolation = validateClosedThrough(upload.closedThrough, period, today)
+  if (closedThroughViolation !== undefined) return closedThroughViolation
 
   const 첫달 = period.start.slice(0, 7)
   const 마지막달 = upload.closedThrough.slice(0, 7)

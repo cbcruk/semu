@@ -2,6 +2,7 @@ import type {
   BalanceSheetInputMonth,
   CashAccount,
   CashFlowInputMonth,
+  PartnerLedger,
   ProfitLossInputMonth,
   ProfitLossSectionAmount,
 } from './settlement-report.types.ts'
@@ -117,4 +118,38 @@ export function balanceSheetMonth(
 /** `from`부터 `count`달의 테스트 재무상태입니다. 달마다 같은 잔액입니다. */
 export function balanceSheetMonths(from: string, count: number): BalanceSheetInputMonth[] {
   return profitLossMonths(from, count).map(({ month }) => balanceSheetMonth(month))
+}
+
+/**
+ * 테스트용 거래처 원장입니다. 미수는 두 거래처(A001: 이월 300만, 1월 500만 발생·2월 400만 회수, A002: 이월 0, 3월 200만 발생),
+ * 미지급은 한 거래처(B001: 이월 100만, 1월 100만 지급)입니다. 날짜는 `year`의 1–3월입니다.
+ */
+export function partnerLedgers(year: number): { receivables: PartnerLedger[]; payables: PartnerLedger[] } {
+  return {
+    receivables: [
+      {
+        partnerCode: 'A001',
+        partnerName: '가나상사',
+        openingBalance: 3_000_000,
+        entries: [
+          { date: `${year}-02-10`, summary: '외상대금 회수', increase: 0, decrease: 4_000_000 },
+          { date: `${year}-01-15`, summary: '상품 매출', increase: 5_000_000, decrease: 0 },
+        ],
+      },
+      {
+        partnerCode: 'A002',
+        partnerName: '다라유통',
+        openingBalance: 0,
+        entries: [{ date: `${year}-03-20`, summary: null, increase: 2_000_000, decrease: 0 }],
+      },
+    ],
+    payables: [
+      {
+        partnerCode: 'B001',
+        partnerName: '마바물산',
+        openingBalance: 1_000_000,
+        entries: [{ date: `${year}-01-25`, summary: '원재료 대금 지급', increase: 0, decrease: 1_000_000 }],
+      },
+    ],
+  }
 }

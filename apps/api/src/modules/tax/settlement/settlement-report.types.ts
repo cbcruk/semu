@@ -86,6 +86,11 @@ export type SettlementSnapshotInvalidReason =
   | 'CASH_BALANCE_MISMATCH'
   | 'BALANCE_SHEET_UNBALANCED'
   | 'CURRENT_ASSET_COMPONENT_INVALID'
+  | 'PARTNER_BLANK'
+  | 'PARTNER_DUPLICATED'
+  | 'PARTNER_CODE_RESERVED'
+  | 'ENTRY_DATE_OUT_OF_RANGE'
+  | 'ENTRY_AMOUNT_NEGATIVE'
 
 /** 결산 스냅샷 업로드 검증 위반입니다. `field`는 본문 안의 위치(`months[2].sections.REVENUE`)입니다. */
 export interface SettlementSnapshotViolation {
@@ -192,4 +197,52 @@ export interface CumulativeProfitLoss {
 export interface BalanceSheetMonth extends BalanceSheetInputMonth {
   totals: { assets: number; liabilities: number; equity: number; liabilitiesAndEquity: number }
   ratios: BalanceSheetRatios
+}
+
+/** 미수(받을 돈)와 미지급(줄 돈)입니다. */
+export type ReceivablePayableKind = 'RECEIVABLE' | 'PAYABLE'
+
+/** 거래처 원장의 거래 한 건입니다. 증가는 채권·채무가 늘어난 금액, 감소는 회수·지급한 금액(원, 0 이상)입니다. */
+export interface PartnerLedgerEntry {
+  /** `YYYY-MM-DD` */
+  date: string
+  summary: string | null
+  increase: number
+  decrease: number
+}
+
+/** ERP 거래처 하나의 미수 또는 미지급 원장입니다. 거래처는 ERP 코드로 가르고, 앱 거래처(Bookkeeping `partners`)와 잇지 않습니다. */
+export interface PartnerLedger {
+  partnerCode: string
+  partnerName: string
+  /** 사업연도 시작일의 잔액(전기 이월)입니다. */
+  openingBalance: number
+  entries: ReadonlyArray<PartnerLedgerEntry>
+}
+
+/** 미수·미지급 스냅샷 업로드 본문입니다. */
+export interface ReceivablePayableUpload {
+  closedThrough: string
+  receivables: ReadonlyArray<PartnerLedger>
+  payables: ReadonlyArray<PartnerLedger>
+}
+
+/** 저장하는 미수·미지급 스냅샷입니다. */
+export interface ReceivablePayableSnapshotRecord extends SettlementSnapshotMeta {
+  receivables: ReadonlyArray<PartnerLedger>
+  payables: ReadonlyArray<PartnerLedger>
+}
+
+/** 잔액이 움직인 한 기간의 요약입니다. 기말 잔액 = 기초 잔액 + 증가 − 감소입니다. */
+export interface BalanceMovement {
+  openingBalance: number
+  increase: number
+  decrease: number
+  closingBalance: number
+}
+
+/** 미수 또는 미지급 한쪽의 집계입니다. */
+export interface ReceivablePayableSide extends BalanceMovement {
+  months: ReadonlyArray<BalanceMovement & { month: string }>
+  partners: ReadonlyArray<BalanceMovement & { partnerCode: string; partnerName: string; entryCount: number }>
 }

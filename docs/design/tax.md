@@ -48,6 +48,8 @@
 | 손익 섹션 | `REVENUE`(매출액), `COST_OF_SALES`(매출원가), `GROSS_PROFIT`(매출총이익), `SELLING_AND_ADMINISTRATIVE_EXPENSES`(판매비와관리비), `OPERATING_INCOME`(영업이익), `NON_OPERATING_INCOME`(영업외수익), `NON_OPERATING_EXPENSES`(영업외비용), `INCOME_TAXES`(법인세등·소득세등), `NET_INCOME`(당기순이익) |
 | 재무상태표 구분 | `BalanceSheetGroup`: `CURRENT_ASSETS`, `NON_CURRENT_ASSETS`, `CURRENT_LIABILITIES`, `NON_CURRENT_LIABILITIES`, `CAPITAL_STOCK`, `CAPITAL_SURPLUS`, `CAPITAL_ADJUSTMENTS`, `ACCUMULATED_OTHER_COMPREHENSIVE_INCOME`, `RETAINED_EARNINGS` |
 | 재무 비율 | `ratios.*Ppm` (1 = 1,000,000, 분모가 0이면 `null`) |
+| 미수 / 미지급 / 거래처 원장 / ERP 거래처 코드 | `receivable`·`receivables` / `payable`·`payables` / `PartnerLedger` / `partnerCode` |
+| 전기 이월 / 증가 / 감소 / 잔액 | `openingBalance` / `increase` / `decrease` / `closingBalance`·`balance` |
 | 현금성 계정 / 기초 잔액 / 보유자금 / 순유입 | `CashAccount`: `CASH`, `CHECKING_DEPOSIT`, `ORDINARY_DEPOSIT`, `OTHER_DEPOSITS` / `openingBalances` / `fundsHeld` / `netInflow` |
 | 성실신고확인 대상 | `sincereFilingTarget` |
 | 부가세 과세 유형 | `vatTaxpayerType`: `GENERAL`(일반과세자), `SIMPLIFIED`(간이과세자) |
@@ -366,6 +368,9 @@ GET /settlement-reports/cash-flow/{fiscalYear}        → CashFlowReport (ETag)
 PUT /settlement-reports/cash-flow/{fiscalYear}        If-Match(선택) { closedThrough, openingBalances, months: [{ month, accounts }] } → CashFlowReport (ETag)
 GET /settlement-reports/balance-sheet/{fiscalYear}    → BalanceSheetReport (ETag)
 PUT /settlement-reports/balance-sheet/{fiscalYear}    If-Match(선택) { closedThrough, months: [{ month, groups, inventories, tradeReceivables }] } → BalanceSheetReport (ETag)
+GET /settlement-reports/receivable-payable/{fiscalYear}                       → ReceivablePayableReport (ETag)
+PUT /settlement-reports/receivable-payable/{fiscalYear}                       If-Match(선택) { closedThrough, receivables, payables } → ReceivablePayableReport (ETag)
+GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}  → PartnerLedgerReport (side = receivables | payables, ETag 없음)
 ```
 
 담당자가 ERP에서 결산한 뒤 올린 스냅샷(결산 스냅샷)으로 세무 보고서를 보여 줍니다. 실시간 보고서(`/reports/*`, [Bookkeeping](bookkeeping.md#실시간-보고서))는 분류한 증빙과 입출금을 바로 집계하고, 결산 보고서는 담당자가 올린 숫자를 그대로 보여 주므로 두 숫자는 다를 수 있습니다. 코드는 [settlement/](../../apps/api/src/modules/tax/settlement/)에 있습니다.
@@ -433,6 +438,11 @@ PUT /settlement-reports/balance-sheet/{fiscalYear}    If-Match(선택) { closedT
 | `CASH_BALANCE_MISMATCH` | 자금 흐름 계정의 월말 잔액이 전월 말 잔액(첫 달은 기초 잔액) + 유입 − 유출과 다름 |
 | `BALANCE_SHEET_UNBALANCED` | 재무상태표의 그 달 자산 총계가 부채 총계 + 자본 총계와 다름(`field`는 `months[i]`) |
 | `CURRENT_ASSET_COMPONENT_INVALID` | 재고자산이나 매출채권이 음수이거나, 둘의 합이 유동자산보다 큼 |
+| `PARTNER_BLANK` | 미수·미지급 거래처의 코드나 이름이 비었음 |
+| `PARTNER_DUPLICATED` | 미수 또는 미지급 한쪽 안에서 거래처 코드가 겹침(앞뒤 공백을 지우고 봄) |
+| `ENTRY_DATE_OUT_OF_RANGE` | 거래 날짜가 사업연도 시작일 앞이거나 결산 기준일 뒤 |
+| `ENTRY_AMOUNT_NEGATIVE` | 거래의 증가나 감소가 음수 |
+| `PARTNER_CODE_RESERVED` | 거래처 코드가 `.`이나 `..`(원장 경로에 쓸 수 없음) |
 
 **자금 흐름 스냅샷.** 현금성 계정 네 개(`CASH` 현금, `CHECKING_DEPOSIT` 당좌예금, `ORDINARY_DEPOSIT` 보통예금, `OTHER_DEPOSITS` 제예금)의 월별 유입·유출·월말 잔액입니다(`tax_settlement_cash_flow` 표, [cash-flow-rules.ts](../../apps/api/src/modules/tax/settlement/cash-flow-rules.ts)).
 - 담당자는 사업연도 시작일의 계정별 잔액(`openingBalances`)과 달마다 계정별 `{ inflow, outflow, closingBalance }`를 올립니다. 네 계정은 모두 보냅니다. 움직이지 않은 계정은 0과 같은 잔액입니다
@@ -464,7 +474,21 @@ PUT /settlement-reports/balance-sheet/{fiscalYear}    If-Match(선택) { closedT
 - 산식은 원본 화면 그대로입니다. 분석 교과서의 ROA·회전율은 평균 자산(기초와 기말의 평균)과 1년 기준 손익을 쓰지만, 여기서는 그 달 말 잔액과 사업연도 첫 달부터의 누계를 씁니다. 그래서 사업연도 초반에는 수익성과 회전율 비율이 작게 나옵니다. 자본이 음수(자본잠식)이면 부채비율과 ROE도 음수로 나오므로 화면이 따로 표시해야 합니다
 - 현행 요약(`closing_date`, `assets`, `liabilities`, `equity`)과 차트의 최상위 값은 마지막 달 값과 같아 따로 두지 않습니다. 화면이 `months`의 마지막을 씁니다
 
-**아직 없는 보고서.** 미수·미지급이 남았습니다. 같은 모양(회사·사업연도마다 한 건, 대리인이 통째로 올림, `GET /settlement-reports`에 `report`로 나옴)으로 더합니다. 모양과 불변식은 [reference/spec/bookkeeping.md](../reference/spec/bookkeeping.md#211-결산-스냅샷-세무-보고서용-담당자-업로드) 4.6절에 있고, [열린 질문 11](#열린-질문)의 거래처 문제를 함께 정합니다.
+**미수·미지급 스냅샷.** ERP 거래처별 미수(받을 돈)와 미지급(줄 돈) 원장입니다(`tax_settlement_receivable_payable` 표, [receivable-payable-rules.ts](../../apps/api/src/modules/tax/settlement/receivable-payable-rules.ts)).
+- **거래처는 ERP 거래처 코드 그대로입니다(2026-11-11 결정).** 앱 거래처(Bookkeeping `partners`)와 잇지 않고, 결산 보고서 안에서만 `partnerCode`와 이름으로 씁니다. 결산 숫자는 담당자가 올린 그대로 보여 주는 다른 결산 보고서와 같은 방식이고, Bookkeeping에 조회 포트를 더하지 않아도 됩니다. 거래처 원장 화면에서 앱 거래처 화면으로 건너가지는 못합니다. 실시간 거래처 미정산(Bookkeeping `outstanding`)과 숫자가 다를 수 있습니다
+  - 다시 볼 때: 고객이 결산 미수에서 앱 거래처의 증빙·입출금으로 바로 가야 한다는 요구가 생기면, 업로드 때 사업자번호를 함께 받아 Bookkeeping 거래처를 찾는 포트를 둡니다
+- 담당자는 거래처마다 코드, 이름, 전기 이월 잔액(`openingBalance`), 거래(`date`, `summary`, `increase`, `decrease`)를 올립니다
+- 월별 합계, 거래처별 합계, 거래처 원장의 누적 잔액은 모두 서버가 거래에서 계산합니다. 원본은 세 가지를 따로 저장해서 서로 어긋날 수 있었습니다(원본 명세의 불변식 "Σ 거래처 잔액 = 마지막 달 잔액"을 지킬 장치가 없었음). 거래 하나만 받으면 어긋날 수 없습니다
+  - 기말 잔액 = 기초 잔액 + 증가 − 감소(거래처, 달, 전체 모두)
+  - 달의 기초 잔액 = 전월 기말 잔액. 첫 달은 거래처 전기 이월의 합입니다
+  - 달은 사업연도 첫 달부터 결산 기준일이 속한 달까지 거래가 없는 달도 모두 냅니다
+- 거래 날짜는 사업연도 시작일부터 결산 기준일까지입니다. 증가·감소는 0 이상이고, 잔액은 음수일 수 있습니다(선수금, 초과 지급)
+- 같은 거래처가 미수와 미지급에 함께 있을 수 있습니다(물건을 사고팔기도 하는 거래처). 한쪽 안에서는 코드가 겹치지 않습니다
+- 거래처 원장(`GET .../{side}/{partnerCode}`)은 거래를 날짜 순(같은 날은 올린 순서)으로 놓고 거래마다 누적 잔액을 붙입니다. 거래처 코드는 저장한 값과 경로 값 모두 앞뒤 공백을 지우고 견주고, 경로에 넣을 때는 URL 인코딩합니다. 거래처가 없으면 404 `SETTLEMENT_PARTNER_NOT_FOUND`입니다. 읽기 전용 파생 화면이라 ETag를 주지 않습니다
+- 거래처 코드 `.`·`..`는 받지 않습니다(422 `PARTNER_CODE_RESERVED`). 인코딩해도 점은 그대로라 URL 정규화가 원장 경로를 요약 경로로 바꾸기 때문입니다
+- 올해 전기 이월이 지난 사업연도 스냅샷의 기말 잔액과 같은지는 보지 않습니다. 자금 흐름의 기초 잔액과 같은 방침입니다(사업연도마다 따로 올리고 지난 사업연도가 없을 수도 있음)
+- 현행은 거래처 목록을 페이지로 나눴지만 여기서는 한 응답에 모두 줍니다. 결산 거래처 수가 한 회사에 수백 개를 넘지 않는다고 보고, 넘으면 `partners`를 커서 페이지로 뺍니다
+- 현행 거래처 표의 "내용"(`IT 서비스 및 컨설팅 외 1건`)은 화면 문구라 서버가 만들지 않습니다. 거래 수(`entryCount`)와 원장의 적요로 화면이 만듭니다
 - 비용 분석은 손익계산서 응답으로 화면이 계산하므로 따로 두지 않습니다
 - 인건비 내역은 결산 스냅샷이 아니라 Payroll 데이터라 Bookkeeping의 `GET /reports/labor-cost`에 그대로 둡니다
 
@@ -505,6 +529,7 @@ PUT /settlement-reports/balance-sheet/{fiscalYear}    If-Match(선택) { closedT
 | 404 | `FILING_DOCUMENT_NOT_FOUND` | 없거나 고객이 지금 볼 수 없는 문서 | |
 | 404 | `ACTION_CARD_NOT_FOUND` | 없거나 볼 수 없는 카드 | |
 | 404 | `SETTLEMENT_REPORT_NOT_FOUND` | 아직 올리지 않은 사업연도의 결산 보고서 | |
+| 404 | `SETTLEMENT_PARTNER_NOT_FOUND` | 미수·미지급 스냅샷에 없는 ERP 거래처의 원장 | |
 | 404 | `TAX_PROFILE_NOT_FOUND` | 회사 사실(`TaxCompanies`)이 없는 회사의 세무 일정 | |
 | 409 | `FILING_TRANSITION_INVALID` | 상태·세목·종류·세액 부호가 커맨드와 맞지 않음 | `currentStatus`, `command` |
 | 409 | `FILING_LOCKED` | `REQUESTED` 밖의 자료 변경, `PREPARING`·`FILED` 밖의 문서 붙이기 | `currentStatus` |
@@ -592,9 +617,10 @@ flowchart LR
 | `GET /report/profit-loss/:year/`, `GET /report/profit-loss/:year/month-range/` | `GET /settlement-reports/profit-loss/{fiscalYear}` (전년 비교는 두 사업연도를 읽음) |
 | `GET /report/cash-flow/:year/`, `GET /report/cash-flow/summary/` | `GET /settlement-reports/cash-flow/{fiscalYear}` (요약의 보유자금은 응답의 `fundsHeld`) |
 | `GET /report/balance-sheet/table/:year/`, `GET /report/balance-sheet/chart/:year/`, `GET /report/balance-sheet/summary/` | `GET /settlement-reports/balance-sheet/{fiscalYear}` (표는 `groups`, 차트는 `ratios`, 요약은 마지막 달 `totals`) |
-| `GET /accounting/settlement/**` | 없음. [결산 보고서](#결산-보고서)의 아직 없는 보고서 |
+| `GET /accounting/settlement/receivable-payable/:year/`, `.../receivable-by-partner/:year/`, `.../payable-by-partner/:year/`, `.../receivable-payable/summary/` | `GET /settlement-reports/receivable-payable/{fiscalYear}` (월별은 `months`, 거래처별은 `partners`, 요약은 `closingBalance`) |
+| `GET /accounting/settlement/:kind-by-partner/:year/:partnerId/` | `GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}` |
 | 각 보고서의 `summary/`의 `closing_list` | `GET /settlement-reports` |
-| `GET`·`PUT /api/desk/companies/:companyId/settlements/:year/:scope` | `PUT /settlement-reports/profit-loss/{fiscalYear}`(`scope=pl`), `PUT /settlement-reports/cash-flow/{fiscalYear}`(`scope=cash`), `PUT /settlement-reports/balance-sheet/{fiscalYear}`(`scope=bs`). 회사 토큰, 대리인 전용 |
+| `GET`·`PUT /api/desk/companies/:companyId/settlements/:year/:scope` | `PUT /settlement-reports/profit-loss/{fiscalYear}`(`scope=pl`), `PUT /settlement-reports/cash-flow/{fiscalYear}`(`scope=cash`), `PUT /settlement-reports/balance-sheet/{fiscalYear}`(`scope=bs`), `PUT /settlement-reports/receivable-payable/{fiscalYear}`(`scope=ar_ap`). 회사 토큰, 대리인 전용. 현행 `GET`(담당자가 올린 값 다시 보기)은 같은 경로의 `GET` |
 | 일정 배치 `jobs/schedule-filings.ts` | `FilingScheduler.run` (엔드포인트 없음) |
 
 현행 sf `GET /tax/surtax/` 목록의 레거시 필드(`year`, `quarter`, `payment_deadline`, `purchase_sales_ledger_*`, `payment_slip_sent`, `amount`, `process_step`)는 `periodKey`·`periodStart`, `paymentDue`, `ledgerUploadedAt`·`ledgerConfirmedAt`, `paymentSlipSentAt`, `payableAmount`, `progress`가 대신합니다. 이관 때 이름 대응은 [legacy-names.ts](../../apps/api/src/modules/tax/legacy-names.ts)에 있습니다.
@@ -612,7 +638,7 @@ flowchart LR
 | 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |
 | 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxCompanies`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결 |
 | 세무 설정(`GET/PATCH /tax-settings`) | 구현 (`tax_settings` 표, [settings/](../../apps/api/src/modules/tax/settings/)). `TaxProfiles`가 `TaxCompanies`와 합침. 바꾸면 다음 일정 배치부터 반영 |
-| 결산 손익계산서·자금 흐름·재무상태표(`GET /settlement-reports`, `GET/PUT /settlement-reports/{profit-loss,cash-flow,balance-sheet}/{fiscalYear}`) | 구현 (`tax_settlement_profit_loss`·`tax_settlement_cash_flow`·`tax_settlement_balance_sheet` 표, [settlement/](../../apps/api/src/modules/tax/settlement/)). 미수·미지급은 없음 |
+| 결산 보고서 네 개(`GET /settlement-reports`, `GET/PUT /settlement-reports/{profit-loss,cash-flow,balance-sheet,receivable-payable}/{fiscalYear}`, 거래처 원장) | 구현 (`tax_settlement_*` 표 네 개, [settlement/](../../apps/api/src/modules/tax/settlement/)). 엑셀 내보내기는 없음 |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
 | 수정신고, 감사 로그 | 없음 |
@@ -634,5 +660,4 @@ flowchart LR
     - **반기 납부 포기:** 매월 납부로 되돌리면(`withholdingSemiannualFrom: null`) 지난 반기까지 매월로 계산합니다. 실제로는 포기한 뒤의 기간부터 매월 납부로 돌아가므로, 지난 반기는 반기 납부로 남아야 합니다. 배치는 기간 안의 `SCHEDULED` 반기 건을 취소하고 매월 건을 만들므로, 이미 지난 반기의 건은 대리인이 정리합니다
     - **결산월 변경:** 결산월을 바꾸면 지난 사업연도까지 새 결산월로 계산합니다. 실제로는 직전 사업연도 종료일부터 3개월 안에 변경 신고를 하고, 종전 사업연도 개시일부터 변경된 사업연도 개시일 전날까지를 한 사업연도로 봅니다(법인세법 제7조). 이미 만든 법인세 건의 기간은 대리인이 고칩니다
     - 두 경우 모두 설정에 적용 시작(반기·사업연도)을 두거나 설정 이력을 기간별로 저장하면 풀립니다. 대리인이 고치는 일이 잦아지면 정합니다
-11. **나머지 결산 보고서.** 프리미엄 결산은 플랜 없이 스냅샷이 있는지로 보여 주기로 정했습니다(2026-11-11, [결산 보고서](#결산-보고서)). 자금 흐름과 재무상태표는 만들었고, 미수·미지급이 남았습니다.
-    - 미수·미지급의 거래처는 ERP 거래처 코드라 Bookkeeping 거래처(`partners`)와 이어지지 않습니다. 거래처 원장 화면에서 앱 거래처로 건너가야 하는지 확인이 필요합니다
+11. ~~나머지 결산 보고서~~: 프리미엄 결산은 플랜 없이 스냅샷이 있는지로 보여 주고, 미수·미지급의 거래처는 ERP 코드 그대로 두기로 정했습니다(2026-11-11). 결산 보고서 네 개를 모두 만들었습니다([결산 보고서](#결산-보고서))
