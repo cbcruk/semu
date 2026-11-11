@@ -389,6 +389,42 @@ describe('결산 재무상태표(PUT·GET /v1/settlement-reports/balance-sheet/{
     expect(body.months[0].ratios.returnOnEquityPpm).not.toBeNull()
   })
 
+  it('계정 이름의 앞뒤 공백을 지워 줍니다', async () => {
+    app = taxTestApp()
+    const base = balanceSheetMonth('2025-01')
+    const month = balanceSheetMonth('2025-01', {
+      groups: {
+        ...base.groups,
+        NON_CURRENT_ASSETS: { amount: 50_000_000, accounts: [{ name: ' 건물 ', amount: 50_000_000 }] },
+      },
+    })
+
+    const body = await (await uploadBalanceSheet({ closedThrough: '2025-01-31', months: [month] })).json()
+
+    expect(body.months[0].groups.NON_CURRENT_ASSETS.accounts).toEqual([{ name: '건물', amount: 50_000_000 }])
+  })
+
+  it('결산월을 바꿔 손익계산서와 사업연도 기간이 다르면 손익 비율은 null입니다', async () => {
+    app = taxTestApp({ profiles: [{ ...DEMO_TAX_PROFILE, fiscalYearEndMonth: 12 }] })
+    await uploadBalanceSheet(balanceSheetYear)
+    await app.send('/tax-settings', { method: 'PATCH', body: { fiscalYearEndMonth: 6 } })
+    await upload({ closedThrough: '2025-06-30', months: profitLossMonths('2024-07', 12) })
+
+    const body = await (await app.send('/settlement-reports/balance-sheet/2025')).json()
+
+    expect(body.months[5].ratios).toMatchObject({ equityRatioPpm: 600_000, returnOnAssetsPpm: null })
+  })
+
+  it('다른 회사의 같은 사업연도 손익계산서는 쓰지 않습니다', async () => {
+    app = taxTestApp()
+    await app.send('/settlement-reports/profit-loss/2025', { method: 'PUT', token: 'otherAgency', body: fullYear })
+    await uploadBalanceSheet(balanceSheetYear)
+
+    const body = await (await app.send('/settlement-reports/balance-sheet/2025')).json()
+
+    expect(body.months[0].ratios.returnOnAssetsPpm).toBeNull()
+  })
+
   it('자산과 부채·자본이 맞지 않으면 422입니다', async () => {
     app = taxTestApp()
     const base = balanceSheetMonth('2025-01')

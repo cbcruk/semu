@@ -222,7 +222,7 @@ export const uploadCashFlow = (
 
 /**
  * 저장한 스냅샷을 재무상태표 응답으로 바꿉니다. 총계와 재무 비율을 채웁니다. 손익을 쓰는 비율은 같은 회사·사업연도의
- * 손익계산서 스냅샷에서 누계를 읽고, 없으면 `null`입니다.
+ * 손익계산서 스냅샷에서 누계를 읽고, 없거나 사업연도 기간이 다르면 `null`입니다.
  */
 const toBalanceSheetReport = (
   snapshot: BalanceSheetSnapshotRecord,
@@ -232,10 +232,14 @@ const toBalanceSheetReport = (
       snapshot.companyId,
       snapshot.fiscalYear,
     )
-    const cumulative = Option.match(profitLoss, {
-      onNone: () => new Map(),
-      onSome: (found) => cumulativeProfitLoss(found.months.map(deriveProfitLossMonth)),
-    })
+    // 결산월을 바꾼 사이에 한쪽만 다시 올리면 두 스냅샷의 기간이 다릅니다. 그때는 누계의 시작이 맞지 않으므로 손익 비율을 내지 않습니다.
+    const cumulative = Option.match(
+      Option.filter(profitLoss, (found) => found.period.start === snapshot.period.start),
+      {
+        onNone: () => new Map(),
+        onSome: (found) => cumulativeProfitLoss(found.months.map(deriveProfitLossMonth)),
+      },
+    )
     return {
       fiscalYear: snapshot.fiscalYear,
       period: snapshot.period,

@@ -7,6 +7,7 @@ import type {
   CumulativeProfitLoss,
   FiscalPeriod,
   ProfitLossMonth,
+  ProfitLossSectionAmount,
   SettlementSnapshotViolation,
 } from './settlement-report.types.ts'
 import { validateSectionAccounts, validateSnapshotMonths } from './settlement-rules.ts'
@@ -85,13 +86,13 @@ export function validateBalanceSheetUpload(
  */
 export function ratioPpm(numerator: number, denominator: number): number | null {
   if (denominator === 0) return null
-  const 분자 = BigInt(numerator) * 1_000_000n
-  const 분모 = BigInt(denominator)
-  const 음수 = 분자 < 0n !== 분모 < 0n
-  const 절대분자 = 분자 < 0n ? -분자 : 분자
-  const 절대분모 = 분모 < 0n ? -분모 : 분모
-  const 몫 = (절대분자 * 2n + 절대분모) / (절대분모 * 2n)
-  return Number(음수 ? -몫 : 몫)
+  const scaled = BigInt(numerator) * 1_000_000n
+  const divisor = BigInt(denominator)
+  const negative = scaled < 0n !== divisor < 0n
+  const absScaled = scaled < 0n ? -scaled : scaled
+  const absDivisor = divisor < 0n ? -divisor : divisor
+  const rounded = (absScaled * 2n + absDivisor) / (absDivisor * 2n)
+  return Number(negative ? -rounded : rounded)
 }
 
 /**
@@ -120,6 +121,8 @@ export function cumulativeProfitLoss(
  * 총자산회전율 = 누적 매출액 / 자산    재고자산회전율 = 누적 매출액 / 재고자산    매출채권회전율 = 누적 매출액 / 매출채권
  * ```
  *
+ * 계정 이름은 손익계산서처럼 앞뒤 공백을 지운 값으로 둡니다.
+ *
  * 누적은 같은 사업연도 손익계산서의 첫 달부터 그 달까지입니다. 그 달의 손익이 없으면(`cumulative`가 없음) 손익을 쓰는 비율은 `null`입니다.
  */
 export function deriveBalanceSheetMonth(
@@ -141,8 +144,17 @@ export function deriveBalanceSheetMonth(
     inventoryTurnoverPpm: 손익비율((value) => value.revenue, input.inventories),
     receivablesTurnoverPpm: 손익비율((value) => value.revenue, input.tradeReceivables),
   }
+  const 다듬은구분 = {} as Record<BalanceSheetGroup, ProfitLossSectionAmount>
+  for (const group of BALANCE_SHEET_GROUPS) {
+    const { amount, accounts } = input.groups[group]
+    다듬은구분[group] = {
+      amount,
+      accounts: accounts.map((account) => ({ name: account.name.trim(), amount: account.amount })),
+    }
+  }
   return {
     ...input,
+    groups: 다듬은구분,
     totals: { assets, liabilities, equity, liabilitiesAndEquity: liabilities + equity },
     ratios,
   }
