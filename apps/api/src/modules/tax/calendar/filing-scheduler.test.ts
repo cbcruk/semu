@@ -3,6 +3,7 @@ import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 import { TEST_COMPANY_ID } from '../../identity-access/testing.ts'
 import { FilingRepository } from '../filings/filing-repository.ts'
+import { TaxSettingRepository } from '../settings/tax-setting-repository.ts'
 import { DEMO_TAX_PROFILE } from '../tax-demo.ts'
 import { FilingSchedulerLive, taxMemoryLayer } from '../tax.layer.ts'
 import type { TaxEvent } from '../tax.public.ts'
@@ -257,5 +258,45 @@ describe('배치가 되살린 원천세 신고 건의 체크리스트(FilingSche
     expect(restored.status).toBe('SCHEDULED')
     expect(restored.requirements[0]).toMatchObject({ code: 'PAYROLL_LEDGER_CLOSED', response: 'PROVIDED' })
     expect(restored.history.at(-1)!.type).toBe('SCHEDULE_RESTORED')
+  })
+})
+
+describe('저장한 세무 설정과 일정 배치(FilingScheduler.run)', () => {
+  it('2027년 1기부터 반기 납부로 저장하면 그 앞의 매월 건은 두고 적용 반기부터 반기 건을 만듭니다', async () => {
+    const memory = taxMemoryLayer({ profiles: [DEMO_TAX_PROFILE], payrollLedgers: closedLedgers() })
+    const [before, afterSaving, inApril] = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.UTC(2026, 10, 11))
+        const scheduler = yield* FilingScheduler
+        const repository = yield* FilingRepository
+        const settings = yield* TaxSettingRepository
+        const withholdingKinds = repository.list(TEST_COMPANY_ID).pipe(
+          Effect.map((filings) =>
+            filings
+              .filter((filing) => filing.taxType === 'WITHHOLDING_TAX' && filing.status !== 'CANCELED')
+              .map((filing) => `${filing.kind}:${filing.periodKey}`)
+              .toSorted(),
+          ),
+        )
+
+        yield* scheduler.run()
+        const before = yield* withholdingKinds
+        const current = yield* settings.get(TEST_COMPANY_ID)
+        yield* settings.save(TEST_COMPANY_ID, {
+          ...current,
+          withholdingCycle: 'SEMIANNUAL',
+          withholdingSemiannualFrom: '2027-H1',
+        })
+        yield* scheduler.run()
+        const afterSaving = yield* withholdingKinds
+        yield* TestClock.setTime(Date.UTC(2027, 3, 1))
+        yield* scheduler.run()
+        return [before, afterSaving, yield* withholdingKinds] as const
+      }).pipe(Effect.provide(Layer.provideMerge(FilingSchedulerLive, memory)), Effect.provide(TestClock.layer())),
+    )
+
+    expect(before).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12', 'MONTHLY:2027-01', 'MONTHLY:2027-02'])
+    expect(afterSaving).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12'])
+    expect(inApril).toEqual(['MONTHLY:2026-11', 'MONTHLY:2026-12', 'SEMIANNUAL:2027-H1'])
   })
 })

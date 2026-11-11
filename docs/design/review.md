@@ -45,7 +45,7 @@
 | Identity & Access | `member:*`, `role:*`, `invitation:*`, `audit-log:read`, `company:read/update` | — |
 | Billing | `subscription:read`, `payment:read`, `billing-mandate:*`, `service-contract:*` (대리인 전용: `subscription:manage`, `payment:retry/refund`) | `service-contract`는 TAXATION |
 | Integrations | `integration:*`, `certificate:*`, `scrap-request:*`, `hometax-delegation:*`, `business-status:read` | `hometax-delegation`은 TAXATION |
-| Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 전용 `filing:process`, `action-card:read/complete`, `estimated-vat:read` | TAXATION + 약관 |
+| Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 전용 `filing:process`, `action-card:read/complete`, `estimated-vat:read`, `tax-setting:read/update` | TAXATION + 약관 |
 | HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update` | PAYROLL 또는 TAXATION |
 | Documents | `esign-request:*`, `esign-template:read`, `certificate-issuance:*`, `document-form:read` | PAYROLL |
 | Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (대장·명세서·인건비는 PAYROLL 또는 TAXATION) |

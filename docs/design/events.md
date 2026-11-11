@@ -72,7 +72,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | 쓰는 쪽 포트 | 제공 쪽 공개 서비스 | 내용 |
 |---|---|---|
 | Identity & Access `CompanyPlans` | Billing 구독 | 회사의 유효 플랜. `Actor.plans`의 원천 |
-| Tax `TaxProfiles` | Identity & Access 회사 + Billing 플랜 | 사업자 형태, 플랜, 결산월 등 신고 일정 계산 입력 |
+| Tax `TaxCompanies` | Identity & Access 회사 + Billing 플랜 | 사업자 형태, 플랜. 결산월 등 세무 설정은 Tax 자기 저장소(`tax_settings`)에 있고 Tax가 합쳐 신고 일정 계산 입력(`TaxProfile`)을 만듦 |
 | Tax `PayrollLedgers` | Payroll `PayrollLedgerSummary` | 지급월 범위의 대장 수와 마감 수 |
 | Tax `WithholdingTotals` | Payroll `PayrollWithholdingTotals` | 지급월의 마감 대장 소득 종류별 원천세 합계. Tax가 신고서 줄 코드로 바꿈 |
 | Payroll `WithholdingFilingLock` | Tax `WithholdingFilingLock` | 지급월 원천세가 `FILED`·`SETTLED`인지. 참이면 대장 변경 409 |

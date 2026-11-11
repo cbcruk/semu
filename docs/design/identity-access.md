@@ -80,6 +80,7 @@
 | | `settlement-report`: read | TAXATION |
 | 세무 | `filing`: read, update, submit, confirm-ledger, pay, *process* | TAXATION |
 | | `vat-filing`·`withholding-tax-filing`·`corporate-tax-filing`·`income-tax-filing`: read, update, submit | TAXATION |
+| | `tax-setting`: read, update | TAXATION |
 | | `estimated-vat`: read · `action-card`: read, update, complete | |
 
 `filing`, `organization`, `payroll-workflow`, `payroll-rate-table`, `payroll-calculator`, `report`는 엔드포인트가 이미 쓰던 리소스를 D5에서 카탈로그에 올린 것입니다. 기존 리소스에서 빠져 있던 동작 17개(`employee:resign`·`reveal-rrn`·`reveal-account`, `esign-request:update`·`delete`·`void`, `certificate-issuance:send`·`void`, `payroll-ledger:submit`·`close`, `severance-settlement:complete`, `bank-transaction:classify`, `giro:update`, `account-title:create`·`delete`, `classification-rule:apply`, `action-card:complete`)도 같이 올려 권한 그룹에서 하나씩 줄 수 있습니다. `permission-catalog.coverage.test.ts`가 소스(테스트 제외)에 나오는 모든 `resource:action` 문자열이 카탈로그에 있는지 확인해 다시 어긋나지 않게 합니다. 대리인 기본 권한이 카탈로그에서 계산되므로 빠져 있으면 대리인이 그 엔드포인트를 쓰지 못합니다. 그 결과 고객 역할 화면(`GET /permissions`)에도 부여 가능 권한으로 나타납니다. 세목별 `*-filing` 리소스는 역할 템플릿과 현행 메뉴 대응이 쓰고 있어 그대로 둡니다.

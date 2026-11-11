@@ -140,31 +140,42 @@ function 간이과세자부가세의무(연도: number, 세금계산서발급자
   ]
 }
 
+/**
+ * 원천세 의무입니다. 반기별 납부는 승인을 받은 날이 속하는 반기의 다음 반기부터 적용하므로(소득세법 제128조 ②,
+ * 시행령 제186조), `withholdingSemiannualFrom` 앞의 반기는 매월, 그 반기부터는 반기입니다. 값이 없으면 모든 반기를 반기로 봅니다.
+ * 값이 없는 경우는 검증을 거치지 않는 테스트 시드와 현행 픽스처뿐입니다.
+ */
 function 원천세의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
-  if (profile.withholdingCycle === 'SEMIANNUAL') {
-    return ([1, 2] as const).map((반기) => {
-      const 반기시작월 = monthOf(연도, 반기 === 1 ? 1 : 7)
-      const 반기종료월 = addMonths(반기시작월, 5)
+  return ([1, 2] as const).flatMap((반기): ObligationDraft[] => {
+    const 반기키 = `${연도}-H${반기}`
+    const 반기시작월 = monthOf(연도, 반기 === 1 ? 1 : 7)
+    const 반기종료월 = addMonths(반기시작월, 5)
+    const 반기납부적용시작 = profile.withholdingSemiannualFrom ?? null
+    const 반기납부임 =
+      profile.withholdingCycle === 'SEMIANNUAL' && (반기납부적용시작 === null || 반기키 >= 반기납부적용시작)
+    if (반기납부임) {
+      return [
+        {
+          taxType: 'WITHHOLDING_TAX',
+          kind: 'SEMIANNUAL',
+          periodKey: 반기키,
+          periodStart: `${반기시작월}-01`,
+          periodEnd: lastDayOfMonth(반기종료월),
+          statutoryDue: `${addMonths(반기종료월, 1)}-10`,
+        },
+      ]
+    }
+    return Array.from({ length: 6 }, (_, index) => {
+      const 귀속월 = addMonths(반기시작월, index)
       return {
         taxType: 'WITHHOLDING_TAX',
-        kind: 'SEMIANNUAL',
-        periodKey: `${연도}-H${반기}`,
-        periodStart: `${반기시작월}-01`,
-        periodEnd: lastDayOfMonth(반기종료월),
-        statutoryDue: `${addMonths(반기종료월, 1)}-10`,
+        kind: 'MONTHLY',
+        periodKey: 귀속월,
+        periodStart: `${귀속월}-01`,
+        periodEnd: lastDayOfMonth(귀속월),
+        statutoryDue: `${addMonths(귀속월, 1)}-10`,
       }
     })
-  }
-  return Array.from({ length: 12 }, (_, index) => {
-    const 귀속월 = monthOf(연도, index + 1)
-    return {
-      taxType: 'WITHHOLDING_TAX',
-      kind: 'MONTHLY',
-      periodKey: 귀속월,
-      periodStart: `${귀속월}-01`,
-      periodEnd: lastDayOfMonth(귀속월),
-      statutoryDue: `${addMonths(귀속월, 1)}-10`,
-    }
   })
 }
 

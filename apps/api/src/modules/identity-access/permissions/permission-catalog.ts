@@ -99,6 +99,7 @@ export const PERMISSION_CATALOG = {
   },
   'estimated-vat': { area: 'TAX', actions: ['read'] },
   'action-card': { area: 'TAX', actions: ['read', 'update', 'complete'] },
+  'tax-setting': { area: 'TAX', actions: ['read', 'update'], plans: ['TAXATION'] },
 } as const satisfies Record<string, ResourcePermissions>
 
 /** 카탈로그의 리소스 이름입니다. */
@@ -249,6 +250,7 @@ export const ROLE_TEMPLATES: ReadonlyArray<RoleTemplate> = [
       'income-tax-filing:*',
       'estimated-vat:read',
       'settlement-report:read',
+      'tax-setting:read',
     ],
   },
   { code: 'SETTINGS', name: '설정', permissions: ['company:update', 'member:read', 'role:read', 'invitation:read'] },

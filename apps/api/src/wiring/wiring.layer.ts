@@ -14,7 +14,7 @@ import { HrCompanyWorkforceSizeFromPayroll, HrSeveranceSettlementLookupFromPayro
 import { PayrollEmployeeDirectoryFromHr } from './payroll-hr.ts'
 import { PayrollEventsToTax, PayrollWithholdingFilingLockFromTax } from './payroll-tax.ts'
 import { TaxVatEvidenceFromBookkeeping } from './tax-bookkeeping.ts'
-import { TaxProfilesFromIdentityAccess } from './tax-identity-access.ts'
+import { TaxCompaniesFromIdentityAccess } from './tax-identity-access.ts'
 import { TaxPayrollLedgersFromPayroll, TaxWithholdingTotalsFromPayroll } from './tax-payroll.ts'
 import { TaxPublicHolidaysFromCalendar } from './tax-public-holidays.ts'
 
@@ -22,7 +22,7 @@ import { TaxPublicHolidaysFromCalendar } from './tax-public-holidays.ts'
 const StoreBackedAdapters = Layer.mergeAll(
   PayrollEmployeeDirectoryFromHr,
   TaxVatEvidenceFromBookkeeping,
-  TaxProfilesFromIdentityAccess,
+  TaxCompaniesFromIdentityAccess,
   TaxPublicHolidaysFromCalendar,
   BillingPublicHolidaysFromCalendar,
   BookkeepingIntegrationsLive,
@@ -58,7 +58,7 @@ const TaxBackedAdapters = Layer.mergeAll(
  * | Payroll `WithholdingFilingLock`, `PayrollEventPublisher` | Tax `WithholdingFilingLock`, `PayrollLedgerSync` | `payroll-tax.ts` |
  * | Tax `PayrollLedgers`, `WithholdingTotals` | Payroll `PayrollLedgerSummary`, `PayrollWithholdingTotals` | `tax-payroll.ts` |
  * | Tax `VatEvidence` | Bookkeeping `VatEvidenceQuery` | `tax-bookkeeping.ts` |
- * | Tax `TaxProfiles` | Identity & Access `CompanyDirectory`, Billing `CompanyPlans` | `tax-identity-access.ts` |
+ * | Tax `TaxCompanies` | Identity & Access `CompanyDirectory`, Billing `CompanyPlans` | `tax-identity-access.ts` |
  * | Tax·Billing `PublicHolidays` | 공유 `PublicHolidayCalendar` | `tax-public-holidays.ts`, `billing-public-holidays.ts` |
  * | Bookkeeping `VatEstimateSource` | Tax `VatEstimateQuery` | `bookkeeping-tax.ts` |
  * | Bookkeeping `LaborCostSource` | Payroll `PayrollLaborCost` | `bookkeeping-payroll.ts` |

@@ -25,6 +25,12 @@ export interface TaxCalendarProfile {
   fiscalYearEndMonth: number
   withholdingCycle: WithholdingCycle
   /**
+   * 반기별 납부를 적용하기 시작하는 반기(`2027-H1`)입니다. 승인받은 날이 속한 반기의 다음 반기입니다(소득세법 제128조 ②,
+   * 시행령 제186조). 그 앞의 반기는 매월 납부입니다. `withholdingCycle`이 `SEMIANNUAL`인데 없으면 모든 반기를 반기 납부로 봅니다.
+   * 이 대체 동작은 검증을 거치지 않는 테스트 시드와 현행 픽스처용입니다. 저장한 설정은 PATCH 검증 때문에 반기 납부면 항상 값이 있습니다.
+   */
+  withholdingSemiannualFrom?: string | null | undefined
+  /**
    * 일반과세자 과세기간(`2026-H2`)별 공급가액 합계액(원)입니다. 확정 신고를 마치면 대리인이 넣고, 다음 과세기간의
    * 예정고지 판정에 씁니다(부가가치세법 시행령 제90조 ④). 없는 기간은 모르는 것으로 봅니다.
    */

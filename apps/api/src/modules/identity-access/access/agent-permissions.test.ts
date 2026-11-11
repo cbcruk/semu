@@ -108,6 +108,7 @@ describe('세무 대리인의 권한 집합 (D5)', () => {
         "subscription:*",
         "subscription:manage",
         "tax-invoice:*",
+        "tax-setting:*",
         "vat-filing:*",
         "withholding-tax-filing:*",
       ]

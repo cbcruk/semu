@@ -31,7 +31,8 @@ export interface ScheduleRunResult {
 /**
  * 세무 기장 회사의 신고 건을 계산한 의무에 맞춰 만들고, 기한을 고치고, 해당 없는 예정 건을 취소합니다.
  *
- * 엔드포인트 없이 매일 배치와 공휴일표·회사 세무 설정 변경 뒤에 부릅니다. 같은 날 다시 돌려도 결과가 같습니다.
+ * 엔드포인트 없이 매일 배치와 공휴일표 변경 뒤에 부릅니다. 세무 설정 변경은 바로 부르지 않고 다음 실행이 새 설정을 씁니다.
+ * 같은 날 다시 돌려도 결과가 같습니다.
  */
 export class FilingScheduler extends Context.Service<
   FilingScheduler,

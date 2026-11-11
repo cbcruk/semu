@@ -12,7 +12,8 @@ import { FilingScheduler } from './calendar/filing-scheduler.ts'
 import { PublicHolidays } from './calendar/public-holidays.ts'
 import { TaxCalendar } from './calendar/tax-calendar.ts'
 import { TaxCalendarHttpLive } from './calendar/tax-calendar.http.ts'
-import { TaxProfiles } from './calendar/tax-profiles.ts'
+import { TaxCompanies } from './calendar/tax-companies.ts'
+import { splitProfile, TaxProfiles } from './calendar/tax-profiles.ts'
 import type { TaxProfile } from './calendar/tax-profiles.ts'
 import type { FilingRecord } from './filings/filing.types.ts'
 import type { PayrollLedgerSummary } from './filings/filing-requirements.types.ts'
@@ -22,6 +23,8 @@ import { FilingsHttpLive } from './filings/filings.http.ts'
 import { PayrollLedgers } from './filings/payroll-ledgers.ts'
 import type { WithholdingTotal } from './filings/withholding-return.types.ts'
 import { WithholdingTotals } from './filings/withholding-totals.ts'
+import { TaxSettingRepository } from './settings/tax-setting-repository.ts'
+import { TaxSettingsHttpLive } from './settings/tax-settings.http.ts'
 import { DEMO_FILINGS, DEMO_HOLIDAYS, DEMO_TAX_PROFILE, DEMO_VAT_EVIDENCE } from './tax-demo.ts'
 import {
   AgencyWorkloadQuery,
@@ -40,22 +43,32 @@ const ActionCardsLive = ActionCards.layer
 
 const FilingsLive = Filings.layer.pipe(Layer.provide(ActionCardsLive))
 
+/** 회사 사실(`TaxCompanies` 포트)과 세무 설정 저장소를 합친 세무 프로필입니다. 일정·예상 부가세를 쓰는 서비스마다 넣습니다. */
+const TaxProfilesLive = TaxProfiles.layer
+
 /**
- * 세무 신고 건·세무 일정·할 일 카드·예상 부가세 컨텍스트의 핸들러 전체입니다.
+ * 세무 신고 건·세무 일정·할 일 카드·예상 부가세·세무 설정 컨텍스트의 핸들러 전체입니다.
  *
- * 저장소(`FilingRepository`·`ActionCardRepository`)와 포트(`TaxEvents`·`PayrollLedgers`·`WithholdingTotals`·
- * `TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 호출하는 쪽이 넣습니다.
+ * 저장소(`FilingRepository`·`ActionCardRepository`·`TaxSettingRepository`)와 포트(`TaxEvents`·`PayrollLedgers`·
+ * `WithholdingTotals`·`TaxCompanies`·`PublicHolidays`·`VatEvidence`)는 호출하는 쪽이 넣습니다.
  */
 export const TaxHttpLive = Layer.mergeAll(
   FilingsHttpLive.pipe(Layer.provide(FilingsLive)),
   ActionCardsHttpLive.pipe(Layer.provide(ActionCardsLive)),
-  TaxCalendarHttpLive.pipe(Layer.provide(TaxCalendar.layer)),
-  VatEstimatesHttpLive.pipe(Layer.provide(VatEstimates.layer)),
+  TaxCalendarHttpLive.pipe(Layer.provide(TaxCalendar.layer), Layer.provide(TaxProfilesLive)),
+  VatEstimatesHttpLive.pipe(Layer.provide(VatEstimates.layer), Layer.provide(TaxProfilesLive)),
   AgencyQueueHttpLive.pipe(Layer.provide(AgencyQueue.layer)),
+  TaxSettingsHttpLive,
 )
 
-/** 일정 배치입니다. 매일 배치와 공휴일표·세무 설정 변경 뒤에 `run`을 부릅니다. 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다. */
-export const FilingSchedulerLive = FilingScheduler.layer.pipe(Layer.provide(ActionCardsLive))
+/**
+ * 일정 배치입니다. 매일 배치와 공휴일표가 바뀐 뒤에 `run`을 부릅니다. 세무 설정을 고쳐도 바로 돌리지 않고 다음 `run`이 새 설정을 씁니다.
+ * 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다.
+ */
+export const FilingSchedulerLive = FilingScheduler.layer.pipe(
+  Layer.provide(ActionCardsLive),
+  Layer.provide(TaxProfilesLive),
+)
 
 /** Payroll이 급여대장 잠금에 쓰는 원천세 신고 여부 조회입니다. `FilingRepository`가 필요합니다. */
 export const WithholdingFilingLockLive = Layer.effect(
@@ -87,7 +100,7 @@ export const PayrollLedgerSyncLive = Layer.effect(
   }),
 ).pipe(Layer.provide(FilingsLive))
 
-/** 예상 부가세 공개 조회입니다. `VatEvidence`·`TaxProfiles`·`PublicHolidays` 포트가 필요합니다. */
+/** 예상 부가세 공개 조회입니다. `VatEvidence`·`TaxCompanies`·`PublicHolidays` 포트와 `TaxSettingRepository`가 필요합니다. */
 export const VatEstimateQueryLive = Layer.effect(
   VatEstimateQuery,
   Effect.gen(function* () {
@@ -108,7 +121,7 @@ export const VatEstimateQueryLive = Layer.effect(
         }),
     })
   }),
-)
+).pipe(Layer.provide(TaxProfilesLive))
 
 /** 대리인 담당 회사의 세무 일감 개수입니다. 작업 큐(`GET /agency/filings`)와 같은 서비스로 셉니다. */
 export const AgencyWorkloadQueryLive = Layer.effect(
@@ -133,6 +146,7 @@ export const TaxPublicLive = Layer.fresh(
 export interface TaxMemorySeed {
   filings?: ReadonlyArray<FilingRecord>
   actionCards?: ReadonlyArray<ActionCardRecord>
+  /** 회사 세무 프로필입니다. 회사 사실은 `TaxCompanies` 가짜에, 세무 설정은 `TaxSettingRepository`에 `version: 1`로 나눠 넣습니다. */
   profiles?: ReadonlyArray<TaxProfile>
   holidays?: ReadonlyArray<string>
   payrollLedgers?: Readonly<Record<string, PayrollLedgerSummary>>
@@ -145,13 +159,17 @@ export interface TaxMemorySeed {
 
 /** 저장소와 포트를 메모리 구현으로 채웁니다. 테스트는 시드를 넘겨 쓰고, 로컬 개발은 {@link TaxMemoryLive}를 씁니다. */
 export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
+  const profiles = (seed.profiles ?? []).map((profile) => splitProfile(profile, { version: 1, updatedAt: null }))
   return Layer.mergeAll(
     FilingRepository.layerMemory(seed.filings),
     ActionCardRepository.layerMemory(seed.actionCards),
+    TaxSettingRepository.layerMemory(
+      profiles.map(({ company, setting }) => ({ companyId: company.companyId, setting })),
+    ),
     TaxEvents.layerMemory(seed.events),
     PayrollLedgers.layerMemory(seed.payrollLedgers),
     WithholdingTotals.layerMemory(seed.withholdingTotals),
-    TaxProfiles.layerMemory(seed.profiles),
+    TaxCompanies.layerMemory(profiles.map(({ company }) => company)),
     PublicHolidays.layerMemory(seed.holidays),
     VatEvidence.layerMemory(seed.vatEvidence),
   )
@@ -159,12 +177,14 @@ export function taxMemoryLayer(seed: TaxMemorySeed = {}) {
 
 /**
  * 세무 컨텍스트가 소유한 저장소와 이벤트 포트입니다. 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다. 데모 회사에 신고 건 두 건이 있습니다.
+ * 세무 설정(`tax_settings`)은 비어 있어 모든 회사가 기본 설정입니다.
  *
- * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`WithholdingTotals`·`TaxProfiles`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
+ * 다른 컨텍스트가 구현하는 포트(`PayrollLedgers`·`WithholdingTotals`·`TaxCompanies`·`PublicHolidays`·`VatEvidence`)는 넣지 않습니다. `app.ts`가 `src/wiring/`의 어댑터로 채웁니다.
  */
 export const TaxStoreLive = Layer.mergeAll(
   FilingRepository.layer(DEMO_FILINGS),
   ActionCardRepository.layer(),
+  TaxSettingRepository.layer(),
   TaxEvents.layerMemory(),
 )
 
