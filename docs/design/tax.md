@@ -1,6 +1,6 @@
-# Tax: 신고 건·세무 일정·할 일 카드·예상 부가세
+# Tax: 신고 건·세무 일정·할 일 카드·예상 부가세·결산 보고서
 
-세무 기장 고객과 세무 대리인이 함께 다루는 신고 건(부가세·원천세·법인세·종합소득세)의 진행, 그 일정을 만드는 세무 달력, 홈의 할 일 카드, 증빙으로 계산하는 예상 부가세, 그리고 일정을 정하는 회사 세무 설정을 다룹니다. 코드는 [`apps/api/src/modules/tax/`](../../apps/api/src/modules/tax/)에 있습니다.
+세무 기장 고객과 세무 대리인이 함께 다루는 신고 건(부가세·원천세·법인세·종합소득세)의 진행, 그 일정을 만드는 세무 달력, 홈의 할 일 카드, 증빙으로 계산하는 예상 부가세, 일정을 정하는 회사 세무 설정, 그리고 담당자가 올린 결산으로 만드는 세무 보고서를 다룹니다. 코드는 [`apps/api/src/modules/tax/`](../../apps/api/src/modules/tax/)에 있습니다.
 
 ## 현행에서 고칠 점
 
@@ -43,6 +43,9 @@
 | 사업연도 종료 월 (결산월) | `fiscalYearEndMonth` (1–12) |
 | 원천세 납부 주기 | `withholdingCycle`: `MONTHLY`(매월), `SEMIANNUAL`(반기별 납부 승인) |
 | 반기 납부 적용 시작 반기 | `withholdingSemiannualFrom` (`2027-H1`, 반기 납부일 때만) |
+| 결산 스냅샷 / 결산 기준일 | 담당자가 올린 사업연도 결산 숫자 / `closedThrough` |
+| 사업연도 (끝나는 해) | `fiscalYear` (`2026`), 기간은 `period { start, end }` |
+| 손익 섹션 | `REVENUE`(매출액), `COST_OF_SALES`(매출원가), `GROSS_PROFIT`(매출총이익), `SELLING_AND_ADMINISTRATIVE_EXPENSES`(판매비와관리비), `OPERATING_INCOME`(영업이익), `NON_OPERATING_INCOME`(영업외수익), `NON_OPERATING_EXPENSES`(영업외비용), `INCOME_TAXES`(법인세등·소득세등), `NET_INCOME`(당기순이익) |
 | 성실신고확인 대상 | `sincereFilingTarget` |
 | 부가세 과세 유형 | `vatTaxpayerType`: `GENERAL`(일반과세자), `SIMPLIFIED`(간이과세자) |
 | 간이과세자의 세금계산서 발급 | `vatSimplifiedInvoiceIssuer` |
@@ -350,6 +353,72 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 
 **이벤트를 내지 않습니다.** 같은 싱글턴 설정인 급여 설정(`PATCH /payroll-settings`)도 이벤트를 내지 않고, `tax_settings.changed`를 받을 소비자가 없습니다(일정 배치는 다음 실행에서 설정을 다시 읽음). 설정 변경을 다른 컨텍스트나 단말이 알아야 하거나, 위의 즉시 반영이 필요해지면 `tax_settings.changed`를 [events.md](events.md#이벤트-목록) 규약대로 더합니다.
 
+## 결산 보고서
+
+```
+GET /settlement-reports                               → { items: [{ report, fiscalYear, closedThrough, updatedAt }] }
+GET /settlement-reports/profit-loss/{fiscalYear}      → ProfitLossReport (ETag)
+PUT /settlement-reports/profit-loss/{fiscalYear}      If-Match(선택) { closedThrough, months: [{ month, sections }] } → ProfitLossReport (ETag)
+```
+
+담당자가 ERP에서 결산한 뒤 올린 스냅샷(결산 스냅샷)으로 세무 보고서를 보여 줍니다. 실시간 보고서(`/reports/*`, [Bookkeeping](bookkeeping.md#실시간-보고서))는 분류한 증빙과 입출금을 바로 집계하고, 결산 보고서는 담당자가 올린 숫자를 그대로 보여 주므로 두 숫자는 다를 수 있습니다. 코드는 [settlement/](../../apps/api/src/modules/tax/settlement/)에 있습니다.
+
+**담당 컨텍스트(2026-11-11 결정).** 결산 보고서는 Tax 안의 하위 모듈로 둡니다. 별도 컨텍스트로 빼지 않은 이유는 다음과 같습니다.
+- 결산을 하는 사람이 세무 대리인이고, 볼 수 있는 고객도 세무 기장(`TAXATION`) 고객입니다. 신고 건과 행위자·플랜이 같습니다
+- 사업연도 기간을 Tax의 세무 설정(`fiscalYearEndMonth`)으로 정합니다. 법인세 확정 신고 건의 기간과 같은 계산입니다
+- 결산 숫자는 법인세·종합소득세 신고의 재료입니다([열린 질문 5](#열린-질문)). 신고 건과 같은 컨텍스트에 두어야 나중에 이을 때 포트가 필요 없습니다
+- 다시 볼 때: 결산 보고서가 세무 기장 밖(예: 경리만 쓰는 고객의 자체 결산)으로 넓어지거나, 회계 원장을 이 서비스가 직접 갖게 되면 회계(Accounting) 컨텍스트로 뺍니다
+
+**손익계산서 스냅샷.** 회사·사업연도마다 한 건이고(`tax_settlement_profit_loss` 표), 올릴 때마다 통째로 바뀝니다. 결산 수정은 다시 올리기입니다. 사업연도 이름(`fiscalYear`)은 사업연도가 끝나는 해입니다. 3월 결산 법인의 2026 사업연도는 2025-04-01–2026-03-31입니다.
+
+```jsonc
+// PUT 본문 (months는 사업연도 첫 달부터 결산 기준일이 속한 달까지 빠짐없이)
+{
+  "closedThrough": "2026-10-31",
+  "months": [{
+    "month": "2026-01",
+    "sections": {
+      "REVENUE": { "amount": 10000000, "accounts": [{ "name": "상품매출", "amount": 10000000 }] },
+      "COST_OF_SALES": { "amount": 400, "accounts": [
+        { "name": "기초제품재고액", "amount": 100 }, { "name": "당기제품제조원가", "amount": 500 }, { "name": "기말제품재고액", "amount": -200 }
+      ] },
+      "SELLING_AND_ADMINISTRATIVE_EXPENSES": { "amount": 3000000, "accounts": [] },
+      "NON_OPERATING_INCOME": { "amount": 0, "accounts": [] },
+      "NON_OPERATING_EXPENSES": { "amount": 0, "accounts": [] },
+      "INCOME_TAXES": { "amount": 500000, "accounts": [] }
+    }
+  }]
+}
+```
+
+- 담당자는 여섯 섹션(매출액, 매출원가, 판매비와관리비, 영업외수익, 영업외비용, 법인세등)만 올립니다. `INCOME_TAXES`는 법인이면 법인세등, 개인이면 소득세등이고, 이름은 화면이 사업자 형태로 고릅니다
+- 응답은 계산 섹션 세 개를 더해 손익계산서 순서로 줍니다. 매출총이익 = 매출액 − 매출원가, 영업이익 = 매출총이익 − 판매비와관리비, 당기순이익 = 영업이익 + 영업외수익 − 영업외비용 − 법인세등입니다. 담당자가 계산 섹션까지 보내면 올린 값과 계산이 어긋날 수 있어서, 계산 섹션은 받지 않습니다
+- 응답의 `total`은 사업연도 첫 달부터 결산 기준일까지의 누계(손익계산서의 "당기")입니다. 계정은 이름으로 묶습니다
+- 계정 이름은 ERP 계정과목 이름을 그대로 쓰는 표시용 문자열입니다. 회사 계정과목표(Bookkeeping `account-titles`)와 잇지 않습니다. 현행도 결산 계정명을 키로 그대로 썼습니다
+- 계정 금액은 섹션 합계에 더하는 부호로 적습니다. 매출원가의 기말재고액처럼 줄이는 계정은 음수입니다. 그래서 계정이 있으면 섹션 합계는 계정 금액의 합과 같아야 합니다. 현행 응답은 줄이는 계정도 양수로 보여 줘서 합이 맞는지 볼 수 없었습니다
+- 금액 부호는 보지 않습니다. 영업외비용 환입이나 법인세 환급처럼 섹션 합계가 음수일 수 있습니다
+- 사업연도 기간은 올릴 때의 세무 설정으로 정해서 스냅샷에 함께 저장합니다. 결산월을 바꿔도 이미 올린 스냅샷의 기간은 그대로이고, 다시 올리면 새 기간으로 검증합니다
+- `PUT`은 대리인 전용(`settlement-report:upload`)입니다. 대리인은 회사 토큰으로 전환해 부릅니다. 처음 올릴 때의 `If-Match`는 `"0"`이고, 버전이 다르면 412 `VERSION_MISMATCH`입니다
+- 올리지 않은 사업연도를 읽으면 404 `SETTLEMENT_REPORT_NOT_FOUND`입니다. 화면은 `GET /settlement-reports`가 비어 있으면 예시 데이터를 보여 줍니다(현행 `closing_list`가 빈 경우와 같음)
+- 이벤트를 내지 않습니다. 결산이 올라온 것을 알릴 소비자(알림·할 일 카드)가 아직 없습니다
+
+어긋나면 422 `SETTLEMENT_SNAPSHOT_INVALID`(`reason`, `field`)입니다([settlement-rules.ts](../../apps/api/src/modules/tax/settlement/settlement-rules.ts)). `field`는 본문 안의 위치(`months[2].sections.REVENUE.amount`)입니다.
+
+| `reason` | 언제 |
+|---|---|
+| `CLOSED_THROUGH_OUT_OF_PERIOD` | 결산 기준일이 사업연도 밖 |
+| `CLOSED_THROUGH_IN_FUTURE` | 결산 기준일이 오늘(회사 시간대)보다 늦음 |
+| `MONTH_OUT_OF_RANGE` | 사업연도 첫 달 앞이거나 결산 기준일이 속한 달 뒤의 달 |
+| `MONTH_DUPLICATED` | 같은 달이 두 번 |
+| `MONTH_MISSING` | 사업연도 첫 달부터 결산 기준일이 속한 달 사이에 빠진 달 |
+| `ACCOUNT_NAME_BLANK` | 계정 이름이 비었음(공백만 포함) |
+| `ACCOUNT_DUPLICATED` | 섹션 안에서 계정 이름이 겹침(앞뒤 공백을 지우고 봄) |
+| `SECTION_TOTAL_MISMATCH` | 계정이 있는데 섹션 합계가 계정 금액의 합과 다름 |
+
+**아직 없는 보고서.** 원본 화면에는 손익계산서 말고도 재무상태표, 자금 흐름, 미수·미지급이 있습니다. 같은 모양(회사·사업연도마다 한 건, 대리인이 통째로 올림, `GET /settlement-reports`에 `report`로 나옴)으로 더합니다. 각 보고서의 모양과 불변식은 [reference/spec/bookkeeping.md](../reference/spec/bookkeeping.md#211-결산-스냅샷-세무-보고서용-담당자-업로드) 4.6, 4.7, 4.9절에 있습니다. 그 전에 [열린 질문 11](#열린-질문)을 정해야 합니다.
+- 비용 분석은 손익계산서 응답으로 화면이 계산하므로 따로 두지 않습니다
+- 인건비 내역은 결산 스냅샷이 아니라 Payroll 데이터라 Bookkeeping의 `GET /reports/labor-cost`에 그대로 둡니다
+
 ## 접근 요건
 
 | 엔드포인트 | 권한 | 플랜 | 약관 |
@@ -365,10 +434,13 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 | 대리인 큐 `GET /agency/action-cards` | `action-card:read`(대리인 범위) | 카드마다 | 건너뜀 |
 | 예상 부가세 | `estimated-vat:read` | | |
 | 세무 설정 조회 / 수정 | `tax-setting:read` / `tax-setting:update` | `TAXATION` | 필요 |
+| 결산 보고서 목록·조회 | `settlement-report:read` | `TAXATION` | 필요 |
+| 결산 스냅샷 올리기 | `settlement-report:upload`(대리인 전용) | `TAXATION` | 필요(대리인은 건너뜀) |
 
 - 권한을 통과해도 행위자가 틀리면 403 `FILING_ACTOR_NOT_ALLOWED`(`action`, `requiredActorKind`)입니다. 권한은 "이 사용자가 할 수 있는가", 행위자는 "이 신고 건에서 누구 차례인가"입니다. 원천세의 고객 커맨드는 대리인도 대행할 수 있습니다([커맨드](#커맨드))
 - `filing:process`는 대리인 전용(D5)이라 고객 관리자의 `*`에도 없습니다. 신고 건을 볼 수 있는(`filing:read`) 고객이 대리인 커맨드나 문서 붙이기를 부르면 `PERMISSION_DENIED` 대신 같은 403 `FILING_ACTOR_NOT_ALLOWED`(`requiredActorKind: AGENCY`)로 돌려줍니다. 플랜·약관 재동의·데모 쓰기 검사는 D5 전처럼 각자의 오류를 먼저 줍니다. 권한 검사에서 바로 거절하므로 신고 건이 없거나 `If-Match`가 달라도 이 오류가 먼저입니다
 - 세무 설정은 고객 관리자(`*`)와 배정된 세무 대리인(대리인 기본 권한의 `tax-setting:*`)이 읽고 고칩니다. 데모 계정은 읽기만 합니다
+- 결산 보고서는 고객 관리자(`*`), 대리인, `settlement-report:read`를 받은 구성원이 읽습니다. 데모 계정도 읽습니다. 올리기(`settlement-report:upload`)는 `filing:process`처럼 대리인 전용이라 고객 관리자의 `*`에도 없고, 고객이 부르면 403 `PERMISSION_DENIED`입니다
 - 예상 부가세는 플랜 없이 열고(현행 무료 고객도 봄), 확정 세액을 쓸지만 플랜으로 정합니다
 
 ## 오류 코드
@@ -383,6 +455,7 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 | 404 | `REQUIREMENT_FILE_NOT_FOUND` | 항목에 붙지 않은 파일 떼기 | |
 | 404 | `FILING_DOCUMENT_NOT_FOUND` | 없거나 고객이 지금 볼 수 없는 문서 | |
 | 404 | `ACTION_CARD_NOT_FOUND` | 없거나 볼 수 없는 카드 | |
+| 404 | `SETTLEMENT_REPORT_NOT_FOUND` | 아직 올리지 않은 사업연도의 결산 보고서 | |
 | 404 | `TAX_PROFILE_NOT_FOUND` | 회사 사실(`TaxCompanies`)이 없는 회사의 세무 일정 | |
 | 409 | `FILING_TRANSITION_INVALID` | 상태·세목·종류·세액 부호가 커맨드와 맞지 않음 | `currentStatus`, `command` |
 | 409 | `FILING_LOCKED` | `REQUESTED` 밖의 자료 변경, `PREPARING`·`FILED` 밖의 문서 붙이기 | `currentStatus` |
@@ -392,6 +465,7 @@ PATCH /tax-settings    If-Match(선택) { fiscalYearEndMonth?, withholdingCycle?
 | 422 | `FILING_REQUIREMENTS_PENDING` | 남은 항목이 있는 `:submit` | `requirementCodes` |
 | 422 | `REQUIREMENT_HAS_FILES` | 파일이 붙은 항목에 `NOT_APPLICABLE` | |
 | 422 | `TAX_SETTING_INVALID` | 사업자 형태나 법령에 맞지 않는 세무 설정([세무 설정](#세무-설정)) | `reason`, `field` |
+| 422 | `SETTLEMENT_SNAPSHOT_INVALID` | 사업연도·결산 기준일·손익 규칙에 맞지 않는 결산 스냅샷([결산 보고서](#결산-보고서)) | `reason`, `field` |
 
 ## 다른 컨텍스트와의 연결
 
@@ -466,6 +540,10 @@ flowchart LR
 | `POST /desk/filings/:filingId/record-notice/` | `POST /filings/{filingId}:record-notice { noticeFileId, ... }` |
 | `POST /desk/filings/:filingId/close/` | `POST /filings/{filingId}:close` |
 | `POST /desk/filings/:filingId/cancel/` | `POST /filings/{filingId}:cancel` |
+| `GET /report/profit-loss/:year/`, `GET /report/profit-loss/:year/month-range/` | `GET /settlement-reports/profit-loss/{fiscalYear}` (전년 비교는 두 사업연도를 읽음) |
+| `GET /report/balance-sheet/**`, `GET /report/cash-flow/**`, `GET /accounting/settlement/**` | 없음. [결산 보고서](#결산-보고서)의 아직 없는 보고서 |
+| 각 보고서의 `summary/`의 `closing_list` | `GET /settlement-reports` |
+| `GET`·`PUT /api/desk/companies/:companyId/settlements/:year/:scope` | `PUT /settlement-reports/profit-loss/{fiscalYear}` (회사 토큰, 대리인 전용). `scope=pl`만 |
 | 일정 배치 `jobs/schedule-filings.ts` | `FilingScheduler.run` (엔드포인트 없음) |
 
 현행 sf `GET /tax/surtax/` 목록의 레거시 필드(`year`, `quarter`, `payment_deadline`, `purchase_sales_ledger_*`, `payment_slip_sent`, `amount`, `process_step`)는 `periodKey`·`periodStart`, `paymentDue`, `ledgerUploadedAt`·`ledgerConfirmedAt`, `paymentSlipSentAt`, `payableAmount`, `progress`가 대신합니다. 이관 때 이름 대응은 [legacy-names.ts](../../apps/api/src/modules/tax/legacy-names.ts)에 있습니다.
@@ -483,6 +561,7 @@ flowchart LR
 | 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |
 | 포트 연결(`PayrollLedgers`, `WithholdingTotals`, `VatEvidence`, `TaxCompanies`, `PublicHolidays`) | `src/wiring/`에서 Payroll·Bookkeeping·Identity & Access·Billing·공유 공휴일표에 연결 |
 | 세무 설정(`GET/PATCH /tax-settings`) | 구현 (`tax_settings` 표, [settings/](../../apps/api/src/modules/tax/settings/)). `TaxProfiles`가 `TaxCompanies`와 합침. 바꾸면 다음 일정 배치부터 반영 |
+| 결산 손익계산서(`GET /settlement-reports`, `GET/PUT /settlement-reports/profit-loss/{fiscalYear}`) | 구현 (`tax_settlement_profit_loss` 표, [settlement/](../../apps/api/src/modules/tax/settlement/)). 재무상태표·자금 흐름·미수·미지급은 없음 |
 | 이벤트 아웃박스 | 없음 (`TaxEvents.layerMemory`) |
 | 대리인 작업 큐(`GET /agency/filings`, `GET /agency/action-cards`, `AgencyWorkloadQuery`) | 구현 ([agency/](../../apps/api/src/modules/tax/agency/)) |
 | 수정신고, 감사 로그 | 없음 |
@@ -499,8 +578,12 @@ flowchart LR
 6. **간이과세자 설정의 출처와 남은 예외.** 중간예납과 간이과세자 일정은 의무 계산에 넣었고, 분납은 신고 건의 `paymentDue`로 덮어씁니다 ([rule-decisions](rule-decisions/tax.md#filing-obligations)). 세무 설정 저장소(`GET/PATCH /tax-settings`)가 생겨 과세 유형·세금계산서 발급 여부·과세기간별 공급가액·예정신고 선택을 대리인이 넣습니다. 넣지 않은 회사는 일반과세자이고 나머지는 비어 있습니다. 남은 것: `vatTaxpayerType`을 사업자 상태조회(Integrations `BusinessStatusClient`)의 과세 유형으로 처음 채우거나 어긋남을 알려 줄지, `vatSupplyAmounts`를 확정 신고(`:file`)의 신고서 값에서 바로 넣을지 정해야 합니다. 아직 계산하지 않는 것: 과세 유형이 바뀐 해의 반기 과세기간과 예정부과 제외(부가가치세법 제5조 ④·제66조 ① 2호), 중간예납기준액이 없는 복식부기의무자의 11월 중간예납추계액 신고(소득세법 제65조 ⑤). 지금은 대리인이 그해 신고 건을 고칩니다
 7. **세무 밖 할 일 카드.** 기관 연동 만료 같은 카드를 다른 컨텍스트가 열 수 있게 하려면 `ActionCards`를 공개 포트로 내야 합니다
 8. **대행 커맨드의 발견.** `allowedActions`는 차례인 행위자의 커맨드만 넣어서, 대리인이 보는 원천세 신고 건에는 대행할 수 있는 `SUBMIT`·`UNSUBMIT`·`PAY`가 없습니다. `/v1`의 대리인 화면이 이 버튼을 켜려면 별도 목록(예: `proxyActions`)을 둘지, 클라이언트가 세목·상태로 고를지 정해야 합니다
-9. **결산 기반 세무 보고서.** [bookkeeping.md](bookkeeping.md#실시간-보고서)가 결산 스냅샷 기반 보고서(손익계산서·재무상태표·현금흐름·미수/미지급)와 담당자 결산 업로드([현행 매핑](bookkeeping.md#현행-엔드포인트-대응))를 Tax 몫으로 넘겼지만, 이 문서에는 모델도 API도 없습니다. Tax 안에 결산 하위 모듈을 둘지, 별도 컨텍스트로 뺄지 정해야 합니다. 열린 질문 5의 법인세·종합소득세 결산 자료와 함께 다룹니다([#75](https://github.com/cbcruk/semu/issues/75))
+9. ~~결산 기반 세무 보고서의 담당~~: Tax 안의 하위 모듈로 정했고 손익계산서를 먼저 만들었습니다([결산 보고서](#결산-보고서)). 남은 보고서는 열린 질문 11입니다
 10. **적용 시점이 없는 세무 설정.** 원천세 반기 납부의 시작은 `withholdingSemiannualFrom`으로 적용 반기를 두었지만, 나머지 설정은 저장하면 모든 기간에 같은 값으로 계산합니다. 알려진 두 경우가 있습니다.
     - **반기 납부 포기:** 매월 납부로 되돌리면(`withholdingSemiannualFrom: null`) 지난 반기까지 매월로 계산합니다. 실제로는 포기한 뒤의 기간부터 매월 납부로 돌아가므로, 지난 반기는 반기 납부로 남아야 합니다. 배치는 기간 안의 `SCHEDULED` 반기 건을 취소하고 매월 건을 만들므로, 이미 지난 반기의 건은 대리인이 정리합니다
     - **결산월 변경:** 결산월을 바꾸면 지난 사업연도까지 새 결산월로 계산합니다. 실제로는 직전 사업연도 종료일부터 3개월 안에 변경 신고를 하고, 종전 사업연도 개시일부터 변경된 사업연도 개시일 전날까지를 한 사업연도로 봅니다(법인세법 제7조). 이미 만든 법인세 건의 기간은 대리인이 고칩니다
     - 두 경우 모두 설정에 적용 시작(반기·사업연도)을 두거나 설정 이력을 기간별로 저장하면 풀립니다. 대리인이 고치는 일이 잦아지면 정합니다
+11. **나머지 결산 보고서와 프리미엄 결산.** 재무상태표, 자금 흐름, 미수·미지급은 원본에서 세무 기장 고객 중 "프리미엄 결산(월·분기·반기) 대상"만 봅니다. 지금 플랜은 `TAXATION`·`PAYROLL`뿐이라 이 구분이 없습니다. 둘 중 하나를 정해야 합니다.
+    - 플랜이나 부가 상품(Billing)으로 두고 읽기 요건에 넣습니다
+    - 요건 없이 두고, 스냅샷이 있는지로만 보여 줍니다. 대리인은 프리미엄 고객에게만 올립니다
+    - 함께 정할 것: 미수·미지급의 거래처는 ERP 거래처 코드라 Bookkeeping 거래처(`partners`)와 이어지지 않습니다. 거래처 원장 화면에서 앱 거래처로 건너가야 하는지 확인이 필요합니다

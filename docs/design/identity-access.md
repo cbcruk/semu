@@ -77,7 +77,7 @@
 | | `labor-cost-report`: read | TAXATION 또는 PAYROLL |
 | | `salary-calculation`: create | |
 | 경리 | `evidence`: CRUD, classify · `bank-account`: read, update · `bank-transaction`: read, update, classify · `partner`: CRUD · `tax-invoice`: read, issue · `sales-transaction`: CRUD · `giro`: read, update, pay · `account-title`: CRUD · `classification-rule`: CRUD, apply · `realtime-report`: read · `report`: read | |
-| | `settlement-report`: read | TAXATION |
+| | `settlement-report`: read, *upload* | TAXATION |
 | 세무 | `filing`: read, update, submit, confirm-ledger, pay, *process* | TAXATION |
 | | `vat-filing`·`withholding-tax-filing`·`corporate-tax-filing`·`income-tax-filing`: read, update, submit | TAXATION |
 | | `tax-setting`: read, update | TAXATION |
@@ -92,7 +92,7 @@
 | 들어 있음 | 빠짐 |
 |---|---|
 | 아래 여섯을 뺀 카탈로그 리소스 전부의 `resource:*`(회사 정보·구독 조회·연동·인사·문서·급여·경리·세무) | 구성원 관리: `member`, `role`, `invitation`, `audit-log` |
-| 대리인 전용 동작: `filing:process`, `subscription:manage`, `payment:retry`, `payment:refund` | AI 비서: `conversation`, `grant` |
+| 대리인 전용 동작: `filing:process`, `settlement-report:upload`, `subscription:manage`, `payment:retry`, `payment:refund` | AI 비서: `conversation`, `grant` |
 
 - 구성원 관리는 고객 회사의 내부 통제라 대리인 업무가 아닙니다. 대리인은 `/users`·`/roles`·`/invitations`·`/audit-logs`가 403입니다. 회사 정보(`company:*`)는 대리인 업무라 남깁니다
 - AI 비서는 고객용 기능이고 현행도 대리인에게 열지 않았습니다. 대리인은 `/conversations`·`/grants`가 403입니다
