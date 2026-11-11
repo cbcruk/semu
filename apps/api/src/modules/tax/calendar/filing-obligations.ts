@@ -143,6 +143,7 @@ function 간이과세자부가세의무(연도: number, 세금계산서발급자
 /**
  * 원천세 의무입니다. 반기별 납부는 승인을 받은 날이 속하는 반기의 다음 반기부터 적용하므로(소득세법 제128조 ②,
  * 시행령 제186조), `withholdingSemiannualFrom` 앞의 반기는 매월, 그 반기부터는 반기입니다. 값이 없으면 모든 반기를 반기로 봅니다.
+ * 값이 없는 경우는 검증을 거치지 않는 테스트 시드와 현행 픽스처뿐입니다.
  */
 function 원천세의무(profile: TaxCalendarProfile, 연도: number): ObligationDraft[] {
   return ([1, 2] as const).flatMap((반기): ObligationDraft[] => {
