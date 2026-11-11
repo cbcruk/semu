@@ -234,7 +234,7 @@ stateDiagram-v2
 - 손익: [realtime-pl-inclusion](../reference/rules/realtime-pl-inclusion.md). 정책은 공급가액·입출금 포함 고정
 - 자금: [cash-status-other-change](../reference/rules/cash-status-other-change.md)
 - 홈 부가세 기한: [vat-due-date-approximation](../reference/rules/vat-due-date-approximation.md)
-- 결산 기반 세무 보고서는 Tax의 [결산 보고서](tax.md#결산-보고서)입니다. 손익계산서(`/settlement-reports/profit-loss/{fiscalYear}`), 자금 흐름(`/settlement-reports/cash-flow/{fiscalYear}`), 재무상태표(`/settlement-reports/balance-sheet/{fiscalYear}`)가 있고, 미수·미지급은 아직 없습니다([tax.md 열린 질문 11](tax.md#열린-질문)). 인건비만 Payroll 데이터라 여기 둡니다. 결산 보고서와 같은 `settlement-report:read`로 엽니다
+- 결산 기반 세무 보고서는 Tax의 [결산 보고서](tax.md#결산-보고서)입니다. 손익계산서(`/settlement-reports/profit-loss/{fiscalYear}`), 자금 흐름(`/settlement-reports/cash-flow/{fiscalYear}`), 재무상태표(`/settlement-reports/balance-sheet/{fiscalYear}`), 미수·미지급(`/settlement-reports/receivable-payable/{fiscalYear}`)이 있습니다. 결산 미수·미지급의 거래처는 ERP 거래처 코드라 이 문서의 거래처(`partners`)와 잇지 않고, 숫자도 [거래처](#거래처)의 미정산 금액과 다를 수 있습니다. 인건비만 Payroll 데이터라 여기 둡니다. 결산 보고서와 같은 `settlement-report:read`로 엽니다
 
 ## 수집 반영 (Integrations → Bookkeeping)
 
@@ -390,9 +390,9 @@ Payroll이 제출 이후(`DRAFT`가 아닌) 급여대장의 행을 귀속월별�
 | `POST /giros/:id/hide` | `POST /v1/giros/{id}:hide` | |
 | `POST /api/v2/company/:companyId/giros/:id/payment` | `POST /v1/giros/{id}:pay` | `request_id` → `Idempotency-Key` |
 | `GET /giros/:id/payment-accounts` | 없음 | 미구현. 회사 출금 계좌 목록은 `GET /v1/bank-accounts`로 대체 예정 |
-| `GET /accounting/settlement/**`, `GET /report/**` (결산 보고서 16개) | Tax | 결산 스냅샷 기반 세무 보고서는 Tax 소유. 손익계산서·자금 흐름·재무상태표만 `GET /v1/settlement-reports/{profit-loss,cash-flow,balance-sheet}/{fiscalYear}` ([tax.md](tax.md#현행-엔드포인트-대응)) |
+| `GET /accounting/settlement/**`, `GET /report/**` (결산 보고서 16개) | Tax | 결산 스냅샷 기반 세무 보고서는 Tax 소유. `GET /v1/settlement-reports/{profit-loss,cash-flow,balance-sheet,receivable-payable}/{fiscalYear}` ([tax.md](tax.md#현행-엔드포인트-대응)) |
 | `GET /report/labor-cost/:year/export` | `GET /v1/reports/labor-cost` | 내보내기는 Job으로 |
-| `GET`/`PUT /api/desk/companies/:companyId/settlements/:year/:scope` | Tax | 담당자 결산 업로드. 손익(`pl`)·자금(`cash`)·재무상태(`bs`)만 `PUT /v1/settlement-reports/{profit-loss,cash-flow,balance-sheet}/{fiscalYear}` |
+| `GET`/`PUT /api/desk/companies/:companyId/settlements/:year/:scope` | Tax | 담당자 결산 업로드. `PUT /v1/settlement-reports/{profit-loss,cash-flow,balance-sheet,receivable-payable}/{fiscalYear}` (`pl`·`cash`·`bs`·`ar_ap`) |
 | `GET /attachments/:fileId`, `GET /attachments/get-upload-url`, `PUT /api/attachments/upload/:token` | Documents | 첨부는 파일 리소스 |
 | `POST /partner/share-company/send`, `GET /share-histories/recent` | 없음 | 미구현. 거래처에 회사 정보 보내기는 Notifications와 함께 정함 |
 | `GET /get-business_types`, `POST /update-business_types` | Identity & Access | 회사 업태·종목 |
