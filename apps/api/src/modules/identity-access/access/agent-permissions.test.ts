@@ -31,7 +31,13 @@ const MEMBER_MANAGEMENT_AND_ASSISTANT: Permission[] = [
 ]
 
 /** 대리인 전용 권한입니다. */
-const AGENT_ONLY: Permission[] = ['filing:process', 'subscription:manage', 'payment:retry', 'payment:refund']
+const AGENT_ONLY: Permission[] = [
+  'filing:process',
+  'subscription:manage',
+  'payment:retry',
+  'payment:refund',
+  'settlement-report:upload',
+]
 
 /** 고객 업무 권한 표본입니다. 대리인이 고객 회사에서 그대로 처리합니다. */
 const CLIENT_WORK: Permission[] = [
@@ -104,6 +110,7 @@ describe('세무 대리인의 권한 집합 (D5)', () => {
         "scrap-request:*",
         "service-contract:*",
         "settlement-report:*",
+        "settlement-report:upload",
         "severance-settlement:*",
         "subscription:*",
         "subscription:manage",

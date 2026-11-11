@@ -28,7 +28,7 @@ export const TEST_TOKENS = {
 
 /** 테스트 앱에 보내는 요청입니다. */
 export interface TaxTestRequest {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   token?: keyof typeof TEST_TOKENS
   body?: unknown
   ifMatch?: string
