@@ -72,7 +72,7 @@
 | 인사·문서 | `employee`: CRUD, resign, reveal-rrn, reveal-account · `organization`: read, update | TAXATION 또는 PAYROLL |
 | | `document-form`: read | |
 | | `esign-request`: CRUD, send, cancel, void · `esign-template`: CRUD · `certificate-issuance`: read, create, send, void | PAYROLL |
-| 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send | TAXATION 또는 PAYROLL |
+| 급여 | `payroll-ledger`: CRUD, submit, approve, close · `payslip`: read, send · `earner`: CRUD, reveal-rrn · `payment-item`: CRUD · `deduction-item`: CRUD | TAXATION 또는 PAYROLL |
 | | `payroll-setting`: read, update · `severance-settlement`: CRUD, complete · `payroll-workflow`: update · `payroll-rate-table`: read · `payroll-calculator`: simulate | PAYROLL |
 | | `labor-cost-report`: read | TAXATION 또는 PAYROLL |
 | | `salary-calculation`: create | |
@@ -115,9 +115,9 @@
 | `employment_employee` | `employee:*` | PAYROLL |
 | `employment_e_sign`, `settings_e_sign` | `esign-request:*`, `esign-template:*` | PAYROLL |
 | `employment_certificate` | `certificate-issuance:*` | PAYROLL |
-| `payroll_settlement` | `payroll-ledger:*`, `payslip:*` | PAYROLL |
-| `payroll_management` | `payroll-ledger:*`, `payslip:*` | TAXATION (메뉴는 현행 기장 메뉴, 권한은 PAYROLL 또는 TAXATION) |
-| `payroll_setting` | `payroll-setting:*` | PAYROLL |
+| `payroll_settlement` | `payroll-ledger:*`, `payslip:*`, `earner:*` | PAYROLL |
+| `payroll_management` | `payroll-ledger:*`, `payslip:*`, `earner:*`, `payment-item:*`, `deduction-item:*` | TAXATION (메뉴는 현행 기장 메뉴, 권한은 PAYROLL 또는 TAXATION) |
+| `payroll_setting` | `payroll-setting:*`, `payment-item:*`, `deduction-item:*` | PAYROLL |
 | `severance_pay_settlement` | `severance-settlement:*` | PAYROLL |
 | `tax_surtax`, `tax_withholding`, `tax_corporation`, `tax_aggr_income` | `vat-filing:*`, `withholding-tax-filing:*`, `corporate-tax-filing:*`, `income-tax-filing:*` | TAXATION |
 | `company_management` | `company:*` | |

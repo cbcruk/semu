@@ -102,6 +102,12 @@ describe('HR → Payroll 연결', () => {
     expect(row.snapshot).not.toHaveProperty('childcareChildren')
 
     // 보육수당 한도는 자녀 1명당 20만원이라 HR의 6세 이하 자녀 2명이면 월 40만원까지 비과세입니다.
+    const childcareItem = await app.request('POST', '/v1/payroll-payment-items', {
+      token: owner,
+      body: { categoryCode: 'CHILDCARE' },
+    })
+    expect(childcareItem.status).toBe(201)
+    const childcareItemId = (await childcareItem.json()).id
     const childcare = await app.request('PATCH', `/v1/payroll-ledgers/${ledgerId}/rows/${contractedRow.id}`, {
       token: owner,
       ifMatch: `"${ledger.version}"`,
@@ -109,21 +115,15 @@ describe('HR → Payroll 연결', () => {
         input: {
           incomeType: 'WAGE_MONTHLY',
           basePay: 2_800_000,
-          paymentItems: [
-            { code: 'CHILDCARE', name: '보육수당', amount: 300_000, nonTaxableCategory: 'CHILDCARE' },
-            { code: 'CHILDCARE_2', name: '가족수당(보육)', amount: 200_000, nonTaxableCategory: 'CHILDCARE' },
-          ],
+          paymentItems: [{ itemId: childcareItemId, amount: 500_000 }],
         },
       },
     })
     expect(childcare.status).toBe(200)
     const childcareRow = await childcare.json()
     expect(
-      childcareRow.result.payments.filter((line: { code: string }) => line.code.startsWith('CHILDCARE')),
-    ).toMatchObject([
-      { nonTaxableAmount: 300_000, taxableAmount: 0 },
-      { nonTaxableAmount: 100_000, taxableAmount: 100_000 },
-    ])
+      childcareRow.result.payments.filter((line: { code: string }) => line.code === childcareItemId),
+    ).toMatchObject([{ name: '보육수당', nonTaxableAmount: 400_000, taxableAmount: 100_000 }])
     expect(childcareRow.result).toMatchObject({ nonTaxablePay: 400_000 })
 
     const demoRow = rows.items.find((item: { employeeId: string }) => item.employeeId === DEMO_WAGE_EMPLOYEE)

@@ -1,5 +1,6 @@
 import { HttpApi } from 'effect/http-api'
 import { EarnersGroup } from './earners/earners.api.ts'
+import { DeductionItemsGroup, PaymentItemsGroup } from './items/payroll-items.api.ts'
 import { LaborCostReportsGroup } from './labor-cost/labor-cost-reports.api.ts'
 import { PayrollLedgerApprovalsGroup, PayrollLedgersGroup } from './ledgers/payroll-ledgers.api.ts'
 import { PayslipsGroup } from './payslips/payslips.api.ts'
@@ -8,12 +9,14 @@ import { PayrollSettingsGroup } from './settings/payroll-settings.api.ts'
 import { SeveranceSettlementsGroup } from './severance/severance-settlements.api.ts'
 
 /**
- * 급여 계산 엔진·기준표·급여 설정·소득자 명부·급여대장·명세서·퇴직금·인건비 컨텍스트의 HTTP 계약입니다. 루트 `Api`가 `addHttpApi`로 합칩니다.
+ * 급여 계산 엔진·기준표·급여 설정·지급·공제 항목·소득자 명부·급여대장·명세서·퇴직금·인건비 컨텍스트의 HTTP 계약입니다. 루트 `Api`가 `addHttpApi`로 합칩니다.
  */
 export const PayrollApi = HttpApi.make('payroll')
   .add(RateTablesGroup)
   .add(PayrollCalculatorGroup)
   .add(PayrollSettingsGroup)
+  .add(PaymentItemsGroup)
+  .add(DeductionItemsGroup)
   .add(PayrollLedgersGroup)
   .add(PayrollLedgerApprovalsGroup)
   .add(EarnersGroup)

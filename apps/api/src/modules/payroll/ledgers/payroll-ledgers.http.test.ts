@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
-import { addEarner, AGENCY_TOKEN, clockAt, payrollTestApp } from '../payroll-testing.ts'
+import { addEarner, addPaymentItem, AGENCY_TOKEN, clockAt, payrollTestApp } from '../payroll-testing.ts'
 import { PayrollEmployeeDirectory, type PayrollEmployee } from '../ports/payroll-employee-directory.ts'
 import { PayrollEventPublisher } from '../ports/payroll-events.ts'
 import type { PayrollEvent } from '../ports/payroll-events.types.ts'
@@ -108,13 +108,14 @@ describe('/payroll-ledgers 급여 아웃소싱(고객 승인)', () => {
   })
 
   it('행을 현행 서비스로 확인한 금액대로 다시 계산합니다', async () => {
+    const mealId = await addPaymentItem(app, { categoryCode: 'MEAL' })
     const response = await app.request('PATCH', `/payroll-ledgers/${ledgerId}/rows/${rowId}`, {
       headers: { 'if-match': '"1"' },
       body: {
         input: {
           incomeType: 'WAGE_MONTHLY',
           basePay: 3_000_000,
-          paymentItems: [{ code: 'MEAL', name: '식대', amount: 200_000, nonTaxableCategory: 'MEAL' }],
+          paymentItems: [{ itemId: mealId, amount: 200_000 }],
         },
       },
     })

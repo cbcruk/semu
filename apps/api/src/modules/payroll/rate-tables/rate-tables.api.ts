@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api'
 import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
-import { ACCESS_ERRORS, RateTableIdNotFound, RateTableNotFound } from '../payroll-problems.ts'
+import { ACCESS_ERRORS, PayrollRowItemInvalid, RateTableIdNotFound, RateTableNotFound } from '../payroll-problems.ts'
 import { YearMonthString } from '../payroll-schema.ts'
 import { PayrollRowInputSchema, PayrollRowResultSchema, EmployeeSnapshotSchema } from '../rows/payroll-row-input.ts'
 import { DeductionMethodsSchema, PremiumMultipliersSchema } from '../settings/payroll-setting.ts'
@@ -56,7 +56,7 @@ export class PayrollCalculatorGroup extends HttpApiGroup.make('payroll-calculato
     HttpApiEndpoint.post('simulate', '/payroll-calculator::simulate', {
       payload: SimulationRequest,
       success: PayrollRowResultSchema,
-      error: [...ACCESS_ERRORS, RateTableNotFound],
+      error: [...ACCESS_ERRORS, RateTableNotFound, PayrollRowItemInvalid],
     }),
   )
   .middleware(Authentication) {}

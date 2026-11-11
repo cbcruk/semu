@@ -13,6 +13,7 @@ import {
   PayrollLedgerReadOnly,
   PayrollLedgerTransitionInvalid,
   PayrollRowNotFound,
+  PayrollRowItemInvalid,
   PayrollRowPayeeInvalid,
   RateTableNotFound,
   WageIncomeDuplicated,
@@ -44,6 +45,7 @@ const WRITE_ERRORS = [
   WageIncomeDuplicated,
   PayrollLedgerHasAdditional,
   PayrollRowPayeeInvalid,
+  PayrollRowItemInvalid,
   EmployeeNotFound,
   RateTableNotFound,
 ] as const

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { payrollTestApp } from '../payroll-testing.ts'
+import { addPaymentItem, payrollTestApp } from '../payroll-testing.ts'
 
 const app = payrollTestApp()
 
@@ -64,13 +64,14 @@ describe('/rate-tables', () => {
 
 describe('/payroll-calculator:simulate', () => {
   it('월급제 근로소득 행을 현행 서비스로 확인한 금액대로 계산합니다', async () => {
+    const mealId = await addPaymentItem(app, { categoryCode: 'MEAL' })
     const response = await app.request('POST', '/payroll-calculator:simulate', {
       body: {
         attributionMonth: '2026-03',
         row: {
           incomeType: 'WAGE_MONTHLY',
           basePay: 3_000_000,
-          paymentItems: [{ code: 'MEAL', name: '식대', amount: 200_000, nonTaxableCategory: 'MEAL' }],
+          paymentItems: [{ itemId: mealId, amount: 200_000 }],
         },
       },
     })
@@ -92,6 +93,7 @@ describe('/payroll-calculator:simulate', () => {
   })
 
   it('보육수당 한도를 자녀 1명당 적용하고 자녀 수의 범위를 제한합니다', async () => {
+    const childcareId = await addPaymentItem(app, { categoryCode: 'CHILDCARE' })
     const employee = {
       dependants: 1,
       childrenAged8To20: 0,
@@ -104,7 +106,7 @@ describe('/payroll-calculator:simulate', () => {
     const row = {
       incomeType: 'WAGE_MONTHLY',
       basePay: 3_000_000,
-      paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
+      paymentItems: [{ itemId: childcareId, amount: 500_000 }],
     }
     const simulate = (childcareChildren: number) =>
       app.request('POST', '/payroll-calculator:simulate', {

@@ -14,6 +14,8 @@ import {
   DEFAULT_OTHER_INCOME_CODE,
   findOtherIncomeCode,
 } from '../rate-tables/reference-codes.ts'
+import { engineDeductions, enginePaymentItems } from '../items/payroll-item-rules.ts'
+import type { PayrollItemCatalog } from '../items/payroll-item.types.ts'
 import type { PayrollSettingRecord } from '../settings/payroll-setting.types.ts'
 import type { EmployeeSnapshot, PayrollRowInputValue, PayrollRowResultValue } from './payroll-row-input.ts'
 
@@ -39,10 +41,13 @@ export interface RowCalculationContext {
   /** 지급월 기준표입니다. 원천세에 씁니다. */
   paymentRates: PayrollRateTable
   setting: Pick<PayrollSettingRecord, 'multipliers' | 'deductionMethods'>
+  /** 행이 가리키는 지급·공제 항목을 푸는 회사 카탈로그입니다. 지운 항목도 들어 있습니다. */
+  catalog: PayrollItemCatalog
 }
 
 /**
  * 와이어 입력을 엔진 입력으로 바꿉니다. 근로 행은 직원 스냅숏과 회사 공제 방식을 함께 씁니다.
+ * 지급·공제 항목은 카탈로그에서 이름과 속성을 채웁니다.
  */
 export function engineInputOf(
   input: PayrollRowInputValue,
@@ -59,7 +64,7 @@ export function engineInputOf(
       const 고지금액 = input.insuranceNotice ?? {}
       const 공통입력 = {
         attributionMonth,
-        paymentItems: (input.paymentItems ?? []).map((item) => ({ ...item })),
+        paymentItems: enginePaymentItems(input.paymentItems ?? [], context.catalog),
         work: { ...input.work },
         multipliers: { ...context.setting.multipliers } satisfies PremiumMultipliers,
         monthlyStandardHours: 직원정보사본.monthlyStandardHours,
@@ -89,7 +94,7 @@ export function engineInputOf(
         ...(직원정보사본.childcareChildrenEffectiveFrom === undefined
           ? {}
           : { childcareChildrenEffectiveFrom: 직원정보사본.childcareChildrenEffectiveFrom }),
-        otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
+        otherDeductions: engineDeductions(input.otherDeductions ?? [], context.catalog),
       }
       if (input.incomeType === 'WAGE_HOURLY') {
         return {
@@ -127,7 +132,7 @@ export function engineInputOf(
           healthInsurance: { mode: 'EXEMPT' },
           employmentInsurance: { mode: input.employmentInsuranceExempt === true ? 'EXEMPT' : 'RATE' },
         },
-        otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
+        otherDeductions: engineDeductions(input.otherDeductions ?? [], context.catalog),
       }
     case 'BUSINESS': {
       return {
@@ -137,7 +142,7 @@ export function engineInputOf(
         taxDeductionMode: input.taxDeductionMode ?? 'BEFORE_TAX',
         // 고용보험 대상 여부는 업종코드가 아니라 계약으로 정해지므로 행의 표시만 봅니다(업종의 `detailType`은 화면 힌트).
         employmentInsurance: { applicable: input.employmentInsuranceApplicable === true },
-        otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
+        otherDeductions: engineDeductions(input.otherDeductions ?? [], context.catalog),
       }
     }
     case 'OTHER': {
@@ -152,7 +157,7 @@ export function engineInputOf(
             : { kind: 'DEEMED', ratePpm: 소득구분코드?.expenseRatePpm ?? 0 },
         ...(소득구분코드?.taxRatePpm == null ? {} : { taxRatePpm: 소득구분코드.taxRatePpm }),
         taxDeductionMode: input.taxDeductionMode ?? 'BEFORE_TAX',
-        otherDeductions: (input.otherDeductions ?? []).map((line) => ({ ...line })),
+        otherDeductions: engineDeductions(input.otherDeductions ?? [], context.catalog),
       }
     }
   }

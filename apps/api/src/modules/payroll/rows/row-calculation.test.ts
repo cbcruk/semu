@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { calculatePayrollRow } from '../engine/payroll-row.ts'
 import { resolveRateTable } from '../engine/rate-table.ts'
 import { BUILT_IN_RATE_TABLES, RATES_2026_01, RATES_2026_03 } from '../engine/rate-tables-2026.ts'
+import { catalogOf } from '../items/payroll-item-rules.ts'
+import { categoryPaymentItem } from '../items/payroll-item.testing.ts'
 import { defaultPayrollSetting } from '../settings/payroll-setting.ts'
 import type { PayrollRowInputValue } from './payroll-row-input.ts'
 import {
@@ -22,6 +24,8 @@ const setting = {
     incomeTax: 'TAX_TABLE',
   },
 } as const
+const childcareItem = categoryPaymentItem('CHILDCARE')
+const catalog = catalogOf([childcareItem], [])
 
 function context(attributionMonth: string, paymentMonth: string): RowCalculationContext {
   return {
@@ -29,6 +33,7 @@ function context(attributionMonth: string, paymentMonth: string): RowCalculation
     attributionRates: resolveRateTable(BUILT_IN_RATE_TABLES, attributionMonth),
     paymentRates: resolveRateTable(BUILT_IN_RATE_TABLES, paymentMonth),
     setting,
+    catalog,
   }
 }
 
@@ -66,7 +71,7 @@ describe('직원 정보 사본의 보육수당 자녀 수', () => {
   const withChildcare: PayrollRowInputValue = {
     incomeType: 'WAGE_MONTHLY',
     basePay: 3_000_000,
-    paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
+    paymentItems: [{ itemId: childcareItem.id, amount: 500_000 }],
   }
 
   it('보육수당 비과세 한도는 대상 자녀 1명당 200,000원입니다', () => {
