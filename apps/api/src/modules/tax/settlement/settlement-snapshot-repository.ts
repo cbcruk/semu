@@ -1,7 +1,11 @@
 import { Context, Effect, Layer, Option } from 'effect'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
-import type { CashFlowSnapshotRecord, ProfitLossSnapshotRecord } from './settlement-report.types.ts'
+import type {
+  BalanceSheetSnapshotRecord,
+  CashFlowSnapshotRecord,
+  ProfitLossSnapshotRecord,
+} from './settlement-report.types.ts'
 
 /** 모든 결산 스냅샷이 갖는 키입니다. */
 interface SnapshotKey {
@@ -57,6 +61,7 @@ const makeStore = <T extends SnapshotKey>(
 export interface SettlementSnapshotSeed {
   profitLoss?: ReadonlyArray<ProfitLossSnapshotRecord>
   cashFlow?: ReadonlyArray<CashFlowSnapshotRecord>
+  balanceSheet?: ReadonlyArray<BalanceSheetSnapshotRecord>
 }
 
 /** 담당자가 올린 결산 스냅샷 저장소입니다. 보고서 종류마다 표 하나입니다. */
@@ -65,9 +70,10 @@ export class SettlementSnapshotRepository extends Context.Service<
   {
     profitLoss: SnapshotStore<ProfitLossSnapshotRecord>
     cashFlow: SnapshotStore<CashFlowSnapshotRecord>
+    balanceSheet: SnapshotStore<BalanceSheetSnapshotRecord>
   }
 >()('semu/tax/SettlementSnapshotRepository') {
-  /** `tax_settlement_profit_loss`·`tax_settlement_cash_flow` 표에 둡니다. */
+  /** `tax_settlement_profit_loss`·`tax_settlement_cash_flow`·`tax_settlement_balance_sheet` 표에 둡니다. */
   static readonly layer = (seed: SettlementSnapshotSeed = {}) =>
     Layer.effect(
       SettlementSnapshotRepository,
@@ -75,6 +81,7 @@ export class SettlementSnapshotRepository extends Context.Service<
         return SettlementSnapshotRepository.of({
           profitLoss: yield* makeStore('tax_settlement_profit_loss', seed.profitLoss ?? []),
           cashFlow: yield* makeStore('tax_settlement_cash_flow', seed.cashFlow ?? []),
+          balanceSheet: yield* makeStore('tax_settlement_balance_sheet', seed.balanceSheet ?? []),
         })
       }),
     )

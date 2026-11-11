@@ -1,4 +1,5 @@
 import type {
+  BalanceSheetInputMonth,
   CashAccount,
   CashFlowInputMonth,
   ProfitLossInputMonth,
@@ -77,4 +78,43 @@ export function cashFlowMonths(
       },
     }
   })
+}
+
+/**
+ * 테스트용 한 달 말 재무상태입니다. 자산 1억(유동 5,000만: 현금 2,000만·매출채권 2,000만·재고 1,000만, 비유동 5,000만),
+ * 부채 4,000만(유동 2,500만, 비유동 1,500만), 자본 6,000만(자본금 5,000만, 이익잉여금 1,000만)입니다.
+ */
+export function balanceSheetMonth(
+  month: string,
+  overrides: Partial<Omit<BalanceSheetInputMonth, 'month'>> = {},
+): BalanceSheetInputMonth {
+  return {
+    month,
+    groups: {
+      CURRENT_ASSETS: {
+        amount: 50_000_000,
+        accounts: [
+          { name: '현금및현금성자산', amount: 20_000_000 },
+          { name: '매출채권', amount: 20_000_000 },
+          { name: '재고자산', amount: 10_000_000 },
+        ],
+      },
+      NON_CURRENT_ASSETS: { amount: 50_000_000, accounts: [] },
+      CURRENT_LIABILITIES: { amount: 25_000_000, accounts: [] },
+      NON_CURRENT_LIABILITIES: { amount: 15_000_000, accounts: [] },
+      CAPITAL_STOCK: { amount: 50_000_000, accounts: [] },
+      CAPITAL_SURPLUS: emptySection,
+      CAPITAL_ADJUSTMENTS: emptySection,
+      ACCUMULATED_OTHER_COMPREHENSIVE_INCOME: emptySection,
+      RETAINED_EARNINGS: { amount: 10_000_000, accounts: [] },
+    },
+    inventories: 10_000_000,
+    tradeReceivables: 20_000_000,
+    ...overrides,
+  }
+}
+
+/** `from`부터 `count`달의 테스트 재무상태입니다. 달마다 같은 잔액입니다. */
+export function balanceSheetMonths(from: string, count: number): BalanceSheetInputMonth[] {
+  return profitLossMonths(from, count).map(({ month }) => balanceSheetMonth(month))
 }
