@@ -3,7 +3,14 @@ import { DEMO_TAX_PROFILE } from '../tax-demo.ts'
 import { httpTestApp } from '../../../shared/testing/http-test-app.ts'
 import { taxTestApp, TEST_TOKENS } from '../tax-http.testing.ts'
 import type { TaxTestApp } from '../tax-http.testing.ts'
-import { cashFlowMonths, OPENING_BALANCES, profitLossMonth, profitLossMonths } from './settlement.testing.ts'
+import {
+  balanceSheetMonth,
+  balanceSheetMonths,
+  cashFlowMonths,
+  OPENING_BALANCES,
+  profitLossMonth,
+  profitLossMonths,
+} from './settlement.testing.ts'
 
 let app: TaxTestApp
 afterEach(() => app.dispose())
@@ -326,7 +333,127 @@ describe('결산 자금 흐름(PUT·GET /v1/settlement-reports/cash-flow/{fiscal
   })
 })
 
+const balanceSheetYear = { closedThrough: '2025-12-31', months: balanceSheetMonths('2025-01', 12) }
+
+function uploadBalanceSheet(body: unknown, ifMatch?: string) {
+  return app.send('/settlement-reports/balance-sheet/2025', {
+    method: 'PUT',
+    token: 'agency',
+    body,
+    ...(ifMatch === undefined ? {} : { ifMatch }),
+  })
+}
+
+describe('결산 재무상태표(PUT·GET /v1/settlement-reports/balance-sheet/{fiscalYear})', () => {
+  it('대리인이 올리면 총계를 채우고, 손익계산서가 없으면 손익 비율은 null입니다', async () => {
+    app = taxTestApp()
+
+    const response = await uploadBalanceSheet(balanceSheetYear)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('etag')).toBe('"1"')
+    expect(body.months).toHaveLength(12)
+    expect(body.months[0].totals).toEqual({
+      assets: 100_000_000,
+      liabilities: 40_000_000,
+      equity: 60_000_000,
+      liabilitiesAndEquity: 100_000_000,
+    })
+    expect(body.months[0].ratios).toMatchObject({ equityRatioPpm: 600_000, returnOnAssetsPpm: null })
+  })
+
+  it('같은 사업연도의 손익계산서가 있으면 그 누계로 비율을 채웁니다', async () => {
+    app = taxTestApp()
+    await upload(fullYear)
+    await uploadBalanceSheet(balanceSheetYear)
+
+    const response = await app.send('/settlement-reports/balance-sheet/2025')
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.months[11].ratios).toMatchObject({
+      returnOnAssetsPpm: 312_000,
+      totalAssetTurnoverPpm: 1_200_000,
+      inventoryTurnoverPpm: 12_000_000,
+    })
+  })
+
+  it('손익계산서를 나중에 올려도 읽을 때 비율을 다시 계산합니다', async () => {
+    app = taxTestApp()
+    await uploadBalanceSheet(balanceSheetYear)
+    await upload(fullYear)
+
+    const body = await (await app.send('/settlement-reports/balance-sheet/2025')).json()
+
+    expect(body.months[0].ratios.returnOnEquityPpm).not.toBeNull()
+  })
+
+  it('자산과 부채·자본이 맞지 않으면 422입니다', async () => {
+    app = taxTestApp()
+    const base = balanceSheetMonth('2025-01')
+    const month = balanceSheetMonth('2025-01', {
+      groups: { ...base.groups, CAPITAL_STOCK: { amount: 1, accounts: [] } },
+    })
+
+    const response = await uploadBalanceSheet({ closedThrough: '2025-01-31', months: [month] })
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({
+      code: 'SETTLEMENT_SNAPSHOT_INVALID',
+      reason: 'BALANCE_SHEET_UNBALANCED',
+      field: 'months[0]',
+    })
+  })
+
+  it('버전이 다르면 412입니다', async () => {
+    app = taxTestApp()
+    await uploadBalanceSheet(balanceSheetYear)
+
+    expect((await uploadBalanceSheet(balanceSheetYear, '"0"')).status).toBe(412)
+  })
+
+  it('고객은 올릴 수 없습니다', async () => {
+    app = taxTestApp()
+
+    const response = await app.send('/settlement-reports/balance-sheet/2025', { method: 'PUT', body: balanceSheetYear })
+
+    expect(response.status).toBe(403)
+  })
+
+  it('다른 회사 대리인은 이 회사 재무상태표를 보지 못합니다', async () => {
+    app = taxTestApp()
+    await uploadBalanceSheet(balanceSheetYear)
+
+    expect((await app.send('/settlement-reports/balance-sheet/2025', { token: 'otherAgency' })).status).toBe(404)
+  })
+
+  it('올리지 않은 사업연도는 404입니다', async () => {
+    app = taxTestApp()
+
+    const response = await app.send('/settlement-reports/balance-sheet/2025')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'SETTLEMENT_REPORT_NOT_FOUND' })
+  })
+})
+
 describe('결산 보고서 목록(GET /v1/settlement-reports)', () => {
+  it('세 보고서를 같은 사업연도 안에서 손익계산서·자금 흐름·재무상태표 순으로 줍니다', async () => {
+    app = taxTestApp()
+    await uploadBalanceSheet(balanceSheetYear)
+    await uploadCashFlow(cashFlowYear)
+    await upload(fullYear)
+
+    const response = await app.send('/settlement-reports')
+
+    expect((await response.json()).items.map((item: { report: string }) => item.report)).toEqual([
+      'PROFIT_LOSS',
+      'CASH_FLOW',
+      'BALANCE_SHEET',
+    ])
+  })
+
   it('보고서마다 올린 사업연도를 사업연도 내림차순, 손익계산서·자금 흐름 순으로 줍니다', async () => {
     app = taxTestApp()
     await upload({ closedThrough: '2024-12-31', months: profitLossMonths('2024-01', 12) }, { fiscalYear: 2024 })
@@ -402,5 +529,22 @@ describe('앱 저장소의 자금 흐름 스냅샷(TaxStoreLive)', () => {
     expect(uploaded.status).toBe(200)
     expect(read.body).toEqual(uploaded.body)
     expect(list.body).toMatchObject({ items: [{ report: 'CASH_FLOW', fiscalYear: 2025 }] })
+  })
+})
+
+describe('앱 저장소의 재무상태표 스냅샷(TaxStoreLive)', () => {
+  it('앱 전체 저장소(메모리 또는 SQLite)에 저장하고 다시 읽습니다', async () => {
+    const whole = httpTestApp({ tokens: Object.entries(TEST_TOKENS), basePath: '/v1', defaultToken: 'client' })
+    app = { send: (path) => whole.request('GET', path), dispose: whole.dispose }
+
+    const uploaded = await whole.json('PUT', '/settlement-reports/balance-sheet/2025', {
+      token: 'agency',
+      body: balanceSheetYear,
+      ifMatch: '"0"',
+    })
+    const read = await whole.json('GET', '/settlement-reports/balance-sheet/2025')
+
+    expect(uploaded.status).toBe(200)
+    expect(read.body).toEqual(uploaded.body)
   })
 })

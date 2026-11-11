@@ -84,6 +84,8 @@ export type SettlementSnapshotInvalidReason =
   | 'SECTION_TOTAL_MISMATCH'
   | 'CASH_AMOUNT_NEGATIVE'
   | 'CASH_BALANCE_MISMATCH'
+  | 'BALANCE_SHEET_UNBALANCED'
+  | 'CURRENT_ASSET_COMPONENT_INVALID'
 
 /** 결산 스냅샷 업로드 검증 위반입니다. `field`는 본문 안의 위치(`months[2].sections.REVENUE`)입니다. */
 export interface SettlementSnapshotViolation {
@@ -132,4 +134,62 @@ export interface CashFlowMonth {
   netInflow: number
   /** 보유자금 = 네 계정의 월말 잔액 합입니다. */
   fundsHeld: number
+}
+
+/** 재무상태표의 구분입니다. 자산 둘, 부채 둘, 자본 다섯입니다. */
+export type BalanceSheetGroup =
+  | 'CURRENT_ASSETS'
+  | 'NON_CURRENT_ASSETS'
+  | 'CURRENT_LIABILITIES'
+  | 'NON_CURRENT_LIABILITIES'
+  | 'CAPITAL_STOCK'
+  | 'CAPITAL_SURPLUS'
+  | 'CAPITAL_ADJUSTMENTS'
+  | 'ACCUMULATED_OTHER_COMPREHENSIVE_INCOME'
+  | 'RETAINED_EARNINGS'
+
+/** 담당자가 올린 한 달 말의 재무상태입니다. */
+export interface BalanceSheetInputMonth {
+  /** `YYYY-MM`. 그 달 말일의 잔액입니다. */
+  month: string
+  groups: Readonly<Record<BalanceSheetGroup, ProfitLossSectionAmount>>
+  /** 유동자산 중 재고자산(원)입니다. 재고자산회전율에 씁니다. */
+  inventories: number
+  /** 유동자산 중 매출채권(원)입니다. 매출채권회전율에 씁니다. */
+  tradeReceivables: number
+}
+
+/** 재무상태표 스냅샷 업로드 본문입니다. */
+export interface BalanceSheetUpload {
+  closedThrough: string
+  months: ReadonlyArray<BalanceSheetInputMonth>
+}
+
+/** 저장하는 재무상태표 스냅샷입니다. */
+export interface BalanceSheetSnapshotRecord extends SettlementSnapshotMeta {
+  months: ReadonlyArray<BalanceSheetInputMonth>
+}
+
+/** 재무 비율입니다. ppm(1 = 1,000,000)이고, 분모가 0이거나 손익 자료가 없으면 `null`입니다. */
+export interface BalanceSheetRatios {
+  equityRatioPpm: number | null
+  debtRatioPpm: number | null
+  currentRatioPpm: number | null
+  returnOnAssetsPpm: number | null
+  returnOnEquityPpm: number | null
+  totalAssetTurnoverPpm: number | null
+  inventoryTurnoverPpm: number | null
+  receivablesTurnoverPpm: number | null
+}
+
+/** 사업연도 첫 달부터 그 달까지의 손익 누계입니다. 비율 계산에 씁니다. */
+export interface CumulativeProfitLoss {
+  revenue: number
+  netIncome: number
+}
+
+/** 합계와 비율을 채운 한 달 재무상태표입니다. */
+export interface BalanceSheetMonth extends BalanceSheetInputMonth {
+  totals: { assets: number; liabilities: number; equity: number; liabilitiesAndEquity: number }
+  ratios: BalanceSheetRatios
 }

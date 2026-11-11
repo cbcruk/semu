@@ -109,14 +109,21 @@ export function validateProfitLossUpload(
 
   for (const [index, month] of upload.months.entries()) {
     for (const section of PROFIT_LOSS_INPUT_SECTIONS) {
-      const violation = 섹션위반(month.sections[section], `months[${index}].sections.${section}`)
+      const violation = validateSectionAccounts(month.sections[section], `months[${index}].sections.${section}`)
       if (violation !== undefined) return violation
     }
   }
   return undefined
 }
 
-function 섹션위반(section: ProfitLossSectionAmount, field: string): SettlementSnapshotViolation | undefined {
+/**
+ * 섹션(또는 재무상태표 구분) 하나의 계정을 봅니다. 계정 이름은 비어 있지 않고 겹치지 않으며, 계정이 있으면 합계가 계정 금액의 합과 같습니다.
+ * 손익계산서와 재무상태표가 같이 씁니다.
+ */
+export function validateSectionAccounts(
+  section: ProfitLossSectionAmount,
+  field: string,
+): SettlementSnapshotViolation | undefined {
   const 이름들 = new Set<string>()
   for (const [index, account] of section.accounts.entries()) {
     const 이름 = account.name.trim()

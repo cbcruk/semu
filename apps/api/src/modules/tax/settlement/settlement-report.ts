@@ -129,8 +129,88 @@ export const CashFlowReport = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-/** 결산 보고서 종류입니다. 손익계산서와 자금 흐름이 있습니다. */
-export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS', 'CASH_FLOW'])
+const BalanceSheetGroups = Schema.Struct({
+  /** 유동자산 */
+  CURRENT_ASSETS: SectionAmount,
+  /** 비유동자산 */
+  NON_CURRENT_ASSETS: SectionAmount,
+  /** 유동부채 */
+  CURRENT_LIABILITIES: SectionAmount,
+  /** 비유동부채 */
+  NON_CURRENT_LIABILITIES: SectionAmount,
+  /** 자본금 */
+  CAPITAL_STOCK: SectionAmount,
+  /** 자본잉여금 */
+  CAPITAL_SURPLUS: SectionAmount,
+  /** 자본조정 */
+  CAPITAL_ADJUSTMENTS: SectionAmount,
+  /** 기타포괄손익누계액 */
+  ACCUMULATED_OTHER_COMPREHENSIVE_INCOME: SectionAmount,
+  /** 이익잉여금(결손이면 음수) */
+  RETAINED_EARNINGS: SectionAmount,
+})
+
+const BalanceSheetInputFields = {
+  /** `YYYY-MM`. 그 달 말일의 잔액입니다. */
+  month: YearMonth,
+  groups: BalanceSheetGroups,
+  /** 유동자산 중 재고자산(원, 0 이상)입니다. */
+  inventories: Schema.Int,
+  /** 유동자산 중 매출채권(원, 0 이상)입니다. */
+  tradeReceivables: Schema.Int,
+}
+
+/** `PUT /settlement-reports/balance-sheet/{fiscalYear}` 본문입니다. 그 사업연도의 재무상태표 스냅샷을 통째로 바꿉니다. */
+export const BalanceSheetUploadBody = Schema.Struct({
+  /** 결산 기준일(월말)입니다. 이날이 속한 달까지 달마다 월말 재무상태를 빠짐없이 보냅니다. */
+  closedThrough: CalendarDate,
+  months: Schema.Array(Schema.Struct(BalanceSheetInputFields)),
+})
+
+const RatioPpm = Schema.NullOr(Schema.Int)
+
+/** 결산 재무상태표입니다. 달마다 월말 재무상태, 총계, 재무 비율입니다. */
+export const BalanceSheetReport = Schema.Struct({
+  fiscalYear: Schema.Int,
+  period: Schema.Struct({ start: CalendarDate, end: CalendarDate }),
+  closedThrough: CalendarDate,
+  months: Schema.Array(
+    Schema.Struct({
+      ...BalanceSheetInputFields,
+      totals: Schema.Struct({
+        assets: Schema.Int,
+        liabilities: Schema.Int,
+        equity: Schema.Int,
+        /** 부채와자본 총계 = 부채 + 자본. 자산 총계와 같습니다. */
+        liabilitiesAndEquity: Schema.Int,
+      }),
+      /** 재무 비율입니다. ppm(1 = 1,000,000)이고, 분모가 0이거나 그 달 손익계산서가 없으면 `null`입니다. */
+      ratios: Schema.Struct({
+        /** 자기자본비율 = 자본 / 자산 */
+        equityRatioPpm: RatioPpm,
+        /** 부채비율 = 부채 / 자본 */
+        debtRatioPpm: RatioPpm,
+        /** 유동비율 = 유동자산 / 유동부채 */
+        currentRatioPpm: RatioPpm,
+        /** 총자산순이익률 = 누적 당기순이익 / 자산 */
+        returnOnAssetsPpm: RatioPpm,
+        /** 자기자본순이익률 = 누적 당기순이익 / 자본 */
+        returnOnEquityPpm: RatioPpm,
+        /** 총자산회전율 = 누적 매출액 / 자산 */
+        totalAssetTurnoverPpm: RatioPpm,
+        /** 재고자산회전율 = 누적 매출액 / 재고자산 */
+        inventoryTurnoverPpm: RatioPpm,
+        /** 매출채권회전율 = 누적 매출액 / 매출채권 */
+        receivablesTurnoverPpm: RatioPpm,
+      }),
+    }),
+  ),
+  version: Schema.Int,
+  updatedAt: Schema.String,
+})
+
+/** 결산 보고서 종류입니다. 손익계산서, 자금 흐름, 재무상태표가 있습니다. */
+export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS', 'CASH_FLOW', 'BALANCE_SHEET'])
 
 /** 결산 데이터가 있는 보고서·사업연도 하나입니다. 화면의 연도 선택기에 씁니다(현행 `closing_list`). */
 export const SettlementReportAvailability = Schema.Struct({
@@ -168,6 +248,8 @@ export class SettlementSnapshotInvalid extends HttpApiError.Problem<SettlementSn
       'SECTION_TOTAL_MISMATCH',
       'CASH_AMOUNT_NEGATIVE',
       'CASH_BALANCE_MISMATCH',
+      'BALANCE_SHEET_UNBALANCED',
+      'CURRENT_ASSET_COMPONENT_INVALID',
     ]),
     field: Schema.String,
   },

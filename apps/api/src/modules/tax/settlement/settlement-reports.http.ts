@@ -5,9 +5,11 @@ import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import type { TaxSettingRepository } from '../settings/tax-setting-repository.ts'
 import type { SettlementSnapshotRepository } from './settlement-snapshot-repository.ts'
 import {
+  getBalanceSheetReport,
   getCashFlowReport,
   getProfitLossReport,
   listSettlementReports,
+  uploadBalanceSheet,
   uploadCashFlow,
   uploadProfitLoss,
 } from './settlement-reports.ts'
@@ -32,6 +34,15 @@ export const SettlementReportsHttpLive = HttpApiBuilder.group(Api, 'settlement-r
       )
       .handle('putCashFlow', ({ params, payload, headers }) =>
         uploadCashFlow(params.fiscalYear, payload, expectedVersion(headers['if-match'])).pipe(
+          Effect.map(withEtag),
+          Effect.provideContext(context),
+        ),
+      )
+      .handle('getBalanceSheet', ({ params }) =>
+        getBalanceSheetReport(params.fiscalYear).pipe(Effect.map(withEtag), Effect.provideContext(context)),
+      )
+      .handle('putBalanceSheet', ({ params, payload, headers }) =>
+        uploadBalanceSheet(params.fiscalYear, payload, expectedVersion(headers['if-match'])).pipe(
           Effect.map(withEtag),
           Effect.provideContext(context),
         ),
