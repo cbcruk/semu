@@ -54,17 +54,22 @@ export interface ProfitLossUpload {
   months: ReadonlyArray<ProfitLossInputMonth>
 }
 
-/** 저장하는 손익 스냅샷입니다. 회사·사업연도마다 한 건이고, 업로드할 때마다 통째로 바뀝니다. */
-export interface ProfitLossSnapshotRecord {
+/** 모든 결산 스냅샷이 갖는 메타데이터입니다. 회사·사업연도마다 한 건이고, 업로드할 때마다 통째로 바뀝니다. */
+export interface SettlementSnapshotMeta {
   companyId: Id<'company'>
   /** 사업연도가 끝나는 해입니다. 법인세 확정 신고 건의 기간 이름과 같습니다. */
   fiscalYear: number
   period: FiscalPeriod
+  /** 결산 기준일(월말)입니다. */
   closedThrough: string
-  months: ReadonlyArray<ProfitLossInputMonth>
   version: number
   updatedAt: string
   updatedBy: Id<'user'>
+}
+
+/** 저장하는 손익 스냅샷입니다. */
+export interface ProfitLossSnapshotRecord extends SettlementSnapshotMeta {
+  months: ReadonlyArray<ProfitLossInputMonth>
 }
 
 export type SettlementSnapshotInvalidReason =
@@ -111,17 +116,10 @@ export interface CashFlowUpload {
   months: ReadonlyArray<CashFlowInputMonth>
 }
 
-/** 저장하는 자금 흐름 스냅샷입니다. 회사·사업연도마다 한 건이고, 업로드할 때마다 통째로 바뀝니다. */
-export interface CashFlowSnapshotRecord {
-  companyId: Id<'company'>
-  fiscalYear: number
-  period: FiscalPeriod
-  closedThrough: string
+/** 저장하는 자금 흐름 스냅샷입니다. */
+export interface CashFlowSnapshotRecord extends SettlementSnapshotMeta {
   openingBalances: Readonly<Record<CashAccount, number>>
   months: ReadonlyArray<CashFlowInputMonth>
-  version: number
-  updatedAt: string
-  updatedBy: Id<'user'>
 }
 
 /** 계정을 합친 한 달 자금 흐름입니다. */

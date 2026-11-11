@@ -280,6 +280,41 @@ describe('결산 자금 흐름(PUT·GET /v1/settlement-reports/cash-flow/{fiscal
     expect(response.status).toBe(403)
   })
 
+  it('유출이 음수면 422입니다', async () => {
+    app = taxTestApp()
+    const months = cashFlowMonths('2025-01', 1)
+    months[0] = {
+      ...months[0]!,
+      accounts: { ...months[0]!.accounts, CASH: { inflow: 0, outflow: -100_000, closingBalance: 1_100_000 } },
+    }
+
+    const response = await uploadCashFlow({ closedThrough: '2025-01-31', openingBalances: OPENING_BALANCES, months })
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({
+      reason: 'CASH_AMOUNT_NEGATIVE',
+      field: 'months[0].accounts.CASH.outflow',
+    })
+  })
+
+  it('다른 회사 대리인은 이 회사 자금 흐름을 보지 못합니다', async () => {
+    app = taxTestApp()
+    await uploadCashFlow(cashFlowYear)
+
+    const response = await app.send('/settlement-reports/cash-flow/2025', { token: 'otherAgency' })
+
+    expect(response.status).toBe(404)
+  })
+
+  it('세무 약관 재동의 전이면 403입니다', async () => {
+    app = taxTestApp()
+
+    const response = await app.send('/settlement-reports/cash-flow/2025', { token: 'pendingTerms' })
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'TERMS_REAGREEMENT_REQUIRED' })
+  })
+
   it('손익계산서만 올린 사업연도의 자금 흐름은 404입니다', async () => {
     app = taxTestApp()
     await upload(fullYear)
