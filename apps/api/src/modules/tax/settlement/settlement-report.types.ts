@@ -67,7 +67,7 @@ export interface ProfitLossSnapshotRecord {
   updatedBy: Id<'user'>
 }
 
-export type ProfitLossUploadInvalidReason =
+export type SettlementSnapshotInvalidReason =
   | 'CLOSED_THROUGH_OUT_OF_PERIOD'
   | 'CLOSED_THROUGH_IN_FUTURE'
   | 'CLOSED_THROUGH_NOT_MONTH_END'
@@ -77,9 +77,61 @@ export type ProfitLossUploadInvalidReason =
   | 'ACCOUNT_NAME_BLANK'
   | 'ACCOUNT_DUPLICATED'
   | 'SECTION_TOTAL_MISMATCH'
+  | 'CASH_AMOUNT_NEGATIVE'
+  | 'CASH_BALANCE_MISMATCH'
 
-/** 업로드 검증 위반입니다. `field`는 본문 안의 위치(`months[2].sections.REVENUE`)입니다. */
-export interface ProfitLossUploadViolation {
-  reason: ProfitLossUploadInvalidReason
+/** 결산 스냅샷 업로드 검증 위반입니다. `field`는 본문 안의 위치(`months[2].sections.REVENUE`)입니다. */
+export interface SettlementSnapshotViolation {
+  reason: SettlementSnapshotInvalidReason
   field: string
+}
+
+/** 자금 흐름을 보는 현금성 계정입니다. 현금, 당좌예금, 보통예금, 제예금(그 밖의 예금)입니다. */
+export type CashAccount = 'CASH' | 'CHECKING_DEPOSIT' | 'ORDINARY_DEPOSIT' | 'OTHER_DEPOSITS'
+
+/** 현금성 계정 하나의 한 달 입출금과 월말 잔액(원)입니다. */
+export interface CashAccountMonth {
+  inflow: number
+  outflow: number
+  closingBalance: number
+}
+
+/** 담당자가 올린 한 달 자금 흐름입니다. */
+export interface CashFlowInputMonth {
+  /** `YYYY-MM` */
+  month: string
+  accounts: Readonly<Record<CashAccount, CashAccountMonth>>
+}
+
+/** 자금 흐름 스냅샷 업로드 본문입니다. */
+export interface CashFlowUpload {
+  closedThrough: string
+  /** 사업연도 시작일의 계정별 잔액(기초 잔액)입니다. 첫 달 잔액을 맞추는 데 씁니다. */
+  openingBalances: Readonly<Record<CashAccount, number>>
+  months: ReadonlyArray<CashFlowInputMonth>
+}
+
+/** 저장하는 자금 흐름 스냅샷입니다. 회사·사업연도마다 한 건이고, 업로드할 때마다 통째로 바뀝니다. */
+export interface CashFlowSnapshotRecord {
+  companyId: Id<'company'>
+  fiscalYear: number
+  period: FiscalPeriod
+  closedThrough: string
+  openingBalances: Readonly<Record<CashAccount, number>>
+  months: ReadonlyArray<CashFlowInputMonth>
+  version: number
+  updatedAt: string
+  updatedBy: Id<'user'>
+}
+
+/** 계정을 합친 한 달 자금 흐름입니다. */
+export interface CashFlowMonth {
+  month: string
+  accounts: Readonly<Record<CashAccount, CashAccountMonth>>
+  inflow: number
+  outflow: number
+  /** 순유입 = 유입 − 유출. 음수면 순유출입니다. */
+  netInflow: number
+  /** 보유자금 = 네 계정의 월말 잔액 합입니다. */
+  fundsHeld: number
 }

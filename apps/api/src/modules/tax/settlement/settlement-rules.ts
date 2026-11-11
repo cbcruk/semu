@@ -7,7 +7,7 @@ import type {
   ProfitLossSection,
   ProfitLossSectionAmount,
   ProfitLossUpload,
-  ProfitLossUploadViolation,
+  SettlementSnapshotViolation,
   SettlementAccountAmount,
 } from './settlement-report.types.ts'
 
@@ -49,28 +49,18 @@ export function fiscalPeriod(fiscalYear: number, fiscalYearEndMonth: number): Fi
 }
 
 /**
- * 손익 스냅샷 업로드가 맞는지 봅니다. 맞으면 `undefined`, 아니면 처음 걸린 위반 하나입니다.
+ * 결산 스냅샷의 결산 기준일과 월 목록이 맞는지 봅니다. 모든 결산 보고서가 같이 씁니다. 맞으면 `undefined`입니다.
  *
  * - 결산 기준일은 사업연도 안이고 오늘보다 늦지 않습니다. 아직 오지 않은 날까지 결산할 수 없습니다
- * - 결산 기준일은 월말입니다. 월별 손익을 받으므로, 달 중간을 기준일로 두면 그 달의 기준일 뒤 거래가 들었는지 알 수 없습니다
- * - 월별 손익은 사업연도 첫 달부터 결산 기준일이 속한 달까지 빠짐없이 한 번씩입니다. 결산은 기간 전체를 닫으므로
- *   중간 달이 빠진 스냅샷은 누적 손익이 틀립니다
- * - 계정 이름은 비어 있지 않고 섹션 안에서 겹치지 않습니다. 이름이 응답과 화면에서 계정을 가르는 키입니다
- * - 계정이 있으면 섹션 합계는 계정 금액의 합과 같습니다. 줄이는 계정(매출원가의 기말재고액 등)은 음수로 적습니다
- *
- * 금액의 부호는 보지 않습니다. 영업외비용 환입이나 법인세 환급처럼 섹션 합계가 음수일 수 있습니다.
- *
- * @example
- * ```ts
- * validateProfitLossUpload({ closedThrough: '2026-12-31', months: [] }, fiscalPeriod(2026, 3), '2026-11-11')
- * // { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
- * ```
+ * - 결산 기준일은 월말입니다. 월별 값을 받으므로, 달 중간을 기준일로 두면 그 달의 기준일 뒤 거래가 들었는지 알 수 없습니다
+ * - 월별 값은 사업연도 첫 달부터 결산 기준일이 속한 달까지 빠짐없이 한 번씩입니다. 결산은 기간 전체를 닫으므로
+ *   중간 달이 빠진 스냅샷은 누계와 잔액이 틀립니다
  */
-export function validateProfitLossUpload(
-  upload: ProfitLossUpload,
+export function validateSnapshotMonths(
+  upload: { closedThrough: string; months: ReadonlyArray<{ month: string }> },
   period: FiscalPeriod,
   today: string,
-): ProfitLossUploadViolation | undefined {
+): SettlementSnapshotViolation | undefined {
   if (upload.closedThrough < period.start || upload.closedThrough > period.end) {
     return { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
   }
@@ -91,6 +81,31 @@ export function validateProfitLossUpload(
   for (let month = 첫달; month <= 마지막달; month = addMonths(month, 1)) {
     if (!본달.has(month)) return { reason: 'MONTH_MISSING', field: 'months' }
   }
+  return undefined
+}
+
+/**
+ * 손익 스냅샷 업로드가 맞는지 봅니다. 맞으면 `undefined`, 아니면 처음 걸린 위반 하나입니다.
+ *
+ * - 결산 기준일과 월 목록은 {@link validateSnapshotMonths}가 봅니다
+ * - 계정 이름은 비어 있지 않고 섹션 안에서 겹치지 않습니다. 이름이 응답과 화면에서 계정을 가르는 키입니다
+ * - 계정이 있으면 섹션 합계는 계정 금액의 합과 같습니다. 줄이는 계정(매출원가의 기말재고액 등)은 음수로 적습니다
+ *
+ * 금액의 부호는 보지 않습니다. 영업외비용 환입이나 법인세 환급처럼 섹션 합계가 음수일 수 있습니다.
+ *
+ * @example
+ * ```ts
+ * validateProfitLossUpload({ closedThrough: '2026-12-31', months: [] }, fiscalPeriod(2026, 3), '2026-11-11')
+ * // { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
+ * ```
+ */
+export function validateProfitLossUpload(
+  upload: ProfitLossUpload,
+  period: FiscalPeriod,
+  today: string,
+): SettlementSnapshotViolation | undefined {
+  const periodViolation = validateSnapshotMonths(upload, period, today)
+  if (periodViolation !== undefined) return periodViolation
 
   for (const [index, month] of upload.months.entries()) {
     for (const section of PROFIT_LOSS_INPUT_SECTIONS) {
@@ -101,7 +116,7 @@ export function validateProfitLossUpload(
   return undefined
 }
 
-function 섹션위반(section: ProfitLossSectionAmount, field: string): ProfitLossUploadViolation | undefined {
+function 섹션위반(section: ProfitLossSectionAmount, field: string): SettlementSnapshotViolation | undefined {
   const 이름들 = new Set<string>()
   for (const [index, account] of section.accounts.entries()) {
     const 이름 = account.name.trim()

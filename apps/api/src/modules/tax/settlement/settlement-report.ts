@@ -67,8 +67,70 @@ export const ProfitLossReport = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-/** 결산 보고서 종류입니다. 지금은 손익계산서만 있습니다. */
-export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS'])
+const CashAccountMonth = Schema.Struct({
+  /** 유입(원, 0 이상) */
+  inflow: Schema.Int,
+  /** 유출(원, 0 이상) */
+  outflow: Schema.Int,
+  /** 월말 잔액(원) = 전월 말 잔액 + 유입 − 유출 */
+  closingBalance: Schema.Int,
+})
+
+const CashAccounts = Schema.Struct({
+  /** 현금 */
+  CASH: CashAccountMonth,
+  /** 당좌예금 */
+  CHECKING_DEPOSIT: CashAccountMonth,
+  /** 보통예금 */
+  ORDINARY_DEPOSIT: CashAccountMonth,
+  /** 제예금(그 밖의 예금) */
+  OTHER_DEPOSITS: CashAccountMonth,
+})
+
+const OpeningBalances = Schema.Struct({
+  CASH: Schema.Int,
+  CHECKING_DEPOSIT: Schema.Int,
+  ORDINARY_DEPOSIT: Schema.Int,
+  OTHER_DEPOSITS: Schema.Int,
+})
+
+/** `PUT /settlement-reports/cash-flow/{fiscalYear}` 본문입니다. 그 사업연도의 자금 흐름 스냅샷을 통째로 바꿉니다. */
+export const CashFlowUploadBody = Schema.Struct({
+  /** 결산 기준일(월말)입니다. 이날이 속한 달까지 월별 자금 흐름을 빠짐없이 보냅니다. */
+  closedThrough: CalendarDate,
+  /** 사업연도 시작일의 계정별 잔액(기초 잔액)입니다. */
+  openingBalances: OpeningBalances,
+  months: Schema.Array(Schema.Struct({ month: YearMonth, accounts: CashAccounts })),
+})
+
+/** 결산 자금 흐름입니다. 현금성 계정(현금·당좌예금·보통예금·제예금)의 월별 유입·유출·잔액입니다. */
+export const CashFlowReport = Schema.Struct({
+  fiscalYear: Schema.Int,
+  period: Schema.Struct({ start: CalendarDate, end: CalendarDate }),
+  closedThrough: CalendarDate,
+  openingBalances: OpeningBalances,
+  months: Schema.Array(
+    Schema.Struct({
+      month: YearMonth,
+      accounts: CashAccounts,
+      /** 네 계정 유입의 합 */
+      inflow: Schema.Int,
+      /** 네 계정 유출의 합 */
+      outflow: Schema.Int,
+      /** 순유입 = 유입 − 유출. 음수면 순유출입니다. */
+      netInflow: Schema.Int,
+      /** 보유자금 = 네 계정 월말 잔액의 합 */
+      fundsHeld: Schema.Int,
+    }),
+  ),
+  /** 결산 기준일의 보유자금입니다. 마지막 달의 `fundsHeld`와 같습니다. */
+  fundsHeld: Schema.Int,
+  version: Schema.Int,
+  updatedAt: Schema.String,
+})
+
+/** 결산 보고서 종류입니다. 손익계산서와 자금 흐름이 있습니다. */
+export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS', 'CASH_FLOW'])
 
 /** 결산 데이터가 있는 보고서·사업연도 하나입니다. 화면의 연도 선택기에 씁니다(현행 `closing_list`). */
 export const SettlementReportAvailability = Schema.Struct({
@@ -104,6 +166,8 @@ export class SettlementSnapshotInvalid extends HttpApiError.Problem<SettlementSn
       'ACCOUNT_NAME_BLANK',
       'ACCOUNT_DUPLICATED',
       'SECTION_TOTAL_MISMATCH',
+      'CASH_AMOUNT_NEGATIVE',
+      'CASH_BALANCE_MISMATCH',
     ]),
     field: Schema.String,
   },

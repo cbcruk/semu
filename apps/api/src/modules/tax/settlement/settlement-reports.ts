@@ -1,18 +1,44 @@
 import { Effect, Option } from 'effect'
 import { checkVersion } from '../../../shared/http/versioning.ts'
+import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import type { AccessDenied } from '../../identity-access/authorization.ts'
 import { authorize } from '../../identity-access/authorization.ts'
 import { TaxSettingRepository } from '../settings/tax-setting-repository.ts'
 import { currentInstant } from '../tax-time.ts'
+import { deriveCashFlowMonth, validateCashFlowUpload } from './cash-flow-rules.ts'
 import { SettlementReportNotFound, SettlementSnapshotInvalid } from './settlement-report.ts'
-import type { ProfitLossReport, ProfitLossUploadBody, SettlementReportList } from './settlement-report.ts'
-import type { ProfitLossSnapshotRecord } from './settlement-report.types.ts'
+import type {
+  CashFlowReport,
+  CashFlowUploadBody,
+  ProfitLossReport,
+  ProfitLossUploadBody,
+  SettlementReportList,
+} from './settlement-report.ts'
+import type {
+  CashFlowSnapshotRecord,
+  FiscalPeriod,
+  ProfitLossSnapshotRecord,
+  SettlementSnapshotViolation,
+} from './settlement-report.types.ts'
 import { deriveProfitLossMonth, fiscalPeriod, sumProfitLoss, validateProfitLossUpload } from './settlement-rules.ts'
 import { SettlementSnapshotRepository } from './settlement-snapshot-repository.ts'
+import type { SnapshotStore } from './settlement-snapshot-repository.ts'
 
 const READ = { permission: 'settlement-report:read', plans: ['TAXATION'], requiresTerms: true } as const
+const UPLOAD = { permission: 'settlement-report:upload', plans: ['TAXATION'], requiresTerms: true } as const
+
+/** 모든 스냅샷이 갖는 메타데이터입니다. */
+interface SnapshotMeta {
+  companyId: Id<'company'>
+  fiscalYear: number
+  period: FiscalPeriod
+  closedThrough: string
+  version: number
+  updatedAt: string
+  updatedBy: Id<'user'>
+}
 
 /** 저장한 스냅샷을 손익계산서 응답으로 바꿉니다. 계산 섹션과 당기 누계를 채웁니다. */
 function toProfitLossReport(snapshot: ProfitLossSnapshotRecord): typeof ProfitLossReport.Type {
@@ -28,7 +54,22 @@ function toProfitLossReport(snapshot: ProfitLossSnapshotRecord): typeof ProfitLo
   }
 }
 
-/** 결산 데이터가 있는 보고서·사업연도 목록입니다. 사업연도 내림차순입니다. */
+/** 저장한 스냅샷을 자금 흐름 응답으로 바꿉니다. 계정 합계와 결산 기준일의 보유자금을 채웁니다. */
+function toCashFlowReport(snapshot: CashFlowSnapshotRecord): typeof CashFlowReport.Type {
+  const months = snapshot.months.map(deriveCashFlowMonth).toSorted((a, b) => a.month.localeCompare(b.month))
+  return {
+    fiscalYear: snapshot.fiscalYear,
+    period: snapshot.period,
+    closedThrough: snapshot.closedThrough,
+    openingBalances: snapshot.openingBalances,
+    months,
+    fundsHeld: months.at(-1)?.fundsHeld ?? 0,
+    version: snapshot.version,
+    updatedAt: snapshot.updatedAt,
+  }
+}
+
+/** 결산 데이터가 있는 보고서·사업연도 목록입니다. 사업연도 내림차순이고, 같은 사업연도는 손익계산서·자금 흐름 순입니다. */
 export const listSettlementReports = (): Effect.Effect<
   typeof SettlementReportList.Type,
   AccessDenied,
@@ -36,68 +77,130 @@ export const listSettlementReports = (): Effect.Effect<
 > =>
   Effect.gen(function* () {
     const actor = yield* authorize(READ)
-    const snapshots = yield* (yield* SettlementSnapshotRepository).listProfitLoss(actor.companyId)
-    return {
-      items: snapshots.map((snapshot) => ({
-        report: 'PROFIT_LOSS' as const,
+    const repository = yield* SettlementSnapshotRepository
+    const available = (report: 'PROFIT_LOSS' | 'CASH_FLOW', order: number) => (snapshot: SnapshotMeta) => ({
+      order,
+      item: {
+        report,
         fiscalYear: snapshot.fiscalYear,
         closedThrough: snapshot.closedThrough,
         updatedAt: snapshot.updatedAt,
-      })),
-    }
+      },
+    })
+    const items = [
+      ...(yield* repository.profitLoss.list(actor.companyId)).map(available('PROFIT_LOSS', 0)),
+      ...(yield* repository.cashFlow.list(actor.companyId)).map(available('CASH_FLOW', 1)),
+    ]
+      .toSorted((a, b) => b.item.fiscalYear - a.item.fiscalYear || a.order - b.order)
+      .map(({ item }) => item)
+    return { items }
   })
 
-/** 사업연도의 결산 손익계산서입니다. 아직 올리지 않았으면 404입니다. */
-export const getProfitLossReport = (
+/** 사업연도의 스냅샷을 읽습니다. 아직 올리지 않았으면 404입니다. */
+const readSnapshot = <T extends SnapshotMeta>(
+  pick: (repository: typeof SettlementSnapshotRepository.Service) => SnapshotStore<T>,
   fiscalYear: number,
-): Effect.Effect<
-  typeof ProfitLossReport.Type,
-  AccessDenied | SettlementReportNotFound,
-  CurrentActor | SettlementSnapshotRepository
-> =>
+): Effect.Effect<T, AccessDenied | SettlementReportNotFound, CurrentActor | SettlementSnapshotRepository> =>
   Effect.gen(function* () {
     const actor = yield* authorize(READ)
-    const found = yield* (yield* SettlementSnapshotRepository).findProfitLoss(actor.companyId, fiscalYear)
+    const found = yield* pick(yield* SettlementSnapshotRepository).find(actor.companyId, fiscalYear)
     if (Option.isNone(found)) return yield* new SettlementReportNotFound()
-    return toProfitLossReport(found.value)
+    return found.value
   })
 
 /**
- * 담당자가 사업연도의 손익 스냅샷을 올립니다. 그 사업연도의 스냅샷을 통째로 바꾸고 버전을 올립니다. 대리인 전용입니다.
+ * 담당자가 사업연도의 스냅샷을 올립니다. 그 사업연도의 스냅샷을 통째로 바꾸고 버전을 올립니다. 대리인 전용입니다.
  *
  * 사업연도 기간은 지금 세무 설정의 결산월로 정합니다. 결산월을 바꾸면 이미 올린 스냅샷의 기간은 그대로이고, 다시 올릴 때 새 기간으로 봅니다.
  */
-export const uploadProfitLoss = (
+const uploadSnapshot = <T extends SnapshotMeta, B extends { closedThrough: string }>(
+  pick: (repository: typeof SettlementSnapshotRepository.Service) => SnapshotStore<T>,
   fiscalYear: number,
-  body: typeof ProfitLossUploadBody.Type,
+  body: B,
   expected: number | undefined,
+  validate: (body: B, period: FiscalPeriod, today: string) => SettlementSnapshotViolation | undefined,
+  build: (body: B, meta: SnapshotMeta) => T,
 ): Effect.Effect<
-  typeof ProfitLossReport.Type,
+  T,
   AccessDenied | VersionMismatch | SettlementSnapshotInvalid,
   CurrentActor | SettlementSnapshotRepository | TaxSettingRepository
 > =>
   Effect.gen(function* () {
-    const actor = yield* authorize({ permission: 'settlement-report:upload', plans: ['TAXATION'], requiresTerms: true })
-    const repository = yield* SettlementSnapshotRepository
-    const current = yield* repository.findProfitLoss(actor.companyId, fiscalYear)
-    yield* checkVersion(Option.match(current, { onNone: () => 0, onSome: (snapshot) => snapshot.version }), expected)
+    const actor = yield* authorize(UPLOAD)
+    const store = pick(yield* SettlementSnapshotRepository)
+    const current = yield* store.find(actor.companyId, fiscalYear)
+    const currentVersion = Option.match(current, { onNone: () => 0, onSome: (snapshot) => snapshot.version })
+    yield* checkVersion(currentVersion, expected)
 
     const setting = yield* (yield* TaxSettingRepository).get(actor.companyId)
     const period = fiscalPeriod(fiscalYear, setting.fiscalYearEndMonth)
     const { now, today } = yield* currentInstant
-    const violation = validateProfitLossUpload(body, period, today)
+    const violation = validate(body, period, today)
     if (violation !== undefined) return yield* new SettlementSnapshotInvalid(violation)
 
-    const snapshot: ProfitLossSnapshotRecord = {
+    const snapshot = build(body, {
       companyId: actor.companyId,
       fiscalYear,
       period,
       closedThrough: body.closedThrough,
-      months: body.months,
-      version: Option.match(current, { onNone: () => 1, onSome: (snapshot) => snapshot.version + 1 }),
+      version: currentVersion + 1,
       updatedAt: now,
       updatedBy: actor.userId,
-    }
-    yield* repository.saveProfitLoss(snapshot)
-    return toProfitLossReport(snapshot)
+    })
+    yield* store.save(snapshot)
+    return snapshot
   })
+
+/** 사업연도의 결산 손익계산서입니다. 아직 올리지 않았으면 404입니다. */
+export const getProfitLossReport = (fiscalYear: number) =>
+  Effect.map(
+    readSnapshot((repository) => repository.profitLoss, fiscalYear),
+    toProfitLossReport,
+  )
+
+/** 담당자가 사업연도의 손익 스냅샷을 올립니다. 대리인 전용입니다. */
+export const uploadProfitLoss = (
+  fiscalYear: number,
+  body: typeof ProfitLossUploadBody.Type,
+  expected: number | undefined,
+) =>
+  Effect.map(
+    uploadSnapshot(
+      (repository) => repository.profitLoss,
+      fiscalYear,
+      body,
+      expected,
+      validateProfitLossUpload,
+      (upload, meta): ProfitLossSnapshotRecord => ({ ...meta, months: upload.months }),
+    ),
+    toProfitLossReport,
+  )
+
+/** 사업연도의 결산 자금 흐름입니다. 아직 올리지 않았으면 404입니다. */
+export const getCashFlowReport = (fiscalYear: number) =>
+  Effect.map(
+    readSnapshot((repository) => repository.cashFlow, fiscalYear),
+    toCashFlowReport,
+  )
+
+/** 담당자가 사업연도의 자금 흐름 스냅샷을 올립니다. 대리인 전용입니다. */
+export const uploadCashFlow = (
+  fiscalYear: number,
+  body: typeof CashFlowUploadBody.Type,
+  expected: number | undefined,
+) =>
+  Effect.map(
+    uploadSnapshot(
+      (repository) => repository.cashFlow,
+      fiscalYear,
+      body,
+      expected,
+      validateCashFlowUpload,
+      (upload, meta): CashFlowSnapshotRecord => ({
+        ...meta,
+        openingBalances: upload.openingBalances,
+        months: upload.months,
+      }),
+    ),
+    toCashFlowReport,
+  )
