@@ -85,7 +85,7 @@ export const PERMISSION_CATALOG = {
   'classification-rule': { area: 'BOOKKEEPING', actions: [...CRUD, 'apply'] },
   'realtime-report': { area: 'BOOKKEEPING', actions: ['read'] },
   report: { area: 'BOOKKEEPING', actions: ['read'] },
-  'settlement-report': { area: 'BOOKKEEPING', actions: ['read'], plans: ['TAXATION'] },
+  'settlement-report': { area: 'BOOKKEEPING', actions: ['read', 'upload'], agentOnly: ['upload'], plans: ['TAXATION'] },
 
   'vat-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
   'withholding-tax-filing': { area: 'TAX', actions: ['read', 'update', 'submit'], plans: ['TAXATION'] },
