@@ -52,6 +52,7 @@ export function fiscalPeriod(fiscalYear: number, fiscalYearEndMonth: number): Fi
  * 손익 스냅샷 업로드가 맞는지 봅니다. 맞으면 `undefined`, 아니면 처음 걸린 위반 하나입니다.
  *
  * - 결산 기준일은 사업연도 안이고 오늘보다 늦지 않습니다. 아직 오지 않은 날까지 결산할 수 없습니다
+ * - 결산 기준일은 월말입니다. 월별 손익을 받으므로, 달 중간을 기준일로 두면 그 달의 기준일 뒤 거래가 들었는지 알 수 없습니다
  * - 월별 손익은 사업연도 첫 달부터 결산 기준일이 속한 달까지 빠짐없이 한 번씩입니다. 결산은 기간 전체를 닫으므로
  *   중간 달이 빠진 스냅샷은 누적 손익이 틀립니다
  * - 계정 이름은 비어 있지 않고 섹션 안에서 겹치지 않습니다. 이름이 응답과 화면에서 계정을 가르는 키입니다
@@ -74,6 +75,9 @@ export function validateProfitLossUpload(
     return { reason: 'CLOSED_THROUGH_OUT_OF_PERIOD', field: 'closedThrough' }
   }
   if (upload.closedThrough > today) return { reason: 'CLOSED_THROUGH_IN_FUTURE', field: 'closedThrough' }
+  if (upload.closedThrough !== lastDayOfMonth(upload.closedThrough.slice(0, 7))) {
+    return { reason: 'CLOSED_THROUGH_NOT_MONTH_END', field: 'closedThrough' }
+  }
 
   const 첫달 = period.start.slice(0, 7)
   const 마지막달 = upload.closedThrough.slice(0, 7)
@@ -84,8 +88,8 @@ export function validateProfitLossUpload(
     if (본달.has(month.month)) return { reason: 'MONTH_DUPLICATED', field }
     본달.add(month.month)
   }
-  for (let 달 = 첫달; 달 <= 마지막달; 달 = addMonths(달, 1)) {
-    if (!본달.has(달)) return { reason: 'MONTH_MISSING', field: 'months' }
+  for (let month = 첫달; month <= 마지막달; month = addMonths(month, 1)) {
+    if (!본달.has(month)) return { reason: 'MONTH_MISSING', field: 'months' }
   }
 
   for (const [index, month] of upload.months.entries()) {
@@ -105,13 +109,13 @@ function 섹션위반(section: ProfitLossSectionAmount, field: string): ProfitLo
     if (이름들.has(이름)) return { reason: 'ACCOUNT_DUPLICATED', field: `${field}.accounts[${index}].name` }
     이름들.add(이름)
   }
-  if (section.accounts.length > 0 && 합계(section.accounts) !== section.amount) {
+  if (section.accounts.length > 0 && sumAmounts(section.accounts) !== section.amount) {
     return { reason: 'SECTION_TOTAL_MISMATCH', field: `${field}.amount` }
   }
   return undefined
 }
 
-function 합계(accounts: ReadonlyArray<SettlementAccountAmount>): number {
+function sumAmounts(accounts: ReadonlyArray<SettlementAccountAmount>): number {
   return accounts.reduce((sum, account) => sum + account.amount, 0)
 }
 

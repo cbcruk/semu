@@ -70,6 +70,7 @@ export interface ProfitLossSnapshotRecord {
 export type ProfitLossUploadInvalidReason =
   | 'CLOSED_THROUGH_OUT_OF_PERIOD'
   | 'CLOSED_THROUGH_IN_FUTURE'
+  | 'CLOSED_THROUGH_NOT_MONTH_END'
   | 'MONTH_OUT_OF_RANGE'
   | 'MONTH_DUPLICATED'
   | 'MONTH_MISSING'

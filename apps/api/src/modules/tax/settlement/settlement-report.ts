@@ -33,7 +33,7 @@ const InputSections = Schema.Struct({
 
 /** `PUT /settlement-reports/profit-loss/{fiscalYear}` 본문입니다. 그 사업연도의 손익 스냅샷을 통째로 바꿉니다. */
 export const ProfitLossUploadBody = Schema.Struct({
-  /** 결산 기준일입니다. 이날이 속한 달까지 월별 손익을 빠짐없이 보냅니다. */
+  /** 결산 기준일(월말)입니다. 이날이 속한 달까지 월별 손익을 빠짐없이 보냅니다. */
   closedThrough: CalendarDate,
   months: Schema.Array(Schema.Struct({ month: YearMonth, sections: InputSections })),
 })
@@ -97,6 +97,7 @@ export class SettlementSnapshotInvalid extends HttpApiError.Problem<SettlementSn
     reason: Schema.Literals([
       'CLOSED_THROUGH_OUT_OF_PERIOD',
       'CLOSED_THROUGH_IN_FUTURE',
+      'CLOSED_THROUGH_NOT_MONTH_END',
       'MONTH_OUT_OF_RANGE',
       'MONTH_DUPLICATED',
       'MONTH_MISSING',

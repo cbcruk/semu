@@ -9,7 +9,7 @@ let app: TaxTestApp
 afterEach(() => app.dispose())
 
 /** 2025 사업연도(12월 결산) 전체를 올리는 본문입니다. 지난 해라 실제 시계와 상관없이 결산 기준일이 오늘보다 늦지 않습니다. */
-const 전체연도 = { closedThrough: '2025-12-31', months: profitLossMonths('2025-01', 12) }
+const fullYear = { closedThrough: '2025-12-31', months: profitLossMonths('2025-01', 12) }
 
 function upload(body: unknown, request: { ifMatch?: string; fiscalYear?: number } = {}) {
   return app.send(`/settlement-reports/profit-loss/${request.fiscalYear ?? 2025}`, {
@@ -24,7 +24,7 @@ describe('결산 손익 업로드(PUT /v1/settlement-reports/profit-loss/{fiscal
   it('세무 대리인이 올리면 계산 섹션과 당기 누계를 채워 버전 1로 줍니다', async () => {
     app = taxTestApp()
 
-    const response = await upload(전체연도)
+    const response = await upload(fullYear)
     const body = await response.json()
 
     expect(response.status).toBe(200)
@@ -48,7 +48,7 @@ describe('결산 손익 업로드(PUT /v1/settlement-reports/profit-loss/{fiscal
     app = taxTestApp()
     await upload({ closedThrough: '2025-06-30', months: profitLossMonths('2025-01', 6) })
 
-    const response = await upload(전체연도, { ifMatch: '"1"' })
+    const response = await upload(fullYear, { ifMatch: '"1"' })
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ closedThrough: '2025-12-31', version: 2 })
@@ -56,9 +56,9 @@ describe('결산 손익 업로드(PUT /v1/settlement-reports/profit-loss/{fiscal
 
   it('버전이 다르면 412입니다', async () => {
     app = taxTestApp()
-    await upload(전체연도)
+    await upload(fullYear)
 
-    const response = await upload(전체연도, { ifMatch: '"0"' })
+    const response = await upload(fullYear, { ifMatch: '"0"' })
 
     expect(response.status).toBe(412)
     expect(await response.json()).toMatchObject({ code: 'VERSION_MISMATCH', currentVersion: 1 })
@@ -67,7 +67,7 @@ describe('결산 손익 업로드(PUT /v1/settlement-reports/profit-loss/{fiscal
   it('처음 올릴 때 If-Match는 "0"입니다', async () => {
     app = taxTestApp()
 
-    expect((await upload(전체연도, { ifMatch: '"0"' })).status).toBe(200)
+    expect((await upload(fullYear, { ifMatch: '"0"' })).status).toBe(200)
   })
 
   it('달이 빠지면 422입니다', async () => {
@@ -113,29 +113,30 @@ describe('결산 손익 업로드(PUT /v1/settlement-reports/profit-loss/{fiscal
   it('고객은 올릴 수 없습니다', async () => {
     app = taxTestApp()
 
-    const response = await app.send('/settlement-reports/profit-loss/2025', { method: 'PUT', body: 전체연도 })
+    const response = await app.send('/settlement-reports/profit-loss/2025', { method: 'PUT', body: fullYear })
 
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ permission: 'settlement-report:upload' })
   })
 
-  it('세무 기장 플랜이 없는 회사에는 올릴 수 없습니다', async () => {
+  it('세무 기장 플랜이 없는 회사에는 대리인도 올릴 수 없습니다', async () => {
     app = taxTestApp()
 
     const response = await app.send('/settlement-reports/profit-loss/2025', {
       method: 'PUT',
-      token: 'free',
-      body: 전체연도,
+      token: 'agencyNoPlan',
+      body: fullYear,
     })
 
     expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ code: 'ENTITLEMENT_REQUIRED' })
   })
 })
 
 describe('결산 손익계산서 조회(GET /v1/settlement-reports/profit-loss/{fiscalYear})', () => {
   it('고객이 올라온 손익계산서를 ETag와 함께 읽습니다', async () => {
     app = taxTestApp()
-    await upload(전체연도)
+    await upload(fullYear)
 
     const response = await app.send('/settlement-reports/profit-loss/2025')
     const body = await response.json()
@@ -187,14 +188,14 @@ describe('결산 손익계산서 조회(GET /v1/settlement-reports/profit-loss/{
 
   it('데모 계정도 읽습니다', async () => {
     app = taxTestApp()
-    await upload(전체연도)
+    await upload(fullYear)
 
     expect((await app.send('/settlement-reports/profit-loss/2025', { token: 'demo' })).status).toBe(200)
   })
 
   it('다른 회사 대리인은 이 회사 스냅샷을 보지 못합니다', async () => {
     app = taxTestApp()
-    await upload(전체연도)
+    await upload(fullYear)
 
     const response = await app.send('/settlement-reports/profit-loss/2025', { token: 'otherAgency' })
 
@@ -206,7 +207,7 @@ describe('결산 보고서 목록(GET /v1/settlement-reports)', () => {
   it('올린 사업연도를 내림차순으로 줍니다', async () => {
     app = taxTestApp()
     await upload({ closedThrough: '2024-12-31', months: profitLossMonths('2024-01', 12) }, { fiscalYear: 2024 })
-    await upload(전체연도)
+    await upload(fullYear)
 
     const response = await app.send('/settlement-reports')
 
@@ -231,7 +232,7 @@ describe('앱 저장소의 결산 스냅샷(TaxStoreLive)', () => {
 
     const uploaded = await whole.json('PUT', '/settlement-reports/profit-loss/2025', {
       token: 'agency',
-      body: 전체연도,
+      body: fullYear,
       ifMatch: '"0"',
     })
     const read = await whole.json('GET', '/settlement-reports/profit-loss/2025')

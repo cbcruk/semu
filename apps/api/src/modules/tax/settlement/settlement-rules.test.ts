@@ -23,19 +23,28 @@ describe('사업연도 기간', () => {
 })
 
 describe('손익 스냅샷 업로드 검증', () => {
-  const 기간 = fiscalPeriod(2026, 12)
-  const 오늘 = '2026-11-11'
+  const period = fiscalPeriod(2026, 12)
+  const today = '2026-11-11'
 
   it('첫 달부터 결산 기준일이 속한 달까지 빠짐없으면 통과합니다', () => {
     const upload = { closedThrough: '2026-10-31', months: profitLossMonths('2026-01', 10) }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toBeUndefined()
+    expect(validateProfitLossUpload(upload, period, today)).toBeUndefined()
+  })
+
+  it('결산 기준일이 월말이 아니면 거절합니다', () => {
+    const upload = { closedThrough: '2026-06-15', months: profitLossMonths('2026-01', 6) }
+
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
+      reason: 'CLOSED_THROUGH_NOT_MONTH_END',
+      field: 'closedThrough',
+    })
   })
 
   it('결산 기준일이 사업연도 밖이면 거절합니다', () => {
     const upload = { closedThrough: '2025-12-31', months: [] }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
       reason: 'CLOSED_THROUGH_OUT_OF_PERIOD',
       field: 'closedThrough',
     })
@@ -44,7 +53,7 @@ describe('손익 스냅샷 업로드 검증', () => {
   it('결산 기준일이 오늘보다 늦으면 거절합니다', () => {
     const upload = { closedThrough: '2026-11-30', months: profitLossMonths('2026-01', 11) }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
       reason: 'CLOSED_THROUGH_IN_FUTURE',
       field: 'closedThrough',
     })
@@ -53,7 +62,7 @@ describe('손익 스냅샷 업로드 검증', () => {
   it('결산 기준일 뒤의 달이 있으면 거절합니다', () => {
     const upload = { closedThrough: '2026-02-28', months: profitLossMonths('2026-01', 3) }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
       reason: 'MONTH_OUT_OF_RANGE',
       field: 'months[2].month',
     })
@@ -62,7 +71,7 @@ describe('손익 스냅샷 업로드 검증', () => {
   it('사업연도 앞의 달이 있으면 거절합니다', () => {
     const upload = { closedThrough: '2026-01-31', months: [profitLossMonth('2025-12'), profitLossMonth('2026-01')] }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
       reason: 'MONTH_OUT_OF_RANGE',
       field: 'months[0].month',
     })
@@ -71,7 +80,7 @@ describe('손익 스냅샷 업로드 검증', () => {
   it('같은 달이 두 번 있으면 거절합니다', () => {
     const upload = { closedThrough: '2026-01-31', months: [profitLossMonth('2026-01'), profitLossMonth('2026-01')] }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({
       reason: 'MONTH_DUPLICATED',
       field: 'months[1].month',
     })
@@ -80,13 +89,13 @@ describe('손익 스냅샷 업로드 검증', () => {
   it('중간 달이 빠지면 거절합니다', () => {
     const upload = { closedThrough: '2026-03-31', months: [profitLossMonth('2026-01'), profitLossMonth('2026-03')] }
 
-    expect(validateProfitLossUpload(upload, 기간, 오늘)).toEqual({ reason: 'MONTH_MISSING', field: 'months' })
+    expect(validateProfitLossUpload(upload, period, today)).toEqual({ reason: 'MONTH_MISSING', field: 'months' })
   })
 
   it('3월 결산 법인은 전년 4월부터 보냅니다', () => {
     const upload = { closedThrough: '2025-06-30', months: profitLossMonths('2025-04', 3) }
 
-    expect(validateProfitLossUpload(upload, fiscalPeriod(2026, 3), 오늘)).toBeUndefined()
+    expect(validateProfitLossUpload(upload, fiscalPeriod(2026, 3), today)).toBeUndefined()
   })
 
   it('계정 이름이 비어 있으면 거절합니다', () => {
@@ -94,7 +103,7 @@ describe('손익 스냅샷 업로드 검증', () => {
       REVENUE: { amount: 10, accounts: [{ name: '  ', amount: 10 }] },
     })
 
-    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, period, today)).toEqual({
       reason: 'ACCOUNT_NAME_BLANK',
       field: 'months[0].sections.REVENUE.accounts[0].name',
     })
@@ -111,7 +120,7 @@ describe('손익 스냅샷 업로드 검증', () => {
       },
     })
 
-    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, period, today)).toEqual({
       reason: 'ACCOUNT_DUPLICATED',
       field: 'months[0].sections.REVENUE.accounts[1].name',
     })
@@ -129,7 +138,7 @@ describe('손익 스냅샷 업로드 검증', () => {
       },
     })
 
-    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, 기간, 오늘)).toEqual({
+    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, period, today)).toEqual({
       reason: 'SECTION_TOTAL_MISMATCH',
       field: 'months[0].sections.COST_OF_SALES.amount',
     })
@@ -147,7 +156,7 @@ describe('손익 스냅샷 업로드 검증', () => {
       },
     })
 
-    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, 기간, 오늘)).toBeUndefined()
+    expect(validateProfitLossUpload({ closedThrough: '2026-01-31', months: [month] }, period, today)).toBeUndefined()
   })
 })
 
