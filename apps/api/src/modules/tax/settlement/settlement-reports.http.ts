@@ -7,11 +7,14 @@ import type { SettlementSnapshotRepository } from './settlement-snapshot-reposit
 import {
   getBalanceSheetReport,
   getCashFlowReport,
+  getPartnerLedger,
   getProfitLossReport,
+  getReceivablePayableReport,
   listSettlementReports,
   uploadBalanceSheet,
   uploadCashFlow,
   uploadProfitLoss,
+  uploadReceivablePayable,
 } from './settlement-reports.ts'
 
 /** `settlement-reports` 그룹 핸들러입니다. */
@@ -46,6 +49,22 @@ export const SettlementReportsHttpLive = HttpApiBuilder.group(Api, 'settlement-r
           Effect.map(withEtag),
           Effect.provideContext(context),
         ),
+      )
+      .handle('getReceivablePayable', ({ params }) =>
+        getReceivablePayableReport(params.fiscalYear).pipe(Effect.map(withEtag), Effect.provideContext(context)),
+      )
+      .handle('putReceivablePayable', ({ params, payload, headers }) =>
+        uploadReceivablePayable(params.fiscalYear, payload, expectedVersion(headers['if-match'])).pipe(
+          Effect.map(withEtag),
+          Effect.provideContext(context),
+        ),
+      )
+      .handle('getPartnerLedger', ({ params }) =>
+        getPartnerLedger(
+          params.fiscalYear,
+          params.side === 'receivables' ? 'RECEIVABLE' : 'PAYABLE',
+          params.partnerCode,
+        ).pipe(Effect.provideContext(context)),
       )
   }),
 )

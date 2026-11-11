@@ -8,14 +8,18 @@ import { TaxSettingRepository } from '../settings/tax-setting-repository.ts'
 import { currentInstant } from '../tax-time.ts'
 import { cumulativeProfitLoss, deriveBalanceSheetMonth, validateBalanceSheetUpload } from './balance-sheet-rules.ts'
 import { deriveCashFlowMonth, validateCashFlowUpload } from './cash-flow-rules.ts'
-import { SettlementReportNotFound, SettlementSnapshotInvalid } from './settlement-report.ts'
+import { ledgerWithBalances, summarizeLedgers, validateReceivablePayableUpload } from './receivable-payable-rules.ts'
+import { SettlementPartnerNotFound, SettlementReportNotFound, SettlementSnapshotInvalid } from './settlement-report.ts'
 import type {
   BalanceSheetReport,
   BalanceSheetUploadBody,
   CashFlowReport,
   CashFlowUploadBody,
+  PartnerLedgerReport,
   ProfitLossReport,
   ProfitLossUploadBody,
+  ReceivablePayableReport,
+  ReceivablePayableUploadBody,
   SettlementReportList,
 } from './settlement-report.ts'
 import type {
@@ -23,6 +27,7 @@ import type {
   CashFlowSnapshotRecord,
   FiscalPeriod,
   ProfitLossSnapshotRecord,
+  ReceivablePayableSnapshotRecord,
   SettlementSnapshotMeta,
   SettlementSnapshotViolation,
 } from './settlement-report.types.ts'
@@ -62,7 +67,7 @@ function toCashFlowReport(snapshot: CashFlowSnapshotRecord): typeof CashFlowRepo
   }
 }
 
-/** 결산 데이터가 있는 보고서·사업연도 목록입니다. 사업연도 내림차순이고, 같은 사업연도는 손익계산서·자금 흐름·재무상태표 순입니다. */
+/** 결산 데이터가 있는 보고서·사업연도 목록입니다. 사업연도 내림차순이고, 같은 사업연도는 손익계산서·자금 흐름·재무상태표·미수·미지급 순입니다. */
 export const listSettlementReports = (): Effect.Effect<
   typeof SettlementReportList.Type,
   AccessDenied,
@@ -72,7 +77,8 @@ export const listSettlementReports = (): Effect.Effect<
     const actor = yield* authorize(READ)
     const repository = yield* SettlementSnapshotRepository
     const available =
-      (report: 'PROFIT_LOSS' | 'CASH_FLOW' | 'BALANCE_SHEET', order: number) => (snapshot: SettlementSnapshotMeta) => ({
+      (report: (typeof SettlementReportList.Type)['items'][number]['report'], order: number) =>
+      (snapshot: SettlementSnapshotMeta) => ({
         order,
         item: {
           report,
@@ -85,6 +91,7 @@ export const listSettlementReports = (): Effect.Effect<
       ...(yield* repository.profitLoss.list(actor.companyId)).map(available('PROFIT_LOSS', 0)),
       ...(yield* repository.cashFlow.list(actor.companyId)).map(available('CASH_FLOW', 1)),
       ...(yield* repository.balanceSheet.list(actor.companyId)).map(available('BALANCE_SHEET', 2)),
+      ...(yield* repository.receivablePayable.list(actor.companyId)).map(available('RECEIVABLE_PAYABLE', 3)),
     ]
       .toSorted((a, b) => b.item.fiscalYear - a.item.fiscalYear || a.order - b.order)
       .map(({ item }) => item)
@@ -285,4 +292,83 @@ export const uploadBalanceSheet = (
       (upload, meta): BalanceSheetSnapshotRecord => ({ ...meta, months: upload.months }),
     ),
     toBalanceSheetReport,
+  )
+
+/** 저장한 스냅샷을 미수·미지급 응답으로 바꿉니다. 거래처 원장에서 월별·거래처별 합계를 계산합니다. */
+function toReceivablePayableReport(snapshot: ReceivablePayableSnapshotRecord): typeof ReceivablePayableReport.Type {
+  return {
+    fiscalYear: snapshot.fiscalYear,
+    period: snapshot.period,
+    closedThrough: snapshot.closedThrough,
+    receivable: summarizeLedgers(snapshot.receivables, snapshot.period, snapshot.closedThrough),
+    payable: summarizeLedgers(snapshot.payables, snapshot.period, snapshot.closedThrough),
+    version: snapshot.version,
+    updatedAt: snapshot.updatedAt,
+  }
+}
+
+/** 사업연도의 결산 미수·미지급입니다. 아직 올리지 않았으면 404입니다. */
+export const getReceivablePayableReport = (
+  fiscalYear: number,
+): Effect.Effect<
+  typeof ReceivablePayableReport.Type,
+  AccessDenied | SettlementReportNotFound,
+  CurrentActor | SettlementSnapshotRepository
+> =>
+  Effect.map(
+    readSnapshot((repository) => repository.receivablePayable, fiscalYear),
+    toReceivablePayableReport,
+  )
+
+/** ERP 거래처 하나의 미수 또는 미지급 원장입니다. 스냅샷이 없으면 404 보고서 없음, 거래처가 없으면 404 거래처 없음입니다. */
+export const getPartnerLedger = (
+  fiscalYear: number,
+  kind: 'RECEIVABLE' | 'PAYABLE',
+  partnerCode: string,
+): Effect.Effect<
+  typeof PartnerLedgerReport.Type,
+  AccessDenied | SettlementReportNotFound | SettlementPartnerNotFound,
+  CurrentActor | SettlementSnapshotRepository
+> =>
+  Effect.gen(function* () {
+    const snapshot = yield* readSnapshot((repository) => repository.receivablePayable, fiscalYear)
+    const ledgers = kind === 'RECEIVABLE' ? snapshot.receivables : snapshot.payables
+    const ledger = ledgers.find((candidate) => candidate.partnerCode.trim() === partnerCode)
+    if (ledger === undefined) return yield* new SettlementPartnerNotFound()
+    const entries = ledgerWithBalances(ledger)
+    return {
+      fiscalYear,
+      kind,
+      partnerCode: ledger.partnerCode.trim(),
+      partnerName: ledger.partnerName.trim(),
+      openingBalance: ledger.openingBalance,
+      closingBalance: entries.at(-1)?.balance ?? ledger.openingBalance,
+      entries,
+    }
+  })
+
+/** 담당자가 사업연도의 미수·미지급 스냅샷을 올립니다. 대리인 전용입니다. */
+export const uploadReceivablePayable = (
+  fiscalYear: number,
+  body: typeof ReceivablePayableUploadBody.Type,
+  expected: number | undefined,
+): Effect.Effect<
+  typeof ReceivablePayableReport.Type,
+  AccessDenied | VersionMismatch | SettlementSnapshotInvalid,
+  CurrentActor | SettlementSnapshotRepository | TaxSettingRepository
+> =>
+  Effect.map(
+    uploadSnapshot(
+      (repository) => repository.receivablePayable,
+      fiscalYear,
+      body,
+      expected,
+      validateReceivablePayableUpload,
+      (upload, meta): ReceivablePayableSnapshotRecord => ({
+        ...meta,
+        receivables: upload.receivables,
+        payables: upload.payables,
+      }),
+    ),
+    toReceivablePayableReport,
   )

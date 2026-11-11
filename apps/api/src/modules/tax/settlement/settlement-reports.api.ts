@@ -14,6 +14,10 @@ import {
   CashFlowUploadBody,
   ProfitLossReport,
   ProfitLossUploadBody,
+  PartnerLedgerReport,
+  ReceivablePayableReport,
+  ReceivablePayableUploadBody,
+  SettlementPartnerNotFound,
   SettlementReportList,
   SettlementReportNotFound,
   SettlementSnapshotInvalid,
@@ -26,11 +30,12 @@ const params = { fiscalYear: FiscalYear }
 const WithEtag = HttpApiSchema.WithHeaders(ProfitLossReport, { etag: Schema.String })
 const CashFlowWithEtag = HttpApiSchema.WithHeaders(CashFlowReport, { etag: Schema.String })
 const BalanceSheetWithEtag = HttpApiSchema.WithHeaders(BalanceSheetReport, { etag: Schema.String })
+const ReceivablePayableWithEtag = HttpApiSchema.WithHeaders(ReceivablePayableReport, { etag: Schema.String })
 const ACCESS_ERRORS = [PermissionDenied, EntitlementRequired, TermsReagreementRequired] as const
 
 /**
  * 결산 기반 세무 보고서입니다. 담당자가 ERP에서 결산한 뒤 올린 스냅샷을 보여 줍니다. 실시간 보고서(`/reports/*`, Bookkeeping)와
- * 숫자가 다를 수 있습니다. 지금은 손익계산서, 자금 흐름, 재무상태표가 있습니다.
+ * 숫자가 다를 수 있습니다. 손익계산서, 자금 흐름, 재무상태표, 미수·미지급이 있습니다.
  */
 export class SettlementReportsApi extends HttpApiGroup.make('settlement-reports')
   .add(
@@ -70,6 +75,23 @@ export class SettlementReportsApi extends HttpApiGroup.make('settlement-reports'
       payload: BalanceSheetUploadBody,
       success: BalanceSheetWithEtag,
       error: [...ACCESS_ERRORS, VersionMismatch, SettlementSnapshotInvalid],
+    }),
+    HttpApiEndpoint.get('getReceivablePayable', '/settlement-reports/receivable-payable/:fiscalYear', {
+      params,
+      success: ReceivablePayableWithEtag,
+      error: [...ACCESS_ERRORS, SettlementReportNotFound],
+    }),
+    HttpApiEndpoint.put('putReceivablePayable', '/settlement-reports/receivable-payable/:fiscalYear', {
+      params,
+      headers: { 'if-match': Schema.optionalKey(Schema.String) },
+      payload: ReceivablePayableUploadBody,
+      success: ReceivablePayableWithEtag,
+      error: [...ACCESS_ERRORS, VersionMismatch, SettlementSnapshotInvalid],
+    }),
+    HttpApiEndpoint.get('getPartnerLedger', '/settlement-reports/receivable-payable/:fiscalYear/:side/:partnerCode', {
+      params: { ...params, side: Schema.Literals(['receivables', 'payables']), partnerCode: Schema.String },
+      success: PartnerLedgerReport,
+      error: [...ACCESS_ERRORS, SettlementReportNotFound, SettlementPartnerNotFound],
     }),
   )
   .middleware(Authentication) {}

@@ -209,8 +209,77 @@ export const BalanceSheetReport = Schema.Struct({
   updatedAt: Schema.String,
 })
 
-/** 결산 보고서 종류입니다. 손익계산서, 자금 흐름, 재무상태표가 있습니다. */
-export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS', 'CASH_FLOW', 'BALANCE_SHEET'])
+const LedgerEntry = Schema.Struct({
+  date: CalendarDate,
+  /** 적요입니다. */
+  summary: Schema.NullOr(Schema.String),
+  /** 채권·채무가 늘어난 금액(원, 0 이상) */
+  increase: Schema.Int,
+  /** 회수·지급한 금액(원, 0 이상) */
+  decrease: Schema.Int,
+})
+
+const PartnerLedgerBody = Schema.Struct({
+  /** ERP 거래처 코드입니다. 앱 거래처(Bookkeeping `partners`)와 잇지 않습니다. */
+  partnerCode: Schema.String,
+  partnerName: Schema.String,
+  /** 사업연도 시작일의 잔액(전기 이월)입니다. */
+  openingBalance: Schema.Int,
+  entries: Schema.Array(LedgerEntry),
+})
+
+/** `PUT /settlement-reports/receivable-payable/{fiscalYear}` 본문입니다. 그 사업연도의 미수·미지급 스냅샷을 통째로 바꿉니다. */
+export const ReceivablePayableUploadBody = Schema.Struct({
+  /** 결산 기준일(월말)입니다. 거래 날짜는 사업연도 시작일부터 이날까지입니다. */
+  closedThrough: CalendarDate,
+  /** 거래처별 미수(받을 돈) 원장 */
+  receivables: Schema.Array(PartnerLedgerBody),
+  /** 거래처별 미지급(줄 돈) 원장 */
+  payables: Schema.Array(PartnerLedgerBody),
+})
+
+const Movement = {
+  openingBalance: Schema.Int,
+  increase: Schema.Int,
+  decrease: Schema.Int,
+  /** 기말 잔액 = 기초 잔액 + 증가 − 감소 */
+  closingBalance: Schema.Int,
+}
+
+const ReceivablePayableSide = Schema.Struct({
+  ...Movement,
+  /** 사업연도 첫 달부터 결산 기준일이 속한 달까지 달마다 */
+  months: Schema.Array(Schema.Struct({ month: YearMonth, ...Movement })),
+  /** 거래처마다. 기초 잔액은 전기 이월, 증가·감소는 사업연도 누계입니다. */
+  partners: Schema.Array(
+    Schema.Struct({ partnerCode: Schema.String, partnerName: Schema.String, entryCount: Schema.Int, ...Movement }),
+  ),
+})
+
+/** 결산 미수·미지급입니다. 거래처 원장에서 월별·거래처별 합계를 계산합니다. */
+export const ReceivablePayableReport = Schema.Struct({
+  fiscalYear: Schema.Int,
+  period: Schema.Struct({ start: CalendarDate, end: CalendarDate }),
+  closedThrough: CalendarDate,
+  receivable: ReceivablePayableSide,
+  payable: ReceivablePayableSide,
+  version: Schema.Int,
+  updatedAt: Schema.String,
+})
+
+/** 거래처 하나의 원장입니다. 거래는 날짜 순이고, 거래마다 누적 잔액이 붙습니다. */
+export const PartnerLedgerReport = Schema.Struct({
+  fiscalYear: Schema.Int,
+  kind: Schema.Literals(['RECEIVABLE', 'PAYABLE']),
+  partnerCode: Schema.String,
+  partnerName: Schema.String,
+  openingBalance: Schema.Int,
+  closingBalance: Schema.Int,
+  entries: Schema.Array(Schema.Struct({ ...LedgerEntry.fields, balance: Schema.Int })),
+})
+
+/** 결산 보고서 종류입니다. 손익계산서, 자금 흐름, 재무상태표, 미수·미지급이 있습니다. */
+export const SettlementReportKind = Schema.Literals(['PROFIT_LOSS', 'CASH_FLOW', 'BALANCE_SHEET', 'RECEIVABLE_PAYABLE'])
 
 /** 결산 데이터가 있는 보고서·사업연도 하나입니다. 화면의 연도 선택기에 씁니다(현행 `closing_list`). */
 export const SettlementReportAvailability = Schema.Struct({
@@ -228,6 +297,13 @@ export class SettlementReportNotFound extends HttpApiError.Problem<SettlementRep
   'SettlementReportNotFound',
   { type: problemType('SETTLEMENT_REPORT_NOT_FOUND'), status: 404, title: 'Settlement report not found' },
   { code: Schema.tag('SETTLEMENT_REPORT_NOT_FOUND') },
+) {}
+
+/** 그 사업연도 미수·미지급 스냅샷에 이 ERP 거래처가 없습니다. */
+export class SettlementPartnerNotFound extends HttpApiError.Problem<SettlementPartnerNotFound>()(
+  'SettlementPartnerNotFound',
+  { type: problemType('SETTLEMENT_PARTNER_NOT_FOUND'), status: 404, title: 'Settlement partner not found' },
+  { code: Schema.tag('SETTLEMENT_PARTNER_NOT_FOUND') },
 ) {}
 
 /** 결산 스냅샷이 사업연도·결산 기준일이나 손익 규칙에 맞지 않습니다. 이유는 `reason`, 걸린 위치는 `field`입니다. */
@@ -250,6 +326,10 @@ export class SettlementSnapshotInvalid extends HttpApiError.Problem<SettlementSn
       'CASH_BALANCE_MISMATCH',
       'BALANCE_SHEET_UNBALANCED',
       'CURRENT_ASSET_COMPONENT_INVALID',
+      'PARTNER_BLANK',
+      'PARTNER_DUPLICATED',
+      'ENTRY_DATE_OUT_OF_RANGE',
+      'ENTRY_AMOUNT_NEGATIVE',
     ]),
     field: Schema.String,
   },

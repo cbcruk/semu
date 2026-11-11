@@ -8,6 +8,7 @@ import {
   balanceSheetMonths,
   cashFlowMonths,
   OPENING_BALANCES,
+  partnerLedgers,
   profitLossMonth,
   profitLossMonths,
 } from './settlement.testing.ts'
@@ -474,7 +475,128 @@ describe('결산 재무상태표(PUT·GET /v1/settlement-reports/balance-sheet/{
   })
 })
 
+const receivablePayableYear = { closedThrough: '2025-12-31', ...partnerLedgers(2025) }
+
+function uploadReceivablePayable(body: unknown, ifMatch?: string) {
+  return app.send('/settlement-reports/receivable-payable/2025', {
+    method: 'PUT',
+    token: 'agency',
+    body,
+    ...(ifMatch === undefined ? {} : { ifMatch }),
+  })
+}
+
+describe('결산 미수·미지급(PUT·GET /v1/settlement-reports/receivable-payable/{fiscalYear})', () => {
+  it('대리인이 올리면 미수·미지급을 달마다, 거래처마다 집계합니다', async () => {
+    app = taxTestApp()
+
+    const response = await uploadReceivablePayable(receivablePayableYear)
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('etag')).toBe('"1"')
+    expect(body.receivable).toMatchObject({ openingBalance: 3_000_000, closingBalance: 6_000_000 })
+    expect(body.receivable.months).toHaveLength(12)
+    expect(body.receivable.months[11]).toMatchObject({ month: '2025-12', closingBalance: 6_000_000 })
+    expect(body.payable).toMatchObject({ openingBalance: 1_000_000, decrease: 1_000_000, closingBalance: 0 })
+  })
+
+  it('고객이 거래처 원장을 누적 잔액과 함께 읽습니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+
+    const response = await app.send('/settlement-reports/receivable-payable/2025/receivables/A001')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      fiscalYear: 2025,
+      kind: 'RECEIVABLE',
+      partnerCode: 'A001',
+      partnerName: '가나상사',
+      openingBalance: 3_000_000,
+      closingBalance: 4_000_000,
+      entries: [
+        { date: '2025-01-15', summary: '상품 매출', increase: 5_000_000, decrease: 0, balance: 8_000_000 },
+        { date: '2025-02-10', summary: '외상대금 회수', increase: 0, decrease: 4_000_000, balance: 4_000_000 },
+      ],
+    })
+  })
+
+  it('없는 거래처 원장은 404 거래처 없음입니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+
+    const response = await app.send('/settlement-reports/receivable-payable/2025/payables/A001')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'SETTLEMENT_PARTNER_NOT_FOUND' })
+  })
+
+  it('스냅샷이 없으면 거래처 원장도 404 보고서 없음입니다', async () => {
+    app = taxTestApp()
+
+    const response = await app.send('/settlement-reports/receivable-payable/2025/receivables/A001')
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ code: 'SETTLEMENT_REPORT_NOT_FOUND' })
+  })
+
+  it('결산 기준일 뒤의 거래가 있으면 422입니다', async () => {
+    app = taxTestApp()
+
+    const response = await uploadReceivablePayable({ closedThrough: '2025-02-28', ...partnerLedgers(2025) })
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({
+      code: 'SETTLEMENT_SNAPSHOT_INVALID',
+      reason: 'ENTRY_DATE_OUT_OF_RANGE',
+      field: 'receivables[1].entries[0].date',
+    })
+  })
+
+  it('버전이 다르면 412입니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+
+    expect((await uploadReceivablePayable(receivablePayableYear, '"0"')).status).toBe(412)
+  })
+
+  it('고객은 올릴 수 없습니다', async () => {
+    app = taxTestApp()
+
+    const response = await app.send('/settlement-reports/receivable-payable/2025', {
+      method: 'PUT',
+      body: receivablePayableYear,
+    })
+
+    expect(response.status).toBe(403)
+  })
+
+  it('다른 회사 대리인은 이 회사 미수·미지급과 거래처 원장을 보지 못합니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+
+    expect((await app.send('/settlement-reports/receivable-payable/2025', { token: 'otherAgency' })).status).toBe(404)
+    expect(
+      (await app.send('/settlement-reports/receivable-payable/2025/receivables/A001', { token: 'otherAgency' })).status,
+    ).toBe(404)
+  })
+})
+
 describe('결산 보고서 목록(GET /v1/settlement-reports)', () => {
+  it('미수·미지급은 같은 사업연도의 마지막입니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+    await uploadBalanceSheet(balanceSheetYear)
+
+    const response = await app.send('/settlement-reports')
+
+    expect((await response.json()).items.map((item: { report: string }) => item.report)).toEqual([
+      'BALANCE_SHEET',
+      'RECEIVABLE_PAYABLE',
+    ])
+  })
+
   it('세 보고서를 같은 사업연도 안에서 손익계산서·자금 흐름·재무상태표 순으로 줍니다', async () => {
     app = taxTestApp()
     await uploadBalanceSheet(balanceSheetYear)
@@ -579,6 +701,23 @@ describe('앱 저장소의 재무상태표 스냅샷(TaxStoreLive)', () => {
       ifMatch: '"0"',
     })
     const read = await whole.json('GET', '/settlement-reports/balance-sheet/2025')
+
+    expect(uploaded.status).toBe(200)
+    expect(read.body).toEqual(uploaded.body)
+  })
+})
+
+describe('앱 저장소의 미수·미지급 스냅샷(TaxStoreLive)', () => {
+  it('앱 전체 저장소(메모리 또는 SQLite)에 저장하고 다시 읽습니다', async () => {
+    const whole = httpTestApp({ tokens: Object.entries(TEST_TOKENS), basePath: '/v1', defaultToken: 'client' })
+    app = { send: (path) => whole.request('GET', path), dispose: whole.dispose }
+
+    const uploaded = await whole.json('PUT', '/settlement-reports/receivable-payable/2025', {
+      token: 'agency',
+      body: receivablePayableYear,
+      ifMatch: '"0"',
+    })
+    const read = await whole.json('GET', '/settlement-reports/receivable-payable/2025')
 
     expect(uploaded.status).toBe(200)
     expect(read.body).toEqual(uploaded.body)
