@@ -64,7 +64,12 @@ export const CreatePaymentItem = Schema.Struct({
 })
 
 /** `PATCH /payroll-payment-items/{itemId}` 본문입니다. 표준 항목은 이름을 바꿀 수 없고, 어느 항목도 표준 항목을 바꿀 수 없습니다. */
-export const UpdatePaymentItem = Schema.Struct({ name: Schema.optionalKey(Schema.String), ...paymentItemEditable })
+export const UpdatePaymentItem = Schema.Struct({
+  /** 받기만 하고 바꾸지 않습니다. 지금과 다른 값이면 422 `CATEGORY_FIXED`입니다. */
+  categoryCode: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  name: Schema.optionalKey(Schema.String),
+  ...paymentItemEditable,
+})
 
 /** 회사 공제 항목 응답입니다. */
 export const DeductionItem = Schema.Struct({

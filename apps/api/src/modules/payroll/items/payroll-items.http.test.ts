@@ -181,6 +181,36 @@ describe('공제 항목 카탈로그', () => {
     expect(reserved.status).toBe(422)
     expect(reserved.body.violations).toEqual([{ field: 'name', code: 'RESERVED_NAME' }])
   })
+
+  it('공제 항목을 If-Match로 고치고, 지우면 목록에서 빠지고 고칠 수 없습니다', async () => {
+    const created = await app.request('POST', '/payroll-deduction-items', {
+      body: { name: '사내대출상환', amount: 50_000 },
+    })
+    const id = created.body.id
+
+    const stale = await app.request('PATCH', `/payroll-deduction-items/${id}`, {
+      headers: { 'if-match': '"9"' },
+      body: { amount: 60_000 },
+    })
+    expect(stale.status).toBe(412)
+    const updated = await app.request('PATCH', `/payroll-deduction-items/${id}`, {
+      headers: { 'if-match': '"1"' },
+      body: { amountMode: 'ON_SETTLEMENT' },
+    })
+    expect(updated.status).toBe(200)
+    expect(updated.body).toMatchObject({ amountMode: 'ON_SETTLEMENT', amount: null, version: 2 })
+    expect((await app.request('GET', `/payroll-deduction-items/${id}`, { token: 'other-company' })).status).toBe(404)
+
+    expect((await app.request('DELETE', `/payroll-deduction-items/${id}`)).status).toBe(204)
+    const listed = (await app.request('GET', '/payroll-deduction-items')).body.items.map(
+      (item: { id: string }) => item.id,
+    )
+    expect(listed).not.toContain(id)
+    const archived = await app.request('GET', '/payroll-deduction-items?includeArchived=true')
+    expect(archived.body.items.map((item: { id: string }) => item.id)).toContain(id)
+    const patched = await app.request('PATCH', `/payroll-deduction-items/${id}`, { body: { name: '대출상환' } })
+    expect(patched.status).toBe(409)
+  })
 })
 
 describe('급여대장 행과 카탈로그', () => {
@@ -305,6 +335,33 @@ describe('급여대장 행과 카탈로그', () => {
 
     expect(rejected.status).toBe(422)
     expect(rejected.body.violations).toEqual([{ field: 'input.paymentItems[0].itemId', code: 'ARCHIVED' }])
+  })
+
+  it('다른 회사의 항목을 가리키는 행은 없는 항목으로 보고 거절합니다', async () => {
+    const foreignId = await addPaymentItem(app, { name: '남의수당' }, 'other-company')
+    const ledger = (await app.request('GET', `/payroll-ledgers/${ledgerId}`)).body
+    const response = await app.request('POST', `/payroll-ledgers/${ledgerId}/rows`, {
+      headers: { 'if-match': `"${ledger.version}"` },
+      body: {
+        employeeId: employee.id,
+        input: {
+          incomeType: 'BUSINESS',
+          payAmount: 1_000_000,
+          otherDeductions: [{ itemId: 'dit_01JBQ000000000000000000099', amount: 1 }],
+        },
+      },
+    })
+    expect(response.status).toBe(422)
+    expect(response.body.violations).toEqual([{ field: 'input.otherDeductions[0].itemId', code: 'NOT_FOUND' }])
+
+    const simulated = await app.request('POST', '/payroll-calculator:simulate', {
+      body: {
+        attributionMonth: '2026-03',
+        row: { incomeType: 'WAGE_MONTHLY', basePay: 3_000_000, paymentItems: [{ itemId: foreignId, amount: 1 }] },
+      },
+    })
+    expect(simulated.status).toBe(422)
+    expect(simulated.body.violations).toEqual([{ field: 'input.paymentItems[0].itemId', code: 'NOT_FOUND' }])
   })
 
   it('계산기도 회사 카탈로그로 항목을 풉니다', async () => {

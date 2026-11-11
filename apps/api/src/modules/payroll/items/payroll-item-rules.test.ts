@@ -62,6 +62,26 @@ describe('지급 항목 입력 규칙', () => {
     })
   })
 
+  it('엔진이 만드는 지급 줄 이름은 쓸 수 없고 만든 뒤 표준 항목은 바꿀 수 없습니다', () => {
+    expect(paymentItemFieldsOf({ name: '연장근로수당' }, undefined, [])).toEqual({
+      ok: false,
+      violations: [{ field: 'name', code: 'RESERVED_NAME' }],
+    })
+    const position = customPaymentItem('직책수당')
+    expect(paymentItemFieldsOf({ categoryCode: 'MEAL' }, position, [position])).toEqual({
+      ok: false,
+      violations: [{ field: 'categoryCode', code: 'CATEGORY_FIXED' }],
+    })
+    expect(paymentItemFieldsOf({ categoryCode: null, prorate: true }, position, [position]).ok).toBe(true)
+  })
+
+  it('보육수당은 일률성이 없어 통상임금에서 빼고 최저임금에는 넣습니다', () => {
+    expect(paymentItemFieldsOf({ categoryCode: 'CHILDCARE' }, undefined, [])).toMatchObject({
+      ok: true,
+      fields: { includeInOrdinaryWage: false, includeInMinimumWage: true },
+    })
+  })
+
   it('회사 비과세 한도는 비과세 항목에만 둡니다', () => {
     expect(
       paymentItemFieldsOf({ categoryCode: 'RESEARCH', companyNonTaxableLimit: 100_000 }, undefined, []),
@@ -163,6 +183,27 @@ describe('행이 가리키는 항목', () => {
       { field: 'input.paymentItems[3].itemId', code: 'DUPLICATED' },
       { field: 'input.otherDeductions[0].itemId', code: 'NOT_FOUND' },
     ])
+  })
+
+  it('고치기 전 행에 없던 지운 항목만 거절합니다', () => {
+    const gone = customPaymentItem('지운수당', {
+      id: 'pit_gone' as Id<'paymentItem'>,
+      archivedAt: '2026-02-01T00:00:00.000Z',
+    })
+    const both = catalogOf([oldBonus, gone], [])
+
+    expect(
+      rowItemViolations(
+        {
+          paymentItems: [
+            { itemId: oldBonus.id, amount: 1 },
+            { itemId: gone.id, amount: 1 },
+          ],
+        },
+        { paymentItems: [{ itemId: oldBonus.id, amount: 1 }] },
+        both,
+      ),
+    ).toEqual([{ field: 'input.paymentItems[1].itemId', code: 'ARCHIVED' }])
   })
 
   it('고치기 전 행에 있던 지운 항목은 그대로 둘 수 있습니다', () => {

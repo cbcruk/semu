@@ -4,6 +4,12 @@ import type { PaymentItemCategory } from './payroll-item.types.ts'
 /** 매달 정해진 금액을 주는 수당의 기본 속성입니다. 통상임금·최저임금에 넣고 일할계산하지 않습니다. */
 const 정기수당 = { includeInOrdinaryWage: true, includeInMinimumWage: true, prorate: false } as const
 
+/**
+ * 매달 주지만 자녀·차량처럼 근로와 상관없는 조건을 갖춘 사람에게만 주는 수당의 기본 속성입니다. 일률성이 없어 통상임금에서
+ * 빼고(대법원 2013. 12. 18. 선고 2012다89399 전원합의체 판결의 가족수당), 매달 현금으로 주므로 최저임금에는 넣습니다.
+ */
+const 조건부정기수당 = { includeInOrdinaryWage: false, includeInMinimumWage: true, prorate: false } as const
+
 /** 실적·사유가 있을 때만 주거나 연장근로의 대가인 수당의 기본 속성입니다. 어디에도 넣지 않습니다. */
 const 비정기수당 = { includeInOrdinaryWage: false, includeInMinimumWage: false, prorate: false } as const
 
@@ -11,7 +17,7 @@ function 비과세(
   code: NonTaxableCategory,
   name: string,
   description: string,
-  defaults: typeof 정기수당 | typeof 비정기수당,
+  defaults: typeof 정기수당 | typeof 조건부정기수당 | typeof 비정기수당,
 ): PaymentItemCategory {
   return { code, name, nonTaxableCategory: code, description, ...defaults }
 }
@@ -29,7 +35,8 @@ function 과세(code: string, name: string, description: string): PaymentItemCat
  *
  * 통상임금·최저임금 산입의 기본값은 출발점일 뿐이고 회사가 항목마다 고칩니다.
  * - 통상임금: 소정근로의 대가로 정기적·일률적으로 주면 넣습니다. 고정성은 요건이 아닙니다(대법원 2024. 12. 19. 선고
- *   2020다247190 전원합의체 판결). 연장근로의 대가(고정 연장 수당 등)와 연차수당은 소정근로의 대가가 아닙니다
+ *   2020다247190 전원합의체 판결). 일률성은 그대로 요건이라 자녀·차량이 있는 사람에게만 주는 수당은 뺍니다. 연장근로의
+ *   대가(고정 연장 수당 등)와 연차수당은 소정근로의 대가가 아닙니다
  * - 최저임금: 매월 1회 이상 정기적으로 주는 임금을 넣고, 연장·휴일·야간 가산과 연차수당은 뺍니다(최저임금법 제6조제4항,
  *   같은 법 시행규칙 제2조). 2024년부터 현금으로 주는 복리후생비는 전액 넣습니다
  */
@@ -38,14 +45,14 @@ export const PAYMENT_ITEM_CATEGORIES: ReadonlyArray<PaymentItemCategory> = [
   비과세(
     'VEHICLE',
     '자가운전보조금',
-    '본인 차량으로 업무에 쓰는 실비 대신 받는 금액으로 월 20만원까지 비과세입니다.',
-    정기수당,
+    '본인 차량으로 업무에 쓰는 실비 대신 받는 금액으로 월 20만원까지 비과세입니다. 차량 보유자에게만 주면 통상임금이 아니고, 전 직원에게 일률로 주면 통상임금에 넣습니다.',
+    조건부정기수당,
   ),
   비과세(
     'CHILDCARE',
     '보육수당',
     '6세 이하 자녀 1명당 월 20만원까지 비과세입니다. 자녀 수는 HR 직원 정보에서 옵니다.',
-    정기수당,
+    조건부정기수당,
   ),
   비과세('RESEARCH', '연구보조비', '연구활동비로 월 20만원까지 비과세입니다.', 정기수당),
   비과세('OVERSEAS', '국외근로수당', '국외 근로 보수로 월 100만원까지 비과세입니다.', 정기수당),

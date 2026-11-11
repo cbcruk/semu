@@ -249,8 +249,8 @@ export class PayrollItemNotFound extends HttpApiError.Problem<PayrollItemNotFoun
 
 /**
  * 지급·공제 항목 입력이 규칙에 맞지 않습니다. `violations`의 `code`는 `REQUIRED`(빈 이름·고정 공제 금액),
- * `UNKNOWN_CATEGORY`(없는 표준 항목), `NAME_FIXED`(표준 항목의 이름), `STANDARD_NAME_RESERVED`(직접 입력에 표준 항목 이름),
- * `RESERVED_NAME`(법정 공제 이름), `NOT_APPLICABLE`(과세 항목의 비과세 한도, 정산 시 입력의 금액), `DUPLICATED`(같은 이름)입니다.
+ * `UNKNOWN_CATEGORY`(없는 표준 항목), `NAME_FIXED`(표준 항목의 이름), `CATEGORY_FIXED`(만든 뒤 표준 항목 변경),
+ * `STANDARD_NAME_RESERVED`(직접 입력에 표준 항목 이름), `RESERVED_NAME`(엔진이 만드는 지급·공제 줄 이름), `NOT_APPLICABLE`(과세 항목의 비과세 한도, 정산 시 입력의 금액), `DUPLICATED`(같은 이름)입니다.
  */
 export class PayrollItemInvalid extends HttpApiError.Problem<PayrollItemInvalid>()(
   'PayrollItemInvalid',

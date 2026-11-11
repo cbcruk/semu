@@ -24,7 +24,7 @@ export type PaymentItemFields = Pick<
 
 /** 지급 항목 입력입니다. 만들 때는 `categoryCode`를 받을 수 있고, 고칠 때는 받지 않습니다. */
 export interface PaymentItemInputFields {
-  categoryCode?: string
+  categoryCode?: string | null
   name?: string
   defaultAmount?: number | null
   companyNonTaxableLimit?: number | null
@@ -47,6 +47,17 @@ export interface DeductionItemInputFields {
 export type FieldsOrViolations<T> =
   { ok: true; fields: T } | { ok: false; violations: ReadonlyArray<PayrollItemViolation> }
 
+/** 엔진이 근무 시간으로 만드는 지급 줄의 이름입니다. 회사 지급 항목이 이 이름을 쓰면 명세서에서 둘을 가를 수 없습니다. */
+const 엔진지급이름 = new Set([
+  '기본급',
+  '주휴수당',
+  '연장근로수당',
+  '야간근로수당',
+  '휴일근로수당',
+  '휴일연장근로수당',
+  '근태공제',
+])
+
 /**
  * 엔진이 행에서 따로 만드는 공제 줄의 이름입니다. 회사 공제 항목이 이 이름을 쓰면 명세서에서 둘을 가를 수 없습니다.
  */
@@ -65,7 +76,9 @@ const 법정공제이름 = new Set([
  * 지급 항목 입력에 규칙을 적용합니다. `current`가 없으면 새 항목이고, 있으면 그 항목을 고칩니다.
  *
  * - 표준 항목(`categoryCode`)을 불러오면 이름과 비과세 유형은 표준 항목 그대로이고, 속성의 기본값도 표준 항목에서 옵니다
- * - 직접 만든 항목은 과세 항목입니다. 이름이 비면 안 되고 표준 항목 이름을 쓸 수 없습니다. 비과세·연차수당은 표준 이름으로만 만듭니다
+ * - 직접 만든 항목은 과세 항목입니다. 이름이 비면 안 되고 표준 항목 이름이나 엔진이 만드는 지급 줄 이름(기본급·연장근로수당 등)을
+ *   쓸 수 없습니다. 비과세·연차수당은 표준 이름으로만 만듭니다
+ * - 표준 항목은 만든 뒤 바꿀 수 없습니다(고칠 때 다른 `categoryCode`를 주면 `CATEGORY_FIXED`)
  * - 회사 비과세 한도는 비과세 항목에만 둡니다
  * - 이름은 회사의 지우지 않은 지급 항목 사이에서 겹치지 않습니다(`others`에 자기 자신이 있어도 됩니다)
  */
@@ -78,7 +91,10 @@ export function paymentItemFieldsOf(
   let 기준값: PaymentItemFields
   if (current !== undefined) {
     기준값 = current
-  } else if (input.categoryCode !== undefined) {
+    if (input.categoryCode !== undefined && input.categoryCode !== current.categoryCode) {
+      violations.push({ field: 'categoryCode', code: 'CATEGORY_FIXED' })
+    }
+  } else if (input.categoryCode !== undefined && input.categoryCode !== null) {
     const 표준항목 = findPaymentItemCategory(input.categoryCode)
     if (표준항목 === undefined) return { ok: false, violations: [{ field: 'categoryCode', code: 'UNKNOWN_CATEGORY' }] }
     기준값 = {
@@ -117,7 +133,7 @@ export function paymentItemFieldsOf(
     if (name === '') violations.push({ field: 'name', code: 'REQUIRED' })
     else if (PAYMENT_ITEM_CATEGORIES.some((category) => category.name === name)) {
       violations.push({ field: 'name', code: 'STANDARD_NAME_RESERVED' })
-    }
+    } else if (엔진지급이름.has(name)) violations.push({ field: 'name', code: 'RESERVED_NAME' })
   }
 
   const companyNonTaxableLimit =
