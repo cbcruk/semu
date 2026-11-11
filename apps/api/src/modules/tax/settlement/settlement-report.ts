@@ -328,6 +328,7 @@ export class SettlementSnapshotInvalid extends HttpApiError.Problem<SettlementSn
       'CURRENT_ASSET_COMPONENT_INVALID',
       'PARTNER_BLANK',
       'PARTNER_DUPLICATED',
+      'PARTNER_CODE_RESERVED',
       'ENTRY_DATE_OUT_OF_RANGE',
       'ENTRY_AMOUNT_NEGATIVE',
     ]),

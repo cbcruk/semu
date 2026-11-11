@@ -14,6 +14,7 @@ import { validateClosedThrough } from './settlement-rules.ts'
  * 미수·미지급 스냅샷 업로드가 맞는지 봅니다. 맞으면 `undefined`, 아니면 처음 걸린 위반 하나입니다.
  *
  * - 결산 기준일은 {@link validateClosedThrough}가 봅니다
+ * - 거래처 코드는 `.`·`..`일 수 없습니다. 원장 경로(`.../{partnerCode}`)에서 URL 정규화가 이 값을 지워 다른 경로가 됩니다
  * - 거래처 코드와 이름은 비어 있지 않고, 코드는 미수·미지급 각각 안에서 겹치지 않습니다. 같은 거래처가 미수와 미지급에 함께 있을 수는 있습니다
  * - 거래 날짜는 사업연도 시작일부터 결산 기준일까지입니다
  * - 증가와 감소는 0 이상입니다. 방향은 필드가 정하므로 부호를 쓰지 않습니다
@@ -38,6 +39,7 @@ export function validateReceivablePayableUpload(
       const 코드 = ledger.partnerCode.trim()
       if (코드 === '') return { reason: 'PARTNER_BLANK', field: `${field}.partnerCode` }
       if (ledger.partnerName.trim() === '') return { reason: 'PARTNER_BLANK', field: `${field}.partnerName` }
+      if (코드 === '.' || 코드 === '..') return { reason: 'PARTNER_CODE_RESERVED', field: `${field}.partnerCode` }
       if (코드들.has(코드)) return { reason: 'PARTNER_DUPLICATED', field: `${field}.partnerCode` }
       코드들.add(코드)
       for (const [entryIndex, entry] of ledger.entries.entries()) {
@@ -54,7 +56,7 @@ export function validateReceivablePayableUpload(
 }
 
 /** 거래를 날짜 순으로 둡니다. 같은 날은 올린 순서를 지킵니다. */
-export function sortedEntries(entries: ReadonlyArray<PartnerLedgerEntry>): PartnerLedgerEntry[] {
+function sortedEntries(entries: ReadonlyArray<PartnerLedgerEntry>): PartnerLedgerEntry[] {
   return entries.toSorted((a, b) => a.date.localeCompare(b.date))
 }
 

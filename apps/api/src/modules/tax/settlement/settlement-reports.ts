@@ -27,6 +27,7 @@ import type {
   CashFlowSnapshotRecord,
   FiscalPeriod,
   ProfitLossSnapshotRecord,
+  ReceivablePayableKind,
   ReceivablePayableSnapshotRecord,
   SettlementSnapshotMeta,
   SettlementSnapshotViolation,
@@ -320,10 +321,10 @@ export const getReceivablePayableReport = (
     toReceivablePayableReport,
   )
 
-/** ERP 거래처 하나의 미수 또는 미지급 원장입니다. 스냅샷이 없으면 404 보고서 없음, 거래처가 없으면 404 거래처 없음입니다. */
+/** ERP 거래처 하나의 미수 또는 미지급 원장입니다. 거래처 코드는 저장한 값과 경로 값 모두 앞뒤 공백을 지우고 견줍니다. 스냅샷이 없으면 404 보고서 없음, 거래처가 없으면 404 거래처 없음입니다. */
 export const getPartnerLedger = (
   fiscalYear: number,
-  kind: 'RECEIVABLE' | 'PAYABLE',
+  kind: ReceivablePayableKind,
   partnerCode: string,
 ): Effect.Effect<
   typeof PartnerLedgerReport.Type,
@@ -333,7 +334,7 @@ export const getPartnerLedger = (
   Effect.gen(function* () {
     const snapshot = yield* readSnapshot((repository) => repository.receivablePayable, fiscalYear)
     const ledgers = kind === 'RECEIVABLE' ? snapshot.receivables : snapshot.payables
-    const ledger = ledgers.find((candidate) => candidate.partnerCode.trim() === partnerCode)
+    const ledger = ledgers.find((candidate) => candidate.partnerCode.trim() === partnerCode.trim())
     if (ledger === undefined) return yield* new SettlementPartnerNotFound()
     const entries = ledgerWithBalances(ledger)
     return {

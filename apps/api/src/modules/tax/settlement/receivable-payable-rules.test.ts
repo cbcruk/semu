@@ -48,6 +48,16 @@ describe('미수·미지급 업로드 검증', () => {
     })
   })
 
+  it('거래처 코드가 . 이나 .. 이면 거절합니다', () => {
+    const ledgers = partnerLedgers(2026)
+    ledgers.receivables[0] = { ...ledgers.receivables[0]!, partnerCode: ' .. ' }
+
+    expect(validateReceivablePayableUpload({ closedThrough: '2026-03-31', ...ledgers }, period, today)).toEqual({
+      reason: 'PARTNER_CODE_RESERVED',
+      field: 'receivables[0].partnerCode',
+    })
+  })
+
   it('같은 거래처가 미수와 미지급에 함께 있는 것은 받습니다', () => {
     const ledgers = partnerLedgers(2026)
     ledgers.payables[0] = { ...ledgers.payables[0]!, partnerCode: 'A001' }

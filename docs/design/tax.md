@@ -370,7 +370,7 @@ GET /settlement-reports/balance-sheet/{fiscalYear}    → BalanceSheetReport (ET
 PUT /settlement-reports/balance-sheet/{fiscalYear}    If-Match(선택) { closedThrough, months: [{ month, groups, inventories, tradeReceivables }] } → BalanceSheetReport (ETag)
 GET /settlement-reports/receivable-payable/{fiscalYear}                       → ReceivablePayableReport (ETag)
 PUT /settlement-reports/receivable-payable/{fiscalYear}                       If-Match(선택) { closedThrough, receivables, payables } → ReceivablePayableReport (ETag)
-GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}  → PartnerLedgerReport (side = receivables | payables)
+GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}  → PartnerLedgerReport (side = receivables | payables, ETag 없음)
 ```
 
 담당자가 ERP에서 결산한 뒤 올린 스냅샷(결산 스냅샷)으로 세무 보고서를 보여 줍니다. 실시간 보고서(`/reports/*`, [Bookkeeping](bookkeeping.md#실시간-보고서))는 분류한 증빙과 입출금을 바로 집계하고, 결산 보고서는 담당자가 올린 숫자를 그대로 보여 주므로 두 숫자는 다를 수 있습니다. 코드는 [settlement/](../../apps/api/src/modules/tax/settlement/)에 있습니다.
@@ -442,6 +442,7 @@ GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}  �
 | `PARTNER_DUPLICATED` | 미수 또는 미지급 한쪽 안에서 거래처 코드가 겹침(앞뒤 공백을 지우고 봄) |
 | `ENTRY_DATE_OUT_OF_RANGE` | 거래 날짜가 사업연도 시작일 앞이거나 결산 기준일 뒤 |
 | `ENTRY_AMOUNT_NEGATIVE` | 거래의 증가나 감소가 음수 |
+| `PARTNER_CODE_RESERVED` | 거래처 코드가 `.`이나 `..`(원장 경로에 쓸 수 없음) |
 
 **자금 흐름 스냅샷.** 현금성 계정 네 개(`CASH` 현금, `CHECKING_DEPOSIT` 당좌예금, `ORDINARY_DEPOSIT` 보통예금, `OTHER_DEPOSITS` 제예금)의 월별 유입·유출·월말 잔액입니다(`tax_settlement_cash_flow` 표, [cash-flow-rules.ts](../../apps/api/src/modules/tax/settlement/cash-flow-rules.ts)).
 - 담당자는 사업연도 시작일의 계정별 잔액(`openingBalances`)과 달마다 계정별 `{ inflow, outflow, closingBalance }`를 올립니다. 네 계정은 모두 보냅니다. 움직이지 않은 계정은 0과 같은 잔액입니다
@@ -483,7 +484,9 @@ GET /settlement-reports/receivable-payable/{fiscalYear}/{side}/{partnerCode}  �
   - 달은 사업연도 첫 달부터 결산 기준일이 속한 달까지 거래가 없는 달도 모두 냅니다
 - 거래 날짜는 사업연도 시작일부터 결산 기준일까지입니다. 증가·감소는 0 이상이고, 잔액은 음수일 수 있습니다(선수금, 초과 지급)
 - 같은 거래처가 미수와 미지급에 함께 있을 수 있습니다(물건을 사고팔기도 하는 거래처). 한쪽 안에서는 코드가 겹치지 않습니다
-- 거래처 원장(`GET .../{side}/{partnerCode}`)은 거래를 날짜 순(같은 날은 올린 순서)으로 놓고 거래마다 누적 잔액을 붙입니다. 거래처가 없으면 404 `SETTLEMENT_PARTNER_NOT_FOUND`입니다
+- 거래처 원장(`GET .../{side}/{partnerCode}`)은 거래를 날짜 순(같은 날은 올린 순서)으로 놓고 거래마다 누적 잔액을 붙입니다. 거래처 코드는 저장한 값과 경로 값 모두 앞뒤 공백을 지우고 견주고, 경로에 넣을 때는 URL 인코딩합니다. 거래처가 없으면 404 `SETTLEMENT_PARTNER_NOT_FOUND`입니다. 읽기 전용 파생 화면이라 ETag를 주지 않습니다
+- 거래처 코드 `.`·`..`는 받지 않습니다(422 `PARTNER_CODE_RESERVED`). 인코딩해도 점은 그대로라 URL 정규화가 원장 경로를 요약 경로로 바꾸기 때문입니다
+- 올해 전기 이월이 지난 사업연도 스냅샷의 기말 잔액과 같은지는 보지 않습니다. 자금 흐름의 기초 잔액과 같은 방침입니다(사업연도마다 따로 올리고 지난 사업연도가 없을 수도 있음)
 - 현행은 거래처 목록을 페이지로 나눴지만 여기서는 한 응답에 모두 줍니다. 결산 거래처 수가 한 회사에 수백 개를 넘지 않는다고 보고, 넘으면 `partners`를 커서 페이지로 뺍니다
 - 현행 거래처 표의 "내용"(`IT 서비스 및 컨설팅 외 1건`)은 화면 문구라 서버가 만들지 않습니다. 거래 수(`entryCount`)와 원장의 적요로 화면이 만듭니다
 - 비용 분석은 손익계산서 응답으로 화면이 계산하므로 따로 두지 않습니다

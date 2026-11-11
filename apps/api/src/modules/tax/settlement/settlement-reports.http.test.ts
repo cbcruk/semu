@@ -522,6 +522,30 @@ describe('결산 미수·미지급(PUT·GET /v1/settlement-reports/receivable-pa
     })
   })
 
+  it('경로의 거래처 코드 앞뒤 공백은 지우고 찾습니다', async () => {
+    app = taxTestApp()
+    await uploadReceivablePayable(receivablePayableYear)
+
+    const response = await app.send('/settlement-reports/receivable-payable/2025/receivables/%20A001%20')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ partnerCode: 'A001' })
+  })
+
+  it('한글과 특수문자가 든 거래처 코드도 인코딩해 찾습니다', async () => {
+    app = taxTestApp()
+    const ledgers = partnerLedgers(2025)
+    ledgers.receivables[0] = { ...ledgers.receivables[0]!, partnerCode: '가나/01?' }
+    await uploadReceivablePayable({ closedThrough: '2025-12-31', ...ledgers })
+
+    const response = await app.send(
+      `/settlement-reports/receivable-payable/2025/receivables/${encodeURIComponent('가나/01?')}`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ partnerCode: '가나/01?' })
+  })
+
   it('없는 거래처 원장은 404 거래처 없음입니다', async () => {
     app = taxTestApp()
     await uploadReceivablePayable(receivablePayableYear)
