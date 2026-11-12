@@ -239,3 +239,46 @@ export class SeverancePaymentDateInvalid extends HttpApiError.Problem<SeveranceP
   },
   { code: Schema.tag('SEVERANCE_PAYMENT_DATE_INVALID'), lastWorkDate: Schema.String },
 ) {}
+
+/** 지급·공제 항목이 없거나 다른 회사의 것입니다. */
+export class PayrollItemNotFound extends HttpApiError.Problem<PayrollItemNotFound>()(
+  'PayrollItemNotFound',
+  { type: problemType('PAYROLL_ITEM_NOT_FOUND'), status: 404, title: 'Payroll item not found' },
+  { code: Schema.tag('PAYROLL_ITEM_NOT_FOUND') },
+) {}
+
+/**
+ * 지급·공제 항목 입력이 규칙에 맞지 않습니다. `violations`의 `code`는 `REQUIRED`(빈 이름·고정 공제 금액),
+ * `UNKNOWN_CATEGORY`(없는 표준 항목), `NAME_FIXED`(표준 항목의 이름), `CATEGORY_FIXED`(만든 뒤 표준 항목 변경),
+ * `STANDARD_NAME_RESERVED`(직접 입력에 표준 항목 이름), `RESERVED_NAME`(엔진이 만드는 지급·공제 줄 이름), `NOT_APPLICABLE`(과세 항목의 비과세 한도, 정산 시 입력의 금액), `DUPLICATED`(같은 이름)입니다.
+ */
+export class PayrollItemInvalid extends HttpApiError.Problem<PayrollItemInvalid>()(
+  'PayrollItemInvalid',
+  { type: problemType('PAYROLL_ITEM_INVALID'), status: 422, title: 'Payroll item input violates a rule' },
+  {
+    code: Schema.tag('PAYROLL_ITEM_INVALID'),
+    violations: Schema.Array(Schema.Struct({ field: Schema.String, code: Schema.String })),
+  },
+) {}
+
+/** 지운(보관한) 항목은 고칠 수 없습니다. 이미 만든 대장 행의 계산에만 남아 있습니다. */
+export class PayrollItemArchived extends HttpApiError.Problem<PayrollItemArchived>()(
+  'PayrollItemArchived',
+  { type: problemType('PAYROLL_ITEM_ARCHIVED'), status: 409, title: 'Payroll item is archived' },
+  { code: Schema.tag('PAYROLL_ITEM_ARCHIVED') },
+) {}
+
+/**
+ * 행이 가리키는 지급·공제 항목이 맞지 않습니다. `code`는 `NOT_FOUND`(카탈로그에 없음), `ARCHIVED`(지운 항목을 새로 넣음),
+ * `DUPLICATED`(한 행에 같은 항목 둘)입니다. `field`는 `input.paymentItems[0].itemId` 꼴입니다.
+ */
+export class PayrollRowItemInvalid extends HttpApiError.Problem<PayrollRowItemInvalid>()(
+  'PayrollRowItemInvalid',
+  { type: problemType('PAYROLL_ROW_ITEM_INVALID'), status: 422, title: 'Payroll row refers to an invalid item' },
+  {
+    code: Schema.tag('PAYROLL_ROW_ITEM_INVALID'),
+    violations: Schema.Array(
+      Schema.Struct({ field: Schema.String, code: Schema.Literals(['NOT_FOUND', 'ARCHIVED', 'DUPLICATED']) }),
+    ),
+  },
+) {}

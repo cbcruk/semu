@@ -3,7 +3,9 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
 import { MULTIPLIERS_FIVE_OR_MORE } from '../engine/working-time.ts'
-import { RateTableIdNotFound, RateTableNotFound } from '../payroll-problems.ts'
+import { rowItemViolations } from '../items/payroll-item-rules.ts'
+import { PayrollItemRepository } from '../items/payroll-item-repository.ts'
+import { PayrollRowItemInvalid, RateTableIdNotFound, RateTableNotFound } from '../payroll-problems.ts'
 import type { PayrollRowResultValue } from '../rows/payroll-row-input.ts'
 import { calculateRow } from '../rows/row-calculation.ts'
 import type { SimulationRequest } from './rate-tables.api.ts'
@@ -60,12 +62,21 @@ export const resolveOrFail = (month: string): Effect.Effect<RateTableRecord, Rat
     return found.value
   })
 
-/** 저장하지 않고 한 행을 계산합니다. */
+/**
+ * 저장하지 않고 한 행을 계산합니다. 행의 지급·공제 항목은 회사 카탈로그에서 풀고, 지운 항목은 받지 않습니다.
+ */
 export const simulate = (
   request: typeof SimulationRequest.Type,
-): Effect.Effect<PayrollRowResultValue, AccessDenied | RateTableNotFound, CurrentActor | RateTableRepository> =>
+): Effect.Effect<
+  PayrollRowResultValue,
+  AccessDenied | RateTableNotFound | PayrollRowItemInvalid,
+  CurrentActor | RateTableRepository | PayrollItemRepository
+> =>
   Effect.gen(function* () {
-    yield* authorize({ permission: 'payroll-calculator:simulate', plans: ['PAYROLL'] })
+    const actor = yield* authorize({ permission: 'payroll-calculator:simulate', plans: ['PAYROLL'] })
+    const catalog = yield* (yield* PayrollItemRepository).catalog(actor.companyId)
+    const violations = rowItemViolations(request.row, undefined, catalog)
+    if (violations.length > 0) return yield* new PayrollRowItemInvalid({ violations })
     const attributionRates = yield* resolveOrFail(request.attributionMonth)
     const paymentRates = yield* resolveOrFail(request.paymentMonth ?? request.attributionMonth)
     return calculateRow(request.row, request.employee ?? null, {
@@ -81,5 +92,6 @@ export const simulate = (
           incomeTax: 'TAX_TABLE',
         },
       },
+      catalog,
     })
   })

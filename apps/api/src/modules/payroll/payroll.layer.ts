@@ -4,6 +4,8 @@ import { PersonalDataAccessLog } from '../../shared/personal-data/personal-data-
 import { PersonalDataCipher } from '../../shared/personal-data/personal-data-cipher.ts'
 import { EarnerRepository } from './earners/earner-repository.ts'
 import { EarnersHttpLive } from './earners/earners.http.ts'
+import { PayrollItemRepository } from './items/payroll-item-repository.ts'
+import { DeductionItemsHttpLive, PaymentItemsHttpLive } from './items/payroll-items.http.ts'
 import { LaborCostReportsHttpLive } from './labor-cost/labor-cost-reports.http.ts'
 import { PayrollLaborCost } from './labor-cost/payroll-labor-cost.ts'
 import { PayrollLedgerRepository } from './ledgers/payroll-ledger-repository.ts'
@@ -27,7 +29,7 @@ import { SeveranceSettlementRepository } from './severance/severance-settlement-
 import { SeveranceSettlementsHttpLive } from './severance/severance-settlements.http.ts'
 
 /**
- * 급여 계산 엔진·기준표·급여 설정·소득자 명부·급여대장·명세서·퇴직금·인건비 컨텍스트의 핸들러 전체입니다.
+ * 급여 계산 엔진·기준표·급여 설정·지급·공제 항목·소득자 명부·급여대장·명세서·퇴직금·인건비 컨텍스트의 핸들러 전체입니다.
  *
  * 저장소와 포트(`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`, `PayslipMailer`), HR과 함께 쓰는
  * 개인정보 암호화(`PersonalDataCipher`)·열람 기록(`PersonalDataAccessLog`)은 호출하는 쪽이 넣습니다.
@@ -36,6 +38,8 @@ export const PayrollHttpLive = Layer.mergeAll(
   RateTablesHttpLive,
   PayrollCalculatorHttpLive,
   PayrollSettingsHttpLive,
+  PaymentItemsHttpLive,
+  DeductionItemsHttpLive,
   PayrollLedgersHttpLive,
   PayrollLedgerApprovalsHttpLive,
   EarnersHttpLive,
@@ -61,7 +65,7 @@ export const PayrollPublicLive = Layer.fresh(
 )
 
 /**
- * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·소득자 명부·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산은
+ * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·지급·공제 항목·소득자 명부·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산은
  * `TableFactory`(메모리 또는 SQLite)의 `payroll_*` 표에 둡니다.
  *
  * 기준표는 코드에 컴파일된 참조 데이터라 표에 두지 않습니다. 명세서 메일(`PayslipMailer`)은 Integrations에 메일 연동이
@@ -70,6 +74,7 @@ export const PayrollPublicLive = Layer.fresh(
 export const PayrollStoreLive = Layer.mergeAll(
   RateTableRepository.layerMemory(),
   PayrollSettingRepository.layer(),
+  PayrollItemRepository.layer(),
   EarnerRepository.layer(),
   PayrollLedgerRepository.layer(),
   PayslipRepository.layer(),

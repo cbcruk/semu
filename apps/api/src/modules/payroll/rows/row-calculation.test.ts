@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { calculatePayrollRow } from '../engine/payroll-row.ts'
 import { resolveRateTable } from '../engine/rate-table.ts'
 import { BUILT_IN_RATE_TABLES, RATES_2026_01, RATES_2026_03 } from '../engine/rate-tables-2026.ts'
+import { catalogOf } from '../items/payroll-item-rules.ts'
+import { categoryPaymentItem, deductionItem } from '../items/payroll-item.testing.ts'
 import { defaultPayrollSetting } from '../settings/payroll-setting.ts'
 import type { PayrollRowInputValue } from './payroll-row-input.ts'
 import {
@@ -22,6 +24,9 @@ const setting = {
     incomeTax: 'TAX_TABLE',
   },
 } as const
+const childcareItem = categoryPaymentItem('CHILDCARE')
+const clubDues = deductionItem('동호회비')
+const catalog = catalogOf([childcareItem], [clubDues])
 
 function context(attributionMonth: string, paymentMonth: string): RowCalculationContext {
   return {
@@ -29,6 +34,7 @@ function context(attributionMonth: string, paymentMonth: string): RowCalculation
     attributionRates: resolveRateTable(BUILT_IN_RATE_TABLES, attributionMonth),
     paymentRates: resolveRateTable(BUILT_IN_RATE_TABLES, paymentMonth),
     setting,
+    catalog,
   }
 }
 
@@ -66,7 +72,7 @@ describe('직원 정보 사본의 보육수당 자녀 수', () => {
   const withChildcare: PayrollRowInputValue = {
     incomeType: 'WAGE_MONTHLY',
     basePay: 3_000_000,
-    paymentItems: [{ code: 'CHILDCARE', name: '보육수당', amount: 500_000, nonTaxableCategory: 'CHILDCARE' }],
+    paymentItems: [{ itemId: childcareItem.id, amount: 500_000 }],
   }
 
   it('보육수당 비과세 한도는 대상 자녀 1명당 200,000원입니다', () => {
@@ -157,4 +163,22 @@ describe('사업소득 고용보험의 calculateRow', () => {
       expect(unflagged.employeeInsurance.employmentInsurance).toBe(0)
     },
   )
+})
+
+describe('근로 외 행의 공제 항목', () => {
+  it.each([
+    { incomeType: 'DAILY', payAmount: 150_000, workDays: 1 },
+    { incomeType: 'BUSINESS', payAmount: 1_000_000 },
+    { incomeType: 'OTHER', payAmount: 1_000_000 },
+  ] as const)('$incomeType 행도 카탈로그의 이름으로 공제 줄을 만듭니다', (row) => {
+    const result = calculateRow(
+      { ...row, otherDeductions: [{ itemId: clubDues.id, amount: 10_000 }] },
+      null,
+      context('2026-03', '2026-03'),
+    )
+
+    expect(result.deductions).toContainEqual(
+      expect.objectContaining({ code: clubDues.id, name: '동호회비', amount: 10_000 }),
+    )
+  })
 })

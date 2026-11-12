@@ -11,6 +11,9 @@ import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
 import { EarnerRepository } from '../earners/earner-repository.ts'
 import type { EarnerRecord } from '../earners/earner.ts'
+import { defaultRowItems, rowItemViolations } from '../items/payroll-item-rules.ts'
+import { PayrollItemRepository } from '../items/payroll-item-repository.ts'
+import type { PayrollItemCatalog } from '../items/payroll-item.types.ts'
 import { LEDGER_PLANS } from '../payroll-access.ts'
 import {
   AdditionalLedgerBlocked,
@@ -20,6 +23,7 @@ import {
   PayrollLedgerReadOnly,
   PayrollLedgerTransitionInvalid,
   PayrollRowNotFound,
+  PayrollRowItemInvalid,
   PayrollRowPayeeInvalid,
   RateTableNotFound,
   WageIncomeDuplicated,
@@ -60,6 +64,7 @@ import type { PayrollEarner, PayrollLedgerRecord, PayrollRowRecord } from './pay
 export type LedgerDeps =
   | PayrollLedgerRepository
   | PayrollSettingRepository
+  | PayrollItemRepository
   | RateTableRepository
   | PayrollEmployeeDirectory
   | EarnerRepository
@@ -80,6 +85,7 @@ export type LedgerError =
   | WageIncomeDuplicated
   | PayrollLedgerHasAdditional
   | PayrollRowPayeeInvalid
+  | PayrollRowItemInvalid
   | EmployeeNotFound
   | RateTableNotFound
 
@@ -168,6 +174,7 @@ export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<Ledg
     const wagePeriod = wagePeriodOf(payload.attributionMonth, setting.wagePeriodStartDay)
     const employees =
       kind === 'REGULAR' ? yield* (yield* PayrollEmployeeDirectory).listWageEarners(actor.companyId, wagePeriod) : []
+    const catalog = yield* (yield* PayrollItemRepository).catalog(actor.companyId)
     const [year, month] = payload.attributionMonth.split('-')
     const draft: PayrollLedgerRecord = {
       id: newId('payrollLedger'),
@@ -185,7 +192,7 @@ export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<Ledg
         earnerId: null,
         payeeName: employee.name,
         earner: earnerOf(employee),
-        input: initialWageInput(employee, wagePeriod),
+        input: initialWageInput(employee, wagePeriod, catalog),
         snapshot: snapshotOf(employee),
         result: null,
         updatedAt: now,
@@ -255,6 +262,7 @@ export const addRow = (
     const { ledger, before } = yield* editable(actor, id, expected)
     const now = yield* nowIso
     const payee = yield* payeeOf(actor, ledger, before, payload)
+    yield* checkRowItems(actor.companyId, payload.input, undefined)
     const row: PayrollRowRecord = {
       id: newId('payrollRow'),
       employeeId: payee.employeeId,
@@ -289,6 +297,7 @@ export const updateRow = (
     if (patch.input.incomeType !== row.input.incomeType) {
       return yield* new PayrollRowPayeeInvalid({ reason: 'INCOME_TYPE_CHANGED' })
     }
+    yield* checkRowItems(actor.companyId, patch.input, row.input)
     const now = yield* nowIso
     const updated: PayrollRowRecord = { ...row, input: patch.input, updatedAt: now }
     const next = yield* calculateAll(
@@ -542,7 +551,11 @@ function payeeOf(
 function calculateAll(
   ledger: PayrollLedgerRecord,
   now: string,
-): Effect.Effect<PayrollLedgerRecord, RateTableNotFound, RateTableRepository | PayrollSettingRepository> {
+): Effect.Effect<
+  PayrollLedgerRecord,
+  RateTableNotFound,
+  RateTableRepository | PayrollSettingRepository | PayrollItemRepository
+> {
   return Effect.gen(function* () {
     const attributionRates = yield* resolveOrFail(ledger.attributionMonth)
     const paymentRates = yield* resolveOrFail(paymentMonthOf(ledger.paymentDate))
@@ -552,12 +565,26 @@ function calculateAll(
       attributionRates: attributionRates.table,
       paymentRates: paymentRates.table,
       setting,
+      catalog: yield* (yield* PayrollItemRepository).catalog(ledger.companyId),
     }
     return {
       ...ledger,
       calculatedAt: now,
       rows: ledger.rows.map((row) => ({ ...row, result: calculateRow(row.input, row.snapshot, context) })),
     }
+  })
+}
+
+/** 행이 가리키는 지급·공제 항목을 회사 카탈로그와 맞춰 봅니다({@link rowItemViolations}). */
+function checkRowItems(
+  companyId: Id<'company'>,
+  input: PayrollRowInputValue,
+  previous: PayrollRowInputValue | undefined,
+): Effect.Effect<void, PayrollRowItemInvalid, PayrollItemRepository> {
+  return Effect.gen(function* () {
+    const catalog = yield* (yield* PayrollItemRepository).catalog(companyId)
+    const violations = rowItemViolations(input, previous, catalog)
+    if (violations.length > 0) return yield* new PayrollRowItemInvalid({ violations })
   })
 }
 
@@ -650,14 +677,21 @@ export function snapshotOf(employee: PayrollEmployee): EmployeeSnapshot {
 
 /**
  * 정기 대장의 근로 행 초기 입력입니다. 월급제가 임금산정 기간 중에 입사·퇴사했으면 역일 기준 일할계산을 넣습니다.
+ * 회사 카탈로그의 기본 금액이 있는 지급 항목과 `FIXED` 공제 항목을 미리 넣습니다({@link defaultRowItems}).
  */
 export function initialWageInput(
   employee: PayrollEmployee,
   period: { start: string; end: string },
+  catalog: PayrollItemCatalog,
 ): PayrollRowInputValue {
-  if (employee.paymentUnit === 'HOURLY') return { incomeType: 'WAGE_HOURLY', hourlyWage: employee.hourlyWage }
+  const { paymentItems, otherDeductions } = defaultRowItems(catalog)
+  const items = {
+    ...(paymentItems.length === 0 ? {} : { paymentItems }),
+    ...(otherDeductions.length === 0 ? {} : { otherDeductions }),
+  }
+  if (employee.paymentUnit === 'HOURLY') return { incomeType: 'WAGE_HOURLY', hourlyWage: employee.hourlyWage, ...items }
   if (employee.paymentUnit === 'DAILY')
-    return { incomeType: 'WAGE_DAILY', dailyWage: employee.dailyWage, workedDays: 0 }
+    return { incomeType: 'WAGE_DAILY', dailyWage: employee.dailyWage, workedDays: 0, ...items }
   const from = employee.joinDate > period.start ? employee.joinDate : period.start
   const to = employee.leaveDate !== null && employee.leaveDate < period.end ? employee.leaveDate : period.end
   const totalDays = daysBetween(period.start, period.end) + 1
@@ -666,5 +700,6 @@ export function initialWageInput(
     incomeType: 'WAGE_MONTHLY',
     basePay: employee.basePay,
     ...(payableDays < totalDays ? { proration: { method: 'CALENDAR_DAYS' as const, payableDays, totalDays } } : {}),
+    ...items,
   }
 }

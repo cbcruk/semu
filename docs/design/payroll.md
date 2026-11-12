@@ -33,6 +33,10 @@
 | 기준표 (요율·간이세액·최저임금) | `RateTable` (`rtb_`), `effectiveFrom` |
 | 미확인 값 | `unverifiedPaths` |
 | 급여 설정 (현행 급여 지급 조건·공제 설정) | `PayrollSetting` |
+| 지급 항목 (수당) / 표준 항목 (불러오기) / 직접 입력 | `PaymentItem` (`pit_`) / `categoryCode` / `categoryCode: null` |
+| 공제 항목 (선지급금·동호회비 등) | `DeductionItem` (`dit_`) |
+| 공제 금액 방식 (매달 고정 / 정산 시 입력) | `amountMode`: `FIXED` / `ON_SETTLEMENT` |
+| 지운 항목 (보관) | `archivedAt` |
 | 수당 지급배수 | `multipliers` (ppm) |
 | 산출방법 (요율 / 고지 / 간이세액표 / 직접 입력 / 미적용) | `deductionMethods`: `RATE`·`NOTICE`·`TAX_TABLE`·`MANUAL`·`NONE` |
 | 급여명세서 | `Payslip` (`psl_`, 행 하나) |
@@ -144,7 +148,50 @@ PATCH /payroll-settings    If-Match(선택)
 - HR은 `PayrollSettingQuery.isUnderFiveEmployees`(`payroll.public.ts`, 플랜·권한 확인 없음, HTTP 미공개)로 규모를 읽어 급여계약 고정수당에 `MULTIPLIERS_FIVE_OR_MORE`·`MULTIPLIERS_UNDER_FIVE`를 씁니다. 회사가 바꾼 `multipliers`는 HR에 넘기지 않습니다([hr.md 열린 질문 3](hr.md#열린-질문))
 - `workflow` 변경은 `payroll-workflow:update` 권한이 더 필요합니다. 급여 아웃소싱 계약은 Billing의 일이라 보통 운영자만 바꿉니다
 - 설정은 **새 대장에만** 적용됩니다. 대장은 만들 때 운영 방식과 지급일을 복사합니다
-- 지급·공제 항목 카탈로그, 근무 일정 정책, 근로조건은 아직 없습니다([구현 상태](#구현-상태))
+- 지급·공제 항목은 [아래 카탈로그](#지급공제-항목)에 있습니다. 근무 일정 정책, 근로조건은 아직 없습니다([구현 상태](#구현-상태))
+
+### 지급·공제 항목
+
+회사마다 지급 항목(수당)과 공제 항목을 두고, 급여대장 행은 항목 ID와 금액만 넣습니다(2026-11-11, #76). 비과세 유형·한도, 통상임금·최저임금 산입, 일할계산 같은 속성은 항목에 있고, 행을 계산할 때 카탈로그에서 읽어 엔진 입력(`PaymentItemInput`)으로 풉니다. 코드는 [items/](../../apps/api/src/modules/payroll/items/)에 있습니다.
+
+```
+GET    /payroll-payment-categories                                       표준 항목(참조 데이터)
+GET    /payroll-payment-items?includeArchived=true
+POST   /payroll-payment-items          { categoryCode? | name?, defaultAmount?, companyNonTaxableLimit?, includeInOrdinaryWage?, includeInMinimumWage?, prorate? }   201 + ETag
+GET    /payroll-payment-items/{itemId}                                    ETag
+PATCH  /payroll-payment-items/{itemId} { name?, defaultAmount?, ... }     If-Match(선택)
+DELETE /payroll-payment-items/{itemId}                                    204, 보관
+GET    /payroll-deduction-items?includeArchived=true
+POST   /payroll-deduction-items        { name, amountMode?, amount? }     201 + ETag
+GET    /payroll-deduction-items/{itemId}                                  ETag
+PATCH  /payroll-deduction-items/{itemId} { name?, amountMode?, amount? }  If-Match(선택)
+DELETE /payroll-deduction-items/{itemId}                                  204, 보관
+```
+
+```
+PaymentItem                                pit_
+├─ categoryCode | null                     # 불러온 표준 항목. 직접 만든 과세 항목은 null
+├─ name, nonTaxableCategory | null         # 표준 항목이면 둘 다 표준 항목 그대로
+├─ companyNonTaxableLimit | null           # 비과세 항목만. 법정 한도와 작은 쪽
+├─ defaultAmount | null                    # 전 직원 같은 금액. 정기 대장 생성 때 넣음
+├─ includeInOrdinaryWage, includeInMinimumWage, prorate
+└─ archivedAt, version, createdAt, updatedAt
+DeductionItem                              dit_
+├─ name, amountMode (FIXED | ON_SETTLEMENT), amount | null
+└─ archivedAt, version, createdAt, updatedAt
+```
+
+- **표준 항목.** 표준 항목은 코드에 둔 참조 데이터입니다([payment-item-categories.ts](../../apps/api/src/modules/payroll/items/payment-item-categories.ts)). 엔진의 비과세 유형 10종과 연차수당, 고정 연장·야간·휴일·휴일연장 수당입니다. 기본급과 연장·야간·휴일·휴일연장 가산수당은 엔진이 근무 시간으로 만드는 줄이라 항목이 아닙니다
+- **비과세는 표준 항목으로만 만듭니다.** 현행 매뉴얼처럼 비과세 항목과 연차수당은 표준 이름이 필수입니다(신고·회계 코드 연동). 그래서 직접 만든 항목은 늘 과세이고 표준 항목 이름을 쓸 수 없습니다(422 `STANDARD_NAME_RESERVED`). 엔진이 만드는 지급 줄 이름(기본급·주휴수당·연장·야간·휴일·휴일연장근로수당·근태공제)도 쓸 수 없습니다(`RESERVED_NAME`). 표준 항목의 이름과 비과세 유형은 바꿀 수 없고(`NAME_FIXED`), 만든 뒤 다른 표준 항목으로 바꾸거나 직접 입력과 서로 바꿀 수 없습니다(`CATEGORY_FIXED`). 회사 비과세 한도는 비과세 항목에만 둡니다(`NOT_APPLICABLE`)
+- **속성의 기본값.** 불러올 때 통상임금·최저임금 산입의 기본값은 표준 항목에서 옵니다. 매달 정해 주는 비과세 수당(식대·연구보조비·국외근로)은 둘 다 넣고, 자녀·차량이 있는 사람에게만 주는 보육수당·자가운전보조금은 최저임금에만 넣고, 사유가 있을 때만 주거나 연장근로의 대가인 항목(생산직 연장근로, 육아휴직, 학자금, 직무발명, 연차수당, 고정 연장 수당들)은 둘 다 뺍니다. 통상임금은 소정근로의 대가로 정기적·일률적으로 주는 임금이고 고정성은 요건이 아닙니다(대법원 2024. 12. 19. 선고 2020다247190 전원합의체 판결). 일률성은 그대로 요건이라 부양가족이 있는 사람에게만 주는 가족수당은 통상임금이 아닙니다(대법원 2013. 12. 18. 선고 2012다89399 전원합의체 판결). 자가운전보조금은 전 직원에게 일률로 주면 통상임금일 수 있어 회사가 고칩니다. 최저임금은 매월 정기적으로 주는 임금을 넣고 연장·휴일·야간 가산과 연차수당을 뺍니다(최저임금법 제6조제4항, 같은 법 시행규칙 제2조). 기본값은 출발점이라 회사가 항목마다 고칩니다. 일할계산은 기본값이 모두 `false`입니다
+- **4대보험 보수 반영은 따로 두지 않습니다.** 보수는 비과세를 뺀 과세 급여라(엔진 `insurablePay`) 비과세 유형과 한도가 정합니다. 현행의 "월급여 포함"·"평균임금 포함" 표시는 아직 쓰는 곳이 없어 두지 않았습니다. 평균임금은 지금 퇴직금 정산이 3개월 임금을 입력(`threeMonthWages`)으로 받습니다. 명세서 계산식 문구는 [열린 질문](#열린-질문) 6과 함께 정합니다
+- **이름.** 앞뒤 공백을 지운 이름이 회사의 지우지 않은 항목 사이에서 겹치면 안 됩니다(`DUPLICATED`). 공제 항목은 엔진이 만드는 공제 줄 이름(국민연금·건강보험·장기요양보험·고용보험·소득세·근로소득세·지방소득세·근태공제)을 쓸 수 없습니다(`RESERVED_NAME`). 표준 항목은 이름이 정해져 있어 같은 표준 항목은 한 번만 불러옵니다
+- **공제 금액.** `FIXED`는 금액이 있어야 하고(`REQUIRED`), `ON_SETTLEMENT`는 금액이 없습니다(`NOT_APPLICABLE`). `ON_SETTLEMENT`로 바꾸면 금액을 지웁니다
+- **지우기는 보관입니다.** `DELETE`는 `archivedAt`을 채웁니다. 지운 항목은 목록(`includeArchived=true`일 때만 보임)과 새 행 입력에서 빠지고, 고칠 수 없습니다(409 `PAYROLL_ITEM_ARCHIVED`). 이미 그 항목을 넣은 행은 그대로 계산하고, 그 행을 고칠 때 이미 있던 지운 항목은 남겨 둘 수 있습니다. 마감한 대장의 결과와 명세서가 항목을 가리키므로 레코드를 없애지 않습니다
+- **행이 항목을 가리킵니다.** 근로 행의 `paymentItems[] { itemId, amount }`와 모든 행의 `otherDeductions[] { itemId, amount }`입니다. 행을 넣거나 고칠 때 카탈로그에 없는 항목(`NOT_FOUND`), 새로 넣는 지운 항목(`ARCHIVED`), 한 행에 두 번 넣은 항목(`DUPLICATED`)을 422 `PAYROLL_ROW_ITEM_INVALID`로 막습니다. 결과의 지급·공제 줄 `code`는 항목 ID이고 `name`은 계산한 때의 항목 이름입니다. 계산기(`:simulate`)도 같은 행 입력이라 회사 카탈로그로 풉니다
+- **속성은 계산할 때 읽습니다.** 항목을 고치면 다음에 계산하는 행(행 저장, `:recalculate`, 지급일 변경)부터 새 속성을 씁니다. 마감한 대장은 다시 계산하지 않으므로 마감 때의 결과가 남습니다. 다만 `:reopen`으로 다시 열고 행을 고치거나 다시 계산하면 대장 전체가 지금 카탈로그로 다시 계산됩니다. 급여 설정의 배수·공제 방식을 계산할 때 읽는 것과 같습니다. 결과 줄에는 비과세 유형을 남기지 않아, 항목이 바뀐 뒤에는 마감 때의 비과세 분류를 결과만으로 되살릴 수 없습니다([열린 질문](#열린-질문) 17)
+- **정기 대장의 기본 항목.** 정기 대장을 만들 때 근로 행마다 기본 금액(`defaultAmount`)이 있는 지급 항목과 `FIXED` 공제 항목을 만든 순서대로 넣습니다. 현행의 "전 직원 동일 지급" 금액입니다. 직원마다 다른 금액(급여계약의 지급항목)은 아직 넘기지 않습니다([열린 질문](#열린-질문) 7)
+- **플랜.** 기장만 구독한 회사도 대장 행에 수당·공제를 넣어야 하므로 항목은 대장과 같은 플랜(`PAYROLL` 또는 `TAXATION`)에 엽니다. 급여 설정이 `PAYROLL`만인 것과 다릅니다([접근 요건](#접근-요건))
 
 ## 급여대장
 
@@ -183,10 +230,11 @@ POST   /payroll-ledgers/{ledgerId}:{transition}                                 
 POST   /payroll-ledgers/{ledgerId}:approve | :reject { reason }                                   If-Match
 ```
 
-- **귀속월의 첫 대장이 정기 대장, 그다음이 추가 대장입니다.** 정기 대장을 만들 때 HR의 근로소득자(임금산정 기간 중 하루라도 재직)로 근로 행을 채우고, 중도 입·퇴사자는 역일 일할 입력을 넣습니다
+- **귀속월의 첫 대장이 정기 대장, 그다음이 추가 대장입니다.** 정기 대장을 만들 때 HR의 근로소득자(임금산정 기간 중 하루라도 재직)로 근로 행을 채우고, 중도 입·퇴사자는 역일 일할 입력을 넣습니다. 회사 카탈로그의 기본 금액이 있는 지급 항목과 고정 공제도 넣습니다([지급·공제 항목](#지급공제-항목))
 - 지급일을 주지 않으면 설정의 지급월·지급일로 정하고, 추가 대장은 정기 대장의 지급일을 씁니다
 - **행은 대장을 통해서만 바뀝니다.** 행을 저장하면 같은 요청에서 계산하고 대장 `version`을 올립니다. 행의 `If-Match`는 대장 버전입니다
 - 근로 행은 직원이 필수(422 `PAYROLL_ROW_PAYEE_INVALID`, `EMPLOYEE_REQUIRED`), 일용·사업·기타 행은 직원이나 [소득자 명부](#소득자-명부)의 소득자 중 하나가 필수입니다(없으면 `PAYEE_REQUIRED`, 둘 다면 `PAYEE_AMBIGUOUS`, 명부에 없으면 `EARNER_NOT_FOUND`). 직원은 같은 회사 직원이어야 합니다(422 `EMPLOYEE_NOT_FOUND`). 행의 소득 종류와 소득자는 바꿀 수 없습니다(`INCOME_TYPE_CHANGED`). 행 수정은 계산 입력(`input`)만 받고, 소득자를 바꾸려면 행을 지우고 다시 넣습니다
+- 행의 지급·공제 항목은 회사 카탈로그의 항목 ID와 금액입니다(422 `PAYROLL_ROW_ITEM_INVALID`, [지급·공제 항목](#지급공제-항목))
 - 이름(`payeeName`)은 입력받지 않고 직원이나 소득자의 이름을 소득자 사본과 같은 때에 복사합니다
 - `:recalculate`는 HR 정보와 소득자 명부를 다시 읽어 사본을 갱신하고 모든 행을 다시 계산합니다(현행 `refresh-employee-info` + `calculate`)
 - **행마다 소득자 사본(`earner`)을 둡니다.** 명세서 머리(가린 신원번호·부서)와 발송 주소가 이 값을 씁니다
@@ -423,9 +471,9 @@ flowchart LR
 
 ## 접근 요건
 
-모든 경로는 플랜과 약관 동의가 필요합니다. 급여대장·행·명세서·소득자 명부·인건비 보고서는 `PAYROLL` 또는 `TAXATION`, 나머지(급여 설정·운영 방식, 기준표·참조 코드, 계산기, 퇴직금)는 `PAYROLL`입니다.
+모든 경로는 플랜과 약관 동의가 필요합니다. 급여대장·행·명세서·소득자 명부·지급·공제 항목·인건비 보고서는 `PAYROLL` 또는 `TAXATION`, 나머지(급여 설정·운영 방식, 기준표·참조 코드, 계산기, 퇴직금)는 `PAYROLL`입니다.
 
-- **급여대장·명세서를 기장에도 엶 (2026-11-07 결정).** 현행 급여 관리(`payroll_management`)는 기장(`TAXATION`) 메뉴였고, 급여 아웃소싱(`PAYROLL`)은 급여 정산(`payroll_settlement`)으로 같은 대장을 썼습니다. 기장 고객을 `PAYROLL`로 옮기지 않고 두 플랜 모두에 엽니다. 플랜 목록은 권한 카탈로그의 `PAYROLL_LEDGER_PLANS` 한 곳이고, 카탈로그의 `payroll-ledger`·`payslip`·`earner`·`labor-cost-report`와 급여 엔드포인트([payroll-access.ts](../../apps/api/src/modules/payroll/payroll-access.ts)의 `LEDGER_PLANS`)가 함께 씁니다. 그래서 권한 그룹 화면의 `requiredPlans`와 엔드포인트가 어긋나지 않습니다. 둘 다 없으면 403 `ENTITLEMENT_REQUIRED`(`requiredPlans: ["TAXATION", "PAYROLL"]`)입니다
+- **급여대장·명세서를 기장에도 엶 (2026-11-07 결정).** 현행 급여 관리(`payroll_management`)는 기장(`TAXATION`) 메뉴였고, 급여 아웃소싱(`PAYROLL`)은 급여 정산(`payroll_settlement`)으로 같은 대장을 썼습니다. 기장 고객을 `PAYROLL`로 옮기지 않고 두 플랜 모두에 엽니다. 플랜 목록은 권한 카탈로그의 `PAYROLL_LEDGER_PLANS` 한 곳이고, 카탈로그의 `payroll-ledger`·`payslip`·`earner`·`payment-item`·`deduction-item`·`labor-cost-report`와 급여 엔드포인트([payroll-access.ts](../../apps/api/src/modules/payroll/payroll-access.ts)의 `LEDGER_PLANS`)가 함께 씁니다. 그래서 권한 그룹 화면의 `requiredPlans`와 엔드포인트가 어긋나지 않습니다. 둘 다 없으면 403 `ENTITLEMENT_REQUIRED`(`requiredPlans: ["TAXATION", "PAYROLL"]`)입니다
 - **`PAYROLL`만 여는 경로.** 급여 설정·퇴직금·기준표·계산기는 현행에서도 급여 아웃소싱 메뉴(`payroll_setting`, `severance_pay_settlement`)였으므로 그대로 둡니다. 기장만 쓰는 회사의 대장은 저장된 급여 설정이 없으면 기본값(현행 기본값, 직접 운영)으로 계산합니다. 대장 계산이 안에서 설정·기준표를 읽는 것은 플랜을 보지 않습니다
 - **약관.** 급여 전용 약관은 없습니다. `requiresTerms`는 회사 플랜이 정한 약관(가입 약관, 기장이면 세무 약관)을 보므로, 기장만 쓰는 회사는 스스로 동의할 수 있는 세무 약관에만 걸립니다(403 `TERMS_REAGREEMENT_REQUIRED`). 대리인은 약관 게이트를 건너뜁니다
 - **원천세 제출 자료.** 원천세 신고 건의 "급여대장 마감분" 자동 연계 항목은 현행처럼 급여 플랜 회사에만 넣습니다([filing-requirements.ts](../../apps/api/src/modules/tax/filings/filing-requirements.ts)). 이 결정은 대장을 여는 플랜만 바꾸고 신고 체크리스트는 바꾸지 않았습니다. 이유는 둘입니다. 현행도 이 항목을 급여 구독 고객에게만 넣었습니다(지운 이전 설계 `docs/reference/legacy-design/tax-api-design.md`의 원천세 제출 자료 표, 커밋 `3c6f890`). 그리고 기장 고객은 대부분 급여대장을 쓰지 않으므로, 이 항목을 넣으면 기간에 대장이 없어 응답이 영영 `PENDING`으로 남습니다. 자동 연계 항목은 제출 전 남은 항목 검사에서 빠지므로(`filing-view.ts`의 `transitionFacts`) 제출을 막지는 않지만, 고객 화면에는 끝나지 않는 "대기" 항목으로 보여 혼란을 줍니다([열린 질문 10](#열린-질문))
@@ -441,6 +489,8 @@ flowchart LR
 | `:approve`, `:reject` | `payroll-ledger:approve` |
 | `:close`, `:reopen` | `payroll-ledger:close` |
 | 명세서 조회 / 발송 | `payslip:read` / `payslip:send` |
+| 표준 항목, 지급 항목 조회 / 생성 / 수정 / 삭제 | `payment-item:read` / `payment-item:create` / `payment-item:update` / `payment-item:delete` |
+| 공제 항목 조회 / 생성 / 수정 / 삭제 | `deduction-item:read` / `deduction-item:create` / `deduction-item:update` / `deduction-item:delete` |
 | 소득자 명부 조회 / 등록 / 수정 / 삭제 / 원문 열람 | `earner:read` / `earner:create` / `earner:update` / `earner:delete` / `earner:reveal-rrn` |
 | 퇴직금 조회 / 생성 / 입력·제외·포함 / 확정·다시 열기 | `severance-settlement:read` / `:create` / `:update` / `:complete` |
 | 인건비 보고서 | `labor-cost-report:read` |
@@ -460,6 +510,7 @@ flowchart LR
 | 404 | `PAYSLIP_NOT_FOUND` | 없거나 마감 전 대장의 행 | |
 | 404 | `SEVERANCE_SETTLEMENT_NOT_FOUND` | 없는 정산 | |
 | 404 | `EARNER_NOT_FOUND` | 명부에 없거나 다른 회사 소득자 | |
+| 404 | `PAYROLL_ITEM_NOT_FOUND` | 없거나 다른 회사의 지급·공제 항목 | |
 | 409 | `PAYROLL_LEDGER_TRANSITION_INVALID` | 상태·운영 방식·행위자가 전이와 맞지 않음 | `ledgerStatus`, `action` |
 | 409 | `PAYROLL_LEDGER_READ_ONLY` | 지금 상태에서 이 행위자가 입력을 고칠 수 없음 | `ledgerStatus` |
 | 409 | `WITHHOLDING_FILED` | 원천세가 신고된 지급월의 금액 변경 | `paymentMonth` |
@@ -471,10 +522,13 @@ flowchart LR
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
 | 409 | `EARNER_DUPLICATE` | 같은 회사에 같은 신원번호의 소득자 | `duplicateEarnerId` |
 | 409 | `EARNER_IN_USE` | 대장 행이 가리키는 소득자 삭제 | |
+| 409 | `PAYROLL_ITEM_ARCHIVED` | 지운 지급·공제 항목 수정 | |
 | 409 | `SEVERANCE_RETIREMENT_MISMATCH` | 정산의 마지막 근무일이 HR의 지금 퇴직과 어긋나 `:complete` 불가 | `reason`, `lastWorkDate`, `leaveDate` |
 | 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` | 같은 키의 명세서 발송이 아직 처리 중 | |
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
 | 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음(`EMPLOYEE_REQUIRED`), 근로 외 행에 직원·소득자 없음(`PAYEE_REQUIRED`), 둘 다 줌(`PAYEE_AMBIGUOUS`), 명부에 없는 소득자(`EARNER_NOT_FOUND`), 소득 종류 변경(`INCOME_TYPE_CHANGED`) | `reason` |
+| 422 | `PAYROLL_ROW_ITEM_INVALID` | 행이 카탈로그에 없는 항목(`NOT_FOUND`), 새로 넣는 지운 항목(`ARCHIVED`), 한 행에 두 번 넣은 항목(`DUPLICATED`)을 가리킴 | `violations { field, code }` |
+| 422 | `PAYROLL_ITEM_INVALID` | 항목 입력 규칙 위반(`REQUIRED`, `UNKNOWN_CATEGORY`, `NAME_FIXED`, `CATEGORY_FIXED`, `STANDARD_NAME_RESERVED`, `RESERVED_NAME`, `NOT_APPLICABLE`, `DUPLICATED`) | `violations { field, code }` |
 | 422 | `EARNER_INVALID` | 신원번호 형식 오류(`INVALID_FORMAT`), 종류만 바꾸고 번호 없음(`REQUIRED`) | `violations` |
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
@@ -601,10 +655,10 @@ flowchart LR
 |---|---|---|
 | 129-134 | `/work-conditions/` CRUD, `usage-status` | HR (근로조건은 직원 계약의 일부) |
 | 135-136 | `GET/PATCH /payroll-terms/` | `GET/PATCH /payroll-settings` (지급일·임금산정 기간·배수·운영 방식) |
-| 137-141 | `/payroll-payment-items/` CRUD | 미구현. `/payroll-payment-items` 카탈로그(통상임금·최저임금 산입, 비과세 유형) 안 |
-| 142 | `GET /payroll-payment-categories/` | 미구현. 위 카탈로그의 표준 항목 |
+| 137-141 | `/payroll-payment-items/` CRUD | `/payroll-payment-items` CRUD. 삭제는 보관([지급·공제 항목](#지급공제-항목)) |
+| 142 | `GET /payroll-payment-categories/` | `GET /payroll-payment-categories` (코드의 표준 항목) |
 | 143-144 | `GET/PATCH /payroll-deduction/` | `GET/PATCH /payroll-settings` (`deductionMethods`) |
-| 145-149 | `/payroll-deduction-items/` CRUD | 미구현. `/payroll-deduction-items` 안 |
+| 145-149 | `/payroll-deduction-items/` CRUD | `/payroll-deduction-items` CRUD (`amount_mode` `fixed`·`on_settlement` → `FIXED`·`ON_SETTLEMENT`) |
 | 150-155 | `/work-schedule-policies/` CRUD, `usage-status` | HR 또는 근태 (근무 일정은 급여 입력의 출처) |
 
 ### 인건비 (Bookkeeping 스펙 N32-N33)
@@ -629,7 +683,8 @@ flowchart LR
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary`, `PayrollWithholdingTotals`, `SeveranceSettlementQuery` | 구현 |
 | 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |
-| 지급·공제 항목 카탈로그, 근무 일정 정책 | 없음 |
+| 지급·공제 항목 카탈로그(표준 항목, 회사 항목 CRUD·보관, 행 참조, 정기 대장 기본 항목) | 구현 ([items/](../../apps/api/src/modules/payroll/items/), `payroll_payment_items`·`payroll_deduction_items` 표) |
+| 근무 일정 정책, 카드 단위 항목 일괄 수정(현행 `payment-items/bulk`) | 없음 |
 | 행 결과 수동 덮어쓰기(고지액 입력 외) | 없음 |
 | 중간정산, 후보 목록, `LEAVE_DATE_BEFORE_INTERIM` | 없음 |
 | 데스크 내보내기, 담당자 메모, 시프티, 명세서 PDF, CSV 내보내기 | 없음 |
@@ -649,7 +704,7 @@ flowchart LR
 7. **공유 변경.**
    - Identity & Access 역할 템플릿에 [접근 요건](#접근-요건)의 권한을 넣어야 합니다
    - ID 접두사(`pyl`·`pyr`·`psl`·`sev`·`rtb`)는 공유 목록에 이미 있어 변경이 필요 없습니다. 소득자 명부의 `ern`은 2026-11-08에 더했습니다
-   - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다
+   - [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)는 급여계약의 파생 기본급만 넘기고 지급항목·고정수당·상여는 넘기지 않습니다. `PayrollEmployee`에 계약 지급항목 자리를 둘지, 급여 설정의 항목으로만 둘지 정해야 합니다. 2026-11-11에 회사 [지급 항목 카탈로그](#지급공제-항목)가 생겨 급여계약의 `paymentItemId`(`pit_`)가 가리킬 곳은 생겼지만, HR은 아직 그 ID가 카탈로그에 있는지 보지 않고 정기 대장도 계약 금액을 행에 넣지 않습니다(카탈로그의 `defaultAmount`만 넣음). 계약 금액을 넘기면 통상임금·최저임금 산입은 계약의 값과 카탈로그의 값 중 무엇을 따를지도 함께 정해야 합니다
    - 퇴직급여 제도(`retirementBenefitType`)는 HR 퇴직 정보가 생기면 기본값(`SEVERANCE_PAY`) 대신 그 값을 써야 합니다
 8. **담당자 메모.** BPO 담당자 특이사항을 회사 단위로 둘지 대장 단위로 둘지 정해야 합니다
 9. **2027 기준표 재확인.** 조세특례제한법 제30조(중소기업 취업자 소득세 감면)는 2026. 12. 31.까지 취업한 사람만 대상입니다. 2027 기준표를 만들 때 일몰 연장 여부를 확인하고, 연장되지 않으면 2027년 이후 취업자에게 감면 입력을 받지 않도록 정해야 합니다([simple-income-tax](../reference/rules/simple-income-tax.md#서버-이전-시-주의))
@@ -672,3 +727,4 @@ flowchart LR
     - HR 직원 삭제·퇴사 취소·다시 퇴사가 이 포트에 묻고, 정산 중 하나라도 `COMPLETED`면 409 `RETIREMENT_COMPLETED`입니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가므로, 최신 정산이 아니어도 완료가 하나 있으면 퇴직 기록을 바꾸거나 지울 수 없습니다. `CALCULATED`는 지급 전이라(현행도 완료만 막음), `EXCLUDED`는 정산하지 않기로 한 것이라 막지 않습니다. 막히면 `:reopen`으로 계산됨으로 되돌린 뒤 합니다
     - 이벤트를 쓰지 않은 이유: HR이 필요한 것은 커맨드 순간의 판정 하나뿐이라 조회로 충분하고, 이벤트로 받으면 outbox 재전달·순서와 한 직원의 여러 정산(제외 후 새 정산)을 필드 하나로 줄이는 매핑을 따로 정해야 합니다
     - ~~남은 것: 퇴사 취소가 계산됨 정산을 남기고(마지막 근무일이 더는 퇴직일이 아님), 계산됨 정산이 있는 직원을 삭제하면 직원 없는 정산이 남습니다. 정산을 자동으로 제외할지, 완료 때 HR 퇴직일과 다시 맞출지는 정하지 않았습니다~~ **정함(2026-11-08):** 완료 때 HR 퇴직일과 대조합니다. `:complete`가 `PayrollEmployeeDirectory`로 퇴직일을 다시 읽어 직원이 없거나 퇴직일이 정산의 마지막 근무일과 다르면 409 `SEVERANCE_RETIREMENT_MISMATCH`이고, 목록·상세는 `retirementMismatch`로 어긋남을 보입니다([퇴직금 정산](#퇴직금-정산)). 자동 제외처럼 HR이 Payroll에 쓰는 명령은 두지 않습니다. 정산의 주인은 Payroll이고, 퇴사 취소가 실수였다면 다시 같은 날로 퇴사시켜 정산을 살릴 수 있어서입니다
+17. **결과 줄의 비과세 분류 보존.** 지급 줄은 항목 ID·이름·과세·비과세 금액만 남기고 비과세 유형은 남기지 않습니다(2026-11-11, [지급·공제 항목](#지급공제-항목)). 지급명세서의 비과세 코드처럼 마감 때의 분류가 필요해지면 결과 줄에 `nonTaxableCategory`를 스냅숏으로 둘지, 마감한 대장이 쓰는 항목의 속성 변경을 막을지 정해야 합니다

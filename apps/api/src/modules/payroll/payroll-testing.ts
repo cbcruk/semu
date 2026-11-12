@@ -102,3 +102,24 @@ export function clockAt(at: string): Layer.Layer<any> {
   )
   return layer as Layer.Layer<unknown> as Layer.Layer<any>
 }
+
+/**
+ * 회사 지급 항목을 만들고 ID를 돌려줍니다. 표준 항목은 `categoryCode`로, 직접 만드는 과세 항목은 `name`으로 줍니다.
+ *
+ * @example
+ * ```ts
+ * const mealId = await addPaymentItem(app, { categoryCode: 'MEAL' })
+ * ```
+ */
+export async function addPaymentItem(
+  app: PayrollTestApp,
+  body: Record<string, unknown>,
+  token?: string,
+): Promise<string> {
+  const response = await app.request('POST', '/payroll-payment-items', {
+    body,
+    ...(token === undefined ? {} : { token }),
+  })
+  if (response.status !== 201) throw new Error(`지급 항목을 만들지 못했습니다: ${response.status}`)
+  return response.body.id
+}

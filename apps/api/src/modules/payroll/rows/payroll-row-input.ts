@@ -1,40 +1,20 @@
 import { Schema } from 'effect'
+import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import { CHILDCARE_CHILDREN_MAX } from '../engine/non-taxable.ts'
 import { CalendarDate, Minutes, Won } from '../payroll-schema.ts'
-
-const NonTaxableCategory = Schema.Literals([
-  'MEAL',
-  'VEHICLE',
-  'CHILDCARE',
-  'RESEARCH',
-  'OVERSEAS',
-  'OVERSEAS_SPECIAL',
-  'NIGHT_SHIFT',
-  'PARENTAL_LEAVE',
-  'TUITION',
-  'INVENTION',
-])
 
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 const PositiveCount = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
 const TaxDeductionMode = Schema.Literals(['BEFORE_TAX', 'AFTER_TAX'])
 
-/** 근로 행의 지급 항목입니다. 기본급 외 수당·비과세 항목입니다. */
-export const PaymentItemSchema = Schema.Struct({
-  code: Schema.String,
-  name: Schema.String,
-  amount: Won,
-  nonTaxableCategory: Schema.optionalKey(NonTaxableCategory),
-  /** 회사가 정한 비과세 한도입니다. 법정 한도와 작은 쪽을 씁니다. */
-  companyNonTaxableLimit: Schema.optionalKey(Won),
-  includeInOrdinaryWage: Schema.optionalKey(Schema.Boolean),
-  includeInMinimumWage: Schema.optionalKey(Schema.Boolean),
-  /** 기본급과 함께 일할계산하는지입니다. */
-  prorate: Schema.optionalKey(Schema.Boolean),
-})
+/**
+ * 근로 행의 지급 항목입니다. 회사 지급 항목(`/payroll-payment-items`)을 가리키고 금액만 받습니다.
+ * 비과세 유형·한도, 통상임금·최저임금 산입, 일할계산은 계산할 때 카탈로그에서 읽습니다.
+ */
+export const PaymentItemRefSchema = Schema.Struct({ itemId: IdSchema('paymentItem'), amount: Won })
 
-/** 회사 공제 항목(선지급금·동호회비 등)입니다. */
-export const OtherDeductionSchema = Schema.Struct({ code: Schema.String, name: Schema.String, amount: Won })
+/** 행의 공제 항목입니다. 회사 공제 항목(`/payroll-deduction-items`)을 가리키고 금액만 받습니다. */
+export const DeductionItemRefSchema = Schema.Struct({ itemId: IdSchema('deductionItem'), amount: Won })
 
 /** 근무 시트입니다. 모두 분 단위 정수입니다. */
 export const WorkMinutesSchema = Schema.Struct({
@@ -56,10 +36,10 @@ export const InsuranceNoticeSchema = Schema.Struct({
 })
 
 const wageFields = {
-  paymentItems: Schema.optionalKey(Schema.Array(PaymentItemSchema)),
+  paymentItems: Schema.optionalKey(Schema.Array(PaymentItemRefSchema)),
   work: Schema.optionalKey(WorkMinutesSchema),
   insuranceNotice: Schema.optionalKey(InsuranceNoticeSchema),
-  otherDeductions: Schema.optionalKey(Schema.Array(OtherDeductionSchema)),
+  otherDeductions: Schema.optionalKey(Schema.Array(DeductionItemRefSchema)),
 }
 
 /** 월급제 근로 행 입력입니다. */
@@ -103,7 +83,7 @@ export const DailyWorkerInput = Schema.Struct({
   averageDailyMinutes: Schema.optionalKey(Minutes),
   /** 사업주·동거친족이라 고용보험을 빼는지입니다. */
   employmentInsuranceExempt: Schema.optionalKey(Schema.Boolean),
-  otherDeductions: Schema.optionalKey(Schema.Array(OtherDeductionSchema)),
+  otherDeductions: Schema.optionalKey(Schema.Array(DeductionItemRefSchema)),
 })
 
 /** 사업소득 행 입력입니다. */
@@ -115,7 +95,7 @@ export const BusinessIncomeInput = Schema.Struct({
   taxDeductionMode: Schema.optionalKey(TaxDeductionMode),
   /** 예술인·노무제공자 고용보험 대상인지입니다. */
   employmentInsuranceApplicable: Schema.optionalKey(Schema.Boolean),
-  otherDeductions: Schema.optionalKey(Schema.Array(OtherDeductionSchema)),
+  otherDeductions: Schema.optionalKey(Schema.Array(DeductionItemRefSchema)),
 })
 
 /** 기타소득 행 입력입니다. */
@@ -127,7 +107,7 @@ export const OtherIncomeInput = Schema.Struct({
   /** 실제 필요경비입니다. 있으면 의제 경비율 대신 씁니다. */
   necessaryExpenseAmount: Schema.optionalKey(Won),
   taxDeductionMode: Schema.optionalKey(TaxDeductionMode),
-  otherDeductions: Schema.optionalKey(Schema.Array(OtherDeductionSchema)),
+  otherDeductions: Schema.optionalKey(Schema.Array(DeductionItemRefSchema)),
 })
 
 /** 급여대장 행과 계산기의 입력입니다. `incomeType`으로 구분합니다. */

@@ -48,7 +48,7 @@
 | Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 전용 `filing:process`, `action-card:read/complete`, `estimated-vat:read`, `tax-setting:read/update`, `settlement-report:read`, 대리인 전용 `settlement-report:upload` | TAXATION + 약관 |
 | HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update` | PAYROLL 또는 TAXATION |
 | Documents | `esign-request:*`, `esign-template:read`, `certificate-issuance:*`, `document-form:read` | PAYROLL |
-| Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (대장·명세서·인건비는 PAYROLL 또는 TAXATION) |
+| Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `earner:*`, `payment-item:*`, `deduction-item:*`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (대장·명세서·소득자 명부·지급·공제 항목·인건비는 PAYROLL 또는 TAXATION) |
 | Bookkeeping | `evidence:*`, `account-title:*`, `classification-rule:*`, `bank-account:*`, `bank-transaction:*`, `partner:*`, `sales-transaction:*`, `tax-invoice:read/issue`, `giro:read/update/pay`, `report:read`, `settlement-report:read`(인건비 `/reports/labor-cost`용) | 결산 보고서는 TAXATION |
 
 - 관리자는 `*`를 받습니다. 역할은 권한 묶음 프리셋입니다
