@@ -19,6 +19,8 @@ import {
 } from './hr-demo-seed.ts'
 import { HrDirectoryLive } from './hr.public.ts'
 import { InsuranceFilingRepository } from './insurance-filings/insurance-filing-repository.ts'
+import { InsuranceFilings } from './insurance-filings/insurance-filings.ts'
+import { InsuranceFilingsHttpLive } from './insurance-filings/insurance-filings.http.ts'
 import { LeaveRepository } from './leaves/leave.ts'
 import { Leaves } from './leaves/leaves.ts'
 import { LeavesHttpLive } from './leaves/leaves.http.ts'
@@ -49,6 +51,7 @@ export const HrHttpLive = Layer.mergeAll(
   TaxWithholdingHttpLive,
   SocialInsuranceHttpLive,
   OrganizationHttpLive,
+  InsuranceFilingsHttpLive,
 ).pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -59,6 +62,7 @@ export const HrHttpLive = Layer.mergeAll(
       TaxWithholdingSettings.layer,
       SocialInsuranceSettings.layer,
       Organization.layer,
+      InsuranceFilings.layer,
     ),
   ),
 )

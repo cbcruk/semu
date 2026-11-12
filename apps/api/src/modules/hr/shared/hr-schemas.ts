@@ -24,3 +24,6 @@ export const IfMatchHeaders = { 'if-match': Schema.optionalKey(Schema.String) }
 
 /** 422로 돌려주는 위반 목록입니다. */
 export const Violations = Schema.Array(Schema.Struct({ field: Schema.String, code: Schema.String }))
+
+/** 4대보험 신고 ID입니다. */
+export const InsuranceFilingId = IdSchema('insuranceFiling')

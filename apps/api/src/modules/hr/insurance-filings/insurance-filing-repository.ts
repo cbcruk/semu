@@ -1,15 +1,44 @@
-import { Context, Effect, Layer } from 'effect'
+import { Context, Effect, Layer, Option } from 'effect'
+import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
-import type { InsuranceFiling, InsuranceFilingKind, InsuranceFilingSource } from './insurance-filing.types.ts'
+import { OPEN_STATUSES } from './insurance-filing-rules.ts'
+import type {
+  InsuranceFiling,
+  InsuranceFilingKind,
+  InsuranceFilingPayloads,
+  InsuranceFilingSource,
+} from './insurance-filing.types.ts'
+
+/** 새 `PENDING` 신고입니다. 원인이 같은 종류의 이전 신고를 닫는 일은 부르는 쪽이 {@link InsuranceFilingRepository} `withdraw`로 합니다. */
+export function pendingFiling<K extends InsuranceFilingKind>(
+  target: { companyId: Id<'company'>; employeeId: Id<'employee'> },
+  kind: K,
+  source: InsuranceFilingSource,
+  payload: InsuranceFilingPayloads[K],
+  at: string,
+): InsuranceFiling {
+  return {
+    id: newId('insuranceFiling'),
+    companyId: target.companyId,
+    employeeId: target.employeeId,
+    kind,
+    source,
+    payload,
+    status: 'PENDING',
+    requestedAt: at,
+  } as InsuranceFiling
+}
 
 /** 4대보험 신고 저장소입니다. */
 export class InsuranceFilingRepository extends Context.Service<
   InsuranceFilingRepository,
   {
+    list(companyId: Id<'company'>): Effect.Effect<ReadonlyArray<InsuranceFiling>>
+    find(companyId: Id<'company'>, id: Id<'insuranceFiling'>): Effect.Effect<Option.Option<InsuranceFiling>>
     listByEmployee(companyId: Id<'company'>, employeeId: Id<'employee'>): Effect.Effect<ReadonlyArray<InsuranceFiling>>
     save(filing: InsuranceFiling): Effect.Effect<void>
-    /** 같은 원인·종류의 `PENDING` 신고를 `WITHDRAWN`으로 닫습니다. */
+    /** 같은 원인·종류의 열린 신고(`PENDING`·`FAILED`)를 `WITHDRAWN`으로 닫습니다. */
     withdraw(
       companyId: Id<'company'>,
       source: InsuranceFilingSource,
@@ -28,6 +57,12 @@ export class InsuranceFilingRepository extends Context.Service<
           companyOf: (filing) => filing.companyId,
         })
         return InsuranceFilingRepository.of({
+          list: (companyId) => table.byCompany(companyId),
+          find: (companyId, id) =>
+            Effect.map(
+              table.get(id),
+              Option.filter((filing) => filing.companyId === companyId),
+            ),
           listByEmployee: (companyId, employeeId) =>
             Effect.map(table.byCompany(companyId), (filings) => filings.filter((f) => f.employeeId === employeeId)),
           save: (filing) => table.put(filing),
@@ -37,7 +72,7 @@ export class InsuranceFilingRepository extends Context.Service<
                 filings.filter(
                   (filing) =>
                     filing.kind === kind &&
-                    filing.status === 'PENDING' &&
+                    OPEN_STATUSES.includes(filing.status) &&
                     filing.source.type === source.type &&
                     filing.source.id === source.id,
                 ),

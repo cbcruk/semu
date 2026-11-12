@@ -282,17 +282,33 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 ```
 InsuranceFiling
-├─ id, employeeId, kind: ACQUISITION | LOSS | LEAVE | RETURN | DEPENDANT
-├─ source: { type: EMPLOYEE | LEAVE | FAMILY_MEMBER, id }, payload
+├─ id, employeeId, kind: ACQUISITION | LOSS | LEAVE | RETURN | DEPENDANT | REMUNERATION_CHANGE
+├─ source: { type: EMPLOYEE | LEAVE | FAMILY_MEMBER | PAYROLL_CONTRACT, id }, payload (kind마다 모양이 다름)
 ├─ status: PENDING | DONE | FAILED | WITHDRAWN
 └─ requestedAt, processedAt?, resultMessage?
 ```
 
 ```
-GET  /insurance-filings?status=&employeeId=&kind=
+GET  /insurance-filings?status=&employeeId=&kind=        요청 순서, employeeName 포함
+GET  /insurance-filings/{insuranceFilingId}
 POST /insurance-filings/{insuranceFilingId}:complete      세무 대리인
 POST /insurance-filings/{insuranceFilingId}:fail          { message }
 ```
+
+| `kind` | 만드는 일 | `payload` |
+|---|---|---|
+| `ACQUISITION` | 주민번호가 있는 근로소득자 등록 | `acquisitionDate`(입사일) |
+| `LOSS` | 근로소득자 퇴직 | `leaveDate`, `lossDate`(퇴직일 다음 날), `leavingReasonCode`, `leavingDetailReasonCode?` |
+| `LEAVE` | 휴직 등록 | `startDate`, `endDate`, `npsPaymentException`, `nhisNoticeDeferral` |
+| `RETURN` | 복직 | `leaveStartDate`, `returnDate` |
+| `DEPENDANT` | 피부양자 등록 (미구현) | `familyMemberId` |
+| `REMUNERATION_CHANGE` | 두 번째 이후 급여계약의 등록·보수 수정 | `effectiveFrom`(계약 시작일), `wageType`, `amount` |
+
+- 신고 코드는 [insurance-filings.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filings.ts), 전이 규칙은 [insurance-filing-rules.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filing-rules.ts)입니다
+- **전이(2026-11-12, #77):** `PENDING` → `DONE`(`:complete`) 또는 `FAILED`(`:fail`, `resultMessage`에 사유). 실패한 신고는 공단에 다시 신고하고 `:complete`로 닫거나 `:fail`로 사유를 바꿉니다. 완료하면 사유를 지웁니다. 닫힌 신고(`DONE`·`WITHDRAWN`)를 처리하면 409 `INSURANCE_FILING_TRANSITION_INVALID`(`currentStatus`)입니다
+- **열린 신고는 `PENDING`과 `FAILED`입니다.** 원인이 취소되면 실패한 신고도 다시 신고할 일이 없으므로 `WITHDRAWN`으로 닫습니다. 복직일을 고쳐 `:return`을 다시 부르면 이전 복직 신고를 닫고 새로 엽니다
+- **보수 변경 신고(`REMUNERATION_CHANGE`)** 는 직원의 두 번째 이후 급여계약이고, 계약 시작일에 국민연금·건강보험·고용보험 중 하나라도 실제로 가입(`socialInsuranceOf`와 같은 판정)일 때 엽니다. 첫 계약의 보수는 취득 신고가 다룹니다. 시작일·지급 단위·금액을 고치면 열린 신고를 닫고 새로 열고, 계약을 지우면 닫습니다. 보수월액 환산은 대리인이 합니다
+- **권한:** 목록·조회는 `insurance-filing:read`, 처리는 대리인 전용 `insurance-filing:process`입니다. 고객 관리자의 `*`로는 처리할 수 없습니다(403 `PERMISSION_DENIED`)
 
 - 직원 등록·퇴직·휴직·복직·피부양자 등록이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
 - 현행 `employee_work.is_*_work` 플래그와 "○○처리중" 상태를 이 리소스가 대신합니다. 처리 주체는 지금처럼 세무 대리인이고, 자동 EDI는 범위 밖입니다 ([integrations.md](integrations.md))
@@ -409,7 +425,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `employee:reveal-rrn`, `employee:reveal-account` | 원문 조회 | 같음 |
 | `employee:export` | `:export` | 같음 |
 | `organization:read`, `organization:update` | 부서·직위 | 같음 |
-| `insurance-filing:read`, `insurance-filing:process` | 4대보험 신고 목록, 처리 | 같음 (처리는 세무 대리인) |
+| `insurance-filing:read`, `insurance-filing:process` | 4대보험 신고 목록, 처리 | 같음 (처리는 대리인 전용 권한) |
 
 ## 현행 엔드포인트 대응
 
@@ -468,7 +484,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 4대보험 설정·판정 (`GET/PUT /employees/{id}/social-insurance`, `:determine`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 판정과 다르면 `ELIGIBILITY_MISMATCH` 경고. 신고 보수월액은 아직 두지 않음(급여는 과세 급여로 보험료 계산) |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
 | `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 가입 여부(`socialInsuranceOf`, 저장 설정 또는 권장값), 주민번호 원문(열람 기록). 인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
-| 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
+| 4대보험 신고 (`/insurance-filings`) | 구현, HTTP 테스트. 취득·상실·휴직·복직·보수 변경 신고를 종류별 `payload`로 열고, 목록·조회와 대리인 `:complete`·`:fail`. 피부양자 신고는 미구현(가족 PR) |
 | 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
 | 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |

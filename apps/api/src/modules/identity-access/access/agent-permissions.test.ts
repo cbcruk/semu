@@ -37,6 +37,7 @@ const AGENT_ONLY: Permission[] = [
   'payment:retry',
   'payment:refund',
   'settlement-report:upload',
+  'insurance-filing:process',
 ]
 
 /** 고객 업무 권한 표본입니다. 대리인이 고객 회사에서 그대로 처리합니다. */
@@ -90,6 +91,8 @@ describe('세무 대리인의 권한 집합 (D5)', () => {
         "giro:*",
         "hometax-delegation:*",
         "income-tax-filing:*",
+        "insurance-filing:*",
+        "insurance-filing:process",
         "integration:*",
         "labor-cost-report:*",
         "messenger-channel:*",
