@@ -46,13 +46,13 @@
 | Billing | `subscription:read`, `payment:read`, `billing-mandate:*`, `service-contract:*` (대리인 전용: `subscription:manage`, `payment:retry/refund`) | `service-contract`는 TAXATION |
 | Integrations | `integration:*`, `certificate:*`, `scrap-request:*`, `hometax-delegation:*`, `business-status:read` | `hometax-delegation`은 TAXATION |
 | Tax | `filing:read/update/submit/confirm-ledger/pay`, 대리인 전용 `filing:process`, `action-card:read/complete`, `estimated-vat:read`, `tax-setting:read/update`, `settlement-report:read`, 대리인 전용 `settlement-report:upload` | TAXATION + 약관 |
-| HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update` | PAYROLL 또는 TAXATION |
+| HR | `employee:read/create/update/delete/resign/reveal-rrn/reveal-account`, `organization:read/update`, `insurance-filing:read`, 대리인 전용 `insurance-filing:process` | PAYROLL 또는 TAXATION |
 | Documents | `esign-request:*`, `esign-template:read`, `certificate-issuance:*`, `document-form:read` | PAYROLL |
 | Payroll | `payroll-setting:*`, `payroll-workflow:update`, `payroll-rate-table:read`, `payroll-calculator:simulate`, `payroll-ledger:*`, `payslip:read/send`, `earner:*`, `payment-item:*`, `deduction-item:*`, `severance-settlement:*`, `labor-cost-report:read` | PAYROLL (대장·명세서·소득자 명부·지급·공제 항목·인건비는 PAYROLL 또는 TAXATION) |
 | Bookkeeping | `evidence:*`, `account-title:*`, `classification-rule:*`, `bank-account:*`, `bank-transaction:*`, `partner:*`, `sales-transaction:*`, `tax-invoice:read/issue`, `giro:read/update/pay`, `report:read`, `settlement-report:read`(인건비 `/reports/labor-cost`용) | 결산 보고서는 TAXATION |
 
 - 관리자는 `*`를 받습니다. 역할은 권한 묶음 프리셋입니다
-- 대리인 전용 권한(`filing:process`, `subscription:manage`, `payment:retry/refund`)은 카탈로그의 `agentOnly` 표시로 정합니다. `*`·`resource:*` 와일드카드가 이 권한을 덮지 않으므로 고객 관리자의 `*`에도 들지 않고, 컨텍스트가 `actor.kind`를 따로 보지 않습니다 ([결정](#결정) D5)
+- 대리인 전용 권한(`filing:process`, `subscription:manage`, `payment:retry/refund`, `settlement-report:upload`, `insurance-filing:process`)은 카탈로그의 `agentOnly` 표시로 정합니다. `*`·`resource:*` 와일드카드가 이 권한을 덮지 않으므로 고객 관리자의 `*`에도 들지 않고, 컨텍스트가 `actor.kind`를 따로 보지 않습니다 ([결정](#결정) D5)
 - 배정된 세무 대리인은 `*` 대신 대리인 기본 권한(`AGENT_PERMISSIONS`)을 받습니다. 구성원 관리와 AI 비서는 없습니다 (D5, [identity-access.md](identity-access.md#행위자와-권한-계산))
 - 대리인 범위 토큰(`/agency/*`)은 `authorizeAgency`로 회사 범위의 대리인과 같은 권한 표를 보고, 플랜은 거절 대신 담당 회사를 거릅니다
 

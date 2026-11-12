@@ -13,7 +13,7 @@ export type TestRequest = HttpTestRequest
 export type TestApp = HttpTestApp
 
 /**
- * 메모리 저장소로 앱을 띄웁니다. 토큰은 `admin`(모든 권한), `viewer`(읽기 권한만), `no-plan`(플랜 없음)입니다.
+ * 메모리 저장소로 앱을 띄웁니다. 토큰은 `admin`(모든 권한), `viewer`(읽기 권한만), `no-plan`(플랜 없음), `agent`(세무 대리인)입니다.
  *
  * 행위자는 {@link HR_TEST_COMPANY_ID}에 속합니다.
  */
@@ -24,9 +24,13 @@ export function startTestApp(): TestApp {
       ['admin', testActor({ companyId })],
       [
         'viewer',
-        testActor({ companyId, permissions: new Set(['employee:read', 'organization:read', 'esign-request:read']) }),
+        testActor({
+          companyId,
+          permissions: new Set(['employee:read', 'organization:read', 'esign-request:read', 'insurance-filing:read']),
+        }),
       ],
       ['no-plan', testActor({ companyId, plans: new Set() })],
+      ['agent', testActor({ companyId, kind: 'AGENCY' })],
     ],
     basePath: '/v1',
     defaultToken: 'admin',

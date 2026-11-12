@@ -9,8 +9,9 @@ import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { WorkContractRepository, type WorkContractRecord } from '../contracts/work-contract.ts'
 import { indefiniteConversion } from '../contracts/indefinite-conversion.ts'
-import { InsuranceFilingRepository } from '../insurance-filings/insurance-filing-repository.ts'
-import type { InsuranceFilingKind } from '../insurance-filings/insurance-filing.types.ts'
+import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/insurance-filing-repository.ts'
+import type { InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
+import { lossDateOf } from '../insurance-filings/insurance-filing-rules.ts'
 import { LeaveRepository, type LeaveRecord } from '../leaves/leave.ts'
 import { OrganizationRepository } from '../organization/organization.ts'
 import { SeveranceSettlementLookup } from '../ports/severance-settlement-lookup.ts'
@@ -144,17 +145,21 @@ export class Employees extends Context.Service<
             ),
           )
 
-      const queueFiling = (record: EmployeeRecord, kind: InsuranceFilingKind, at: string) =>
-        filings.save({
-          id: newId('insuranceFiling'),
-          companyId: record.companyId,
-          employeeId: record.id,
-          kind,
-          source: { type: 'EMPLOYEE', id: record.id },
-          payload: {},
-          status: 'PENDING',
-          requestedAt: at,
-        })
+      const queueFiling = <K extends 'ACQUISITION' | 'LOSS'>(
+        record: EmployeeRecord,
+        kind: K,
+        payload: InsuranceFilingPayloads[K],
+        at: string,
+      ) =>
+        filings.save(
+          pendingFiling(
+            { companyId: record.companyId, employeeId: record.id },
+            kind,
+            { type: 'EMPLOYEE', id: record.id },
+            payload,
+            at,
+          ),
+        )
 
       /** 주민번호·조직 단위를 검사하고 저장할 신원 필드를 만듭니다. */
       const resolveIdentity = Effect.fn('Employees.resolveIdentity')(function* (
@@ -276,7 +281,7 @@ export class Employees extends Context.Service<
           yield* employees.save(record)
           yield* markAssigned(record)
           if (record.kind === 'WAGE' && record.registrationNumberEncrypted !== undefined) {
-            yield* queueFiling(record, 'ACQUISITION', now)
+            yield* queueFiling(record, 'ACQUISITION', { acquisitionDate: record.joinDate }, now)
           }
           return yield* viewOf(record)
         }),
@@ -315,6 +320,8 @@ export class Employees extends Context.Service<
           const record = yield* find(actor, id)
           yield* guardSettlement(record)
           yield* employees.remove(actor.companyId, id)
+          // 없는 직원의 신고가 대리인 큐에 남지 않게 열린 신고를 모두 닫습니다.
+          yield* filings.withdrawEmployee(actor.companyId, id, yield* nowIso)
         }),
 
         revealRegistrationNumber: Effect.fn('Employees.revealRegistrationNumber')(function* (actor, id, reason) {
@@ -341,7 +348,21 @@ export class Employees extends Context.Service<
           const next: EmployeeRecord = { ...record, resignation, version: record.version + 1, updatedAt: now }
           yield* employees.save(next)
           yield* filings.withdraw(record.companyId, { type: 'EMPLOYEE', id: record.id }, 'LOSS', now)
-          if (record.kind === 'WAGE') yield* queueFiling(next, 'LOSS', now)
+          if (record.kind === 'WAGE') {
+            yield* queueFiling(
+              next,
+              'LOSS',
+              {
+                leaveDate: resignation.leaveDate,
+                lossDate: lossDateOf(resignation.leaveDate),
+                leavingReasonCode: resignation.leavingReasonCode,
+                ...(resignation.leavingDetailReasonCode === undefined
+                  ? {}
+                  : { leavingDetailReasonCode: resignation.leavingDetailReasonCode }),
+              },
+              now,
+            )
+          }
           return yield* viewOf(next)
         }),
 

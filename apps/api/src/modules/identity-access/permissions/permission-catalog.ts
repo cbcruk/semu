@@ -53,6 +53,12 @@ export const PERMISSION_CATALOG = {
     plans: ['TAXATION', 'PAYROLL'],
   },
   organization: { area: 'HR', actions: ['read', 'update'], plans: ['TAXATION', 'PAYROLL'] },
+  'insurance-filing': {
+    area: 'HR',
+    actions: ['read', 'process'],
+    agentOnly: ['process'],
+    plans: ['TAXATION', 'PAYROLL'],
+  },
   'document-form': { area: 'DOCUMENTS', actions: ['read'] },
   'esign-request': { area: 'DOCUMENTS', actions: [...CRUD, 'send', 'cancel', 'void'], plans: ['PAYROLL'] },
   'esign-template': { area: 'DOCUMENTS', actions: CRUD, plans: ['PAYROLL'] },

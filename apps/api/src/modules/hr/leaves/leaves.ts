@@ -7,8 +7,8 @@ import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
-import { InsuranceFilingRepository } from '../insurance-filings/insurance-filing-repository.ts'
-import type { InsuranceFilingKind } from '../insurance-filings/insurance-filing.types.ts'
+import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/insurance-filing-repository.ts'
+import type { InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { summarizeLeaves, validateLeave } from './leave-rules.ts'
 import type { LeaveSummary, LeaveTerms, LeaveValidation } from './leave-rules.types.ts'
@@ -92,17 +92,21 @@ export class Leaves extends Context.Service<
         return Effect.succeed(result.normalized)
       }
 
-      const queueFiling = (leave: LeaveRecord, kind: InsuranceFilingKind, at: string) =>
-        filings.save({
-          id: newId('insuranceFiling'),
-          companyId: leave.companyId,
-          employeeId: leave.employeeId,
-          kind,
-          source: { type: 'LEAVE', id: leave.id },
-          payload: { startDate: leave.startDate, endDate: leave.endDate },
-          status: 'PENDING',
-          requestedAt: at,
-        })
+      const queueFiling = <K extends 'LEAVE' | 'RETURN'>(
+        leave: LeaveRecord,
+        kind: K,
+        payload: InsuranceFilingPayloads[K],
+        at: string,
+      ) =>
+        filings.save(
+          pendingFiling(
+            { companyId: leave.companyId, employeeId: leave.employeeId },
+            kind,
+            { type: 'LEAVE', id: leave.id },
+            payload,
+            at,
+          ),
+        )
 
       return Leaves.of({
         list: Effect.fn('Leaves.list')(function* (actor, employeeId) {
@@ -130,7 +134,19 @@ export class Leaves extends Context.Service<
             version: 1,
           }
           yield* leaves.save(leave)
-          if (employee.kind === 'WAGE') yield* queueFiling(leave, 'LEAVE', now)
+          if (employee.kind === 'WAGE') {
+            yield* queueFiling(
+              leave,
+              'LEAVE',
+              {
+                startDate: leave.startDate,
+                endDate: leave.endDate,
+                npsPaymentException: leave.npsPaymentException,
+                nhisNoticeDeferral: leave.nhisNoticeDeferral,
+              },
+              now,
+            )
+          }
           return toView(leave)
         }),
 
@@ -148,7 +164,12 @@ export class Leaves extends Context.Service<
             yield* check(employee, terms, others).pipe(cannotFail('LeaveOverlap'))
             const next: LeaveRecord = { ...leave, actualReturnDate, version: leave.version + 1 }
             yield* leaves.save(next)
-            if (employee?.kind === 'WAGE') yield* queueFiling(next, 'RETURN', yield* nowIso)
+            if (employee?.kind === 'WAGE') {
+              // 복직일을 고쳐 다시 부르면 이전 복직 신고를 닫고 새로 엽니다.
+              const at = yield* nowIso
+              yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'RETURN', at)
+              yield* queueFiling(next, 'RETURN', { leaveStartDate: leave.startDate, returnDate: actualReturnDate }, at)
+            }
             return toView(next)
           },
         ),
