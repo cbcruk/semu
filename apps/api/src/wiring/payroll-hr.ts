@@ -46,7 +46,8 @@ export const PAYROLL_DEFAULTS_WITHOUT_HR = {
  * `leaveDatesOf`는 HR `listLeaveDates` 한 번으로 퇴직일만 읽습니다. 계약·공제·보험은 읽지 않습니다.
  *
  * HR에서 그대로 옮기는 값: 이름, 가린 주민번호, 이메일, 부서 이름, 입사일, 퇴직일(마지막 근무일), 근로소득자(`WAGE`) 여부,
- * 근로계약의 주 소정근로시간에서 구한 월 소정근로시간·1일 주휴시간, 4대보험 자격 판정에서 구한 가입 여부.
+ * 근로계약의 주 소정근로시간에서 구한 월 소정근로시간·1일 주휴시간, 4대보험 가입 여부(`socialInsuranceOf`: 그날 적용되는
+ * 4대보험 설정에 자동 판정을 덮어 적용한 값, 설정이 없으면 판정 권장값).
  *
  * 기준일에 유효한 급여계약에서 옮기는 값: 지급 단위(`wageType`), 월급제 기본급(급여계약의 파생 기본급 `baseSalary`, 곧 월급에서
  * 지급항목·고정수당을 뺀 값), 시급제의 시급·일급제의 일급(계약 금액). 해당하지 않는 단위의 금액은 0원입니다.
@@ -63,7 +64,7 @@ export const PAYROLL_DEFAULTS_WITHOUT_HR = {
  * - 월 소정근로시간은 급여계약이 아니라 근로계약의 주 소정근로시간에서 구하고, 근로계약이 없거나 주 소정근로시간이 없으면
  *   주 40시간(월 209시간, 1일 주휴 480분)으로 봅니다
  * - 주민번호가 없는 직원의 가린 주민번호는 빈 문자열입니다
- * - 4대보험 판정은 대표자·임원·친족 여부를 모르는 채로 합니다
+ * - 4대보험 설정이 없으면 판정은 대표자·임원·친족 여부를 모르는 채로 합니다
  */
 export const PayrollEmployeeDirectoryFromHr: Layer.Layer<PayrollEmployeeDirectory, never, HrDirectory> = Layer.effect(
   PayrollEmployeeDirectory,

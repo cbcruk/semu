@@ -31,10 +31,11 @@ export const SocialInsuranceHttpLive = HttpApiBuilder.group(
           Effect.flatMap((actor) => settings.put(actor, params.id, payload, expectedVersion(headers['if-match']))),
           Effect.map(withEtag),
         ),
-      determine: ({ params, payload }) =>
+      determine: ({ params, query, payload }) =>
         Effect.gen(function* () {
           const actor = yield* authorize(hrAccess('employee:read'))
-          const result = yield* settings.determine(actor, params.id, payload, yield* today)
+          const asOf = query.asOf ?? (yield* today)
+          const result = yield* settings.determine(actor, params.id, payload, asOf)
           return {
             ...result,
             recommended: {

@@ -111,7 +111,66 @@ describe('4대보험 설정(/v1/employees/{employeeId}/social-insurance)', () =>
       body: { weeklyWorkHours: 40 },
     })
     // 저장된 가입 여부를 출발점으로 두고 바꾼 근로 조건으로 다시 판정합니다. 주 40시간이면 제외 규칙이 없어 저장값이 남습니다.
+    // 급여에 적용하는 값과 같은 방식이라, 사용자가 정한 제외는 판정이 되돌리지 않습니다.
     expect(overridden.body.recommended.nhis).toEqual({ enrolled: false, exclusionReason: 'SHORT_PART_TIME' })
+  })
+
+  it('설정이 없으면 모두 가입에서 출발해 기준일로 판정합니다', async () => {
+    const employeeId = (
+      await app.json('POST', '/employees', {
+        body: { kind: 'WAGE', name: '김예순', joinDate: '2026-01-02', birthDate: '1966-03-01' },
+      })
+    ).body.id as string
+
+    const before = await app.json('POST', `/employees/${employeeId}/social-insurance:determine?asOf=2026-02-28`, {
+      body: {},
+    })
+    expect(before.body.recommended).toEqual({ nps: enrolled, nhis: enrolled, ei: enrolled, iais: enrolled })
+
+    const after = await app.json('POST', `/employees/${employeeId}/social-insurance:determine?asOf=2026-03-01`, {
+      body: {},
+    })
+    expect(after.body).toMatchObject({
+      determinations: ['NPS_OVER_60_INCUMBENT'],
+      recommended: { nps: { enrolled: false, exclusionReason: 'AGE_60_OR_OVER' } },
+    })
+  })
+
+  it('판정에 음수 주 소정근로시간은 받지 않습니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json('POST', `/employees/${employeeId}/social-insurance:determine`, {
+      body: { weeklyWorkHours: -1 },
+    })
+
+    expect(response.status).toBe(400)
+  })
+
+  it('첫 적용 시작일보다 이른 기준일은 404이고 같은 적용 시작일은 덮어씁니다', async () => {
+    const employeeId = await hire()
+    await app.json('PUT', `/employees/${employeeId}/social-insurance`, { body: setting })
+    const overwritten = await app.json('PUT', `/employees/${employeeId}/social-insurance`, {
+      headers: { 'if-match': '"1"' },
+      body: { ...setting, iais: { enrolled: false, exclusionReason: 'OTHER' } },
+    })
+    expect(overwritten.body).toMatchObject({ version: 2, iais: { enrolled: false, exclusionReason: 'OTHER' } })
+
+    const current = await app.json('GET', `/employees/${employeeId}/social-insurance?asOf=2026-06-30`)
+    expect(current.body).toMatchObject({ effectiveFrom: '2026-01-02', iais: { enrolled: false } })
+
+    const early = await app.json('GET', `/employees/${employeeId}/social-insurance?asOf=2026-01-01`)
+    expect(early.status).toBe(404)
+  })
+
+  it('가입하는 보험에 제외 사유가 있으면 422입니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json('PUT', `/employees/${employeeId}/social-insurance`, {
+      body: { ...setting, nps: { enrolled: true, exclusionReason: 'OTHER' } },
+    })
+
+    expect(response.status).toBe(422)
+    expect(response.body).toMatchObject({
+      violations: [{ field: 'nps.exclusionReason', code: 'NOT_APPLICABLE' }],
+    })
   })
 
   it('근로소득자만 설정을 저장합니다', async () => {

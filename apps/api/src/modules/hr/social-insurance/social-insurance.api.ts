@@ -7,7 +7,7 @@ import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employe
 import { ACCESS_ERRORS } from '../shared/hr-access.ts'
 import { EmployeeId, IfMatchHeaders } from '../shared/hr-schemas.ts'
 import {
-  EnrollmentSchema,
+  Enrollments,
   SocialInsuranceSetting,
   SocialInsuranceSettingInput,
   SocialInsuranceSettingInvalid,
@@ -17,16 +17,13 @@ import {
 const params = { id: EmployeeId }
 const withEtag = HttpApiSchema.WithHeaders(SocialInsuranceSetting, { etag: Schema.String })
 
-/** 4대보험 자격 판정 결과입니다. 저장하지 않고 권장값만 돌려줍니다. */
+/**
+ * 4대보험 자격 판정 결과입니다. 저장하지 않고 권장값만 돌려줍니다. 본문이 비면 급여가 그날 적용하는 가입 여부와 같습니다.
+ */
 export const EligibilityView = Schema.Struct({
   determinations: Schema.Array(Schema.String),
   messages: Schema.Array(Schema.String),
-  recommended: Schema.Struct({
-    nps: EnrollmentSchema,
-    nhis: EnrollmentSchema,
-    ei: EnrollmentSchema,
-    iais: EnrollmentSchema,
-  }),
+  recommended: Enrollments,
 })
 
 /**
@@ -56,8 +53,9 @@ export class SocialInsuranceApi extends HttpApiGroup.make('hrSocialInsurance')
     }),
     HttpApiEndpoint.post('determine', '/employees/:id/social-insurance::determine', {
       params,
+      query: { asOf: Schema.optionalKey(CalendarDate) },
       payload: Schema.Struct({
-        weeklyWorkHours: Schema.optionalKey(Schema.Number),
+        weeklyWorkHours: Schema.optionalKey(Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))),
         isRepresentativeOrExecutive: Schema.optionalKey(Schema.Boolean),
         isRepresentativeRelative: Schema.optionalKey(Schema.Boolean),
       }),

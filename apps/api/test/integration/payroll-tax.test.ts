@@ -78,6 +78,25 @@ describe('HR → Payroll 연결', () => {
       },
     })
     expect(insurance.status).toBe(200)
+    // 저장한 설정이 국민연금 가입이어도 재직 중 만 60세가 되면 급여는 자동 판정대로 국민연금을 뺍니다.
+    const senior = await app.request('POST', '/v1/employees', {
+      token: owner,
+      body: { kind: 'WAGE', name: '김예순', joinDate: '2026-01-05', birthDate: '1966-03-01' },
+    })
+    const seniorId = (await senior.json()).id
+    const seniorInsurance = await app.request('PUT', `/v1/employees/${seniorId}/social-insurance`, {
+      token: owner,
+      body: {
+        effectiveFrom: '2026-01-05',
+        nps: { enrolled: true },
+        nhis: { enrolled: true },
+        ei: { enrolled: true },
+        iais: { enrolled: true },
+        isRepresentativeOrExecutive: false,
+        isRepresentativeRelative: false,
+      },
+    })
+    expect(seniorInsurance.status).toBe(200)
 
     const created = await app.request('POST', '/v1/payroll-ledgers', {
       token: owner,
@@ -115,6 +134,12 @@ describe('HR → Payroll 연결', () => {
       },
     })
     expect(row.snapshot).not.toHaveProperty('childcareChildren')
+    const seniorRow = rows.items.find((item: { employeeId: string }) => item.employeeId === seniorId)
+    expect(seniorRow.snapshot.socialInsurance).toEqual({
+      nationalPension: false,
+      healthInsurance: true,
+      employmentInsurance: true,
+    })
 
     // 보육수당 한도는 자녀 1명당 20만원이라 HR의 6세 이하 자녀 2명이면 월 40만원까지 비과세입니다.
     const childcareItem = await app.request('POST', '/v1/payroll-payment-items', {

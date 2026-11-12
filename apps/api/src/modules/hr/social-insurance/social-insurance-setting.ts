@@ -24,6 +24,17 @@ export const EnrollmentSchema = Schema.Struct({
   exclusionReason: Schema.optionalKey(ExclusionReasonSchema),
 })
 
+/** 국민연금·건강보험·고용보험·산재보험의 가입 여부입니다. */
+export const Enrollments = Schema.Struct({
+  nps: EnrollmentSchema,
+  nhis: EnrollmentSchema,
+  ei: EnrollmentSchema,
+  iais: EnrollmentSchema,
+})
+
+/** 4대보험 하나입니다. */
+export const InsuranceSchema = Schema.Literals(['nps', 'nhis', 'ei', 'iais'])
+
 const terms = {
   nps: EnrollmentSchema,
   nhis: EnrollmentSchema,
@@ -47,7 +58,7 @@ export type SocialInsuranceSettingEntry = SocialInsuranceSettingInput
 /** 판정과 다르게 저장한 보험입니다. 저장을 막지 않습니다. */
 export const SocialInsuranceWarning = Schema.Struct({
   code: Schema.Literal('ELIGIBILITY_MISMATCH'),
-  insurance: Schema.Literals(['nps', 'nhis', 'ei', 'iais']),
+  insurance: InsuranceSchema,
 })
 
 /** 기준일에 적용되는 4대보험 설정입니다. `recommended`는 같은 날의 자격 판정입니다. */
@@ -55,12 +66,7 @@ export const SocialInsuranceSetting = Schema.Struct({
   employeeId: EmployeeId,
   effectiveFrom: CalendarDate,
   ...terms,
-  recommended: Schema.Struct({
-    nps: EnrollmentSchema,
-    nhis: EnrollmentSchema,
-    ei: EnrollmentSchema,
-    iais: EnrollmentSchema,
-  }),
+  recommended: Enrollments,
   warnings: Schema.Array(SocialInsuranceWarning),
   /** 직원의 설정 이력 전체의 버전입니다. 다음 `PUT`의 `If-Match`로 보냅니다. */
   version: Schema.Int,
