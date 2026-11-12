@@ -27,3 +27,6 @@ export const Violations = Schema.Array(Schema.Struct({ field: Schema.String, cod
 
 /** 4대보험 신고 ID입니다. */
 export const InsuranceFilingId = IdSchema('insuranceFiling')
+
+/** 인적공제 대상자(가족) ID입니다. */
+export const FamilyMemberId = IdSchema('familyMember')

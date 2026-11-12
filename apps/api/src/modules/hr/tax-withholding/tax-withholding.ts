@@ -15,9 +15,6 @@ const ReductionType = Schema.Literals(['SMALL_BUSINESS', 'RETURNING_KOREAN_TALEN
 const ReductionApplication = Schema.Literals(['PAYROLL', 'YEAR_END'])
 
 const terms = {
-  /** 간이세액표의 공제대상 가족 수입니다. 본인을 포함합니다. */
-  dependantsCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
-  childrenAged8To20Count: Count,
   /**
    * 보육수당 비과세 대상 자녀 수입니다. 근로자 또는 배우자의 자녀로 과세기간 개시일(1월 1일) 현재 6세 이하인
    * 자녀입니다(소득세법 제12조제3호머목2)). 급여는 보육수당 월 비과세 한도를 20만원 × 이 값으로 잡습니다.
@@ -65,6 +62,13 @@ export type TaxWithholdingInput = typeof TaxWithholdingInput.Type
 export const TaxWithholding = Schema.Struct({
   employeeId: EmployeeId,
   effectiveFrom: CalendarDate,
+  /**
+   * 간이세액표의 공제대상 가족 수입니다. 본인을 포함합니다. 입력이 아니라 기준일(`GET`은 `asOf`, `PUT`은
+   * `effectiveFrom`)의 인적공제 대상자 중 연말정산 대상에서 셉니다.
+   */
+  dependantsCount: Schema.Int,
+  /** 공제대상 가족 중 8–20세 자녀 수입니다. `dependantsCount`와 같이 인적공제 대상자에서 셉니다. */
+  childrenAged8To20Count: Schema.Int,
   ...terms,
   adjustmentRatePpm: Schema.Int,
   reduction: Schema.optionalKey(
@@ -85,8 +89,11 @@ export const TaxWithholding = Schema.Struct({
 /** 소득세 공제 설정 응답의 타입입니다. */
 export type TaxWithholding = typeof TaxWithholding.Type
 
-/** 이력 한 건입니다. */
-export type TaxWithholdingEntry = Omit<TaxWithholding, 'employeeId' | 'version' | 'updatedAt'>
+/** 이력 한 건입니다. 공제대상 가족 수는 저장하지 않고 조회할 때 셉니다. */
+export type TaxWithholdingEntry = Omit<
+  TaxWithholding,
+  'employeeId' | 'version' | 'updatedAt' | 'dependantsCount' | 'childrenAged8To20Count'
+>
 
 /** 직원 한 명의 소득세 공제 설정 이력입니다. ID는 직원 ID와 같습니다. */
 export interface TaxWithholdingRecord {

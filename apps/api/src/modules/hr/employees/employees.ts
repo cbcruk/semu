@@ -9,6 +9,7 @@ import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { WorkContractRepository, type WorkContractRecord } from '../contracts/work-contract.ts'
 import { indefiniteConversion } from '../contracts/indefinite-conversion.ts'
+import { FamilyMemberRepository } from '../family/family-member.ts'
 import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/insurance-filing-repository.ts'
 import type { InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
 import { lossDateOf } from '../insurance-filings/insurance-filing-rules.ts'
@@ -93,6 +94,7 @@ export class Employees extends Context.Service<
       const contracts = yield* WorkContractRepository
       const units = yield* OrganizationRepository
       const filings = yield* InsuranceFilingRepository
+      const family = yield* FamilyMemberRepository
       const cipher = yield* PersonalDataCipher
       const accessLog = yield* PersonalDataAccessLog
       const settlements = yield* SeveranceSettlementLookup
@@ -322,6 +324,9 @@ export class Employees extends Context.Service<
           yield* employees.remove(actor.companyId, id)
           // 없는 직원의 신고가 대리인 큐에 남지 않게 열린 신고를 모두 닫습니다.
           yield* filings.withdrawEmployee(actor.companyId, id, yield* nowIso)
+          // 가족은 주민번호를 담은 개인정보라 직원과 함께 지웁니다. 피부양자 상실 신고는 직원 상실 신고가 대신합니다.
+          const members = (yield* family.list(actor.companyId)).filter((member) => member.employeeId === id)
+          yield* Effect.forEach(members, (member) => family.remove(actor.companyId, member.id), { discard: true })
         }),
 
         revealRegistrationNumber: Effect.fn('Employees.revealRegistrationNumber')(function* (actor, id, reason) {

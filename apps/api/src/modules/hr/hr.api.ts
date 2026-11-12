@@ -2,6 +2,7 @@ import { HttpApi } from 'effect/http-api'
 import { PayrollContractsApi } from './contracts/payroll-contracts.api.ts'
 import { WorkContractsApi } from './contracts/work-contracts.api.ts'
 import { EmployeesApi } from './employees/employees.api.ts'
+import { FamilyMembersApi } from './family/family-members.api.ts'
 import { InsuranceFilingsApi } from './insurance-filings/insurance-filings.api.ts'
 import { LeavesApi } from './leaves/leaves.api.ts'
 import { OrganizationApi } from './organization/organization.api.ts'
@@ -19,6 +20,7 @@ export const HrApi = HttpApi.make('hr')
   .add(WorkContractsApi)
   .add(PayrollContractsApi)
   .add(TaxWithholdingApi)
+  .add(FamilyMembersApi)
   .add(SocialInsuranceApi)
   .add(OrganizationApi)
   .add(InsuranceFilingsApi)

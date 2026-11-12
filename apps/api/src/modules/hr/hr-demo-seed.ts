@@ -6,6 +6,7 @@ import type { PayrollContractRecord } from './contracts/payroll-contract.ts'
 import { MINIMUM_HOURLY_WAGE_2026 } from './contracts/wage-calculation.ts'
 import type { WorkContractRecord } from './contracts/work-contract.ts'
 import type { EmployeeRecord } from './employees/employee.ts'
+import type { FamilyMemberRecord } from './family/family-member.ts'
 import type { OrganizationUnitRecord } from './organization/organization.ts'
 import type { TaxWithholdingRecord } from './tax-withholding/tax-withholding.ts'
 
@@ -124,7 +125,7 @@ export const demoPayrollContracts = (accountNumberEncrypted: string): ReadonlyAr
   },
 ]
 
-/** 데모 소득세 공제 설정입니다. 본인 포함 공제대상 가족 3명, 그중 8–20세 자녀 1명입니다. */
+/** 데모 소득세 공제 설정입니다. 공제대상 가족 수는 {@link DEMO_FAMILY_MEMBERS}에서 셉니다. */
 export const DEMO_TAX_WITHHOLDING: ReadonlyArray<TaxWithholdingRecord> = [
   {
     id: 'emp_01JBQ00000000000000000D3M1' as Id<'employee'>,
@@ -132,13 +133,46 @@ export const DEMO_TAX_WITHHOLDING: ReadonlyArray<TaxWithholdingRecord> = [
     entries: [
       {
         effectiveFrom: '2025-03-02',
-        dependantsCount: 3,
-        childrenAged8To20Count: 1,
         calcMethod: 'TAX_TABLE',
         adjustmentRatePpm: 1_000_000,
       },
     ],
     version: 1,
     updatedAt: createdAt,
+  },
+]
+
+/**
+ * 데모 직원의 가족입니다. 배우자와 2015년생 자녀가 연말정산 대상이라 본인 포함 공제대상 가족 3명, 그중 8–20세 자녀
+ * 1명입니다(2023–2035년).
+ */
+export const DEMO_FAMILY_MEMBERS: ReadonlyArray<FamilyMemberRecord> = [
+  {
+    id: 'fam_01JBQ00000000000000000D3M1' as Id<'familyMember'>,
+    companyId: DEMO_COMPANY_ID,
+    employeeId: 'emp_01JBQ00000000000000000D3M1' as Id<'employee'>,
+    name: '김배우',
+    birthDate: '1988-03-15',
+    relation: 'SPOUSE',
+    isForeigner: false,
+    taxFreeTarget: false,
+    yearEndTarget: true,
+    yearEndDependantType: 'SPOUSE',
+    healthInsuranceDependant: false,
+    version: 1,
+  },
+  {
+    id: 'fam_01JBQ00000000000000000D3M2' as Id<'familyMember'>,
+    companyId: DEMO_COMPANY_ID,
+    employeeId: 'emp_01JBQ00000000000000000D3M1' as Id<'employee'>,
+    name: '김자녀',
+    birthDate: '2015-05-10',
+    relation: 'CHILD',
+    isForeigner: false,
+    taxFreeTarget: false,
+    yearEndTarget: true,
+    yearEndDependantType: 'AGE_20_OR_UNDER',
+    healthInsuranceDependant: false,
+    version: 1,
   },
 ]

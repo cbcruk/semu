@@ -51,12 +51,22 @@ describe('HR → Payroll 연결', () => {
       body: { startDate: '2026-01-05', wageType: 'MONTHLY', amount: 2_800_000, monthlyWorkHours: 209 },
     })
     expect(payrollContract.status).toBe(201)
+    // 공제대상 가족 수는 입력하지 않고 인적공제 대상자에서 셉니다. 본인 + 2014년생 자녀(2026년 12세)입니다.
+    const child = await app.request('POST', `/v1/employees/${contractedId}/family-members`, {
+      token: owner,
+      body: {
+        name: '최자녀',
+        birthDate: '2014-04-01',
+        relation: 'CHILD',
+        yearEndTarget: true,
+        yearEndDependantType: 'AGE_20_OR_UNDER',
+      },
+    })
+    expect(child.status).toBe(201)
     const withholding = await app.request('PUT', `/v1/employees/${contractedId}/tax-withholding`, {
       token: owner,
       body: {
         effectiveFrom: '2026-01-05',
-        dependantsCount: 2,
-        childrenAged8To20Count: 1,
         childcareChildrenCount: 2,
         calcMethod: 'MANUAL',
         manualIncomeTax: 40_000,
