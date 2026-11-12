@@ -79,7 +79,7 @@ export const PayrollEmployeeDirectoryFromHr: Layer.Layer<PayrollEmployeeDirector
         workContract: hr.findWorkContract(companyId, employee.id, asOf),
         payrollContract: hr.findPayrollContract(companyId, employee.id, asOf),
         taxWithholding: hr.findTaxWithholding(companyId, employee.id, asOf),
-        insurance: hr.recommendSocialInsurance(companyId, employee.id, asOf),
+        insurance: hr.socialInsuranceOf(companyId, employee.id, asOf),
       }).pipe(
         Effect.map((found) =>
           payrollEmployeeOf(employee, {

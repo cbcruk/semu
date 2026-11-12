@@ -1,27 +1,61 @@
 import { Schema } from 'effect'
-import { HttpApiEndpoint, HttpApiGroup } from 'effect/http-api'
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api'
+import { VersionMismatch } from '../../../shared/problem/problem.ts'
+import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import { Authentication } from '../../identity-access/authentication.ts'
-import { EmployeeNotFound } from '../employees/employee.ts'
+import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employee.ts'
 import { ACCESS_ERRORS } from '../shared/hr-access.ts'
-import { EmployeeId } from '../shared/hr-schemas.ts'
+import { EmployeeId, IfMatchHeaders } from '../shared/hr-schemas.ts'
+import {
+  EnrollmentSchema,
+  SocialInsuranceSetting,
+  SocialInsuranceSettingInput,
+  SocialInsuranceSettingInvalid,
+  SocialInsuranceSettingNotFound,
+} from './social-insurance-setting.ts'
 
-const Enrollment = Schema.Struct({
-  enrolled: Schema.Boolean,
-  exclusionReason: Schema.optionalKey(Schema.String),
-})
+const params = { id: EmployeeId }
+const withEtag = HttpApiSchema.WithHeaders(SocialInsuranceSetting, { etag: Schema.String })
 
 /** 4대보험 자격 판정 결과입니다. 저장하지 않고 권장값만 돌려줍니다. */
 export const EligibilityView = Schema.Struct({
   determinations: Schema.Array(Schema.String),
   messages: Schema.Array(Schema.String),
-  recommended: Schema.Struct({ nps: Enrollment, nhis: Enrollment, ei: Enrollment, iais: Enrollment }),
+  recommended: Schema.Struct({
+    nps: EnrollmentSchema,
+    nhis: EnrollmentSchema,
+    ei: EnrollmentSchema,
+    iais: EnrollmentSchema,
+  }),
 })
 
-/** 4대보험 자격 판정입니다. 직원 정보와 본문의 근로 조건으로 권장 가입 여부를 계산합니다. */
+/**
+ * 근로소득자의 4대보험 가입 설정과 자격 판정입니다. 설정은 `effectiveFrom` 이력으로 쌓고, `GET`은 기준일(`asOf`, 기본 오늘)에
+ * 적용되는 설정과 같은 날의 판정, 판정과 다른 보험의 경고를 줍니다.
+ */
 export class SocialInsuranceApi extends HttpApiGroup.make('hrSocialInsurance')
   .add(
+    HttpApiEndpoint.get('get', '/employees/:id/social-insurance', {
+      params,
+      query: { asOf: Schema.optionalKey(CalendarDate) },
+      success: withEtag,
+      error: [...ACCESS_ERRORS, EmployeeNotFound, SocialInsuranceSettingNotFound],
+    }),
+    HttpApiEndpoint.put('put', '/employees/:id/social-insurance', {
+      params,
+      headers: IfMatchHeaders,
+      payload: SocialInsuranceSettingInput,
+      success: withEtag,
+      error: [
+        ...ACCESS_ERRORS,
+        EmployeeNotFound,
+        EmployeeKindNotSupported,
+        SocialInsuranceSettingInvalid,
+        VersionMismatch,
+      ],
+    }),
     HttpApiEndpoint.post('determine', '/employees/:id/social-insurance::determine', {
-      params: { id: EmployeeId },
+      params,
       payload: Schema.Struct({
         weeklyWorkHours: Schema.optionalKey(Schema.Number),
         isRepresentativeOrExecutive: Schema.optionalKey(Schema.Boolean),

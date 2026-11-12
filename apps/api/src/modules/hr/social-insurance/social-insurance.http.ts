@@ -1,47 +1,40 @@
-import { DateTime, Effect, Option } from 'effect'
+import { DateTime, Effect } from 'effect'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from '../../../api.ts'
+import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
+import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import { authorize } from '../../identity-access/authorization.ts'
-import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { EmployeeNotFound } from '../employees/employee.ts'
 import { hrAccess } from '../shared/hr-access.ts'
-import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
-import { DEFAULT_ENROLLMENT, determineEligibility } from './insurance-eligibility.ts'
+import { SocialInsuranceSettings } from './social-insurance-settings.ts'
 
-/** 4대보험 자격 판정 핸들러입니다. */
+/** 4대보험 설정·자격 판정 핸들러입니다. */
 export const SocialInsuranceHttpLive = HttpApiBuilder.group(
   Api,
   'hrSocialInsurance',
   Effect.fn(function* (handlers) {
-    const employees = yield* EmployeeRepository
+    const settings = yield* SocialInsuranceSettings
+    const today = DateTime.now.pipe(Effect.map((now) => companyDate(DateTime.toEpochMillis(now))))
 
     return handlers.handleAll({
+      get: ({ params, query }) =>
+        authorize(hrAccess('employee:read')).pipe(
+          Effect.flatMap((actor) =>
+            Effect.flatMap(query.asOf === undefined ? today : Effect.succeed(query.asOf), (asOf) =>
+              settings.get(actor, params.id, asOf),
+            ),
+          ),
+          Effect.map(withEtag),
+        ),
+      put: ({ params, headers, payload }) =>
+        authorize(hrAccess('employee:update')).pipe(
+          Effect.flatMap((actor) => settings.put(actor, params.id, payload, expectedVersion(headers['if-match']))),
+          Effect.map(withEtag),
+        ),
       determine: ({ params, payload }) =>
         Effect.gen(function* () {
           const actor = yield* authorize(hrAccess('employee:read'))
-          const employee = yield* employees
-            .find(actor.companyId, params.id)
-            .pipe(
-              Effect.flatMap(
-                Option.match({ onNone: () => Effect.fail(new EmployeeNotFound({})), onSome: Effect.succeed }),
-              ),
-            )
-          const now = yield* DateTime.now
-          const result = determineEligibility(
-            {
-              birthDate: employee.birthDate,
-              joinDate: employee.joinDate,
-              isForeigner: employee.isForeigner,
-              visaCode: employee.visaCode,
-              nationalityCode: employee.nationalityCode,
-              weeklyWorkHours: payload.weeklyWorkHours,
-              isRepresentativeOrExecutive: payload.isRepresentativeOrExecutive ?? false,
-              isRepresentativeRelative: payload.isRepresentativeRelative ?? false,
-            },
-            DEFAULT_ENROLLMENT,
-            companyDate(DateTime.toEpochMillis(now)),
-          )
+          const result = yield* settings.determine(actor, params.id, payload, yield* today)
           return {
             ...result,
             recommended: {

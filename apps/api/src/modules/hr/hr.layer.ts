@@ -27,6 +27,8 @@ import { OrganizationHttpLive } from './organization/organization.http.ts'
 import { OrganizationRepository } from './organization/organization.ts'
 import { PersonalDataAccessLog } from '../../shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../../shared/personal-data/personal-data-cipher.ts'
+import { SocialInsuranceSettingRepository } from './social-insurance/social-insurance-setting.ts'
+import { SocialInsuranceSettings } from './social-insurance/social-insurance-settings.ts'
 import { SocialInsuranceHttpLive } from './social-insurance/social-insurance.http.ts'
 import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
 import { TaxWithholdingSettings } from './tax-withholding/tax-withholding-service.ts'
@@ -36,7 +38,7 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 핸들러 전체입니다.
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
- * `TaxWithholdingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
+ * `TaxWithholdingRepository`, `SocialInsuranceSettingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
  * Payroll이 구현하는 포트 `SeveranceSettlementLookup`·`CompanyWorkforceSize`(`src/wiring/hr-payroll.ts`). 급여계약은 `CompanyWorkforceSize`로 사업장 규모를 읽습니다.
  */
 export const HrHttpLive = Layer.mergeAll(
@@ -55,6 +57,7 @@ export const HrHttpLive = Layer.mergeAll(
       WorkContracts.layer,
       PayrollContracts.layer,
       TaxWithholdingSettings.layer,
+      SocialInsuranceSettings.layer,
       Organization.layer,
     ),
   ),
@@ -85,6 +88,7 @@ export const HrStoreLive = Layer.mergeAll(
   WorkContractRepository.layer(DEMO_WORK_CONTRACTS),
   DemoPayrollContractRepositoryLive,
   TaxWithholdingRepository.layer(DEMO_TAX_WITHHOLDING),
+  SocialInsuranceSettingRepository.layer(),
   OrganizationRepository.layer(DEMO_ORGANIZATION),
   InsuranceFilingRepository.layer(),
 )

@@ -64,6 +64,20 @@ describe('HR → Payroll 연결', () => {
       },
     })
     expect(withholding.status).toBe(200)
+    // 저장한 4대보험 설정은 판정 권장값 대신 급여 행 사본으로 갑니다.
+    const insurance = await app.request('PUT', `/v1/employees/${contractedId}/social-insurance`, {
+      token: owner,
+      body: {
+        effectiveFrom: '2026-01-05',
+        nps: { enrolled: true },
+        nhis: { enrolled: true },
+        ei: { enrolled: false, exclusionReason: 'REPRESENTATIVE_RELATIVE' },
+        iais: { enrolled: false, exclusionReason: 'REPRESENTATIVE_RELATIVE' },
+        isRepresentativeOrExecutive: false,
+        isRepresentativeRelative: true,
+      },
+    })
+    expect(insurance.status).toBe(200)
 
     const created = await app.request('POST', '/v1/payroll-ledgers', {
       token: owner,
@@ -91,6 +105,7 @@ describe('HR → Payroll 연결', () => {
       incomeType: 'WAGE_MONTHLY',
       input: { basePay: 2_800_000 },
       snapshot: {
+        socialInsurance: { nationalPension: true, healthInsurance: true, employmentInsurance: false },
         dependants: 2,
         childrenAged8To20: 1,
         childcareChildren: 2,

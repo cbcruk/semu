@@ -19,6 +19,7 @@ import { stripUndefined } from '../../shared/http/strip-undefined.ts'
 import { DEFAULT_ENROLLMENT, determineEligibility } from './social-insurance/insurance-eligibility.ts'
 import { entryInEffect } from './tax-withholding/tax-withholding-history.ts'
 import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
+import { SocialInsuranceSettingRepository } from './social-insurance/social-insurance-setting.ts'
 
 /** HR이 쓰고 다른 컨텍스트가 구현하는 포트입니다. Payroll이 `src/wiring/hr-payroll.ts`로 구현합니다. */
 export { SeveranceSettlementLookup } from './ports/severance-settlement-lookup.ts'
@@ -171,8 +172,11 @@ export class HrDirectory extends Context.Service<
       from: string,
       to: string,
     ): Effect.Effect<ReadonlyArray<DirectoryLeave>>
-    /** 기준일의 4대보험 권장 가입 여부입니다. 직원이 없으면 `None`입니다. */
-    recommendSocialInsurance(
+    /**
+     * 기준일의 4대보험 가입 여부입니다. 그날 적용되는 저장된 설정이 있으면 그 값, 없으면 자격 판정의 권장값입니다.
+     * 직원이 없으면 `None`입니다.
+     */
+    socialInsuranceOf(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
       asOf: string,
@@ -194,6 +198,7 @@ export const HrDirectoryLive = Layer.effect(
     const contracts = yield* WorkContractRepository
     const payrollContracts = yield* PayrollContractRepository
     const taxWithholding = yield* TaxWithholdingRepository
+    const socialInsuranceSettings = yield* SocialInsuranceSettingRepository
     const organization = yield* OrganizationRepository
     const cipher = yield* PersonalDataCipher
     const accessLog = yield* PersonalDataAccessLog
@@ -376,10 +381,23 @@ export const HrDirectoryLive = Layer.effect(
               })),
           ),
         ),
-      recommendSocialInsurance: (companyId, employeeId, asOf) =>
-        Effect.all([employees.find(companyId, employeeId), contracts.list(companyId)]).pipe(
-          Effect.map(([record, all]) =>
+      socialInsuranceOf: (companyId, employeeId, asOf) =>
+        Effect.all([
+          employees.find(companyId, employeeId),
+          contracts.list(companyId),
+          socialInsuranceSettings.find(companyId, employeeId),
+        ]).pipe(
+          Effect.map(([record, all, settings]) =>
             Option.map(record, (employee) => {
+              const stored = Option.getOrUndefined(settings)
+              const entry = stored === undefined ? undefined : entryInEffect(stored.entries, asOf)
+              if (entry !== undefined) {
+                return {
+                  nationalPension: entry.nps.enrolled,
+                  healthInsurance: entry.nhis.enrolled,
+                  employmentInsurance: entry.ei.enrolled,
+                }
+              }
               const contract = contractInForce(
                 all.filter((candidate) => candidate.employeeId === employeeId),
                 asOf,
