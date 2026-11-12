@@ -7,6 +7,7 @@ const spouse: FamilyMemberTerms = {
   taxFreeTarget: false,
   yearEndTarget: true,
   yearEndDependantType: 'SPOUSE',
+  healthInsuranceDependant: false,
 }
 
 describe('가족 입력 검사', () => {
@@ -35,6 +36,40 @@ describe('가족 입력 검사', () => {
     ])
     expect(validateFamilyMember({ ...spouse, yearEndTarget: false }, '2026-06-01').violations).toEqual([
       { field: 'yearEndDependantType', code: 'NOT_APPLICABLE' },
+    ])
+  })
+
+  it('공제 구분이 관계와 연 나이에 맞아야 합니다', () => {
+    const child = { ...spouse, relation: 'CHILD', yearEndDependantType: 'AGE_20_OR_UNDER' } as const
+    // 소득세법 제50조③: 과세기간 중 20세 이하인 날이 있으면 대상이라 연도 − 출생 연도로 봅니다.
+    expect(validateFamilyMember({ ...child, birthDate: '2006-12-31' }, '2026-06-01').violations).toEqual([])
+    expect(validateFamilyMember({ ...child, birthDate: '2005-12-31' }, '2026-06-01').violations).toEqual([
+      { field: 'yearEndDependantType', code: 'INCONSISTENT' },
+    ])
+    expect(validateFamilyMember({ ...child, yearEndDependantType: 'SPOUSE' }, '2026-06-01').violations).toEqual([
+      { field: 'yearEndDependantType', code: 'INCONSISTENT' },
+    ])
+    const parent = { ...spouse, relation: 'PARENT', yearEndDependantType: 'AGE_60_OR_OVER' } as const
+    expect(validateFamilyMember({ ...parent, birthDate: '1966-12-31' }, '2026-06-01').violations).toEqual([])
+    expect(validateFamilyMember({ ...parent, birthDate: '1967-01-01' }, '2026-06-01').violations).toEqual([
+      { field: 'yearEndDependantType', code: 'INCONSISTENT' },
+    ])
+  })
+
+  it('피부양자는 국민건강보험법의 관계여야 하고 주민번호가 있어야 합니다', () => {
+    expect(validateFamilyMember({ ...spouse, healthInsuranceDependant: true }, '2026-06-01').violations).toEqual([
+      { field: 'registrationNumber', code: 'REQUIRED' },
+    ])
+    const other = {
+      ...spouse,
+      relation: 'OTHER',
+      yearEndTarget: false,
+      yearEndDependantType: 'NOT_ELIGIBLE',
+      healthInsuranceDependant: true,
+      registrationNumber: '9001012234567',
+    } as const
+    expect(validateFamilyMember(other, '2026-06-01').violations).toEqual([
+      { field: 'healthInsuranceDependant', code: 'NOT_ELIGIBLE' },
     ])
   })
 
@@ -71,5 +106,12 @@ describe('피부양자 신고 구분', () => {
     const pending = { status: 'PENDING' as const, payload: { change: 'ADD' as const } }
     expect(dependantChange(true, [pending])).toBe('ADD')
     expect(dependantChange(false, [pending])).toBeUndefined()
+    const failed = {
+      status: 'FAILED' as const,
+      processedAt: '2026-05-01T00:00:00.000Z',
+      payload: { change: 'ADD' as const },
+    }
+    expect(dependantChange(true, [failed])).toBe('ADD')
+    expect(dependantChange(false, [failed])).toBeUndefined()
   })
 })

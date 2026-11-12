@@ -40,6 +40,18 @@ describe('HR → Payroll 연결', () => {
       body: { contractType: 'PERMANENT', startDate: '2026-01-05', weeklyWorkHours: 20 },
     })
     expect(contract.status).toBe(201)
+    // 소득세 공제 설정이 없어도 공제대상 가족 수는 인적공제 대상자에서 셉니다.
+    const spouse = await app.request('POST', `/v1/employees/${employeeId}/family-members`, {
+      token: owner,
+      body: {
+        name: '박배우',
+        birthDate: '1990-05-01',
+        relation: 'SPOUSE',
+        yearEndTarget: true,
+        yearEndDependantType: 'SPOUSE',
+      },
+    })
+    expect(spouse.status).toBe(201)
 
     const contracted = await app.request('POST', '/v1/employees', {
       token: owner,
@@ -125,7 +137,7 @@ describe('HR → Payroll 연결', () => {
       payeeName: '박급여',
       // 급여계약이 없어 기본값(PAYROLL_DEFAULTS_WITHOUT_HR)을 씁니다.
       input: { basePay: 3_000_000 },
-      snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240 },
+      snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240, dependants: 2, childrenAged8To20: 0 },
     })
 
     const contractedRow = rows.items.find((item: { employeeId: string }) => item.employeeId === contractedId)

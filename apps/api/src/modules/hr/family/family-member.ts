@@ -44,7 +44,10 @@ export const FamilyMemberInput = Schema.Struct({
   relation: FamilyRelationSchema,
   /** 외국인이면 `true`입니다. 등록번호는 외국인등록번호입니다. 없으면 `false`. */
   isForeigner: Schema.optionalKey(Schema.Boolean),
-  /** 주민등록번호 또는 외국인등록번호입니다. 암호화해 두고 응답에는 가린 값만 줍니다. 수정할 때 비우면 지웁니다. */
+  /**
+   * 주민등록번호 또는 외국인등록번호입니다. 암호화해 두고 응답에는 가린 값만 줍니다. 수정할 때 이 키를 빼면 지웁니다.
+   * 피부양자면 신고서에 들어가므로 있어야 합니다.
+   */
   registrationNumber: Schema.optionalKey(Schema.String),
   /** 비과세(보육수당) 대상 자녀입니다. 과세기간 개시일 현재 6세 이하 자녀만 됩니다. 없으면 `false`. */
   taxFreeTarget: Schema.optionalKey(Schema.Boolean),
@@ -115,6 +118,20 @@ export class FamilyMemberNotFound extends HttpApiError.Problem<FamilyMemberNotFo
   'FamilyMemberNotFound',
   { type: problemType('FAMILY_MEMBER_NOT_FOUND'), status: 404, title: 'Family member not found' },
   { code: Schema.tag('FAMILY_MEMBER_NOT_FOUND') },
+) {}
+
+/**
+ * 공단에 피부양자로 등록된 가족은 지울 수 없습니다. 상실 신고에 주민번호가 들어가므로, 먼저 피부양자를 끄고 대리인이
+ * 상실 신고를 마친 뒤 지웁니다.
+ */
+export class FamilyMemberDependantRegistered extends HttpApiError.Problem<FamilyMemberDependantRegistered>()(
+  'FamilyMemberDependantRegistered',
+  {
+    type: problemType('FAMILY_MEMBER_DEPENDANT_REGISTERED'),
+    status: 409,
+    title: 'Family member is a registered health insurance dependant',
+  },
+  { code: Schema.tag('FAMILY_MEMBER_DEPENDANT_REGISTERED') },
 ) {}
 
 /** 가족 입력이 업무 규칙을 어겼습니다. */

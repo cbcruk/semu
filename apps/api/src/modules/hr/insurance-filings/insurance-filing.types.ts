@@ -29,8 +29,8 @@ export interface InsuranceFilingPayloads {
   LEAVE: { startDate: string; endDate: string; npsPaymentException: boolean; nhisNoticeDeferral: boolean }
   RETURN: { leaveStartDate: string; returnDate: string }
   /**
-   * 피부양자 취득(`ADD`)·상실(`REMOVE`) 신고입니다. 가족을 지워도 대리인이 신고서를 쓸 수 있게 이름·관계·생년월일을
-   * 담습니다.
+   * 피부양자 취득(`ADD`)·상실(`REMOVE`) 신고입니다. 목록에서 알아보도록 이름·관계·생년월일을 담고, 주민번호는 가족의
+   * `registration-number:reveal`로 읽습니다. 등록된 피부양자는 지울 수 없어 상실 신고의 가족은 남아 있습니다.
    */
   DEPENDANT: {
     familyMemberId: string

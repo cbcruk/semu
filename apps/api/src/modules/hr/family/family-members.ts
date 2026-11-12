@@ -14,8 +14,9 @@ import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/i
 import { OPEN_STATUSES } from '../insurance-filings/insurance-filing-rules.ts'
 import type { InsuranceFiling, InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
 import { maskIdentityNumber } from '../shared/identity-number.ts'
-import { dependantChange, validateFamilyMember } from './family-member-rules.ts'
+import { dependantChange, isRegisteredDependant, validateFamilyMember } from './family-member-rules.ts'
 import {
+  FamilyMemberDependantRegistered,
   FamilyMemberInvalid,
   FamilyMemberNotFound,
   FamilyMemberRepository,
@@ -58,7 +59,10 @@ export class FamilyMembers extends Context.Service<
       input: FamilyMemberInput,
       expectedVersion: number | undefined,
     ): Effect.Effect<FamilyMember, FamilyMemberNotFound | FamilyMemberInvalid | VersionMismatch>
-    remove(actor: Actor, id: Id<'familyMember'>): Effect.Effect<void, FamilyMemberNotFound>
+    remove(
+      actor: Actor,
+      id: Id<'familyMember'>,
+    ): Effect.Effect<void, FamilyMemberNotFound | FamilyMemberDependantRegistered>
     revealRegistrationNumber(
       actor: Actor,
       id: Id<'familyMember'>,
@@ -108,6 +112,7 @@ export class FamilyMembers extends Context.Service<
           taxFreeTarget: input.taxFreeTarget ?? false,
           yearEndTarget: input.yearEndTarget ?? false,
           yearEndDependantType: input.yearEndDependantType ?? 'NOT_ELIGIBLE',
+          healthInsuranceDependant: input.healthInsuranceDependant ?? false,
         }
         const result = validateFamilyMember(terms, yield* today)
         if (result.violations.length > 0) return yield* new FamilyMemberInvalid({ violations: result.violations })
@@ -116,7 +121,6 @@ export class FamilyMembers extends Context.Service<
           ...fields,
           name: input.name,
           isForeigner: input.isForeigner ?? false,
-          healthInsuranceDependant: input.healthInsuranceDependant ?? false,
           registrationNumberEncrypted:
             result.registrationNumber === undefined
               ? undefined
@@ -128,19 +132,30 @@ export class FamilyMembers extends Context.Service<
 
       /**
        * 피부양자 신고를 가족의 지금 상태에 맞춥니다. 공단에 등록된 상태(마지막 완료 신고)와 원하는 상태가 다르면 취득·상실
-       * 신고를 열고, 같으면 열린 신고를 닫습니다. 내용이 같은 열린 신고는 그대로 둡니다. 가족을 지우면 `wanted`가
-       * `false`라 등록된 피부양자는 상실 신고가 열립니다.
+       * 신고를 열고, 같으면 열린 신고를 닫습니다. 내용이 같은 열린 신고는 그대로 둡니다. 가족을 지울 때는 `wanted`가
+       * `false`이고, 등록된 피부양자는 지울 수 없으므로 열린 취득 신고만 닫습니다.
        */
+      const dependantFilingsOf = (member: FamilyMemberRecord) =>
+        filings
+          .listByEmployee(member.companyId, member.employeeId)
+          .pipe(
+            Effect.map((all) =>
+              all.filter(
+                (filing): filing is DependantFiling =>
+                  filing.kind === 'DEPENDANT' &&
+                  filing.source.type === 'FAMILY_MEMBER' &&
+                  filing.source.id === member.id,
+              ),
+            ),
+          )
+
       const syncDependantFiling = Effect.fn('FamilyMembers.syncDependantFiling')(function* (
         member: FamilyMemberRecord,
         wanted: boolean,
         at: string,
       ) {
         const source = { type: 'FAMILY_MEMBER', id: member.id } as const
-        const own = (yield* filings.listByEmployee(member.companyId, member.employeeId)).filter(
-          (filing): filing is DependantFiling =>
-            filing.kind === 'DEPENDANT' && filing.source.type === source.type && filing.source.id === source.id,
-        )
+        const own = yield* dependantFilingsOf(member)
         const change = dependantChange(wanted, own)
         const payload: InsuranceFilingPayloads['DEPENDANT'] | undefined =
           change === undefined
@@ -212,6 +227,9 @@ export class FamilyMembers extends Context.Service<
 
         remove: Effect.fn('FamilyMembers.remove')(function* (actor, id) {
           const member = yield* findMember(actor, id)
+          if (isRegisteredDependant(yield* dependantFilingsOf(member))) {
+            return yield* new FamilyMemberDependantRegistered({})
+          }
           yield* members.remove(actor.companyId, member.id)
           yield* syncDependantFiling(member, false, yield* nowIso)
         }),

@@ -6,7 +6,13 @@ import { Authentication } from '../../identity-access/authentication.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employee.ts'
 import { ACCESS_ERRORS } from '../shared/hr-access.ts'
 import { EmployeeId, FamilyMemberId, IfMatchHeaders } from '../shared/hr-schemas.ts'
-import { FamilyMember, FamilyMemberInput, FamilyMemberInvalid, FamilyMemberNotFound } from './family-member.ts'
+import {
+  FamilyMember,
+  FamilyMemberDependantRegistered,
+  FamilyMemberInput,
+  FamilyMemberInvalid,
+  FamilyMemberNotFound,
+} from './family-member.ts'
 
 const withEtag = HttpApiSchema.WithHeaders(FamilyMember, { etag: Schema.String })
 
@@ -43,7 +49,7 @@ export class FamilyMembersApi extends HttpApiGroup.make('hrFamilyMembers')
     HttpApiEndpoint.delete('remove', '/family-members/:familyMemberId', {
       params: { familyMemberId: FamilyMemberId },
       success: HttpApiSchema.NoContent,
-      error: [...ACCESS_ERRORS, FamilyMemberNotFound],
+      error: [...ACCESS_ERRORS, FamilyMemberNotFound, FamilyMemberDependantRegistered],
     }),
     HttpApiEndpoint.post('revealRegistrationNumber', '/family-members/:familyMemberId/registration-number::reveal', {
       params: { familyMemberId: FamilyMemberId },

@@ -22,6 +22,10 @@ const spouse = {
   yearEndDependantType: 'SPOUSE',
 }
 
+/** 피부양자 신고서에 주민번호가 들어가서 피부양자로 둘 때는 주민번호가 있어야 합니다. */
+const dependant = { ...spouse, registrationNumber: '900101-2234567', healthInsuranceDependant: true }
+const notDependant = { ...spouse, registrationNumber: '900101-2234567' }
+
 type Filing = { id: string; status: string; payload: Record<string, unknown> }
 
 const dependantFilings = async (employeeId: string) =>
@@ -130,26 +134,26 @@ describe('피부양자 신고', () => {
   it('피부양자로 등록하면 취득 신고를 열고, 처리 전에 끄면 닫습니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/family-members`, {
-      body: { ...spouse, healthInsuranceDependant: true },
+      body: dependant,
     })
     expect(await dependantFilings(employeeId)).toEqual([{ status: 'PENDING', change: 'ADD', name: '김배우' }])
 
-    await app.json('PUT', `/family-members/${created.body.id}`, { body: spouse, ifMatch: '"1"' })
+    await app.json('PUT', `/family-members/${created.body.id}`, { body: notDependant, ifMatch: '"1"' })
     expect(await dependantFilings(employeeId)).toEqual([{ status: 'WITHDRAWN', change: 'ADD', name: '김배우' }])
   })
 
   it('처리 전에 이름을 고치면 새 내용으로 다시 엽니다', async () => {
     const employeeId = await hire()
     const created = await app.json('POST', `/employees/${employeeId}/family-members`, {
-      body: { ...spouse, healthInsuranceDependant: true },
+      body: dependant,
     })
     await app.json('PUT', `/family-members/${created.body.id}`, {
-      body: { ...spouse, name: '김배우자', healthInsuranceDependant: true },
+      body: { ...dependant, name: '김배우자' },
       ifMatch: '"1"',
     })
     // 내용이 같으면 그대로 둡니다.
     await app.json('PUT', `/family-members/${created.body.id}`, {
-      body: { ...spouse, name: '김배우자', healthInsuranceDependant: true, isForeigner: false },
+      body: { ...dependant, name: '김배우자', isForeigner: false },
       ifMatch: '"2"',
     })
 
@@ -159,25 +163,61 @@ describe('피부양자 신고', () => {
     ])
   })
 
-  it('등록을 마친 피부양자를 끄거나 가족을 지우면 상실 신고를 엽니다', async () => {
+  it('등록을 마친 피부양자를 끄면 상실 신고를 열고, 상실을 마치기 전에는 지울 수 없습니다', async () => {
     const employeeId = await hire()
-    const created = await app.json('POST', `/employees/${employeeId}/family-members`, {
-      body: { ...spouse, healthInsuranceDependant: true },
-    })
+    const created = await app.json('POST', `/employees/${employeeId}/family-members`, { body: dependant })
     await complete(employeeId)
 
     const path = `/family-members/${created.body.id}`
-    await app.json('PUT', path, { body: spouse, ifMatch: '"1"' })
+    const blocked = await app.json('DELETE', path)
+    expect(blocked.status).toBe(409)
+    expect(blocked.body).toMatchObject({ code: 'FAMILY_MEMBER_DEPENDANT_REGISTERED' })
+
+    await app.json('PUT', path, { body: notDependant, ifMatch: '"1"' })
     expect((await dependantFilings(employeeId)).at(-1)).toEqual({ status: 'PENDING', change: 'REMOVE', name: '김배우' })
 
     // 상실 신고를 처리하기 전에 다시 켜면 공단 상태와 같아져 상실 신고만 닫습니다.
-    await app.json('PUT', path, { body: { ...spouse, healthInsuranceDependant: true }, ifMatch: '"2"' })
+    await app.json('PUT', path, { body: dependant, ifMatch: '"2"' })
     expect(await dependantFilings(employeeId)).toEqual([
       { status: 'DONE', change: 'ADD', name: '김배우' },
       { status: 'WITHDRAWN', change: 'REMOVE', name: '김배우' },
     ])
 
+    // 끄고 상실 신고를 마치면 지울 수 있고, 지워도 새 신고는 열지 않습니다.
+    await app.json('PUT', path, { body: notDependant, ifMatch: '"3"' })
+    await complete(employeeId)
     expect((await app.json('DELETE', path)).status).toBe(204)
-    expect((await dependantFilings(employeeId)).at(-1)).toEqual({ status: 'PENDING', change: 'REMOVE', name: '김배우' })
+    expect((await dependantFilings(employeeId)).filter((filing) => filing.status === 'PENDING')).toEqual([])
+  })
+
+  it('실패한 취득 신고는 내용이 바뀌면 닫고 새로 엽니다', async () => {
+    const employeeId = await hire()
+    const created = await app.json('POST', `/employees/${employeeId}/family-members`, { body: dependant })
+    const [filing] = (await app.json('GET', `/insurance-filings?kind=DEPENDANT&employeeId=${employeeId}`)).body
+      .items as Filing[]
+    await app.json('POST', `/insurance-filings/${filing!.id}:fail`, {
+      token: 'agent',
+      body: { message: '이름 불일치' },
+    })
+
+    await app.json('PUT', `/family-members/${created.body.id}`, {
+      body: { ...dependant, name: '김배우자' },
+      ifMatch: '"1"',
+    })
+    expect(await dependantFilings(employeeId)).toEqual([
+      { status: 'WITHDRAWN', change: 'ADD', name: '김배우' },
+      { status: 'PENDING', change: 'ADD', name: '김배우자' },
+    ])
+  })
+
+  it('직원을 지우면 열린 피부양자 신고를 닫고 상실 신고는 열지 않습니다', async () => {
+    const employeeId = await hire()
+    const other = await hire()
+    await app.json('POST', `/employees/${employeeId}/family-members`, { body: dependant })
+    const kept = await app.json('POST', `/employees/${other}/family-members`, { body: spouse })
+
+    expect((await app.json('DELETE', `/employees/${employeeId}`)).status).toBe(204)
+    expect(await dependantFilings(employeeId)).toEqual([{ status: 'WITHDRAWN', change: 'ADD', name: '김배우' }])
+    expect((await app.json('GET', `/family-members/${kept.body.id}`)).status).toBe(200)
   })
 })

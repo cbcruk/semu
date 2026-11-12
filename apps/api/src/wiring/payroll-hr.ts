@@ -52,12 +52,14 @@ export const PAYROLL_DEFAULTS_WITHOUT_HR = {
  * 기준일에 유효한 급여계약에서 옮기는 값: 지급 단위(`wageType`), 월급제 기본급(급여계약의 파생 기본급 `baseSalary`, 곧 월급에서
  * 지급항목·고정수당을 뺀 값), 시급제의 시급·일급제의 일급(계약 금액). 해당하지 않는 단위의 금액은 0원입니다.
  *
- * 기준일에 적용되는 소득세 공제 설정에서 옮기는 값: 공제대상 가족 수, 8–20세 자녀 수, 보육수당 비과세 대상 자녀 수
+ * 기준일의 인적공제 대상자에서 세는 값(`countDependants`, 소득세 공제 설정이 없어도 셈): 공제대상 가족 수, 8–20세 자녀 수.
+ *
+ * 기준일에 적용되는 소득세 공제 설정에서 옮기는 값: 보육수당 비과세 대상 자녀 수
  * (`childcareChildrenCount`와 그 설정의 `effectiveFrom`, 없으면 `null`), 원천징수 비율(조정비율 ppm), 직접 입력 세액(`MANUAL`일 때만, 아니면 `null`).
  *
  * 아직 기본값으로 채우는 값입니다.
  * - 급여계약이 없으면 {@link PAYROLL_DEFAULTS_WITHOUT_HR}의 월급제·기본급 300만 원·시급·일급 0원
- * - 소득세 공제 설정이 없으면 같은 기본값의 부양가족 1명, 8–20세 자녀 0명, 원천징수 비율 100%, 직접 입력 세액 없음
+ * - 소득세 공제 설정이 없으면 같은 기본값의 원천징수 비율 100%, 직접 입력 세액 없음(가족 수는 위처럼 셉니다)
  * - 보육수당 비과세 대상 자녀 수는 설정에 없으면 `null`(모름)입니다. 급여 엔진이 1명으로 보고 경고합니다
  * - 퇴직급여 제도는 HR에 저장소가 없어 언제나 퇴직금(`SEVERANCE_PAY`)
  * - 급여계약의 지급항목·고정수당·상여·지급 시기·계좌, 소득세 감면·학자금 상환은 Payroll 포트에 자리가 없어 넘기지 않습니다
@@ -81,6 +83,7 @@ export const PayrollEmployeeDirectoryFromHr: Layer.Layer<PayrollEmployeeDirector
         payrollContract: hr.findPayrollContract(companyId, employee.id, asOf),
         taxWithholding: hr.findTaxWithholding(companyId, employee.id, asOf),
         insurance: hr.socialInsuranceOf(companyId, employee.id, asOf),
+        dependants: hr.countDependants(companyId, employee.id, asOf),
       }).pipe(
         Effect.map((found) =>
           payrollEmployeeOf(employee, {
@@ -88,6 +91,7 @@ export const PayrollEmployeeDirectoryFromHr: Layer.Layer<PayrollEmployeeDirector
             payrollContract: Option.getOrUndefined(found.payrollContract),
             taxWithholding: Option.getOrUndefined(found.taxWithholding),
             insurance: Option.getOrUndefined(found.insurance),
+            dependants: found.dependants,
           }),
         ),
       )
@@ -140,6 +144,7 @@ function payrollEmployeeOf(
     payrollContract: DirectoryPayrollContract | undefined
     taxWithholding: DirectoryTaxWithholding | undefined
     insurance: DirectorySocialInsurance | undefined
+    dependants: { dependantsCount: number; childrenAged8To20Count: number }
   },
 ): PayrollEmployee {
   const weeklyHours = Math.min(hr.workContract?.weeklyWorkHours ?? STANDARD_WEEKLY_HOURS, STANDARD_WEEKLY_HOURS)
@@ -152,7 +157,11 @@ function payrollEmployeeOf(
     joinDate: employee.joinDate,
     leaveDate: employee.leaveDate ?? null,
     ...payOf(hr.payrollContract),
-    incomeTax: incomeTaxOf(hr.taxWithholding),
+    incomeTax: {
+      ...incomeTaxOf(hr.taxWithholding),
+      dependants: hr.dependants.dependantsCount,
+      childrenAged8To20: hr.dependants.childrenAged8To20Count,
+    },
     retirementBenefitType: PAYROLL_DEFAULTS_WITHOUT_HR.retirementBenefitType,
     monthlyStandardHours: monthlyStandardHours(weeklyHours),
     dailyRestMinutes: dailyRestMinutes(weeklyHours),
