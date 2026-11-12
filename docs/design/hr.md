@@ -302,15 +302,18 @@ POST /insurance-filings/{insuranceFilingId}:fail          { message }
 | `LEAVE` | 휴직 등록 | `startDate`, `endDate`, `npsPaymentException`, `nhisNoticeDeferral` |
 | `RETURN` | 복직 | `leaveStartDate`, `returnDate` |
 | `DEPENDANT` | 피부양자 등록 (미구현) | `familyMemberId` |
-| `REMUNERATION_CHANGE` | 두 번째 이후 급여계약의 등록·보수 수정 | `effectiveFrom`(계약 시작일), `wageType`, `amount` |
+| `REMUNERATION_CHANGE` | 급여계약 등록·수정·삭제 때 다시 맞춤(아래) | `effectiveFrom`(계약 시작일), `wageType`, `amount` |
 
 - 신고 코드는 [insurance-filings.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filings.ts), 전이 규칙은 [insurance-filing-rules.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filing-rules.ts)입니다
 - **전이(2026-11-12, #77):** `PENDING` → `DONE`(`:complete`) 또는 `FAILED`(`:fail`, `resultMessage`에 사유). 실패한 신고는 공단에 다시 신고하고 `:complete`로 닫거나 `:fail`로 사유를 바꿉니다. 완료하면 사유를 지웁니다. 닫힌 신고(`DONE`·`WITHDRAWN`)를 처리하면 409 `INSURANCE_FILING_TRANSITION_INVALID`(`currentStatus`)입니다
 - **열린 신고는 `PENDING`과 `FAILED`입니다.** 원인이 취소되면 실패한 신고도 다시 신고할 일이 없으므로 `WITHDRAWN`으로 닫습니다. 복직일을 고쳐 `:return`을 다시 부르면 이전 복직 신고를 닫고 새로 엽니다
-- **보수 변경 신고(`REMUNERATION_CHANGE`)** 는 직원의 두 번째 이후 급여계약이고, 계약 시작일에 국민연금·건강보험·고용보험 중 하나라도 실제로 가입(`socialInsuranceOf`와 같은 판정)일 때 엽니다. 첫 계약의 보수는 취득 신고가 다룹니다. 시작일·지급 단위·금액을 고치면 열린 신고를 닫고 새로 열고, 계약을 지우면 닫습니다. 보수월액 환산은 대리인이 합니다
+- **보수 변경 신고(`REMUNERATION_CHANGE`)** 는 급여계약을 등록·수정·삭제할 때마다 직원의 계약 전체에 다시 맞춥니다([remuneration-change.ts](../../apps/api/src/modules/hr/contracts/remuneration-change.ts)). 시작일 순으로 바로 앞 계약과 지급 단위나 금액이 다르고, 그 시작일에 국민연금·건강보험·고용보험 중 하나라도 실제로 가입(`socialInsuranceOf`와 같은 판정)인 계약이 대상입니다. 가장 이른 계약은 대상이 아닙니다. 그래서 첫 계약을 고치거나 소급 계약을 등록·삭제해 순서가 바뀌면 신고도 따라 바뀝니다. 내용이 같은 신고(열렸거나 완료된)가 있으면 두고, 대상이 아니게 된 계약의 열린 신고는 닫습니다
+- **보수는 계약 금액과 지급 단위만 봅니다.** 시급제의 월 소정근로시간이나 고정수당·지급항목만 바뀐 경우는 잡지 않습니다. 보수월액 환산(일급·시급제 포함)은 대리인이 합니다
+- **취득 신고서의 보수월액**은 직원 등록 때 급여계약이 없어 `payload`에 넣지 않습니다. 대리인이 그 직원의 가장 이른 급여계약에서 읽습니다
+- 직원을 지우면 그 직원의 열린 신고를 모두 닫습니다. 같은 요청에서 연 신고는 `requestedAt`이 같아 목록 안 순서가 정해지지 않습니다
 - **권한:** 목록·조회는 `insurance-filing:read`, 처리는 대리인 전용 `insurance-filing:process`입니다. 고객 관리자의 `*`로는 처리할 수 없습니다(403 `PERMISSION_DENIED`)
 
-- 직원 등록·퇴직·휴직·복직·피부양자 등록이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
+- 직원 등록·퇴직·휴직·복직·급여계약 변경(피부양자 등록은 미구현)이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제, 급여계약 수정·삭제, 직원 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
 - 현행 `employee_work.is_*_work` 플래그와 "○○처리중" 상태를 이 리소스가 대신합니다. 처리 주체는 지금처럼 세무 대리인이고, 자동 EDI는 범위 밖입니다 ([integrations.md](integrations.md))
 
 ## 조직

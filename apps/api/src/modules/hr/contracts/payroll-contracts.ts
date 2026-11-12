@@ -17,6 +17,7 @@ import { appliedEnrollment } from '../social-insurance/applied-enrollment.ts'
 import { SocialInsuranceSettingRepository } from '../social-insurance/social-insurance-setting.ts'
 import { entryInEffect } from '../tax-withholding/tax-withholding-history.ts'
 import { evaluatePayrollContract } from './payroll-contract-evaluation.ts'
+import { type RemunerationChange, remunerationChanges } from './remuneration-change.ts'
 import {
   maskAccountNumber,
   PayrollContractInvalid,
@@ -30,6 +31,11 @@ import { MINIMUM_HOURLY_WAGE_2026 } from './wage-calculation.ts'
 import { contractInForce, workContractStatus } from './work-contract-period.ts'
 import { WorkContractRepository } from './work-contract.ts'
 
+/** 보수 변경 신고 내용이 같은지 봅니다. */
+function samePayload(a: RemunerationChange['payload'], b: RemunerationChange['payload']): boolean {
+  return a.effectiveFrom === b.effectiveFrom && a.wageType === b.wageType && a.amount === b.amount
+}
+
 /**
  * 급여계약 관리입니다. 근로소득자(`WAGE`)만 가질 수 있습니다.
  *
@@ -40,9 +46,9 @@ import { WorkContractRepository } from './work-contract.ts'
  * Payroll `MULTIPLIERS_FIVE_OR_MORE`, 4명 이하면 `MULTIPLIERS_UNDER_FIVE`입니다. 규모가 나중에 바뀌어도 저장한 파생 금액은
  * 다시 저장할 때까지 그대로입니다.
  *
- * 보수가 바뀌면 보수 변경 신고(`REMUNERATION_CHANGE`)를 엽니다. 직원의 두 번째 이후 계약이고, 계약 시작일에 국민연금·건강보험·
- * 고용보험 중 하나라도 가입(`appliedEnrollment`)일 때입니다. 첫 계약의 보수는 취득 신고가 다룹니다. 계약의 시작일·지급 단위·금액을
- * 고치면 열린 신고를 닫고 새로 열고, 계약을 지우면 닫습니다.
+ * 계약을 등록·수정·삭제하면 직원의 보수 변경 신고(`REMUNERATION_CHANGE`)를 계약 전체에 다시 맞춥니다. 시작일 순으로 바로 앞
+ * 계약과 지급 단위나 금액이 다르고, 그날 국민연금·건강보험·고용보험 중 하나라도 가입(`appliedEnrollment`)인 계약이 대상입니다
+ * ({@link remunerationChanges}). 가장 이른 계약의 보수는 취득 신고가 다룹니다.
  */
 export class PayrollContracts extends Context.Service<
   PayrollContracts,
@@ -143,35 +149,53 @@ export class PayrollContracts extends Context.Service<
         }
       })
 
-      /** 보수 변경 신고를 다시 맞춥니다. 같은 계약의 열린 신고를 닫고, 대상이면 새로 엽니다. */
-      const syncRemunerationFiling = Effect.fn('PayrollContracts.syncRemunerationFiling')(function* (
-        employee: EmployeeRecord,
-        record: PayrollContractRecord,
+      /**
+       * 직원의 보수 변경 신고를 계약 전체에 다시 맞춥니다({@link remunerationChanges}). 있어야 할 신고와 내용이 같은 신고(열렸거나
+       * 완료된)가 있으면 그대로 두고, 아니면 그 계약의 열린 신고를 닫고 새로 엽니다. 더는 대상이 아닌 계약(지운 계약 포함)의 열린
+       * 신고는 닫습니다. 계약을 등록·수정·삭제할 때마다 불러, 첫 계약을 고치거나 지워 순서가 바뀌는 경우도 맞춥니다.
+       */
+      const syncRemunerationFilings = Effect.fn('PayrollContracts.syncRemunerationFilings')(function* (
+        companyId: Id<'company'>,
+        employeeId: Id<'employee'>,
         at: string,
       ) {
-        const source = { type: 'PAYROLL_CONTRACT' as const, id: record.id }
-        yield* filings.withdraw(record.companyId, source, 'REMUNERATION_CHANGE', at)
-        const others = (yield* contracts.list(record.companyId)).filter(
-          (contract) => contract.employeeId === record.employeeId && contract.id !== record.id,
+        const employee = Option.getOrUndefined(yield* employees.find(companyId, employeeId))
+        const own = (yield* contracts.list(companyId)).filter((contract) => contract.employeeId === employeeId)
+        const settings = Option.getOrUndefined(yield* insuranceSettings.find(companyId, employeeId))
+        const ownWorkContracts = (yield* workContracts.list(companyId)).filter(
+          (contract) => contract.employeeId === employeeId,
         )
-        if (others.length === 0) return
-        const settings = Option.getOrUndefined(yield* insuranceSettings.find(record.companyId, record.employeeId))
-        const entry = settings === undefined ? undefined : entryInEffect(settings.entries, record.startDate)
-        const workContract = contractInForce(
-          (yield* workContracts.list(record.companyId)).filter((contract) => contract.employeeId === record.employeeId),
-          record.startDate,
+        const enrolledOn = (date: string) => {
+          if (employee === undefined || employee.kind !== 'WAGE') return false
+          const entry = settings === undefined ? undefined : entryInEffect(settings.entries, date)
+          const { recommended } = appliedEnrollment(
+            employee,
+            entry,
+            contractInForce(ownWorkContracts, date)?.weeklyWorkHours,
+            date,
+          )
+          return recommended.nps.enrolled || recommended.nhis.enrolled || recommended.ei.enrolled
+        }
+        const wanted = new Map(
+          remunerationChanges(own, enrolledOn).map((change) => [change.contractId, change.payload]),
         )
-        const { recommended } = appliedEnrollment(employee, entry, workContract?.weeklyWorkHours, record.startDate)
-        if (!recommended.nps.enrolled && !recommended.nhis.enrolled && !recommended.ei.enrolled) return
-        yield* filings.save(
-          pendingFiling(
-            { companyId: record.companyId, employeeId: record.employeeId },
-            'REMUNERATION_CHANGE',
-            source,
-            { effectiveFrom: record.startDate, wageType: record.wageType, amount: record.amount },
-            at,
-          ),
+        const existing = (yield* filings.listByEmployee(companyId, employeeId)).filter(
+          (filing) => filing.kind === 'REMUNERATION_CHANGE' && filing.status !== 'WITHDRAWN',
         )
+        const contractIds = new Set([...existing.map((filing) => filing.source.id), ...wanted.keys()])
+        for (const contractId of contractIds) {
+          const source = { type: 'PAYROLL_CONTRACT' as const, id: contractId }
+          const payload = wanted.get(contractId)
+          const current = existing.filter((filing) => filing.source.id === contractId)
+          if (
+            payload !== undefined &&
+            current.some((filing) => filing.kind === 'REMUNERATION_CHANGE' && samePayload(filing.payload, payload))
+          )
+            continue
+          yield* filings.withdraw(companyId, source, 'REMUNERATION_CHANGE', at)
+          if (payload === undefined) continue
+          yield* filings.save(pendingFiling({ companyId, employeeId }, 'REMUNERATION_CHANGE', source, payload, at))
+        }
       })
 
       const toView = (record: PayrollContractRecord, asOf: string): PayrollContract => {
@@ -217,7 +241,7 @@ export class PayrollContracts extends Context.Service<
             updatedAt: at,
           }
           yield* contracts.save(record)
-          yield* syncRemunerationFiling(employee, record, at)
+          yield* syncRemunerationFilings(actor.companyId, employeeId, at)
           return toView(record, yield* today)
         }),
 
@@ -239,25 +263,14 @@ export class PayrollContracts extends Context.Service<
             updatedAt: yield* now,
           }
           yield* contracts.save(record)
-          const remunerationChanged =
-            record.startDate !== current.startDate ||
-            record.wageType !== current.wageType ||
-            record.amount !== current.amount
-          const employee = Option.getOrUndefined(yield* employees.find(actor.companyId, current.employeeId))
-          if (remunerationChanged && employee !== undefined)
-            yield* syncRemunerationFiling(employee, record, record.updatedAt)
+          yield* syncRemunerationFilings(actor.companyId, current.employeeId, record.updatedAt)
           return toView(record, yield* today)
         }),
 
         remove: Effect.fn('PayrollContracts.remove')(function* (actor, id) {
           const contract = yield* findContract(actor, id)
           yield* contracts.remove(actor.companyId, contract.id)
-          yield* filings.withdraw(
-            actor.companyId,
-            { type: 'PAYROLL_CONTRACT', id: contract.id },
-            'REMUNERATION_CHANGE',
-            yield* now,
-          )
+          yield* syncRemunerationFilings(actor.companyId, contract.employeeId, yield* now)
         }),
 
         revealAccountNumber: Effect.fn('PayrollContracts.revealAccountNumber')(function* (actor, id, reason) {

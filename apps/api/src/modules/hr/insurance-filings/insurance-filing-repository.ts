@@ -38,6 +38,8 @@ export class InsuranceFilingRepository extends Context.Service<
     find(companyId: Id<'company'>, id: Id<'insuranceFiling'>): Effect.Effect<Option.Option<InsuranceFiling>>
     listByEmployee(companyId: Id<'company'>, employeeId: Id<'employee'>): Effect.Effect<ReadonlyArray<InsuranceFiling>>
     save(filing: InsuranceFiling): Effect.Effect<void>
+    /** 직원의 열린 신고(`PENDING`·`FAILED`)를 모두 `WITHDRAWN`으로 닫습니다. 직원을 지울 때 씁니다. */
+    withdrawEmployee(companyId: Id<'company'>, employeeId: Id<'employee'>, at: string): Effect.Effect<void>
     /** 같은 원인·종류의 열린 신고(`PENDING`·`FAILED`)를 `WITHDRAWN`으로 닫습니다. */
     withdraw(
       companyId: Id<'company'>,
@@ -66,6 +68,14 @@ export class InsuranceFilingRepository extends Context.Service<
           listByEmployee: (companyId, employeeId) =>
             Effect.map(table.byCompany(companyId), (filings) => filings.filter((f) => f.employeeId === employeeId)),
           save: (filing) => table.put(filing),
+          withdrawEmployee: (companyId, employeeId, at) =>
+            Effect.flatMap(table.byCompany(companyId), (filings) =>
+              Effect.forEach(
+                filings.filter((filing) => filing.employeeId === employeeId && OPEN_STATUSES.includes(filing.status)),
+                (filing) => table.put({ ...filing, status: 'WITHDRAWN', processedAt: at }),
+                { discard: true },
+              ),
+            ),
           withdraw: (companyId, source, kind, at) =>
             Effect.flatMap(table.byCompany(companyId), (filings) =>
               Effect.forEach(

@@ -132,7 +132,7 @@ describe('4대보험 신고 큐(/v1/insurance-filings)', () => {
     ])
 
     await app.json('PUT', `/payroll-contracts/${raised.id}`, {
-      headers: { 'if-match': raise.headers.get('etag') ?? `"${raised.version}"` },
+      headers: { 'if-match': `"${raised.version}"` },
       body: { ...contract, startDate: '2026-07-01', amount: 3_500_000 },
     })
     expect(
@@ -149,6 +149,63 @@ describe('4대보험 신고 큐(/v1/insurance-filings)', () => {
       'WITHDRAWN',
       'WITHDRAWN',
     ])
+  })
+
+  it('첫 계약을 고치거나 보수가 같은 새 계약은 신고하지 않고, 첫 계약을 지우면 다음 계약의 신고를 닫습니다', async () => {
+    const employeeId = await hire()
+    const first = await app.request('POST', `/employees/${employeeId}/payroll-contracts`, { body: contract })
+    const firstBody = await first.json()
+    await app.json('POST', `/employees/${employeeId}/payroll-contracts`, {
+      body: { ...contract, startDate: '2026-04-01', monthlyWorkHours: 200 },
+    })
+    expect(await filingsOf(employeeId, 'REMUNERATION_CHANGE')).toEqual([])
+
+    await app.json('POST', `/employees/${employeeId}/payroll-contracts`, {
+      body: { ...contract, startDate: '2026-07-01', amount: 3_300_000 },
+    })
+    await app.json('PUT', `/payroll-contracts/${firstBody.id}`, {
+      headers: { 'if-match': `"${firstBody.version}"` },
+      body: { ...contract, amount: 3_100_000 },
+    })
+    // 첫 계약(1월)의 보수는 취득 신고가 다룹니다. 4월 계약은 1월과 금액이 달라져 보수 변경이 됩니다.
+    expect(
+      (await filingsOf(employeeId, 'REMUNERATION_CHANGE'))
+        .filter((filing) => filing.status === 'PENDING')
+        .map((filing) => filing.payload.effectiveFrom)
+        .toSorted(),
+    ).toEqual(['2026-04-01', '2026-07-01'])
+
+    await app.json('DELETE', `/payroll-contracts/${firstBody.id}`)
+    // 4월 계약이 가장 이른 계약이 되어 그 신고를 닫고, 7월 신고는 그대로 둡니다.
+    expect(
+      (await filingsOf(employeeId, 'REMUNERATION_CHANGE'))
+        .filter((filing) => filing.status === 'PENDING')
+        .map((filing) => filing.payload.effectiveFrom),
+    ).toEqual(['2026-07-01'])
+  })
+
+  it('직원을 지우면 열린 신고를 모두 닫습니다', async () => {
+    const employeeId = await hire()
+    await app.json('DELETE', `/employees/${employeeId}`)
+
+    const [acquisition] = await filingsOf(employeeId)
+    expect(acquisition).toMatchObject({ status: 'WITHDRAWN', employeeName: '' })
+    const processed = await app.json('POST', `/insurance-filings/${acquisition!.id}:complete`, { token: 'agent' })
+    expect(processed.body).toMatchObject({ code: 'INSURANCE_FILING_TRANSITION_INVALID', currentStatus: 'WITHDRAWN' })
+  })
+
+  it('읽기 권한만 있어도 목록을 보고, 플랜이 없으면 막습니다', async () => {
+    await hire()
+    const viewer = await app.json('GET', '/insurance-filings', { token: 'viewer' })
+    expect(viewer.status).toBe(200)
+    expect(viewer.body.items).toHaveLength(1)
+    const viewerProcess = await app.json('POST', `/insurance-filings/${viewer.body.items[0].id}:complete`, {
+      token: 'viewer',
+    })
+    expect(viewerProcess.status).toBe(403)
+
+    const noPlan = await app.json('GET', '/insurance-filings', { token: 'no-plan' })
+    expect(noPlan.status).toBe(403)
   })
 
   it('4대보험에 모두 가입하지 않은 직원은 보수 변경 신고를 열지 않습니다', async () => {

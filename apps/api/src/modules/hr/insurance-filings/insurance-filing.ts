@@ -22,7 +22,7 @@ export const InsuranceFilingStatusSchema = Schema.Literals(['PENDING', 'DONE', '
 const common = {
   id: InsuranceFilingId,
   employeeId: EmployeeId,
-  /** 목록에서 대리인이 알아보는 직원 이름입니다. 직원이 지워졌으면 빈 문자열입니다. */
+  /** 목록에서 대리인이 알아보는 직원 이름입니다. 지운 직원의 신고(모두 닫힘)면 빈 문자열입니다. */
   employeeName: Schema.String,
   source: Schema.Struct({
     type: Schema.Literals(['EMPLOYEE', 'LEAVE', 'FAMILY_MEMBER', 'PAYROLL_CONTRACT']),

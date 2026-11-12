@@ -320,6 +320,8 @@ export class Employees extends Context.Service<
           const record = yield* find(actor, id)
           yield* guardSettlement(record)
           yield* employees.remove(actor.companyId, id)
+          // 없는 직원의 신고가 대리인 큐에 남지 않게 열린 신고를 모두 닫습니다.
+          yield* filings.withdrawEmployee(actor.companyId, id, yield* nowIso)
         }),
 
         revealRegistrationNumber: Effect.fn('Employees.revealRegistrationNumber')(function* (actor, id, reason) {

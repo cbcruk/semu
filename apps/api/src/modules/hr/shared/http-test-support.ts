@@ -24,7 +24,10 @@ export function startTestApp(): TestApp {
       ['admin', testActor({ companyId })],
       [
         'viewer',
-        testActor({ companyId, permissions: new Set(['employee:read', 'organization:read', 'esign-request:read']) }),
+        testActor({
+          companyId,
+          permissions: new Set(['employee:read', 'organization:read', 'esign-request:read', 'insurance-filing:read']),
+        }),
       ],
       ['no-plan', testActor({ companyId, plans: new Set() })],
       ['agent', testActor({ companyId, kind: 'AGENCY' })],
