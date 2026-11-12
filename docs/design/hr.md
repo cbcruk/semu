@@ -196,8 +196,13 @@ PUT  /employees/{employeeId}/social-insurance             { effectiveFrom, ...�
 POST /employees/{employeeId}/social-insurance:determine   { 저장하지 않은 값(선택) } → { determinations, messages, recommended }
 ```
 
+- **설정은 `effectiveFrom` 이력입니다(2026-11-12, #77).** 소득세 공제처럼 같은 날짜는 덮어쓰고, `GET`은 기준일(`asOf`, 기본 오늘)에 적용되는 항목을 줍니다. 버전은 직원 한 명의 이력 전체에 하나입니다. 근로소득자(`WAGE`)만 저장합니다(422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 코드는 [social-insurance-settings.ts](../../apps/api/src/modules/hr/social-insurance/social-insurance-settings.ts)입니다
+- 본문은 `effectiveFrom`, 보험별 `nps`·`nhis`·`ei`·`iais { enrolled, exclusionReason? }`, 판정에 쓰는 근로 조건(`weeklyWorkHours?`, `isRepresentativeOrExecutive`, `isRepresentativeRelative`)입니다. 주 소정근로시간이 없으면 그날의 근로계약에서 읽습니다
+- 가입하지 않는 보험은 제외 사유가 있어야 하고(`REQUIRED`), 가입하는 보험은 제외 사유가 없어야 합니다(`NOT_APPLICABLE`). 둘 다 422 `SOCIAL_INSURANCE_SETTING_INVALID`입니다. 상실·취득 신고에 사유 코드가 들어가서입니다. 설정이 없으면 `GET`은 404 `SOCIAL_INSURANCE_SETTING_NOT_FOUND`입니다
+- 응답의 `recommended`는 같은 날의 판정이고, 가입 여부가 판정과 다른 보험은 `warnings[] { code: ELIGIBILITY_MISMATCH, insurance }`입니다. 이때 판정은 저장값이 아니라 모두 가입을 출발점으로 합니다. 저장값을 출발점으로 두면 사용자가 정한 제외를 판정이 그대로 물려받아 차이가 보이지 않습니다. 제외 사유만 다른 것은 차이로 보지 않습니다
+- **급여는 저장한 설정에 자동 판정을 덮어 적용합니다.** `HrDirectory.socialInsuranceOf`는 그날 적용되는 설정의 가입 여부와 근로 조건을 출발점으로(없으면 모두 가입, 대표자·임원·친족 아님) 자동 판정을 적용합니다. 본문 없는 `:determine`과 같은 값이고, 급여대장 행 사본(`snapshot.socialInsurance`)이 이 값입니다. 그래서 가입으로 저장한 직원도 재직 중 만 60세가 되는 날부터 국민연금을 빼고, 근로계약이 초단시간으로 바뀌면 그날부터 국민연금·건강·고용보험을 뺍니다. 판정은 가입을 빼기만 하므로 사용자가 정한 제외는 그대로 남습니다. 다시 저장하지 않아도 되는 대신, 판정이 빼는 보험을 가입으로 강제할 수는 없습니다
 - **자격 판정은 순수 규칙입니다** ([social-insurance-eligibility](../reference/rules/social-insurance-eligibility.md)). 입력은 생년월일·입사일·내외국인·체류자격·주 소정근로시간·대표자/친족 여부이고, 출력은 판정 코드와 권장 가입 여부입니다
-- `:determine` 하나가 현행 `preview`(미저장 값)와 `redetermine`(저장값)을 대신합니다. 본문이 비면 저장된 값으로 판정합니다. 저장하지 않으므로 커맨드지만 멱등입니다
+- `:determine` 하나가 현행 `preview`(미저장 값)와 `redetermine`(저장값)을 대신합니다. 기준일은 `asOf`(기본 오늘)입니다. 본문이 비면 그날 적용되는 저장 설정의 근로 조건과 가입 여부로 판정하고, 본문의 값은 그 근로 조건을 바꿔 봅니다. 판정은 현행처럼 저장된 가입 여부를 출발점으로 하므로 사용자가 정한 제외는 그대로 남습니다. 설정이 없으면 모두 가입을 출발점으로 합니다. 저장하지 않으므로 커맨드지만 멱등입니다
 - 판정·안내 코드는 `NPS_OVER_60_NEW_HIRE`, `NPS_OVER_60_INCUMBENT`, `EI_OVER_65_NEW_HIRE`, `NPS_UNDER_60_HOURS_ENROLLED`, `EI_FOREIGNER_OPTIONAL`, `EI_FOREIGNER_RECIPROCITY_CHECK`로 대문자를 맞춥니다. 상호주의 국가 목록은 두지 않습니다(D-7·D-8·D-9만 본국법 확인 안내). 당연가입이 아닌 그 밖의 체류자격은 신청 전 미적용으로 권합니다([결정](rule-decisions/hr.md#social-insurance-eligibility))
 - 제외 사유는 한글 문장 대신 코드(`AGE_60_OR_OVER`, `SHORT_PART_TIME`, …)로 받고, 표시 문자열은 `GET /reference/insurance-exclusion-reasons`가 줍니다
 - 판정 결과는 권장값입니다. 사용자가 다르게 저장할 수 있고, 그 차이는 `GET` 응답의 `warnings`(`ELIGIBILITY_MISMATCH`)로 보여 줍니다
@@ -345,7 +350,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `listLeaveDates(companyId, employeeIds)` | 직원별 퇴직일(재직 중이면 `null`, 없는 직원은 키 없음). 직원 표만 읽음 | 퇴직금 정산의 퇴직일 대조 |
 | `findWorkContract(companyId, employeeId, asOf)` / `listWorkContracts` | 그날 유효한 근로계약 | 소정근로시간, 수습 |
 | `findPayrollContract(companyId, employeeId, asOf)` | 그날 유효한 급여계약(계좌는 마스킹) | 기본급·지급항목 |
-| `findSocialInsurance(companyId, employeeId, asOf)` | 그날 유효한 4대보험 설정 | 보험료 계산 |
+| `socialInsuranceOf(companyId, employeeId, asOf)` | 그날의 국민연금·건강보험·고용보험 가입 여부. 저장한 설정이 없으면 판정 권장값 | 보험료 계산 |
 | `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 + 보육수당 대상 자녀 수 | 간이세액, 보육수당 비과세 한도 |
 | `listDependants(companyId, employeeId, asOf)` | 인적공제 대상자 | 연말정산, 비과세 수당 |
 | `listLeavesOverlapping(companyId, employeeId, from, to)` | 기간과 겹치는 휴직 | 일할 계산, 근속 |
@@ -377,7 +382,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 | 코드 | HTTP | 뜻 |
 |---|---:|---|
-| `EMPLOYEE_NOT_FOUND`, `LEAVE_NOT_FOUND`, `WORK_CONTRACT_NOT_FOUND`, `PAYROLL_CONTRACT_NOT_FOUND`, `FAMILY_MEMBER_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `POSITION_NOT_FOUND`, `INSURANCE_FILING_NOT_FOUND` | 404 | |
+| `EMPLOYEE_NOT_FOUND`, `LEAVE_NOT_FOUND`, `WORK_CONTRACT_NOT_FOUND`, `PAYROLL_CONTRACT_NOT_FOUND`, `FAMILY_MEMBER_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `POSITION_NOT_FOUND`, `INSURANCE_FILING_NOT_FOUND`, `SOCIAL_INSURANCE_SETTING_NOT_FOUND` | 404 | |
 | `EMPLOYEE_DUPLICATE` | 409 | 같은 종류에 같은 주민등록번호 (`duplicateEmployeeId`) |
 | `RETIREMENT_COMPLETED` | 409 | 퇴직금 정산 완료 직원의 삭제·퇴직 취소 |
 | `EMPLOYEE_NOT_RESIGNED` | 409 | 퇴직하지 않은 직원의 퇴직 취소 |
@@ -389,7 +394,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_DATE_BEFORE_JOIN` | 422 | 퇴직일 검증 |
 | `LEAVING_REASON_INVALID` | 422 | 사유·상세사유 조합이 없음 |
 | `LEAVE_OVERLAP`, `LEAVE_PERIOD_INVALID` | 422 | 휴직 겹침, 기간·복직일·고지유예 조건 위반 (`violations`) |
-| `WORK_CONTRACT_INVALID`, `PAYROLL_CONTRACT_INVALID`, `TAX_WITHHOLDING_INVALID`, `FAMILY_MEMBER_INVALID` | 422 | 규칙 위반 (`violations[].code`) |
+| `WORK_CONTRACT_INVALID`, `PAYROLL_CONTRACT_INVALID`, `TAX_WITHHOLDING_INVALID`, `SOCIAL_INSURANCE_SETTING_INVALID`, `FAMILY_MEMBER_INVALID` | 422 | 규칙 위반 (`violations[].code`) |
 | `EMPLOYEE_INVALID` | 422 | 주민등록번호 형식·여권 생년월일 누락 등 |
 
 현행 `DUPLICATE_EMPLOYEE`는 `EMPLOYEE_DUPLICATE`로, 400이던 업무 규칙 오류는 409/422로 나눕니다.
@@ -460,9 +465,9 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
 | 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
 | 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수·보육수당 대상 자녀 수(선택)를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
-| 4대보험 판정 (`POST /employees/{id}/social-insurance:determine`) | 구현(저장 없는 권장값), HTTP 테스트. 설정 저장(`PUT`) 미구현 |
+| 4대보험 설정·판정 (`GET/PUT /employees/{id}/social-insurance`, `:determine`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 판정과 다르면 `ELIGIBILITY_MISMATCH` 경고. 신고 보수월액은 아직 두지 않음(급여는 과세 급여로 보험료 계산) |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
-| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 권장 가입 여부, 주민번호 원문(열람 기록). 4대보험 설정·인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
+| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 가입 여부(`socialInsuranceOf`, 저장 설정 또는 권장값), 주민번호 원문(열람 기록). 인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
 | 4대보험 신고 | 직원 등록(취득)·퇴사(상실)·휴직·복직 때 `PENDING` 생성, 퇴사 취소·휴직 삭제 때 철회만 구현. 목록과 처리 커맨드 미구현 |
 | 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
 | 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |

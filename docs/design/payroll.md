@@ -681,7 +681,7 @@ flowchart LR
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
 | 퇴직금 정산 (퇴직) | 구현 (메모리). 원천세 합계(`RETIREMENT`)·지급월 신호(`payroll_pay_month.withholding_changed`)·신고 잠금·완료 때 HR 퇴직일 대조(`retirementMismatch`) 포함 |
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary`, `PayrollWithholdingTotals`, `SeveranceSettlementQuery` | 구현 |
-| 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
+| 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정, 4대보험 가입 여부는 HR 4대보험 설정(없으면 판정 권장값)에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |
 | 지급·공제 항목 카탈로그(표준 항목, 회사 항목 CRUD·보관, 행 참조, 정기 대장 기본 항목) | 구현 ([items/](../../apps/api/src/modules/payroll/items/), `payroll_payment_items`·`payroll_deduction_items` 표) |
 | 근무 일정 정책, 카드 단위 항목 일괄 수정(현행 `payment-items/bulk`) | 없음 |

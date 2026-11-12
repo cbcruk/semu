@@ -19,6 +19,7 @@ import { stripUndefined } from '../../shared/http/strip-undefined.ts'
 import { DEFAULT_ENROLLMENT, determineEligibility } from './social-insurance/insurance-eligibility.ts'
 import { entryInEffect } from './tax-withholding/tax-withholding-history.ts'
 import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
+import { SocialInsuranceSettingRepository } from './social-insurance/social-insurance-setting.ts'
 
 /** HR이 쓰고 다른 컨텍스트가 구현하는 포트입니다. Payroll이 `src/wiring/hr-payroll.ts`로 구현합니다. */
 export { SeveranceSettlementLookup } from './ports/severance-settlement-lookup.ts'
@@ -171,8 +172,12 @@ export class HrDirectory extends Context.Service<
       from: string,
       to: string,
     ): Effect.Effect<ReadonlyArray<DirectoryLeave>>
-    /** 기준일의 4대보험 권장 가입 여부입니다. 직원이 없으면 `None`입니다. */
-    recommendSocialInsurance(
+    /**
+     * 기준일의 4대보험 가입 여부입니다. 그날 적용되는 저장된 설정이 있으면 그 가입 여부와 근로 조건을 출발점으로, 없으면
+     * 모두 가입을 출발점으로 자동 판정(재직 중 만 60세, 초단시간 등)을 적용한 값입니다. 본문 없는 `:determine`과 같습니다.
+     * 직원이 없으면 `None`입니다.
+     */
+    socialInsuranceOf(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
       asOf: string,
@@ -194,6 +199,7 @@ export const HrDirectoryLive = Layer.effect(
     const contracts = yield* WorkContractRepository
     const payrollContracts = yield* PayrollContractRepository
     const taxWithholding = yield* TaxWithholdingRepository
+    const socialInsuranceSettings = yield* SocialInsuranceSettingRepository
     const organization = yield* OrganizationRepository
     const cipher = yield* PersonalDataCipher
     const accessLog = yield* PersonalDataAccessLog
@@ -376,10 +382,18 @@ export const HrDirectoryLive = Layer.effect(
               })),
           ),
         ),
-      recommendSocialInsurance: (companyId, employeeId, asOf) =>
-        Effect.all([employees.find(companyId, employeeId), contracts.list(companyId)]).pipe(
-          Effect.map(([record, all]) =>
+      socialInsuranceOf: (companyId, employeeId, asOf) =>
+        Effect.all([
+          employees.find(companyId, employeeId),
+          contracts.list(companyId),
+          socialInsuranceSettings.find(companyId, employeeId),
+        ]).pipe(
+          Effect.map(([record, all, settings]) =>
             Option.map(record, (employee) => {
+              const stored = Option.getOrUndefined(settings)
+              // 저장한 설정이 있으면 그 가입 여부와 근로 조건을 출발점으로 자동 판정을 덮어 적용합니다. 재직 중 만 60세가 되면
+              // 저장값이 가입이어도 국민연금을 빼고, 근로계약이 초단시간으로 바뀌면 그날부터 뺍니다. 사용자가 정한 제외는 남습니다.
+              const entry = stored === undefined ? undefined : entryInEffect(stored.entries, asOf)
               const contract = contractInForce(
                 all.filter((candidate) => candidate.employeeId === employeeId),
                 asOf,
@@ -391,11 +405,11 @@ export const HrDirectoryLive = Layer.effect(
                   isForeigner: employee.isForeigner,
                   visaCode: employee.visaCode,
                   nationalityCode: employee.nationalityCode,
-                  weeklyWorkHours: contract?.weeklyWorkHours,
-                  isRepresentativeOrExecutive: false,
-                  isRepresentativeRelative: false,
+                  weeklyWorkHours: entry?.weeklyWorkHours ?? contract?.weeklyWorkHours,
+                  isRepresentativeOrExecutive: entry?.isRepresentativeOrExecutive ?? false,
+                  isRepresentativeRelative: entry?.isRepresentativeRelative ?? false,
                 },
-                DEFAULT_ENROLLMENT,
+                entry ?? DEFAULT_ENROLLMENT,
                 asOf,
               )
               return {
