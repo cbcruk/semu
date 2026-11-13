@@ -416,10 +416,10 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntake`([signed-document-intake.ts](../../apps/api/src/modules/hr/documents/signed-document-intake.ts))가 받습니다. 같은 요청을 두 번 받아도 결과가 같습니다.
 
-- **완료.** 수신자가 직원이면 완료본을 보관함(`category`는 계약서가 있으면 `CONTRACT`)에 넣고, 문서가 확정한 계약의 `signedDocumentId`를 그 문서로 둡니다. 맞는 계약이 없어도 문서는 넣습니다. 수신자가 직원이 아니거나 직원이 지워졌으면 아무것도 하지 않습니다
-- **확정 규칙**([employee-document-rules.ts](../../apps/api/src/modules/hr/documents/employee-document-rules.ts)): 근로계약서는 근로개시일(비워 두었으면 입사일)에 시작하는 근로계약, 연봉계약서는 적용 시작일에 시작하고 연봉이 같은 급여계약(연봉이 없으면 날짜만)입니다. 여럿이면 가장 나중에 만든 계약 하나입니다
-- **무효.** 문서를 `VOIDED`(`voidedAt`)로 두고, 아직 그 문서를 가리키는 계약에서만 `signedDocumentId`를 지웁니다. 예전 서명 문서로 되돌리지 않습니다
-- **급여계약을 고치면** `signedDocumentId`가 지워집니다. 고친 계약은 다시 서명받아야 확정입니다. 근로계약은 수정이 없습니다
+- **완료.** 수신자가 직원이면 완료본을 보관함(`category`는 계약서가 있으면 `CONTRACT`)에 넣고, 문서가 확정한 계약의 `signedDocumentId`를 그 문서로 둡니다. 맞는 계약이 없어도 문서는 넣습니다. 수신자가 직원이 아니면 아무것도 하지 않고, 직원이 지워졌으면 문서만 넣습니다. 급여계약은 연결이 바뀌면 `version`이 오릅니다
+- **확정 규칙**([employee-document-rules.ts](../../apps/api/src/modules/hr/documents/employee-document-rules.ts)): 근로계약서는 근로개시일(비워 두었으면 입사일)에 시작하는 근로계약, 연봉계약서는 적용 시작일에 시작하고 연봉이 같은 급여계약입니다. 같은 연봉의 계약이 없으면 연봉을 두지 않은 계약(월급만 등록)을 날짜만 보고 고르고, 문서에 연봉이 없으면 날짜만 봅니다. 여럿이면 가장 나중에 만든 계약 하나입니다. 계약 조건은 관리자가 정한 값으로만 판단하고, 서명자는 템플릿이 맡긴 필드(`signer: true`)만 채울 수 있습니다
+- **무효.** 문서를 `VOIDED`(`voidedAt`)로 두고, 아직 그 문서를 가리키는 계약에서만 `signedDocumentId`를 지웁니다. 예전 서명 문서로 되돌리지 않습니다. 무효가 완료보다 먼저 오면(완료 처리가 실패해 재전달될 때) 무효 표식(`hr_voided_esign_requests`)을 남기고, 늦게 온 완료는 문서를 `VOIDED`로 넣고 계약을 잇지 않습니다
+- **급여계약의 근로조건을 고치면** `signedDocumentId`가 지워집니다. 고친 계약은 다시 서명받아야 확정입니다. 계좌만 바꾸면 남깁니다. 보관함 문서의 `links`는 서명 당시 기록이라 그대로 남습니다. 근로계약은 수정이 없습니다
 - **정함(2026-11-13): 서명으로 직원·계약을 만들지 않습니다.** 현행 R29는 서명 완료로 근로·급여계약과 신규 `WAGE` 직원을 만들었지만, 템플릿 필드는 자유 입력이라 계약 형태·임금 형태·주민번호를 믿을 만하게 얻을 수 없습니다. 직원과 계약은 직접 등록하고 서명은 그것을 확정합니다. 사직서 템플릿이 없어 퇴직 사유 초안도 두지 않습니다
 
 ## 오류 코드
@@ -508,7 +508,7 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
 | 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)과 휴직 파생 상태(`SCHEDULED`·`ONGOING`·`ENDED`)는 미구현 |
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 서명한 근로계약서는 `signedDocumentId`로 잇습니다. 계약 수정·삭제 미구현 |
-| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 서명한 연봉계약서는 `signedDocumentId`로 잇고 계약을 고치면 풉니다. 계약 기간 겹침 검사는 미구현 |
+| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 서명한 연봉계약서는 `signedDocumentId`로 잇고 근로조건을 고치면 풉니다. 계약 기간 겹침 검사는 미구현 |
 | 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 공제대상 가족 수·8–20세 자녀 수는 인적공제 대상자에서 세는 읽기 전용 값이고, 보육수당 대상 자녀 수(선택)만 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
 | 4대보험 설정·판정 (`GET/PUT /employees/{id}/social-insurance`, `:determine`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 판정과 다르면 `ELIGIBILITY_MISMATCH` 경고. 신고 보수월액은 아직 두지 않음(급여는 과세 급여로 보험료 계산) |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
@@ -519,7 +519,7 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |
 | 문서 보관함 (`GET /employees/{id}/documents?category=`, `GET /employee-documents/{id}`) | 구현, HTTP 테스트. 전자서명 완료본만 들어옵니다. 직접 올리기·파일 내려받기·삭제(`DOCUMENT_LOCKED`)는 파일 저장소(D7)가 없어 미구현이고, 증명서 발급(`certificate.issued`)도 아직 넣지 않습니다. 직원을 지워도 문서는 남습니다 |
 | 메모, 가족 첨부, 엑셀 내보내기 | 미구현 |
-| 이벤트 구독 | `esign_request.completed`·`esign_request.voided` 구현(outbox, [전자서명 반영](#전자서명-반영)). 무효가 완료보다 먼저 전달되면(완료 처리가 실패해 재전달될 때) 문서가 `ACTIVE`로 남습니다 |
+| 이벤트 구독 | `esign_request.completed`·`esign_request.voided` 구현(outbox, [전자서명 반영](#전자서명-반영)) |
 | 이벤트 발행 | 미구현 |
 | 멱등성 키 재응답 | 미구현 |
 

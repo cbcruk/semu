@@ -96,7 +96,6 @@ flowchart TD
   verify --> complete["서명자 :complete → COMPLETED<br/>esign_request.completed 발행"]
   complete -- "outbox esign_request->hr" --> hrmake["완료본 문서 보관함,<br/>확정한 근로·급여계약에 signedDocumentId"]
   manual["POST /employees<br/>POST work-contracts·payroll-contracts"] --> acq["4대보험 취득 신고 ACQUISITION PENDING"]
-  hrmake -.-> acq
   acq -.-> agentdo["대리인 :complete·:fail"]:::todo
   manual -.-> payroll["급여대장 근로 행 (흐름 1)"]
   payroll -.-> resign[":resign {leaveDate, 상실사유}<br/>상실 신고 LOSS PENDING"]

@@ -27,7 +27,8 @@ export function documentCategoryOf(kinds: ReadonlyArray<string>): EmployeeDocume
  * 서명 완료 문서가 확정하는 계약입니다. 조건이 맞는 계약이 여럿이면 가장 나중에 만든 것 하나만 잇고, 없으면 잇지 않습니다.
  *
  * - 근로계약서: 근로개시일(비워 두었으면 입사일)에 시작하는 근로계약
- * - 연봉계약서: 적용 시작일에 시작하는 급여계약. 연봉이 적혀 있으면 계약의 연봉도 같아야 합니다. 적용 시작일이 없으면 잇지 않습니다
+ * - 연봉계약서: 적용 시작일에 시작하는 급여계약. 연봉이 적혀 있으면 연봉이 같은 계약을 먼저 고르고, 없으면 연봉을 두지 않은
+ *   계약(월급만 등록)을 날짜만 보고 고릅니다. 연봉이 다른 계약은 잇지 않습니다. 적용 시작일이 없으면 잇지 않습니다
  *
  * @example
  * ```ts
@@ -54,11 +55,9 @@ export function signedContractLinks(
     } else if (document.kind === 'SALARY_CONTRACT') {
       const { effectiveDate: 적용시작일, annualSalary: 연봉 } = document.terms
       if (적용시작일 === undefined) continue
-      const 계약 = 가장최근(
-        candidates.payrollContracts.filter(
-          (contract) => contract.startDate === 적용시작일 && (연봉 === undefined || contract.annualSalary === 연봉),
-        ),
-      )
+      const 같은날 = candidates.payrollContracts.filter((contract) => contract.startDate === 적용시작일)
+      const 연봉일치 = 같은날.filter((contract) => 연봉 === undefined || contract.annualSalary === 연봉)
+      const 계약 = 가장최근(연봉일치.length > 0 ? 연봉일치 : 같은날.filter((c) => c.annualSalary === undefined))
       add(계약 === undefined ? undefined : { type: 'PAYROLL_CONTRACT', id: 계약.id })
     }
   }

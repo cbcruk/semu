@@ -20,6 +20,7 @@ import { evaluatePayrollContract } from './payroll-contract-evaluation.ts'
 import { type RemunerationChange, remunerationChanges } from './remuneration-change.ts'
 import {
   maskAccountNumber,
+  PayrollContractInput as PayrollContractInputSchema,
   PayrollContractInvalid,
   PayrollContractNotFound,
   PayrollContractRepository,
@@ -258,6 +259,8 @@ export class PayrollContracts extends Context.Service<
             companyId: current.companyId,
             employeeId: current.employeeId,
             ...fields,
+            // 서명한 연봉계약서는 근로조건이 그대로일 때만 남깁니다. 계좌만 바꾸면 다시 서명받을 일이 아닙니다.
+            signedDocumentId: sameTerms(current, input) ? current.signedDocumentId : undefined,
             version: current.version + 1,
             createdAt: current.createdAt,
             updatedAt: yield* now,
@@ -288,5 +291,21 @@ export class PayrollContracts extends Context.Service<
         }),
       })
     }),
+  )
+}
+
+/** 계좌를 뺀 근로조건이 같은지입니다. 빈 값(`undefined`)과 빠진 키는 같게 봅니다. */
+function sameTerms(current: PayrollContractRecord, input: PayrollContractInput): boolean {
+  const keys = Object.keys(PayrollContractInputSchema.fields).filter((key) => key !== 'account')
+  const pick = (source: object) =>
+    canonical(Object.fromEntries(keys.map((key) => [key, (source as Record<string, unknown>)[key]])))
+  return pick(current) === pick(input)
+}
+
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    inner !== null && typeof inner === 'object' && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).toSorted(([a], [b]) => a.localeCompare(b)))
+      : inner,
   )
 }

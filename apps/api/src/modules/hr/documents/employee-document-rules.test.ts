@@ -93,6 +93,20 @@ describe('서명 문서가 확정하는 계약(signedContractLinks)', () => {
     expect(links).toEqual([{ type: 'PAYROLL_CONTRACT', id: pct(3) }])
   })
 
+  it('연봉이 없는 급여계약(월급만 등록)은 날짜만 보고 잇습니다', () => {
+    const links = signedContractLinks(
+      [
+        {
+          kind: 'SALARY_CONTRACT',
+          title: '연봉계약서',
+          terms: { effectiveDate: '2027-01-01', annualSalary: 50_000_000 },
+        },
+      ],
+      candidates,
+    )
+    expect(links).toEqual([{ type: 'PAYROLL_CONTRACT', id: pct(3) }])
+  })
+
   it('적용 시작일이 없는 연봉계약서는 잇지 않습니다', () => {
     const links = signedContractLinks(
       [{ kind: 'SALARY_CONTRACT', title: '연봉계약서', terms: { annualSalary: 36_000_000 } }],

@@ -76,9 +76,15 @@ export class EmployeeDocumentRepository extends Context.Service<
       esignRequestId: Id<'esignRequest'>,
     ): Effect.Effect<Option.Option<EmployeeDocumentRecord>>
     save(record: EmployeeDocumentRecord): Effect.Effect<void>
+    /**
+     * 보관함에 넣기 전에 무효가 된 요청을 적어 둡니다. outbox 재전달로 완료가 무효보다 늦게 와도 무효로 넣기 위해서입니다.
+     */
+    markVoided(companyId: Id<'company'>, esignRequestId: Id<'esignRequest'>, at: string): Effect.Effect<void>
+    /** {@link markVoided}로 적어 둔 무효 시각입니다. */
+    voidedAt(companyId: Id<'company'>, esignRequestId: Id<'esignRequest'>): Effect.Effect<Option.Option<string>>
   }
 >()('semu/hr/EmployeeDocumentRepository') {
-  /** `hr_employee_documents` 표에 둡니다. 저장 방식은 {@link TableFactory}가 정합니다. */
+  /** `hr_employee_documents` 표(무효 표식은 `hr_voided_esign_requests`)에 둡니다. 저장 방식은 {@link TableFactory}가 정합니다. */
   static readonly layer = (seed: ReadonlyArray<EmployeeDocumentRecord> = []) =>
     Layer.effect(
       EmployeeDocumentRepository,
@@ -87,6 +93,11 @@ export class EmployeeDocumentRepository extends Context.Service<
           seed,
           companyOf: (record) => record.companyId,
         })
+        const voids = yield* (yield* TableFactory).make<{
+          id: Id<'esignRequest'>
+          companyId: Id<'company'>
+          voidedAt: string
+        }>('hr_voided_esign_requests', { companyOf: (record) => record.companyId })
         return EmployeeDocumentRepository.of({
           list: (companyId) => table.byCompany(companyId),
           find: (companyId, id) =>
@@ -99,6 +110,14 @@ export class EmployeeDocumentRepository extends Context.Service<
               Option.fromNullishOr(records.find((record) => record.esignRequestId === esignRequestId)),
             ),
           save: (record) => table.put(record),
+          markVoided: (companyId, esignRequestId, at) => voids.put({ id: esignRequestId, companyId, voidedAt: at }),
+          voidedAt: (companyId, esignRequestId) =>
+            Effect.map(
+              voids.get(esignRequestId),
+              Option.flatMap((record) =>
+                record.companyId === companyId ? Option.some(record.voidedAt) : Option.none(),
+              ),
+            ),
         })
       }),
     )

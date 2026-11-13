@@ -177,9 +177,15 @@ export class Signing extends Context.Service<
           if (!live) return yield* new SignerSessionInvalid({})
           const moved = transitionEsignRequest(status, 'COMPLETE')
           if (!moved.ok || moved.to === 'DELETED') return yield* new EsignLinkClosed({ currentStatus: status })
+          const found = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
+          // 서명자는 템플릿이 서명자에게 맡긴 필드(`signer: true`)만 채웁니다. 관리자가 정한 계약 조건은 덮어쓰지 못합니다.
           const fieldValues: Record<string, Readonly<Record<string, unknown>>> = { ...record.fieldValues }
           for (const [index, values] of Object.entries(signerValues)) {
-            fieldValues[index] = { ...fieldValues[index], ...values }
+            const template = found[Number(index)]
+            if (template === undefined || Option.isNone(template)) continue
+            const signerKeys = new Set(template.value.fields.filter((f) => f.signer).map((f) => f.key))
+            const allowed = Object.fromEntries(Object.entries(values).filter(([key]) => signerKeys.has(key)))
+            fieldValues[index] = { ...fieldValues[index], ...allowed }
           }
           const resultFileId = yield* renderer.render({
             companyId: record.companyId,
@@ -196,7 +202,6 @@ export class Signing extends Context.Service<
             version: record.version + 1,
             updatedAt: now.iso,
           })
-          const found = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
           yield* events.publish({
             type: 'esign_request.completed',
             companyId: record.companyId,
@@ -210,7 +215,7 @@ export class Signing extends Context.Service<
                       index,
                       kind: template.value.kind,
                       title: template.value.title,
-                      terms: signedTermsOf(template.value.kind, fieldValues[String(index)] ?? {}),
+                      terms: signedTermsOf(template.value.kind, record.fieldValues[String(index)] ?? {}),
                     },
                   ]
                 : [],

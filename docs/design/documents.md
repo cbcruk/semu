@@ -156,7 +156,8 @@ sequenceDiagram
 - 닫힌 링크(`DRAFT`, `CANCELED`, `VOIDED`, `EXPIRED`, `SEND_FAILED`, 기한 경과)는 410 `ESIGN_LINK_CLOSED`(`status`)이고, 화면은 `status`로 취소·만료 화면을 고릅니다. 모르는 토큰은 404 `ESIGN_LINK_NOT_FOUND`입니다
 - 세션은 30분이고 서버는 토큰·세션의 SHA-256 해시만 저장합니다
 - **완료 처리는 한 트랜잭션입니다.** 모든 문서에 서명 이미지가 있는지, 사직서면 퇴직 사유가 유효한지 확인하고, PDF(감사 추적: 이벤트·IP·UA·문서 해시)를 만들어 저장하고 `COMPLETED`로 바꾸고 `esign_request.completed`를 냅니다. 이벤트는 outbox 채널 `esign_request->hr`로 커밋 뒤 HR에 갑니다([documents-hr.ts](../../apps/api/src/wiring/documents-hr.ts), [hr.md](hr.md#전자서명-반영))
-- 완료 이벤트에는 문서마다 종류·제목과 계약 조건(`terms`)만 담습니다. 근로계약서는 근로개시일(`startDate`), 연봉계약서는 적용 시작일(`effectiveDate`)과 연봉(`annualSalary`)이고, 형식이 틀린 값은 버립니다([signed-terms.ts](../../apps/api/src/modules/documents/signing/signed-terms.ts)). 서명자가 입력한 주소 같은 다른 값은 넘기지 않습니다
+- 완료 이벤트에는 문서마다 종류·제목과 계약 조건(`terms`)만 담습니다. 근로계약서는 근로개시일(`startDate`), 연봉계약서는 적용 시작일(`effectiveDate`)과 연봉(`annualSalary`)이고, 형식이 틀린 값은 버립니다([signed-terms.ts](../../apps/api/src/modules/documents/signing/signed-terms.ts)). 계약 조건은 관리자가 정한 값에서만 뽑고, 서명자가 입력한 주소 같은 값은 넘기지 않습니다
+- `:complete`의 `signerValues`는 템플릿이 서명자에게 맡긴 필드(`signer: true`)만 받고 나머지 키는 버립니다. 서명자가 관리자 값(연봉·시작일 등)을 덮어쓸 수 없습니다
 - `:void`는 `esign_request.voided`를 같은 채널로 냅니다
 - 완료·만료 알림톡은 알림 수신자(최대 3명, 없으면 대표자)에게, 완료본 사본은 수신자 이메일로 보냅니다
 

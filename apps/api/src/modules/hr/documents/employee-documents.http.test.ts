@@ -53,7 +53,12 @@ async function payrollContract(employeeId: string): Promise<string> {
 }
 
 /** 요청을 만들어 보내고 서명자가 본인확인 뒤 서명을 마칩니다. 요청 ID를 돌려줍니다. */
-async function signed(recipient: Record<string, unknown>, templateIds: string[], fieldValues: object): Promise<string> {
+async function signed(
+  recipient: Record<string, unknown>,
+  templateIds: string[],
+  fieldValues: object,
+  signerValues: object = { '0': { signerAddress: '서울' } },
+): Promise<string> {
   const created = await app.json('POST', '/esign-requests', {
     body: { title: '2026 근로·연봉계약', recipient, templateIds, fieldValues, companySealId: sealId },
   })
@@ -65,7 +70,7 @@ async function signed(recipient: Record<string, unknown>, templateIds: string[],
   })
   const completed = await app.json('POST', `/esign-links/${token}:complete`, {
     headers: { 'x-signer-session': verified.body.sessionToken },
-    body: { signerValues: { '0': { signerAddress: '서울' } } },
+    body: { signerValues },
   })
   expect(completed.body).toMatchObject({ status: 'COMPLETED' })
   return created.body.id
@@ -143,6 +148,45 @@ describe('전자서명 완료를 문서 보관함에 반영', () => {
     })
     expect(updated.status).toBe(200)
     expect(updated.body.signedDocumentId).toBeUndefined()
+  })
+
+  it('서명자는 관리자가 정한 계약 조건을 덮어써 다른 계약을 확정할 수 없습니다', async () => {
+    const employeeId = await hire()
+    const offered = await payrollContract(employeeId)
+    const other = await app.json('POST', `/employees/${employeeId}/payroll-contracts`, {
+      body: { ...payrollTerms, amount: 3_000_000, annualSalary: 36_000_000 },
+    })
+
+    const requestId = await signed({ employeeId }, [EMPLOYMENT_CONTRACT, SALARY_CONTRACT], contractFields, {
+      '0': { signerAddress: '서울', startDate: '2030-01-01' },
+      '1': { annualSalary: 36_000_000 },
+    })
+
+    const [document] = (await app.json('GET', `/employees/${employeeId}/documents`)).body.items
+    expect(document.links).toContainEqual({ type: 'PAYROLL_CONTRACT', id: offered })
+    expect(document.links).not.toContainEqual({ type: 'PAYROLL_CONTRACT', id: other.body.id })
+    const request = await app.json('GET', `/esign-requests/${requestId}`)
+    expect(request.body.fieldValues['1']).toMatchObject({ annualSalary: 42_000_000 })
+    expect(request.body.fieldValues['0']).toMatchObject({ signerAddress: '서울' })
+    expect(request.body.fieldValues['0'].startDate).toBeUndefined()
+  })
+
+  it('급여계약의 계좌만 바꾸면 서명 문서가 남고, 연결이 바뀌면 버전이 오릅니다', async () => {
+    const employeeId = await hire()
+    const payrollContractId = await payrollContract(employeeId)
+    await signed({ employeeId }, [EMPLOYMENT_CONTRACT, SALARY_CONTRACT], contractFields)
+
+    const current = await app.json('GET', `/payroll-contracts/${payrollContractId}`)
+    expect(current.body.version).toBe(2)
+    const updated = await app.json('PUT', `/payroll-contracts/${payrollContractId}`, {
+      headers: { 'if-match': `"${current.body.version}"` },
+      body: {
+        ...payrollTerms,
+        account: { bankCode: '004', accountNumber: '123-456-789012', accountHolder: '홍길동' },
+      },
+    })
+    expect(updated.status).toBe(200)
+    expect(updated.body.signedDocumentId).toBe(current.body.signedDocumentId)
   })
 
   it('완료한 요청을 무효로 하면 문서는 남고 계약에서 풀립니다', async () => {
