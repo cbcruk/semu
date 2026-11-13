@@ -4,7 +4,7 @@ import { IdSchema } from '../../../shared/ids/id-schema.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
-import { EmployeeId, PayrollContractId, Violations } from '../shared/hr-schemas.ts'
+import { EmployeeDocumentId, EmployeeId, PayrollContractId, Violations } from '../shared/hr-schemas.ts'
 import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { PayrollContractDerived, PayrollContractWarning } from './payroll-contract-evaluation.types.ts'
 
@@ -103,6 +103,8 @@ export const PayrollContract = Schema.Struct({
   ),
   derived: PayrollContractDerivedSchema,
   warnings: Schema.Array(Schema.Literals(['BELOW_MINIMUM_WAGE', 'PROBATION_BELOW_MINIMUM_WAGE'])),
+  /** 이 계약을 서명한 연봉계약서입니다(문서 보관함). 전자서명이 완료되면 HR이 잇고, 계약을 고치거나 무효로 하면 풉니다. */
+  signedDocumentId: Schema.optionalKey(EmployeeDocumentId),
   /** 기준일(오늘)의 계약 상태입니다. */
   status: Schema.Literals(['SCHEDULED', 'ACTIVE', 'EXPIRED']),
   version: Schema.Int,
@@ -121,6 +123,7 @@ export interface PayrollContractRecord extends Omit<PayrollContractInput, 'accou
   account?: { bankCode: string; accountNumberEncrypted: string; accountNumberMasked: string; accountHolder: string }
   derived: PayrollContractDerived
   warnings: ReadonlyArray<PayrollContractWarning>
+  signedDocumentId?: Id<'document'> | undefined
   version: number
   createdAt: string
   updatedAt: string

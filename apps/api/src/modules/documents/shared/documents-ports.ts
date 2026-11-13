@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto'
-import { Context, Effect, Layer, Ref } from 'effect'
+import { Context, Effect, Layer } from 'effect'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { identityMatches } from '../signing/signer-verification.ts'
+import type { signedTermsOf } from '../signing/signed-terms.ts'
+import type { DocumentKind, SignedTerms } from '../signing/signed-terms.types.ts'
 
 /** 발송 결과입니다. 실패하면 요청이 `SEND_FAILED`가 됩니다. */
 export interface DeliveryResult {
@@ -75,6 +77,15 @@ export class SignerIdentityVerifier extends Context.Service<
   )
 }
 
+/** 서명 완료 요청에 든 문서 하나입니다. 순서는 요청의 템플릿 순서입니다. */
+export interface SignedDocumentSummary {
+  index: number
+  kind: DocumentKind
+  title: string
+  /** 인사 기록에 이어 붙일 계약 조건입니다({@link signedTermsOf}). */
+  terms: SignedTerms
+}
+
 /** 문서 컨텍스트가 내는 도메인 이벤트입니다. */
 export type DocumentEvent =
   | { type: 'esign_request.sent'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
@@ -82,26 +93,25 @@ export type DocumentEvent =
       type: 'esign_request.completed'
       companyId: Id<'company'>
       requestId: Id<'esignRequest'>
+      /** 수신자가 직원이면 있습니다. 신규 계약자는 없습니다. */
       employeeId?: Id<'employee'>
-      documentKinds: ReadonlyArray<string>
+      title: string
+      documents: ReadonlyArray<SignedDocumentSummary>
       resultFileId: Id<'file'>
       at: string
     }
+  /** 완료한 요청을 `:void`로 무효로 했습니다. 완료본 파일은 남습니다. */
+  | { type: 'esign_request.voided'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
   | { type: 'certificate.issued'; companyId: Id<'company'>; issuanceId: Id<'certificateIssuance'>; at: string }
 
-/** 도메인 이벤트를 내보내는 포트입니다. 아웃박스가 생기면 그 구현을 넣습니다. */
+/**
+ * 도메인 이벤트를 내보내는 포트입니다. 앱은 outbox로 HR에 넘기는 구현(`src/wiring/documents-hr.ts`)을 넣습니다.
+ * 소비자는 같은 이벤트를 두 번 받아도 같은 결과여야 합니다.
+ */
 export class DocumentEvents extends Context.Service<
   DocumentEvents,
-  { publish(event: DocumentEvent): Effect.Effect<void>; published(): Effect.Effect<ReadonlyArray<DocumentEvent>> }
+  { publish(event: DocumentEvent): Effect.Effect<void> }
 >()('semu/documents/DocumentEvents') {
-  /** 낸 이벤트를 메모리에 쌓습니다. */
-  static readonly layerMemory = Layer.effect(
-    DocumentEvents,
-    Effect.map(Ref.make<ReadonlyArray<DocumentEvent>>([]), (store) =>
-      DocumentEvents.of({
-        publish: (event) => Ref.update(store, (events) => [...events, event]),
-        published: () => Ref.get(store),
-      }),
-    ),
-  )
+  /** 받는 곳 없이 버립니다. 문서 컨텍스트만 띄울 때 씁니다. */
+  static readonly layerDiscard = Layer.succeed(DocumentEvents, DocumentEvents.of({ publish: () => Effect.void }))
 }

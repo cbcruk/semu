@@ -60,7 +60,7 @@ GET  /events/stream?ticket=…&since=18200  Server-Sent Events
 | Integrations | `scrap_request.completed` (`job.completed`) | 단말 | 설계. 수집 레코드 자체는 이벤트가 아니라 `ScrapedRecordIngestion` 호출로 넘김(아래) |
 | Tax | `filing.status_changed` | 단말, 알림. Payroll은 받지 않고 대장 잠금을 `WithholdingFilingLock` 조회로 판정하며, 할 일 카드는 같은 요청 안에서 바뀜 | 구현(메모리 발행), 소비자 없음 |
 | HR | `employee.joined`, `employee.resigned`, `leave.started`, `leave.ended` | Payroll(명단 변경 경고), Documents | 설계 |
-| Documents | `esign_request.sent`, `esign_request.completed`, `certificate.issued` | HR(서명 완료 시 근로·급여계약과 문서 보관함 생성) | 발행 구현, HR 소비는 설계 |
+| Documents | `esign_request.sent`, `esign_request.completed`, `esign_request.voided`, `certificate.issued` | HR(완료본을 문서 보관함에 넣고 확정한 근로·급여계약에 연결, 무효면 풂) | `completed`·`voided` 구현(outbox `esign_request->hr`). `sent`·`certificate.issued`는 받는 곳이 없어 버림 |
 | Payroll | `payroll_pay_month.closed`, `payroll_pay_month.reopened`, `payroll_pay_month.withholding_changed` | Tax(원천세 신고의 급여대장 항목 `provided` 판정을 다시 맞춤) | 구현(outbox) |
 | Bookkeeping | `evidence.ingested`, `tax_invoice.issued`, `giro.paid` | 단말, Tax(예상 부가세 갱신 알림) | 설계 |
 | 공통 | `job.completed`, `reset` | 단말 | 설계 |

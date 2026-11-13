@@ -141,11 +141,11 @@ POST   /employees:export                             X-Access-Reason 필수 → 
 
 ```
 WorkContract
-├─ id, employeeId, origin: MANUAL | ESIGN, esignRequestId?
+├─ id, employeeId, signedDocumentId? (서명한 근로계약서, 보관함 문서)
 ├─ contractType: PERMANENT | FIXED_TERM, startDate, endDate?
 ├─ workType, occupationCode?, weeklyWorkHours?, workSchedulePolicyId?, workConditionId?
 ├─ probation?: { months, payRatePpm }, standardOccupationCode?, termLimitExemption?
-├─ jobDescription?, documentId?
+├─ jobDescription?
 └─ status (파생): SCHEDULED | ACTIVE | EXPIRED
 ```
 
@@ -359,6 +359,7 @@ GET    /reference/document-categories
 - 카테고리는 `CONTRACT` / `CERTIFICATE` / `CONSENT` / `RESIGNATION` / `OTHER`, 출처는 `UPLOAD` / `ESIGN` / `CERTIFICATE`입니다. 전자서명 완료본과 발급 증명서는 Documents 이벤트로 서버가 넣습니다
 - 파일은 PDF·JPEG·PNG, 10MB 이하이고 MIME은 서버가 내용으로 판정합니다(클라이언트가 보낸 `mime_type`을 믿지 않습니다)
 - 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않습니다(409 `DOCUMENT_LOCKED`)
+- 지금은 두 조회(`GET …/documents`, `GET /employee-documents/{id}`)만 있고 전자서명 완료본만 들어옵니다. 응답은 `status`(`ACTIVE`/`VOIDED`), `esignRequestId`, `signedAt`, 확정한 계약 `links[]`를 담습니다([전자서명 반영](#전자서명-반영), [구현 상태](#구현-상태))
 
 ## 개인정보
 
@@ -394,7 +395,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 ## 이벤트
 
-**모두 미구현입니다.** HR은 지금 이벤트를 내지도 받지도 않습니다([구현 상태](#구현-상태)). 이름은 [events.md](events.md#이벤트-목록)의 이벤트 목록과 snake_case 규칙을 따릅니다. events.md 목록에 아직 없는 이벤트는 "목록에 없음"으로 표시했습니다.
+**HR이 내는 이벤트는 모두 미구현입니다.** 받는 쪽은 전자서명 완료·무효만 구현했습니다([전자서명 반영](#전자서명-반영), [구현 상태](#구현-상태)). 이름은 [events.md](events.md#이벤트-목록)의 이벤트 목록과 snake_case 규칙을 따릅니다. events.md 목록에 아직 없는 이벤트는 "목록에 없음"으로 표시했습니다.
 
 | 이벤트 | 낼 때 | 받는 곳 | events.md |
 |---|---|---|---|
@@ -407,14 +408,25 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 | 받는 이벤트 | 하는 일 |
 |---|---|
-| `esign_request.completed` (Documents) | 근로·연봉계약서면 근로계약(`origin: ESIGN`)과 급여계약을 만들고, 수신자가 직원이 아니면 `WAGE` 직원을 만들고, 완료본을 보관함에 넣고, 사직서면 퇴직 사유 초안을 남깁니다 (현행 R29) |
-| `certificate.issued` (Documents) | 증명서 PDF를 보관함에 넣습니다 |
+| `esign_request.completed` (Documents) | 완료본을 보관함에 넣고 그 문서가 확정한 근로·급여계약에 서명 문서를 잇습니다. 구현([전자서명 반영](#전자서명-반영)) |
+| `esign_request.voided` (Documents) | 보관함 문서를 `VOIDED`로 두고 계약에서 서명 문서를 풉니다. 구현 |
+| `certificate.issued` (Documents) | 증명서 PDF를 보관함에 넣습니다. 미구현 |
+
+### 전자서명 반영
+
+Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntake`([signed-document-intake.ts](../../apps/api/src/modules/hr/documents/signed-document-intake.ts))가 받습니다. 같은 요청을 두 번 받아도 결과가 같습니다.
+
+- **완료.** 수신자가 직원이면 완료본을 보관함(`category`는 계약서가 있으면 `CONTRACT`)에 넣고, 문서가 확정한 계약의 `signedDocumentId`를 그 문서로 둡니다. 맞는 계약이 없어도 문서는 넣습니다. 수신자가 직원이 아니거나 직원이 지워졌으면 아무것도 하지 않습니다
+- **확정 규칙**([employee-document-rules.ts](../../apps/api/src/modules/hr/documents/employee-document-rules.ts)): 근로계약서는 근로개시일(비워 두었으면 입사일)에 시작하는 근로계약, 연봉계약서는 적용 시작일에 시작하고 연봉이 같은 급여계약(연봉이 없으면 날짜만)입니다. 여럿이면 가장 나중에 만든 계약 하나입니다
+- **무효.** 문서를 `VOIDED`(`voidedAt`)로 두고, 아직 그 문서를 가리키는 계약에서만 `signedDocumentId`를 지웁니다. 예전 서명 문서로 되돌리지 않습니다
+- **급여계약을 고치면** `signedDocumentId`가 지워집니다. 고친 계약은 다시 서명받아야 확정입니다. 근로계약은 수정이 없습니다
+- **정함(2026-11-13): 서명으로 직원·계약을 만들지 않습니다.** 현행 R29는 서명 완료로 근로·급여계약과 신규 `WAGE` 직원을 만들었지만, 템플릿 필드는 자유 입력이라 계약 형태·임금 형태·주민번호를 믿을 만하게 얻을 수 없습니다. 직원과 계약은 직접 등록하고 서명은 그것을 확정합니다. 사직서 템플릿이 없어 퇴직 사유 초안도 두지 않습니다
 
 ## 오류 코드
 
 | 코드 | HTTP | 뜻 |
 |---|---:|---|
-| `EMPLOYEE_NOT_FOUND`, `LEAVE_NOT_FOUND`, `WORK_CONTRACT_NOT_FOUND`, `PAYROLL_CONTRACT_NOT_FOUND`, `FAMILY_MEMBER_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `POSITION_NOT_FOUND`, `INSURANCE_FILING_NOT_FOUND`, `SOCIAL_INSURANCE_SETTING_NOT_FOUND` | 404 | |
+| `EMPLOYEE_NOT_FOUND`, `LEAVE_NOT_FOUND`, `WORK_CONTRACT_NOT_FOUND`, `PAYROLL_CONTRACT_NOT_FOUND`, `FAMILY_MEMBER_NOT_FOUND`, `EMPLOYEE_DOCUMENT_NOT_FOUND`, `DEPARTMENT_NOT_FOUND`, `POSITION_NOT_FOUND`, `INSURANCE_FILING_NOT_FOUND`, `SOCIAL_INSURANCE_SETTING_NOT_FOUND` | 404 | |
 | `EMPLOYEE_DUPLICATE` | 409 | 같은 종류에 같은 주민등록번호 (`duplicateEmployeeId`) |
 | `RETIREMENT_COMPLETED` | 409 | 퇴직금 정산 완료 직원의 삭제·퇴직 취소 |
 | `EMPLOYEE_NOT_RESIGNED` | 409 | 퇴직하지 않은 직원의 퇴직 취소 |
@@ -495,8 +507,8 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 가족 검사·피부양자 신고 구분, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 |
 | 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
 | 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)과 휴직 파생 상태(`SCHEDULED`·`ONGOING`·`ENDED`)는 미구현 |
-| 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
-| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
+| 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 서명한 근로계약서는 `signedDocumentId`로 잇습니다. 계약 수정·삭제 미구현 |
+| 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 서명한 연봉계약서는 `signedDocumentId`로 잇고 계약을 고치면 풉니다. 계약 기간 겹침 검사는 미구현 |
 | 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 공제대상 가족 수·8–20세 자녀 수는 인적공제 대상자에서 세는 읽기 전용 값이고, 보육수당 대상 자녀 수(선택)만 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
 | 4대보험 설정·판정 (`GET/PUT /employees/{id}/social-insurance`, `:determine`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 판정과 다르면 `ELIGIBILITY_MISMATCH` 경고. 신고 보수월액은 아직 두지 않음(급여는 과세 급여로 보험료 계산) |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
@@ -505,8 +517,10 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | 인적공제 대상자 (`GET/POST /employees/{id}/family-members`, `GET/PUT/DELETE /family-members/{id}`, `registration-number:reveal`) | 구현, HTTP 테스트. `WAGE`만, 주민번호 암호화·열람 기록, 공제대상 가족 수 파생, 피부양자 취득·상실 신고. 첨부 미구현 |
 | 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |
-| 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기 | 미구현 |
-| 이벤트 발행·구독 (`esign_request.completed` 처리 포함) | 미구현. 이벤트 버스가 없습니다 |
+| 문서 보관함 (`GET /employees/{id}/documents?category=`, `GET /employee-documents/{id}`) | 구현, HTTP 테스트. 전자서명 완료본만 들어옵니다. 직접 올리기·파일 내려받기·삭제(`DOCUMENT_LOCKED`)는 파일 저장소(D7)가 없어 미구현이고, 증명서 발급(`certificate.issued`)도 아직 넣지 않습니다. 직원을 지워도 문서는 남습니다 |
+| 메모, 가족 첨부, 엑셀 내보내기 | 미구현 |
+| 이벤트 구독 | `esign_request.completed`·`esign_request.voided` 구현(outbox, [전자서명 반영](#전자서명-반영)). 무효가 완료보다 먼저 전달되면(완료 처리가 실패해 재전달될 때) 문서가 `ACTIVE`로 남습니다 |
+| 이벤트 발행 | 미구현 |
 | 멱등성 키 재응답 | 미구현 |
 
 ## 열린 질문

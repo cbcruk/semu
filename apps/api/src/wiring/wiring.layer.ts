@@ -1,11 +1,12 @@
 import { Layer } from 'effect'
-import { HrDirectoryLive } from '../modules/hr/hr.public.ts'
+import { HrDirectoryLive, SignedDocumentIntake } from '../modules/hr/hr.public.ts'
 import { PayrollPublicLive } from '../modules/payroll/payroll.layer.ts'
 import { TaxPublicLive } from '../modules/tax/tax.layer.ts'
 import { BillingPublicHolidaysFromCalendar } from './billing-public-holidays.ts'
 import { BookkeepingIntegrationsLive } from './bookkeeping-integrations.ts'
 import { BookkeepingLaborCostFromPayroll } from './bookkeeping-payroll.ts'
 import { BookkeepingVatEstimateFromTax } from './bookkeeping-tax.ts'
+import { DocumentEventsToHr } from './documents-hr.ts'
 import { IdentityAccessBusinessStatusFromIntegrations } from './identity-access-integrations.ts'
 import { IdentityAccessAgencyWorkloadFromTax } from './identity-access-tax.ts'
 import { IntegrationsRecordSinkFromBookkeeping } from './integrations-bookkeeping.ts'
@@ -29,6 +30,7 @@ const StoreBackedAdapters = Layer.mergeAll(
   IntegrationsRecordSinkFromBookkeeping,
   IntegrationsCompanyProfilesFromIdentityAccess,
   IdentityAccessBusinessStatusFromIntegrations,
+  DocumentEventsToHr.pipe(Layer.provide(SignedDocumentIntake.layer)),
 )
 
 /** Payroll 공개 서비스로 만드는 어댑터입니다. */
@@ -69,6 +71,7 @@ const TaxBackedAdapters = Layer.mergeAll(
  * | Identity & Access `AgencyWorkload` | Tax `AgencyWorkloadQuery` | `identity-access-tax.ts` |
  * | Identity & Access `BusinessStatusCheck` | Integrations `BusinessStatusClient` | `identity-access-integrations.ts` |
  * | Documents `HrDirectory` | HR `HrDirectoryLive` | 어댑터 없이 HR 공개 조회를 그대로 씁니다 |
+ * | Documents `DocumentEvents` | HR `SignedDocumentIntake` | `documents-hr.ts` (outbox 채널 `esign_request->hr`) |
  *
  * 만드는 순서는 저장소 → HR 공개 조회 → 저장소 어댑터 → Payroll 공개 서비스 → Payroll 어댑터 → Tax 공개 서비스 → Tax 어댑터입니다.
  * 모든 어댑터와 공개 서비스가 호출하는 쪽이 넣은 저장소 인스턴스 하나를 함께 쓰므로, 한 컨텍스트에 쓴 값이 다른 컨텍스트에 바로 보입니다.

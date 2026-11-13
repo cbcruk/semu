@@ -13,6 +13,7 @@ import type { EsignRequestStatus } from '../esign/esign-request-status.types.ts'
 import { DocumentEvents, PdfRenderer, SignerIdentityVerifier } from '../shared/documents-ports.ts'
 import { EsignTemplateRepository } from '../templates/esign-template.ts'
 import { decideVerification, maskName, SIGNER_SESSION_MINUTES } from './signer-verification.ts'
+import { signedTermsOf } from './signed-terms.ts'
 
 /** 링크 토큰에 맞는 요청이 없습니다. */
 export class EsignLinkNotFound extends HttpApiError.Problem<EsignLinkNotFound>()(
@@ -195,13 +196,25 @@ export class Signing extends Context.Service<
             version: record.version + 1,
             updatedAt: now.iso,
           })
-          const kinds = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
+          const found = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
           yield* events.publish({
             type: 'esign_request.completed',
             companyId: record.companyId,
             requestId: record.id,
             ...(record.recipient.employeeId === undefined ? {} : { employeeId: record.recipient.employeeId }),
-            documentKinds: kinds.flatMap((template) => (Option.isSome(template) ? [template.value.kind] : [])),
+            title: record.title,
+            documents: found.flatMap((template, index) =>
+              Option.isSome(template)
+                ? [
+                    {
+                      index,
+                      kind: template.value.kind,
+                      title: template.value.title,
+                      terms: signedTermsOf(template.value.kind, fieldValues[String(index)] ?? {}),
+                    },
+                  ]
+                : [],
+            ),
             resultFileId,
             at: now.iso,
           })

@@ -323,6 +323,14 @@ export class EsignRequests extends Context.Service<
             updatedAt: now.iso,
           }
           yield* requests.save(next)
+          if (command === 'VOID') {
+            yield* events.publish({
+              type: 'esign_request.voided',
+              companyId: actor.companyId,
+              requestId: id,
+              at: now.iso,
+            })
+          }
           return toView(next, now.today)
         }),
       })

@@ -28,6 +28,9 @@ import { SocialInsuranceSettingRepository } from './social-insurance/social-insu
 export { SeveranceSettlementLookup } from './ports/severance-settlement-lookup.ts'
 export type { SeveranceSettlementStatus } from './retirement/retirement.types.ts'
 
+/** 전자서명 결과를 받는 HR 서비스입니다. Documents 이벤트를 `src/wiring/documents-hr.ts`가 넘깁니다. */
+export { SignedDocumentIntake, type CompletedEsignRequest } from './documents/signed-document-intake.ts'
+
 /** 다른 컨텍스트에 보이는 직원입니다. 주민번호 원문은 담지 않습니다. */
 export interface DirectoryEmployee {
   id: Id<'employee'>
