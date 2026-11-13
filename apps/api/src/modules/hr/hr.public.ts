@@ -19,6 +19,9 @@ import { stripUndefined } from '../../shared/http/strip-undefined.ts'
 import { appliedEnrollment } from './social-insurance/applied-enrollment.ts'
 import { entryInEffect } from './tax-withholding/tax-withholding-history.ts'
 import { TaxWithholdingRepository } from './tax-withholding/tax-withholding.ts'
+import { countDependants } from './family/dependant-rules.ts'
+import { FamilyMemberRepository } from './family/family-member.ts'
+import type { DependantCounts } from './family/family-member.types.ts'
 import { SocialInsuranceSettingRepository } from './social-insurance/social-insurance-setting.ts'
 
 /** HR이 쓰고 다른 컨텍스트가 구현하는 포트입니다. Payroll이 `src/wiring/hr-payroll.ts`로 구현합니다. */
@@ -74,8 +77,9 @@ export interface DirectoryPayrollContract {
 /** 다른 컨텍스트에 보이는 소득세 공제 설정입니다. 기준일에 적용되는 이력 항목입니다. */
 export interface DirectoryTaxWithholding {
   effectiveFrom: string
-  /** 본인을 포함한 공제대상 가족 수입니다. */
+  /** 본인을 포함한 공제대상 가족 수입니다. `asOf`의 인적공제 대상자 중 연말정산 대상에서 셉니다. */
   dependantsCount: number
+  /** 공제대상 가족 중 8–20세 자녀 수입니다(`asOf`의 연도 − 출생 연도). */
   childrenAged8To20Count: number
   /** 보육수당 비과세 대상 자녀 수(과세기간 개시일 현재 6세 이하)입니다. 입력하지 않았으면 없습니다. */
   childcareChildrenCount?: number
@@ -160,7 +164,7 @@ export class HrDirectory extends Context.Service<
       employeeId: Id<'employee'>,
       asOf: string,
     ): Effect.Effect<Option.Option<DirectoryPayrollContract>>
-    /** `asOf`에 적용되는 소득세 공제 설정입니다. */
+    /** `asOf`에 적용되는 소득세 공제 설정입니다. 공제대상 가족 수는 그날의 인적공제 대상자에서 셉니다. */
     findTaxWithholding(
       companyId: Id<'company'>,
       employeeId: Id<'employee'>,
@@ -172,6 +176,11 @@ export class HrDirectory extends Context.Service<
       from: string,
       to: string,
     ): Effect.Effect<ReadonlyArray<DirectoryLeave>>
+    /**
+     * 기준일의 공제대상 가족 수(본인 포함)와 8–20세 자녀 수입니다. 소득세 공제 설정이 없어도 인적공제 대상자에서 셉니다.
+     * 직원이 없거나 가족이 없으면 본인 1명입니다.
+     */
+    countDependants(companyId: Id<'company'>, employeeId: Id<'employee'>, asOf: string): Effect.Effect<DependantCounts>
     /**
      * 기준일의 4대보험 가입 여부입니다. 그날 적용되는 저장된 설정이 있으면 그 가입 여부와 근로 조건을 출발점으로, 없으면
      * 모두 가입을 출발점으로 자동 판정(재직 중 만 60세, 초단시간 등)을 적용한 값입니다. 본문 없는 `:determine`과 같습니다.
@@ -199,6 +208,7 @@ export const HrDirectoryLive = Layer.effect(
     const contracts = yield* WorkContractRepository
     const payrollContracts = yield* PayrollContractRepository
     const taxWithholding = yield* TaxWithholdingRepository
+    const family = yield* FamilyMemberRepository
     const socialInsuranceSettings = yield* SocialInsuranceSettingRepository
     const organization = yield* OrganizationRepository
     const cipher = yield* PersonalDataCipher
@@ -348,11 +358,15 @@ export const HrDirectoryLive = Layer.effect(
           ),
         ),
       findTaxWithholding: (companyId, employeeId, asOf) =>
-        taxWithholding.find(companyId, employeeId).pipe(
-          Effect.map((record) =>
+        Effect.all([taxWithholding.find(companyId, employeeId), family.list(companyId)]).pipe(
+          Effect.map(([record, members]) =>
             Option.flatMap(record, (found) => Option.fromNullishOr(entryInEffect(found.entries, asOf))).pipe(
               Option.map(({ reduction, ...entry }): DirectoryTaxWithholding => ({
                 ...stripUndefined(entry),
+                ...countDependants(
+                  members.filter((member) => member.employeeId === employeeId),
+                  asOf,
+                ),
                 ...(reduction === undefined
                   ? {}
                   : {
@@ -380,6 +394,15 @@ export const HrDirectoryLive = Layer.effect(
                 lastDay: lastLeaveDay(leave),
                 includeInServiceYears: leave.includeInServiceYears,
               })),
+          ),
+        ),
+      countDependants: (companyId, employeeId, asOf) =>
+        family.list(companyId).pipe(
+          Effect.map((members) =>
+            countDependants(
+              members.filter((member) => member.employeeId === employeeId),
+              asOf,
+            ),
           ),
         ),
       socialInsuranceOf: (companyId, employeeId, asOf) =>

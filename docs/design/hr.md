@@ -224,16 +224,28 @@ GET  /reference/income-tax-reduction-reasons
 ```
 GET    /employees/{employeeId}/family-members
 POST   /employees/{employeeId}/family-members
-GET    /family-members/{familyMemberId}
-PUT    /family-members/{familyMemberId}
+GET    /family-members/{familyMemberId}                       ETag
+PUT    /family-members/{familyMemberId}                       전체 교체, If-Match
 DELETE /family-members/{familyMemberId}
-POST   /family-members/{familyMemberId}/attachments           multipart (file) → { fileId }
-DELETE /family-members/{familyMemberId}/attachments/{fileId}
-GET    /family-members/{familyMemberId}/registration-number   X-Access-Reason 필수
+POST   /family-members/{familyMemberId}/registration-number:reveal   X-Access-Reason 필수
+POST   /family-members/{familyMemberId}/attachments           multipart (file) → { fileId }  (미구현)
+DELETE /family-members/{familyMemberId}/attachments/{fileId}                              (미구현)
 ```
 
-- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(보육수당) 대상은 과세기간 개시일 현재 6세 이하 자녀만 허용합니다. 법이 "근로자 또는 그 배우자의 … 자녀"라 손자녀는 제외합니다(그해 − 출생 연도 ≤ 6, [결정](rule-decisions/hr.md#dependant-count))
-- `healthInsuranceDependant`를 켜면 피부양자 신고(`DEPENDANT`)를 엽니다
+- 본문은 `name`, `birthDate`, `relation`, `isForeigner?`, `registrationNumber?`, `taxFreeTarget?`, `yearEndTarget?`, `yearEndDependantType?`, `healthInsuranceDependant?`입니다. 불리언은 없으면 `false`, 공제 구분은 없으면 `NOT_ELIGIBLE`입니다. `WAGE`만 가질 수 있습니다(422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 코드는 [family-members.ts](../../apps/api/src/modules/hr/family/family-members.ts), 검사는 [family-member-rules.ts](../../apps/api/src/modules/hr/family/family-member-rules.ts)입니다
+- 관계·연말정산 공제 구분은 영문 enum(`SPOUSE`, `CHILD`, `PARENT`, …)으로 바꿉니다. 비과세(보육수당) 대상은 과세기간 개시일 현재 6세 이하 자녀만 허용합니다. 법이 "근로자 또는 그 배우자의 … 자녀"라 손자녀는 제외합니다(그해 − 출생 연도 ≤ 6, [결정](rule-decisions/hr.md#dependant-count)). 저장할 때의 오늘로 판정하므로, 해가 바뀌어 대상이 아니게 된 자녀는 다음 수정에서 `taxFreeTarget`을 꺼야 저장됩니다
+- 422 `FAMILY_MEMBER_INVALID`의 위반은 다음과 같습니다
+  - `taxFreeTarget` `NOT_ELIGIBLE`
+  - `yearEndDependantType`: 연말정산 대상인데 구분이 없으면 `REQUIRED`, 대상이 아닌데 구분이 있으면 `NOT_APPLICABLE`, 구분이 관계·나이와 맞지 않으면 `INCONSISTENT`(배우자 구분은 배우자만, 20세 이하·60세 이상은 저장하는 해의 연도 − 출생 연도로 봅니다. 소득세법 제50조①③)
+  - `healthInsuranceDependant` `NOT_ELIGIBLE`: 국민건강보험법 제5조②의 관계(배우자, 직계존·비속과 그 배우자, 형제·자매)가 아님. `OTHER`·`NONE`은 피부양자가 될 수 없습니다
+  - `registrationNumber`: 피부양자인데 없으면 `REQUIRED`(신고서에 들어감), `INVALID_FORMAT`, `BIRTH_DATE_MISMATCH`(번호의 생년월일과 `birthDate`가 다름)
+- 주민번호(외국인등록번호)는 직원과 같이 암호화하고 응답에는 `registrationNumberMasked`만 줍니다. 원문은 `:reveal`(권한 `employee:reveal-rrn`, 열람 기록 `familyMember:{id}:registrationNumber`)로만 줍니다. 가족은 중복 판정을 하지 않아 해시를 두지 않습니다. `PUT`에서 주민번호를 빼면 지웁니다
+- **공제대상 가족 수:** 연말정산 대상(`yearEndTarget`)이고 기준일까지 태어났으며 나이 기준 구분(`AGE_20_OR_UNDER`·`AGE_60_OR_OVER`)이면 기준일의 연도에 그 나이인 가족에 본인을 더한 값이 [소득세 공제](#소득세-공제)의 `dependantsCount`, 그중 8–20세 자녀가 `childrenAged8To20Count`입니다([dependant-count](../reference/rules/dependant-count.md)). 급여는 소득세 공제 설정이 없어도 이 값을 씁니다(`HrDirectory.countDependants`). 보육수당 대상 자녀 수(`childcareChildrenCount`)는 아직 공제 설정의 입력이고, `taxFreeTarget`과 연결하지 않았습니다
+- **가족에는 이력이 없습니다.** 기준일은 출생일과 나이를 보는 데만 쓰고, 등록·삭제·`yearEndTarget` 변경은 날짜 없이 지금 상태로 셉니다. 그래서 11월에 배우자를 등록하면 1월 기준으로 다시 계산한 급여 초안과 `GET tax-withholding?asOf=`도 가족 수가 늘어납니다. 확정한 급여대장은 행 사본(`snapshot.dependants`)을 쓰므로 바뀌지 않습니다
+- **피부양자 신고:** `healthInsuranceDependant`를 바꾸거나 가족을 지우면 피부양자 신고(`DEPENDANT`)를 맞춥니다. 공단에 등록된 상태는 가장 나중에 완료(`DONE`)한 신고로 보고, 원하는 상태와 다르면 취득(`change: ADD`)이나 상실(`REMOVE`) 신고를 엽니다. 같아지면(예: 처리 전에 다시 끔) 열린 신고만 닫습니다. 내용(이름·관계·생년월일·구분)이 같은 열린 신고가 있으면 그대로 두고, 다르면 닫고 새로 엽니다(실패한 신고도 같음). 신고에는 목록에서 알아보도록 이름·관계·생년월일을 담고, 주민번호는 대리인이 가족의 `:reveal`로 읽습니다
+- **등록된 피부양자는 지울 수 없습니다**(409 `FAMILY_MEMBER_DEPENDANT_REGISTERED`). 상실 신고에 주민번호가 필요하므로 먼저 피부양자를 끄고 대리인이 상실 신고를 마친 뒤 지웁니다. 아직 처리되지 않은 취득 신고만 있으면 지울 수 있고, 그 신고는 닫습니다
+- 직원이 건강보험에 가입하지 않았거나 퇴직했는지는 보지 않습니다. 그런 직원에게도 취득 신고가 열리면 대리인이 실패로 처리합니다
+- 직원을 지우면 가족도 함께 지웁니다. 주민번호를 담은 개인정보라 남기지 않습니다. 피부양자 신고는 직원의 열린 신고와 함께 닫히고, 피부양자 상실은 직원 자격 상실이 대신합니다
 
 ## 휴직
 
@@ -301,7 +313,7 @@ POST /insurance-filings/{insuranceFilingId}:fail          { message }
 | `LOSS` | 근로소득자 퇴직 | `leaveDate`, `lossDate`(퇴직일 다음 날), `leavingReasonCode`, `leavingDetailReasonCode?` |
 | `LEAVE` | 휴직 등록 | `startDate`, `endDate`, `npsPaymentException`, `nhisNoticeDeferral` |
 | `RETURN` | 복직 | `leaveStartDate`, `returnDate` |
-| `DEPENDANT` | 피부양자 등록 (미구현) | `familyMemberId` |
+| `DEPENDANT` | 가족의 피부양자 여부 변경·가족 삭제([인적공제 대상자](#인적공제-대상자)) | `familyMemberId`, `change`(`ADD` 취득 / `REMOVE` 상실), `name`, `relation`, `birthDate` |
 | `REMUNERATION_CHANGE` | 급여계약 등록·수정·삭제 때 다시 맞춤(아래) | `effectiveFrom`(계약 시작일), `wageType`, `amount` |
 
 - 신고 코드는 [insurance-filings.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filings.ts), 전이 규칙은 [insurance-filing-rules.ts](../../apps/api/src/modules/hr/insurance-filings/insurance-filing-rules.ts)입니다
@@ -313,7 +325,7 @@ POST /insurance-filings/{insuranceFilingId}:fail          { message }
 - 직원을 지우면 그 직원의 열린 신고를 모두 닫습니다. 같은 요청에서 연 신고는 `requestedAt`이 같아 목록 안 순서가 정해지지 않습니다
 - **권한:** 목록·조회는 `insurance-filing:read`, 처리는 대리인 전용 `insurance-filing:process`입니다. 고객 관리자의 `*`로는 처리할 수 없습니다(403 `PERMISSION_DENIED`)
 
-- 직원 등록·퇴직·휴직·복직·급여계약 변경(피부양자 등록은 미구현)이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제, 급여계약 수정·삭제, 직원 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
+- 직원 등록·퇴직·휴직·복직·급여계약 변경·피부양자 변경이 `PENDING` 신고를 같은 트랜잭션에서 만듭니다. 원인이 취소되면(퇴직 취소, 휴직 삭제, 급여계약 수정·삭제, 피부양자 해제, 직원 삭제) 열린 신고를 `WITHDRAWN`으로 닫습니다
 - 현행 `employee_work.is_*_work` 플래그와 "○○처리중" 상태를 이 리소스가 대신합니다. 처리 주체는 지금처럼 세무 대리인이고, 자동 EDI는 범위 밖입니다 ([integrations.md](integrations.md))
 
 ## 조직
@@ -370,7 +382,8 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `findWorkContract(companyId, employeeId, asOf)` / `listWorkContracts` | 그날 유효한 근로계약 | 소정근로시간, 수습 |
 | `findPayrollContract(companyId, employeeId, asOf)` | 그날 유효한 급여계약(계좌는 마스킹) | 기본급·지급항목 |
 | `socialInsuranceOf(companyId, employeeId, asOf)` | 그날의 국민연금·건강보험·고용보험 가입 여부. 저장한 설정이 없으면 판정 권장값 | 보험료 계산 |
-| `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 공제대상 가족 수 + 보육수당 대상 자녀 수 | 간이세액, 보육수당 비과세 한도 |
+| `countDependants(companyId, employeeId, asOf)` | 그날의 인적공제 대상자에서 센 공제대상 가족 수(본인 포함)·8–20세 자녀 수. 공제 설정이 없어도 셈 | 간이세액 |
+| `findTaxWithholding(companyId, employeeId, asOf)` | 그날 유효한 공제 설정 + 그날의 인적공제 대상자에서 센 공제대상 가족 수 + 보육수당 대상 자녀 수 | 간이세액, 보육수당 비과세 한도 |
 | `listDependants(companyId, employeeId, asOf)` | 인적공제 대상자 | 연말정산, 비과세 수당 |
 | `listLeavesOverlapping(companyId, employeeId, from, to)` | 기간과 겹치는 휴직 | 일할 계산, 근속 |
 | `findRetirement(companyId, employeeId)` | 퇴직일·사유·퇴직금 유형·중간정산 | 퇴직금 정산 |
@@ -408,6 +421,7 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 | `DEPARTMENT_IN_USE`, `POSITION_IN_USE` | 409 | 배정된 적 있는 조직 삭제 |
 | `DEPARTMENT_NAME_TAKEN`, `POSITION_NAME_TAKEN` | 409 | 이름 중복 |
 | `INSURANCE_FILING_TRANSITION_INVALID` | 409 | 닫힌 신고 처리 |
+| `FAMILY_MEMBER_DEPENDANT_REGISTERED` | 409 | 공단에 등록된 피부양자 가족 삭제 |
 | `DOCUMENT_LOCKED` | 409 | 서명·발급에서 온 문서 삭제 |
 | `EMPLOYEE_KIND_NOT_SUPPORTED` | 422 | `WAGE`가 아닌 직원에 하위 리소스 |
 | `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_DATE_BEFORE_JOIN` | 422 | 퇴직일 검증 |
@@ -478,17 +492,17 @@ Payroll은 HR 저장소를 직접 읽지 않고 `apps/api/src/modules/hr/hr.publ
 
 | 영역 | 상태 |
 |---|---|
-| 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 13개 규칙 |
+| 순수 규칙 (상태 파생, 중복, 경고, 근로계약 검증, 임금 계산, 무기계약 전환, 4대보험 판정, 휴직 검증·요약, 퇴직 검증·사유표, 조직 사용 여부, 공제 검증, 공제대상 가족 수, 가족 검사·피부양자 신고 구분, 레거시 상태 매핑) | 구현, 단위·픽스처 테스트 |
 | 직원 (`GET/POST /employees`, `GET/PATCH/DELETE /employees/{id}`, `:resign`, `:cancel-resignation`, `registration-number:reveal`) | 구현, HTTP 테스트. 목록 필터는 `kind`·`status` 하나씩, 건수 엔드포인트는 미구현(`totalCount`로 대신) |
 | 휴직 (`GET/POST /employees/{id}/leaves`, `/leaves/{leaveId}:return`, `DELETE /leaves/{leaveId}`) | 구현, HTTP 테스트. 수정(`PATCH`)과 휴직 파생 상태(`SCHEDULED`·`ONGOING`·`ENDED`)는 미구현 |
 | 근로계약 (`GET/POST /employees/{id}/work-contracts`), 무기계약 전환 조회 | 구현, HTTP 테스트. 계약 수정·삭제 미구현 |
 | 급여계약 (`GET/POST /employees/{id}/payroll-contracts`, `GET/PUT/DELETE /payroll-contracts/{id}`, `GET …/account-number`) | 구현, HTTP 테스트. `WAGE`만(그 밖은 422 `EMPLOYEE_KIND_NOT_SUPPORTED`). 파생 금액은 저장할 때 계산하고, 고정수당 가산 배수는 `CompanyWorkforceSize` 포트(Payroll 급여 설정)로 고르고, 최저시급은 Payroll 기준표 대신 HR 상수(`MINIMUM_HOURLY_WAGE_2026`)로 비교합니다. 수습 지급률은 계약 시작일의 근로계약에서 읽습니다. 전자서명(`esignRequestId`)·계약 기간 겹침 검사는 미구현 |
-| 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 인적공제 대상자가 없어 공제대상 가족 수·8–20세 자녀 수·보육수당 대상 자녀 수(선택)를 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
+| 소득세 공제 (`GET/PUT /employees/{id}/tax-withholding`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 버전은 직원별 이력 하나. 공제대상 가족 수·8–20세 자녀 수는 인적공제 대상자에서 세는 읽기 전용 값이고, 보육수당 대상 자녀 수(선택)만 입력으로 받습니다. 감면 사유 참조(`GET /reference/income-tax-reduction-reasons`) 미구현 |
 | 4대보험 설정·판정 (`GET/PUT /employees/{id}/social-insurance`, `:determine`) | 구현, HTTP 테스트. `WAGE`만, `effectiveFrom` 이력, 판정과 다르면 `ELIGIBILITY_MISMATCH` 경고. 신고 보수월액은 아직 두지 않음(급여는 과세 급여로 보험료 계산) |
 | 부서·직위 (CRUD, `:reorder`) | 구현, HTTP 테스트 |
-| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`), 겹치는 휴직, 4대보험 가입 여부(`socialInsuranceOf`, 저장 설정 또는 권장값), 주민번호 원문(열람 기록). 인적공제·퇴직 조회와 `revealPaymentAccount`는 미구현 |
-| 4대보험 신고 (`/insurance-filings`) | 구현, HTTP 테스트. 취득·상실·휴직·복직·보수 변경 신고를 종류별 `payload`로 열고, 목록·조회와 대리인 `:complete`·`:fail`. 피부양자 신고는 미구현(가족 PR) |
-| 인적공제 대상자 | 규칙만 구현. 엔드포인트 미구현 |
+| `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`, 공제대상 가족 수는 인적공제 대상자에서 셈), 겹치는 휴직, 4대보험 가입 여부(`socialInsuranceOf`, 저장 설정 또는 권장값), 주민번호 원문(열람 기록). 인적공제 목록(`listDependants`)·퇴직 조회와 `revealPaymentAccount`는 미구현 |
+| 4대보험 신고 (`/insurance-filings`) | 구현, HTTP 테스트. 취득·상실·휴직·복직·보수 변경·피부양자 신고를 종류별 `payload`로 열고, 목록·조회와 대리인 `:complete`·`:fail` |
+| 인적공제 대상자 (`GET/POST /employees/{id}/family-members`, `GET/PUT/DELETE /family-members/{id}`, `registration-number:reveal`) | 구현, HTTP 테스트. `WAGE`만, 주민번호 암호화·열람 기록, 공제대상 가족 수 파생, 피부양자 취득·상실 신고. 첨부 미구현 |
 | 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |
 | 메모, 문서 보관함, 가족 첨부, 엑셀 내보내기 | 미구현 |

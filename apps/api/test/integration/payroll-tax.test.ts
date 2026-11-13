@@ -40,6 +40,18 @@ describe('HR → Payroll 연결', () => {
       body: { contractType: 'PERMANENT', startDate: '2026-01-05', weeklyWorkHours: 20 },
     })
     expect(contract.status).toBe(201)
+    // 소득세 공제 설정이 없어도 공제대상 가족 수는 인적공제 대상자에서 셉니다.
+    const spouse = await app.request('POST', `/v1/employees/${employeeId}/family-members`, {
+      token: owner,
+      body: {
+        name: '박배우',
+        birthDate: '1990-05-01',
+        relation: 'SPOUSE',
+        yearEndTarget: true,
+        yearEndDependantType: 'SPOUSE',
+      },
+    })
+    expect(spouse.status).toBe(201)
 
     const contracted = await app.request('POST', '/v1/employees', {
       token: owner,
@@ -51,12 +63,22 @@ describe('HR → Payroll 연결', () => {
       body: { startDate: '2026-01-05', wageType: 'MONTHLY', amount: 2_800_000, monthlyWorkHours: 209 },
     })
     expect(payrollContract.status).toBe(201)
+    // 공제대상 가족 수는 입력하지 않고 인적공제 대상자에서 셉니다. 본인 + 2014년생 자녀(2026년 12세)입니다.
+    const child = await app.request('POST', `/v1/employees/${contractedId}/family-members`, {
+      token: owner,
+      body: {
+        name: '최자녀',
+        birthDate: '2014-04-01',
+        relation: 'CHILD',
+        yearEndTarget: true,
+        yearEndDependantType: 'AGE_20_OR_UNDER',
+      },
+    })
+    expect(child.status).toBe(201)
     const withholding = await app.request('PUT', `/v1/employees/${contractedId}/tax-withholding`, {
       token: owner,
       body: {
         effectiveFrom: '2026-01-05',
-        dependantsCount: 2,
-        childrenAged8To20Count: 1,
         childcareChildrenCount: 2,
         calcMethod: 'MANUAL',
         manualIncomeTax: 40_000,
@@ -115,7 +137,7 @@ describe('HR → Payroll 연결', () => {
       payeeName: '박급여',
       // 급여계약이 없어 기본값(PAYROLL_DEFAULTS_WITHOUT_HR)을 씁니다.
       input: { basePay: 3_000_000 },
-      snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240 },
+      snapshot: { monthlyStandardHours: 104, dailyRestMinutes: 240, dependants: 2, childrenAged8To20: 0 },
     })
 
     const contractedRow = rows.items.find((item: { employeeId: string }) => item.employeeId === contractedId)

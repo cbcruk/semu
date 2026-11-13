@@ -16,10 +16,11 @@ const hire = async (kind = 'WAGE') =>
 
 const settings = {
   effectiveFrom: '2026-01-01',
-  dependantsCount: 3,
-  childrenAged8To20Count: 1,
   calcMethod: 'TAX_TABLE',
 }
+
+const addFamily = (employeeId: string, body: Record<string, unknown>) =>
+  app.json('POST', `/employees/${employeeId}/family-members`, { body })
 
 describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)', () => {
   it('설정을 저장하기 전에는 404입니다', async () => {
@@ -84,8 +85,6 @@ describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)
       body: {
         ...settings,
         effectiveFrom: '2026-03-01',
-        dependantsCount: 1,
-        childrenAged8To20Count: 0,
         childcareChildrenCount: 2,
       },
       ifMatch: '"1"',
@@ -106,6 +105,41 @@ describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)
     expect(tooMany.status).toBe(400)
   })
 
+  it('공제대상 가족 수는 기준일의 연말정산 대상 가족에서 셉니다', async () => {
+    const employeeId = await hire()
+    const path = `/employees/${employeeId}/tax-withholding`
+    await addFamily(employeeId, {
+      name: '배우자',
+      birthDate: '1990-02-01',
+      relation: 'SPOUSE',
+      yearEndTarget: true,
+      yearEndDependantType: 'SPOUSE',
+    })
+    await addFamily(employeeId, {
+      name: '자녀',
+      birthDate: '2015-06-01',
+      relation: 'CHILD',
+      yearEndTarget: true,
+      yearEndDependantType: 'AGE_20_OR_UNDER',
+    })
+    // 연말정산 대상이 아닌 가족과 기준일에 아직 태어나지 않은 가족은 세지 않습니다.
+    await addFamily(employeeId, { name: '형', birthDate: '1985-01-01', relation: 'SIBLING' })
+    await addFamily(employeeId, {
+      name: '둘째',
+      birthDate: '2026-09-01',
+      relation: 'CHILD',
+      yearEndTarget: true,
+      yearEndDependantType: 'AGE_20_OR_UNDER',
+    })
+
+    const saved = await app.json('PUT', path, { body: { ...settings, dependantsCount: 9 } })
+    expect(saved.body).toMatchObject({ dependantsCount: 3, childrenAged8To20Count: 1 })
+    expect((await app.json('GET', `${path}?asOf=2026-09-01`)).body).toMatchObject({
+      dependantsCount: 4,
+      childrenAged8To20Count: 1,
+    })
+  })
+
   it('낡은 If-Match를 거부합니다', async () => {
     const employeeId = await hire()
     const path = `/employees/${employeeId}/tax-withholding`
@@ -119,7 +153,7 @@ describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)
   it('공제 설정 위반을 모두 모읍니다', async () => {
     const employeeId = await hire()
     const response = await app.json('PUT', `/employees/${employeeId}/tax-withholding`, {
-      body: { ...settings, childrenAged8To20Count: 3, calcMethod: 'MANUAL', adjustmentRatePpm: 900_000 },
+      body: { ...settings, calcMethod: 'MANUAL', adjustmentRatePpm: 900_000 },
     })
 
     expect(response.status).toBe(422)
@@ -127,7 +161,6 @@ describe('소득세 및 기타공제(/v1/employees/{employeeId}/tax-withholding)
     expect(response.body.violations).toEqual([
       { field: 'manualIncomeTax', code: 'REQUIRED' },
       { field: 'adjustmentRatePpm', code: 'ADJUSTMENT_RATE_NOT_ALLOWED' },
-      { field: 'childrenAged8To20Count', code: 'CHILDREN_EXCEED_DEPENDANTS' },
     ])
   })
 

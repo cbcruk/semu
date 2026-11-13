@@ -9,8 +9,12 @@ import { WorkContractsHttpLive } from './contracts/work-contracts.http.ts'
 import { EmployeeRepository } from './employees/employee-repository.ts'
 import { Employees } from './employees/employees.ts'
 import { EmployeesHttpLive } from './employees/employees.http.ts'
+import { FamilyMemberRepository } from './family/family-member.ts'
+import { FamilyMembers } from './family/family-members.ts'
+import { FamilyMembersHttpLive } from './family/family-members.http.ts'
 import {
   DEMO_EMPLOYEES,
+  DEMO_FAMILY_MEMBERS,
   DEMO_ORGANIZATION,
   DEMO_PAYROLL_ACCOUNT_NUMBER,
   demoPayrollContracts,
@@ -40,7 +44,7 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 핸들러 전체입니다.
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
- * `TaxWithholdingRepository`, `SocialInsuranceSettingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
+ * `TaxWithholdingRepository`, `FamilyMemberRepository`, `SocialInsuranceSettingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
  * Payroll이 구현하는 포트 `SeveranceSettlementLookup`·`CompanyWorkforceSize`(`src/wiring/hr-payroll.ts`). 급여계약은 `CompanyWorkforceSize`로 사업장 규모를 읽습니다.
  */
 export const HrHttpLive = Layer.mergeAll(
@@ -49,6 +53,7 @@ export const HrHttpLive = Layer.mergeAll(
   WorkContractsHttpLive,
   PayrollContractsHttpLive,
   TaxWithholdingHttpLive,
+  FamilyMembersHttpLive,
   SocialInsuranceHttpLive,
   OrganizationHttpLive,
   InsuranceFilingsHttpLive,
@@ -60,6 +65,7 @@ export const HrHttpLive = Layer.mergeAll(
       WorkContracts.layer,
       PayrollContracts.layer,
       TaxWithholdingSettings.layer,
+      FamilyMembers.layer,
       SocialInsuranceSettings.layer,
       Organization.layer,
       InsuranceFilings.layer,
@@ -92,6 +98,7 @@ export const HrStoreLive = Layer.mergeAll(
   WorkContractRepository.layer(DEMO_WORK_CONTRACTS),
   DemoPayrollContractRepositoryLive,
   TaxWithholdingRepository.layer(DEMO_TAX_WITHHOLDING),
+  FamilyMemberRepository.layer(DEMO_FAMILY_MEMBERS),
   SocialInsuranceSettingRepository.layer(),
   OrganizationRepository.layer(DEMO_ORGANIZATION),
   InsuranceFilingRepository.layer(),

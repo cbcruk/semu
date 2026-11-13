@@ -46,9 +46,9 @@ export function countDependantsAsOf(db: DatabaseSync, companyId: string, employe
 
 ## 서버 이전 시 주의
 
-- 급여 컨텍스트가 `HrDirectory.countDependants`로 읽습니다
+- 급여 컨텍스트는 `HrDirectory.findTaxWithholding`으로 읽습니다. 공제 설정의 `dependantsCount`·`childrenAged8To20Count`는 입력이 아니라 그날의 인적공제 대상자(`hr_family_members`)에서 셉니다(2026-11-12, #77). 서버는 현행과 달리 나이 기준 공제 구분(`AGE_20_OR_UNDER`·`AGE_60_OR_OVER`)이 그해 연 나이와 맞지 않는 가족을 세지 않습니다(소득세법 제50조①③). 공제대상 가족 수를 직접 고칠 길이 없어져 해가 바뀐 뒤 20세를 넘긴 자녀가 남지 않게 하려는 것입니다. 픽스처에는 구분이 없어 결과가 같습니다
 - 소득세법 제12조제3호머목2)는 6세 이하를 "해당 과세기간 개시일을 기준으로 … 6세가 되는 날과 그 이전 기간"으로 정합니다(2026-11-06 원문 확인). 서버는 `asOf`의 만 나이 대신 그해 − 출생 연도로 판정합니다. 현행 픽스처 케이스는 그대로 통과합니다
-- 보육수당 비과세 한도에 쓰는 대상 자녀 수는 지금 소득세 공제 설정의 `childcareChildrenCount`로 입력받습니다. 인적공제 대상자에서 파생하는 것은 저장소가 생긴 뒤입니다
+- 보육수당 비과세 한도에 쓰는 대상 자녀 수는 지금 소득세 공제 설정의 `childcareChildrenCount`로 입력받습니다. 인적공제 대상자 저장소는 생겼지만 `taxFreeTarget`과는 아직 연결하지 않았습니다. 배우자가 기본공제를 받는 자녀도 세야 해서 연말정산 대상 가족과 범위가 다릅니다
 
 ## 열린 질문
 

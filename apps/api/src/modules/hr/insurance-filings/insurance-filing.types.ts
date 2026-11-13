@@ -1,4 +1,8 @@
 import type { Id } from '../../../shared/ids/ids.types.ts'
+import type { FamilyRelation } from '../family/family-member.types.ts'
+
+/** 피부양자 신고 구분입니다. 취득(등록)·상실(해지)입니다. */
+export type DependantChange = 'ADD' | 'REMOVE'
 
 /** 4대보험 신고 종류입니다. 취득·상실·휴직·복직·피부양자·보수 변경입니다. */
 export type InsuranceFilingKind = 'ACQUISITION' | 'LOSS' | 'LEAVE' | 'RETURN' | 'DEPENDANT' | 'REMUNERATION_CHANGE'
@@ -24,7 +28,17 @@ export interface InsuranceFilingPayloads {
   /** 국민연금 납부예외·건강보험 고지유예 신청 여부가 들어갑니다. */
   LEAVE: { startDate: string; endDate: string; npsPaymentException: boolean; nhisNoticeDeferral: boolean }
   RETURN: { leaveStartDate: string; returnDate: string }
-  DEPENDANT: { familyMemberId: string }
+  /**
+   * 피부양자 취득(`ADD`)·상실(`REMOVE`) 신고입니다. 목록에서 알아보도록 이름·관계·생년월일을 담고, 주민번호는 가족의
+   * `registration-number:reveal`로 읽습니다. 등록된 피부양자는 지울 수 없어 상실 신고의 가족은 남아 있습니다.
+   */
+  DEPENDANT: {
+    familyMemberId: string
+    change: DependantChange
+    name: string
+    relation: FamilyRelation
+    birthDate: string
+  }
   /** 새 급여계약의 시작일과 금액입니다. 보수월액은 대리인이 이 값으로 정합니다. */
   REMUNERATION_CHANGE: { effectiveFrom: string; wageType: 'MONTHLY' | 'DAILY' | 'HOURLY'; amount: number }
 }

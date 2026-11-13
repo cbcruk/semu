@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 import { HttpApiError } from 'effect/http-api'
 import { problemType } from '../../../shared/problem/problem.ts'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
+import { FamilyRelationSchema } from '../family/family-member.ts'
 import { EmployeeId, InsuranceFilingId } from '../shared/hr-schemas.ts'
 
 const Won = Schema.Int
@@ -69,7 +70,13 @@ export const InsuranceFilingView = Schema.Union([
   Schema.Struct({
     ...common,
     kind: Schema.Literal('DEPENDANT'),
-    payload: Schema.Struct({ familyMemberId: Schema.String }),
+    payload: Schema.Struct({
+      familyMemberId: Schema.String,
+      change: Schema.Literals(['ADD', 'REMOVE']),
+      name: Schema.String,
+      relation: FamilyRelationSchema,
+      birthDate: CalendarDate,
+    }),
   }),
   Schema.Struct({
     ...common,
