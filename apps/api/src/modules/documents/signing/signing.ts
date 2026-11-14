@@ -1,54 +1,29 @@
 import { randomBytes } from 'node:crypto'
-import { Context, DateTime, Duration, Effect, Layer, Option, Schema } from 'effect'
-import { HttpApiError } from 'effect/http-api'
+import { Context, DateTime, Duration, Effect, Layer, Option, Result } from 'effect'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
-import { problemType } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import { HrDirectory } from '../../hr/hr.public.ts'
-import { effectiveStatus, hashToken } from '../esign/esign-requests.ts'
-import { EsignRequestRepository, EsignRequestStatusSchema, type EsignRequestRecord } from '../esign/esign-request.ts'
-import { isLinkClosed, transitionEsignRequest } from '../esign/esign-request-status.ts'
+import {
+  decideSignerVerification,
+  decideSigningCompletion,
+  effectiveStatus,
+  planSigningCompletion,
+  signerLinkStatus,
+} from '../esign/esign-request.aggregate.ts'
+import { hashToken } from '../esign/esign-requests.ts'
+import { EsignRequestRepository, type EsignRequestRecord } from '../esign/esign-request.ts'
 import type { EsignRequestStatus } from '../esign/esign-request-status.types.ts'
 import { DocumentEvents, PdfRenderer, SignerIdentityVerifier } from '../shared/documents-ports.ts'
 import { EsignTemplateRepository } from '../templates/esign-template.ts'
-import { decideVerification, maskName, SIGNER_SESSION_MINUTES } from './signer-verification.ts'
-import { signedTermsOf } from './signed-terms.ts'
-
-/** 링크 토큰에 맞는 요청이 없습니다. */
-export class EsignLinkNotFound extends HttpApiError.Problem<EsignLinkNotFound>()(
-  'EsignLinkNotFound',
-  { type: problemType('ESIGN_LINK_NOT_FOUND'), status: 404, title: 'Signing link not found' },
-  { code: Schema.tag('ESIGN_LINK_NOT_FOUND') },
-) {}
-
-/** 요청이 닫혀(초안·취소·무효·만료·발송 실패·완료) 서명할 수 없습니다. */
-export class EsignLinkClosed extends HttpApiError.Problem<EsignLinkClosed>()(
-  'EsignLinkClosed',
-  { type: problemType('ESIGN_LINK_CLOSED'), status: 409, title: 'Signing link is closed' },
-  { code: Schema.tag('ESIGN_LINK_CLOSED'), currentStatus: EsignRequestStatusSchema },
-) {}
-
-/** 이름이나 생년월일이 맞지 않습니다. */
-export class EsignVerificationFailed extends HttpApiError.Problem<EsignVerificationFailed>()(
-  'EsignVerificationFailed',
-  { type: problemType('ESIGN_VERIFICATION_FAILED'), status: 422, title: 'Identity does not match' },
-  { code: Schema.tag('ESIGN_VERIFICATION_FAILED'), remainingAttempts: Schema.Int },
-) {}
-
-/** 본인확인을 다섯 번 틀려 링크가 잠겼습니다. 관리자가 다시 보내야 합니다. */
-export class EsignVerificationLocked extends HttpApiError.Problem<EsignVerificationLocked>()(
-  'EsignVerificationLocked',
-  { type: problemType('ESIGN_VERIFICATION_LOCKED'), status: 429, title: 'Too many failed verifications' },
-  { code: Schema.tag('ESIGN_VERIFICATION_LOCKED') },
-) {}
-
-/** 서명자 세션이 없거나 만료됐습니다. 본인확인을 다시 합니다. */
-export class SignerSessionInvalid extends HttpApiError.Problem<SignerSessionInvalid>()(
-  'SignerSessionInvalid',
-  { type: problemType('SIGNER_SESSION_INVALID'), status: 401, title: 'Signer session required' },
-  { code: Schema.tag('SIGNER_SESSION_INVALID') },
-) {}
+import { maskName, SIGNER_SESSION_MINUTES } from './signer-verification.ts'
+import {
+  EsignLinkNotFound,
+  type EsignLinkClosed,
+  type EsignVerificationFailed,
+  type EsignVerificationLocked,
+  type SignerSessionInvalid,
+} from './signing-errors.ts'
 
 /** 서명자가 본인확인 전에 보는 요약입니다. */
 export interface SigningSummary {
@@ -104,12 +79,10 @@ export class Signing extends Context.Service<
             ),
           )
 
-      const requireOpen = (record: EsignRequestRecord, today: string) => {
-        const status = effectiveStatus(record, today)
-        return isLinkClosed(status) || status === 'COMPLETED'
-          ? Effect.fail(new EsignLinkClosed({ currentStatus: status }))
-          : Effect.succeed(status)
-      }
+      const loadTemplates = (record: EsignRequestRecord) =>
+        Effect.forEach(record.templateIds, (id) => templates.find(id)).pipe(
+          Effect.map((found) => found.map(Option.getOrUndefined)),
+        )
 
       return Signing.of({
         summary: Effect.fn('Signing.summary')(function* (token) {
@@ -132,7 +105,8 @@ export class Signing extends Context.Service<
         verify: Effect.fn('Signing.verify')(function* (token, claim) {
           const record = yield* findByToken(token)
           const now = yield* clock
-          const status = yield* requireOpen(record, now.today)
+          // 닫힌 링크면 본인확인을 부르지 않습니다.
+          yield* Effect.fromResult(signerLinkStatus(record, now.today))
           const employee =
             record.recipient.employeeId === undefined
               ? undefined
@@ -140,89 +114,47 @@ export class Signing extends Context.Service<
                   yield* directory.findEmployee(record.companyId, record.recipient.employeeId, now.today),
                 )
           const matches = yield* verifier.verify({ name: record.recipient.name, birthDate: employee?.birthDate }, claim)
-          const decision = decideVerification({ failures: record.verifyFailures, matches })
-          if (decision.outcome === 'LOCKED') return yield* new EsignVerificationLocked({})
-          if (decision.outcome === 'FAILED') {
-            // 실패 응답(4xx)은 트랜잭션을 되돌리지만 실패 횟수는 남겨야 잠금이 걸립니다.
-            yield* requests.save({ ...record, verifyFailures: decision.failures })
-            yield* keepChanges
-            return yield* new EsignVerificationFailed({ remainingAttempts: decision.remainingAttempts })
-          }
           const sessionToken = randomBytes(24).toString('base64url')
           const expiresAt = DateTime.formatIso(DateTime.addDuration(now.now, Duration.minutes(SIGNER_SESSION_MINUTES)))
-          const moved = transitionEsignRequest(status, 'VERIFY_SIGNER')
-          yield* requests.save({
-            ...record,
-            status: moved.ok && moved.to !== 'DELETED' ? moved.to : status,
-            verifyFailures: 0,
-            sessions: [
-              ...record.sessions.filter((session) => session.expiresAt > now.iso),
-              { tokenHash: hashToken(sessionToken), expiresAt },
-            ],
-            version: record.version + 1,
-            updatedAt: now.iso,
-          })
+          const result = decideSignerVerification(
+            record,
+            { matches, session: { tokenHash: hashToken(sessionToken), expiresAt } },
+            now,
+          )
+          if (Result.isFailure(result)) {
+            const { error, keep } = result.failure
+            if (keep !== undefined) {
+              // 실패 응답(4xx)은 트랜잭션을 되돌리지만 실패 횟수는 남겨야 잠금이 걸립니다(M1).
+              yield* requests.save(keep.request)
+              yield* keepChanges
+            }
+            return yield* Effect.fail(error)
+          }
+          yield* requests.save(result.success.request)
           return { sessionToken, expiresAt }
         }),
 
         complete: Effect.fn('Signing.complete')(function* (token, sessionToken, signerValues) {
           const record = yield* findByToken(token)
           const now = yield* clock
-          const status = yield* requireOpen(record, now.today)
-          const live =
-            sessionToken !== undefined &&
-            record.sessions.some(
-              (session) => session.tokenHash === hashToken(sessionToken) && session.expiresAt > now.iso,
-            )
-          if (!live) return yield* new SignerSessionInvalid({})
-          const moved = transitionEsignRequest(status, 'COMPLETE')
-          if (!moved.ok || moved.to === 'DELETED') return yield* new EsignLinkClosed({ currentStatus: status })
-          const found = yield* Effect.forEach(record.templateIds, (id) => templates.find(id))
-          // 서명자는 템플릿이 서명자에게 맡긴 필드(`signer: true`)만 채웁니다. 관리자가 정한 계약 조건은 덮어쓰지 못합니다.
-          const fieldValues: Record<string, Readonly<Record<string, unknown>>> = { ...record.fieldValues }
-          for (const [index, values] of Object.entries(signerValues)) {
-            const template = found[Number(index)]
-            if (template === undefined || Option.isNone(template)) continue
-            const signerKeys = new Set(template.value.fields.filter((f) => f.signer).map((f) => f.key))
-            const allowed = Object.fromEntries(Object.entries(values).filter(([key]) => signerKeys.has(key)))
-            fieldValues[index] = { ...fieldValues[index], ...allowed }
-          }
+          const found = yield* loadTemplates(record)
+          const plan = yield* Effect.fromResult(
+            planSigningCompletion(
+              record,
+              sessionToken === undefined ? undefined : hashToken(sessionToken),
+              signerValues,
+              found,
+              now,
+            ),
+          )
           const resultFileId = yield* renderer.render({
             companyId: record.companyId,
             title: record.title,
-            values: fieldValues,
+            values: plan.fieldValues,
           })
-          yield* requests.save({
-            ...record,
-            status: moved.to,
-            fieldValues,
-            completedAt: now.iso,
-            resultFileId,
-            sessions: [],
-            version: record.version + 1,
-            updatedAt: now.iso,
-          })
-          yield* events.publish({
-            type: 'esign_request.completed',
-            companyId: record.companyId,
-            requestId: record.id,
-            ...(record.recipient.employeeId === undefined ? {} : { employeeId: record.recipient.employeeId }),
-            title: record.title,
-            documents: found.flatMap((template, index) =>
-              Option.isSome(template)
-                ? [
-                    {
-                      index,
-                      kind: template.value.kind,
-                      title: template.value.title,
-                      terms: signedTermsOf(template.value.kind, record.fieldValues[String(index)] ?? {}),
-                    },
-                  ]
-                : [],
-            ),
-            resultFileId,
-            at: now.iso,
-          })
+          const decision = decideSigningCompletion(record, plan, found, resultFileId, now)
+          yield* requests.save(decision.request)
+          for (const event of decision.events) yield* events.publish(event)
           return { status: 'COMPLETED' as const, resultFileId }
         }),
       })

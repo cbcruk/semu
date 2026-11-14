@@ -10,7 +10,7 @@ import { DocumentsMemoryLive, EsignRequestsLive } from '../documents.layer.ts'
 import { DocumentEvents, type DocumentEvent } from '../shared/documents-ports.ts'
 import { esignExpiryTask } from './esign-expiry-task.ts'
 import { EsignRequestRepository, type EsignRequestRecord } from './esign-request.ts'
-import { decideExpire } from './esign-requests.ts'
+import { decideExpire } from './esign-request.aggregate.ts'
 
 const COMPANY_A = 'cmp_01JBQ00000000000000000000A' as Id<'company'>
 const COMPANY_B = 'cmp_01JBQ00000000000000000000B' as Id<'company'>
