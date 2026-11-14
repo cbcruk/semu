@@ -29,8 +29,12 @@ function layerWith(enqueued: Array<Id<'scrapRequest'>>) {
 }
 
 describe('정기 수집 시각표', () => {
-  it('PG는 10시·22시, 배달은 10시, 올라는 6시에 돌고 나머지 기관은 정기 수집이 없습니다', () => {
+  it('은행은 7시, 카드는 7시 반, PG는 10시·22시, 배달은 10시, 올라는 6시에 돌고 홈택스·지로는 정기 수집이 없습니다', () => {
     expect(scheduledScraps()).toEqual([
+      { name: 'integrations.scrap.card-sales-0730', institutionType: 'CARD_SALES', at: '07:30' },
+      { name: 'integrations.scrap.credit-card-0730', institutionType: 'CREDIT_CARD', at: '07:30' },
+      { name: 'integrations.scrap.bank-0700', institutionType: 'BANK', at: '07:00' },
+      { name: 'integrations.scrap.speed-bank-0700', institutionType: 'SPEED_BANK', at: '07:00' },
       { name: 'integrations.scrap.pg-1000', institutionType: 'PG', at: '10:00' },
       { name: 'integrations.scrap.pg-2200', institutionType: 'PG', at: '22:00' },
       { name: 'integrations.scrap.delivery-1000', institutionType: 'DELIVERY', at: '10:00' },
