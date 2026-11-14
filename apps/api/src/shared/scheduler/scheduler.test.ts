@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from 'effect'
 import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
-import { TableFactory } from '../persistence/record-table.ts'
+import { TableFactory, makeMemoryRecordTable } from '../persistence/record-table.ts'
 import { SqliteDatabase, UnitOfWork } from '../persistence/unit-of-work.ts'
 import { CompaniesFailed, Scheduler, eachCompany } from './scheduler.ts'
 import type { ScheduledTask } from './scheduler.ts'
@@ -102,6 +102,48 @@ describe('Scheduler', () => {
     expect(outcomes.map((outcome) => outcome.outcome)).toEqual(['FAILED', 'SUCCEEDED'])
     const failure = runs.find((record) => record.task === 'test.broken')!
     expect(failure.lastError).toMatch(/^TypeError at src\/shared\/scheduler\/scheduler\.test\.ts:\d+$/)
+  })
+
+  it('한 작업의 실행 기록 저장에서 결함이 나도 다음 작업은 돕니다', async () => {
+    const calls: string[] = []
+    const first: ScheduledTask<UnitOfWork> = {
+      name: 'test.first',
+      spec: { kind: 'DAILY', at: '03:00' },
+      run: () => Effect.sync(() => calls.push('first')),
+    }
+    const second: ScheduledTask<UnitOfWork> = {
+      ...first,
+      name: 'test.second',
+      run: () => Effect.sync(() => calls.push('second')),
+    }
+    // 첫 작업의 기록을 쓸 때만 결함을 내는 표입니다.
+    const brokenTables = Layer.succeed(
+      TableFactory,
+      TableFactory.of({
+        make: <T extends { readonly id: string }>() =>
+          Effect.gen(function* () {
+            const inner = yield* makeMemoryRecordTable<T>()
+            return {
+              ...inner,
+              put: (record: T) =>
+                record.id.startsWith('test.first@') ? Effect.die(new Error('disk')) : inner.put(record),
+            }
+          }),
+      }),
+    )
+
+    const outcomes = await run(
+      [first, second],
+      (scheduler) =>
+        Effect.gen(function* () {
+          yield* TestClock.setTime(kst('2026-11-14T03:00:00'))
+          return yield* scheduler.runDue()
+        }),
+      Layer.merge(brokenTables, UnitOfWork.layerNone),
+    )
+
+    expect(outcomes.map((outcome) => outcome.outcome)).toEqual(['ERRORED', 'SUCCEEDED'])
+    expect(calls).toEqual(['second'])
   })
 
   it('같은 데이터베이스를 쓰는 실행기 둘 중 한쪽만 슬롯을 돌립니다', async () => {

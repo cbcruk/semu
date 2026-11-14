@@ -58,7 +58,8 @@ export const eachCompany = <T, A, E, R>(
 export interface SlotOutcome {
   readonly task: string
   readonly slot: string
-  readonly outcome: 'SUCCEEDED' | 'FAILED' | 'GAVE_UP' | 'SKIPPED'
+  /** `ERRORED`는 슬롯 잡기·기록 저장에서 결함이 난 것입니다. 다음 틱에 다시 봅니다. */
+  readonly outcome: 'SUCCEEDED' | 'FAILED' | 'GAVE_UP' | 'SKIPPED' | 'ERRORED'
 }
 
 /**
@@ -131,7 +132,18 @@ export class Scheduler extends Context.Service<
           })
 
         return Scheduler.of({
-          runDue: () => Effect.forEach(tasks, runTask),
+          // 슬롯 잡기·기록 저장의 결함이 뒤에 등록된 작업을 막지 않도록 작업마다 받습니다.
+          runDue: () =>
+            Effect.forEach(tasks, (task) =>
+              runTask(task).pipe(
+                Effect.catchDefect((defect) =>
+                  Effect.logError('Scheduled task bookkeeping defect', {
+                    task: task.name,
+                    defect: describeDefect(defect),
+                  }).pipe(Effect.as({ task: task.name, slot: '', outcome: 'ERRORED' as const })),
+                ),
+              ),
+            ),
           runs: () => table.all().pipe(Effect.map((records) => records.toSorted(byStartedAtDesc))),
         })
       }),
