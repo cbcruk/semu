@@ -4,7 +4,6 @@ import { checkVersion } from '../../../shared/http/versioning.ts'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
-import type { Violation } from '../../../shared/problem/problem.types.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { WorkContractRepository, type WorkContractRecord } from '../contracts/work-contract.ts'
@@ -16,28 +15,31 @@ import { lossDateOf } from '../insurance-filings/insurance-filing-rules.ts'
 import { LeaveRepository, type LeaveRecord } from '../leaves/leave.ts'
 import { OrganizationRepository } from '../organization/organization.ts'
 import { SeveranceSettlementLookup } from '../ports/severance-settlement-lookup.ts'
-import { checkResignation, isSeveranceSettled, latestCompletedInterimDate } from '../retirement/retirement-rules.ts'
-import {
-  birthDateFromRegistrationNumber,
-  maskIdentityNumber,
-  normalizeIdentityNumber,
-} from '../shared/identity-number.ts'
 import { PersonalDataAccessLog } from '../../../shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../../../shared/personal-data/personal-data-cipher.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import type { EmployeeKind } from './employee-kind.types.ts'
-import { findBlockingDuplicate } from './employee-duplicate.ts'
+import {
+  decideEmployeeCreation,
+  decideEmployeeRemoval,
+  decideEmployeeUpdate,
+  decideResignation,
+  decideResignationCancel,
+  planEmployeeIdentity,
+  type EmployeeIdentityFacts,
+  type IdentityInput,
+} from './employee.aggregate.ts'
 import { EmployeeRepository } from './employee-repository.ts'
 import { deriveEmployeeStatus } from './employee-status.ts'
 import type { EmployeeStatus } from './employee-status.types.ts'
 import { employeeWarnings } from './employee-warnings.ts'
 import {
-  EmployeeDuplicate,
   EmployeeInvalid,
   EmployeeNotFound,
-  ResignationRejected,
-  RetirementCompleted,
   type CreateEmployee,
+  type EmployeeDuplicate,
+  type ResignationRejected,
+  type RetirementCompleted,
   type Employee,
   type EmployeeRecord,
   type Resignation,
@@ -163,68 +165,31 @@ export class Employees extends Context.Service<
           ),
         )
 
-      /** 주민번호·조직 단위를 검사하고 저장할 신원 필드를 만듭니다. */
-      const resolveIdentity = Effect.fn('Employees.resolveIdentity')(function* (
-        actor: Actor,
+      /**
+       * 신원 판정에 넘길 사실을 읽습니다. 소속·번호 형식이 틀리면 번호를 봉인하기 전에 422입니다. 번호를 받았으면 해시·암호문을
+       * 만들고, 같은 소득 구분에서 해시가 같은 직원과 그 지금 상태를 모읍니다.
+       */
+      const identityFacts = Effect.fn('Employees.identityFacts')(function* (
+        companyId: Id<'company'>,
         kind: EmployeeKind,
-        selfId: Id<'employee'> | undefined,
-        isRejoin: boolean,
-        input: {
-          registrationNumber?: string
-          identityType?: 'RRN' | 'PASSPORT'
-          isForeigner: boolean
-          departmentId?: Id<'department'> | null
-          positionId?: Id<'position'> | null
-        },
+        input: IdentityInput,
       ) {
-        const violations: Violation[] = []
-        const all = yield* units.list(actor.companyId)
-        if (input.departmentId && !all.some((unit) => unit.kind === 'DEPARTMENT' && unit.id === input.departmentId)) {
-          violations.push({ field: 'departmentId', code: 'NOT_FOUND' })
+        const all = yield* units.list(companyId)
+        const plan = planEmployeeIdentity(input, all)
+        if (plan.violations.length > 0) return yield* new EmployeeInvalid({ violations: plan.violations })
+        if (plan.normalized === undefined) {
+          return { units: all, sealed: undefined, sameNumber: [] } satisfies EmployeeIdentityFacts
         }
-        if (input.positionId && !all.some((unit) => unit.kind === 'POSITION' && unit.id === input.positionId)) {
-          violations.push({ field: 'positionId', code: 'NOT_FOUND' })
-        }
-        if (input.registrationNumber === undefined) {
-          if (violations.length > 0) return yield* new EmployeeInvalid({ violations })
-          return {}
-        }
-        const type = input.identityType ?? (input.isForeigner ? 'PASSPORT' : 'RRN')
-        const normalized = normalizeIdentityNumber(input.registrationNumber, type)
-        if (normalized === null) violations.push({ field: 'registrationNumber', code: 'INVALID_FORMAT' })
-        if (violations.length > 0 || normalized === null) return yield* new EmployeeInvalid({ violations })
-
-        const hash = yield* cipher.hash(normalized)
-        const [asOf, everyone, all2] = yield* Effect.all([
-          today,
-          employees.list(actor.companyId),
-          related(actor.companyId),
-        ])
-        const candidates = everyone
+        const hash = yield* cipher.hash(plan.normalized.value)
+        const [asOf, everyone, all2] = yield* Effect.all([today, employees.list(companyId), related(companyId)])
+        const sameNumber = everyone
           .filter((other) => other.kind === kind && other.registrationNumberHash === hash)
           .map((other) => ({ id: other.id, status: toView(other, asOf, all2).status }))
-        const blocking = findBlockingDuplicate(candidates, { selfId, isRejoin })
-        if (blocking !== undefined) {
-          return yield* new EmployeeDuplicate({ duplicateEmployeeId: blocking as Id<'employee'> })
-        }
-        return {
-          identityType: type,
-          registrationNumberEncrypted: yield* cipher.encrypt('registrationNumber', normalized),
-          registrationNumberHash: hash,
-          registrationNumberMasked: maskIdentityNumber(normalized, type),
-          ...(type === 'RRN' ? { derivedBirthDate: birthDateFromRegistrationNumber(normalized) ?? undefined } : {}),
-        }
+        const encrypted = yield* cipher.encrypt('registrationNumber', plan.normalized.value)
+        return { units: all, sealed: { hash, encrypted }, sameNumber } satisfies EmployeeIdentityFacts
       })
 
-      /** Payroll에 물어 퇴직금 정산이 끝난 직원이면 409입니다. 그 직원의 정산을 돌려줍니다. */
-      const guardSettlement = (record: EmployeeRecord, command: 'DELETE' | 'RESIGNATION') =>
-        settlements
-          .settlementsOf(record.companyId, record.id)
-          .pipe(
-            Effect.flatMap((found) =>
-              isSeveranceSettled(found, command) ? Effect.fail(new RetirementCompleted({})) : Effect.succeed(found),
-            ),
-          )
+      const settlementsOf = (record: EmployeeRecord) => settlements.settlementsOf(record.companyId, record.id)
 
       const markAssigned = (record: EmployeeRecord) =>
         Effect.forEach(
@@ -255,31 +220,14 @@ export class Employees extends Context.Service<
         get: (actor, id) => find(actor, id).pipe(Effect.flatMap(viewOf)),
 
         create: Effect.fn('Employees.create')(function* (actor, input) {
-          const isRejoin = input.isRejoin ?? false
-          const isForeigner = input.isForeigner ?? false
-          const identity = yield* resolveIdentity(actor, input.kind, undefined, isRejoin, { ...input, isForeigner })
-          const { derivedBirthDate, ...stored } = identity as typeof identity & { derivedBirthDate?: string }
+          const facts = yield* identityFacts(actor.companyId, input.kind, {
+            ...input,
+            isForeigner: input.isForeigner ?? false,
+          })
           const now = yield* nowIso
-          const record: EmployeeRecord = {
-            id: newId('employee'),
-            companyId: actor.companyId,
-            kind: input.kind,
-            name: input.name.trim(),
-            ...stored,
-            birthDate: input.birthDate ?? derivedBirthDate,
-            joinDate: input.joinDate,
-            isRejoin,
-            departmentId: input.departmentId,
-            positionId: input.positionId,
-            email: input.email,
-            phone: input.phone,
-            isForeigner,
-            nationalityCode: input.nationalityCode,
-            visaCode: input.visaCode,
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          }
+          const { employee: record } = yield* Effect.fromResult(
+            decideEmployeeCreation({ ...input, id: newId('employee'), companyId: actor.companyId }, facts, now),
+          )
           yield* employees.save(record)
           yield* markAssigned(record)
           if (record.kind === 'WAGE' && record.registrationNumberEncrypted !== undefined) {
@@ -291,28 +239,11 @@ export class Employees extends Context.Service<
         update: Effect.fn('Employees.update')(function* (actor, id, patch, expectedVersion) {
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          const isForeigner = patch.isForeigner ?? record.isForeigner
-          const identity = yield* resolveIdentity(actor, record.kind, record.id, record.isRejoin, {
+          const facts = yield* identityFacts(actor.companyId, record.kind, {
             ...patch,
-            isForeigner,
+            isForeigner: patch.isForeigner ?? record.isForeigner,
           })
-          const { derivedBirthDate, ...stored } = identity as typeof identity & { derivedBirthDate?: string }
-          const next: EmployeeRecord = {
-            ...record,
-            ...stored,
-            name: patch.name?.trim() ?? record.name,
-            birthDate: patch.birthDate ?? derivedBirthDate ?? record.birthDate,
-            joinDate: patch.joinDate ?? record.joinDate,
-            departmentId: patch.departmentId === undefined ? record.departmentId : (patch.departmentId ?? undefined),
-            positionId: patch.positionId === undefined ? record.positionId : (patch.positionId ?? undefined),
-            email: patch.email ?? record.email,
-            phone: patch.phone ?? record.phone,
-            isForeigner,
-            nationalityCode: patch.nationalityCode ?? record.nationalityCode,
-            visaCode: patch.visaCode ?? record.visaCode,
-            version: record.version + 1,
-            updatedAt: yield* nowIso,
-          }
+          const { employee: next } = yield* Effect.fromResult(decideEmployeeUpdate(record, patch, facts, yield* nowIso))
           yield* employees.save(next)
           yield* markAssigned(next)
           return yield* viewOf(next)
@@ -320,7 +251,7 @@ export class Employees extends Context.Service<
 
         remove: Effect.fn('Employees.remove')(function* (actor, id) {
           const record = yield* find(actor, id)
-          yield* guardSettlement(record, 'DELETE')
+          yield* Effect.fromResult(decideEmployeeRemoval(yield* settlementsOf(record)))
           yield* employees.remove(actor.companyId, id)
           // 없는 직원의 신고가 대리인 큐에 남지 않게 열린 신고를 모두 닫습니다.
           yield* filings.withdrawEmployee(actor.companyId, id, yield* nowIso)
@@ -346,14 +277,10 @@ export class Employees extends Context.Service<
         resign: Effect.fn('Employees.resign')(function* (actor, id, resignation, expectedVersion) {
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          const found = yield* guardSettlement(record, 'RESIGNATION')
-          const rejection = checkResignation(resignation, {
-            joinDate: record.joinDate,
-            interimSettlementDate: latestCompletedInterimDate(found),
-          })
-          if (rejection !== undefined) return yield* new ResignationRejected({ reason: rejection })
           const now = yield* nowIso
-          const next: EmployeeRecord = { ...record, resignation, version: record.version + 1, updatedAt: now }
+          const { employee: next } = yield* Effect.fromResult(
+            decideResignation(record, resignation, yield* settlementsOf(record), now),
+          )
           yield* employees.save(next)
           yield* filings.withdraw(record.companyId, { type: 'EMPLOYEE', id: record.id }, 'LOSS', now)
           if (record.kind === 'WAGE') {
@@ -377,11 +304,10 @@ export class Employees extends Context.Service<
         cancelResignation: Effect.fn('Employees.cancelResignation')(function* (actor, id, expectedVersion) {
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          if (record.resignation === undefined) return yield* new ResignationRejected({ reason: 'NOT_RESIGNED' })
-          yield* guardSettlement(record, 'RESIGNATION')
           const now = yield* nowIso
-          const { resignation: _, ...rest } = record
-          const next: EmployeeRecord = { ...rest, version: record.version + 1, updatedAt: now }
+          const { employee: next } = yield* Effect.fromResult(
+            decideResignationCancel(record, yield* settlementsOf(record), now),
+          )
           yield* employees.save(next)
           yield* filings.withdraw(record.companyId, { type: 'EMPLOYEE', id: record.id }, 'LOSS', now)
           return yield* viewOf(next)

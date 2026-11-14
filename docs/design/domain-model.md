@@ -266,10 +266,15 @@ Tax 신고 건을 옮기며 정한 규약입니다(2026-11-14). 다음 애그리
 - **정산 둘은 같은 모양입니다.** 퇴직금·근로소득 정산은 HR 직원(근로소득 정산은 오늘과 정산 기준일 두 번, `wageSettlementBasisDate`)과 같은 회사 정산·대장, 기준표 전체, 신고 잠금을 사실로 받고, 원천세 합계가 바뀐 지급월 이벤트(`payroll_pay_month.withholding_changed`)를 판정이 만듭니다. 확정할 지급일처럼 판정이 채우는 값의 달은 `completionPaymentDate` 같은 순수 함수로 서비스가 먼저 알아 신고 잠금을 묻습니다
 - **같은 회사의 다른 대장에 걸친 이벤트도 판정이 만듭니다.** 지급월 마감·해제 이벤트는 같은 회사 대장 전체(`ledgers`)의 앞뒤를 비교해 판정이 만들고, 서비스는 `save(decision)`으로 저장·발행만 합니다
 
+직원([employee.aggregate.ts](../../apps/api/src/modules/hr/employees/employee.aggregate.ts), 2026-11-14)을 옮기며 더 정한 것입니다.
+
+- **개인정보 봉인은 서비스가 하고 판정은 봉인한 값을 받습니다.** 주민등록번호의 해시·암호문은 `PersonalDataCipher`가 만드므로 판정에 넣지 않습니다. 서비스는 `planEmployeeIdentity`로 소속·번호 형식을 먼저 검사해 틀리면 봉인하지 않고 거부하고, 맞으면 해시·암호문(`SealedIdentity`)과 같은 번호의 직원·상태를 읽어 넘깁니다. 중복 판정과 마스킹·생년월일 채우기는 판정이 합니다
+- **이벤트가 없는 애그리거트는 `{ <애그리거트> }`만 돌려줍니다.** 직원 변경은 아직 이벤트를 내지 않습니다. 4대보험 취득·상실 신고 열기·철회, 조직 단위 배치 표시, 가족 삭제는 4단계까지 서비스가 판정 뒤에 합니다
+
 ## 단계
 
 1. **시범: Tax 신고 건.** 마쳤습니다([filing.aggregate.ts](../../apps/api/src/modules/tax/filings/filing.aggregate.ts)). 동작은 바꾸지 않았습니다. 정한 것은 아래 [시범에서 정한 것](#시범에서-정한-것)에 있습니다
-2. **나머지 애그리거트.** 묶은 경계 표의 묶음과 거부하며 남기는 커맨드(M1)부터 옮깁니다. 컨텍스트 묶음마다 PR 하나이고 동작은 바꾸지 않습니다. 순서는 Payroll → HR → Documents → Identity & Access → Billing → Integrations → Bookkeeping입니다. Payroll은 큰 애그리거트부터 나눠 옮깁니다. 급여대장, 퇴직금 정산([severance-settlement.aggregate.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.aggregate.ts)), 근로소득 정산([wage-tax-settlement.aggregate.ts](../../apps/api/src/modules/payroll/wage-settlements/wage-tax-settlement.aggregate.ts))을 마쳤고(2026-11-14), 판정할 규칙이 패치 하나뿐인 설정·소득자 명부·항목이 남았습니다
+2. **나머지 애그리거트.** 묶은 경계 표의 묶음과 거부하며 남기는 커맨드(M1)부터 옮깁니다. 컨텍스트 묶음마다 PR 하나이고 동작은 바꾸지 않습니다. 순서는 Payroll → HR → Documents → Identity & Access → Billing → Integrations → Bookkeeping입니다. Payroll은 큰 애그리거트부터 나눠 옮깁니다. 급여대장, 퇴직금 정산([severance-settlement.aggregate.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.aggregate.ts)), 근로소득 정산([wage-tax-settlement.aggregate.ts](../../apps/api/src/modules/payroll/wage-settlements/wage-tax-settlement.aggregate.ts))을 마쳤습니다(2026-11-14). 설정·소득자 명부·지급·공제 항목은 애그리거트 파일을 두지 않습니다. 판정이 이미 Effect에 의존하지 않는 순수 함수(`applyPayrollSettingPatch`, `normalizeEarnerRegistrationNumber`, `paymentItemFieldsOf`·`deductionItemFieldsOf`)이고 상태 전이도 이벤트도 없어서 옮겨도 이름만 바뀌기 때문입니다. 서비스가 읽기 → 판정 → 저장만 하면 그대로 둡니다. HR은 직원([employee.aggregate.ts](../../apps/api/src/modules/hr/employees/employee.aggregate.ts))부터 옮겼습니다(2026-11-14)
 3. **정책 기반.** 이벤트 행과 정책별 커서, 정책 실행기를 만들고([M2](#결정)) 지금 있는 채널 둘을 정책으로 옮깁니다
 4. **트랜잭션에서 정책으로 옮기기.** 위 [정책](#정책) 표의 "같은 트랜잭션"·"요청 안에서 호출"을 하나씩 옮깁니다. 응답이 바뀌는 것은 컨텍스트 문서를 함께 고칩니다
 
