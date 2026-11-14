@@ -5,22 +5,31 @@ import { checkVersion } from '../../../shared/http/versioning.ts'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
-import type { Violation } from '../../../shared/problem/problem.types.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import { HrDirectory } from '../../hr/hr.public.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { CompanySealRepository } from '../seals/company-seal.ts'
-import { DocumentEvents, DocumentNotifier, type DocumentEvent } from '../shared/documents-ports.ts'
+import { DocumentEvents, DocumentNotifier } from '../shared/documents-ports.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
-import { EsignTemplateRepository, type EsignTemplateRecord } from '../templates/esign-template.ts'
-import { allowedEsignActions, dueDateOnSend, isOverdue, transitionEsignRequest } from './esign-request-status.ts'
-import type { EsignRequestEvent, EsignRequestStatus } from './esign-request-status.types.ts'
-import { validateEsignSend } from './esign-send-validation.ts'
+import { EsignTemplateRepository } from '../templates/esign-template.ts'
 import {
-  EsignRequestInvalid,
+  decideEsignRequestCommand,
+  decideEsignRequestCreation,
+  decideEsignRequestRemoval,
+  decideEsignRequestSend,
+  decideEsignRequestUpdate,
+  decideExpire,
+  effectiveStatus,
+  planEsignRequestSend,
+  type EsignRequestDecision,
+} from './esign-request.aggregate.ts'
+import { allowedEsignActions } from './esign-request-status.ts'
+import type { EsignRequestStatus } from './esign-request-status.types.ts'
+import {
   EsignRequestNotFound,
   EsignRequestRepository,
-  EsignRequestTransitionInvalid,
+  type EsignRequestInvalid,
+  type EsignRequestTransitionInvalid,
   type EsignRequest,
   type EsignRequestDraft,
   type EsignRequestRecord,
@@ -42,11 +51,6 @@ type CommandError = EsignRequestNotFound | EsignRequestTransitionInvalid | Versi
 /** 링크 토큰과 세션 토큰은 SHA-256 해시로만 저장합니다. */
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex')
-}
-
-/** 저장한 요청에 기한 만료를 반영한 상태입니다. 만료는 기한 다음날부터입니다. */
-export function effectiveStatus(record: EsignRequestRecord, today: string): EsignRequestStatus {
-  return isOverdue(record.status, record.dueDate, today) ? 'EXPIRED' : record.status
 }
 
 /** 관리자의 전자서명 요청 관리입니다. 서명자 쪽은 `Signing`이 맡습니다. */
@@ -126,133 +130,38 @@ export class EsignRequests extends Context.Service<
             ),
           )
 
-      const transition = (record: EsignRequestRecord, today: string, event: EsignRequestEvent) => {
-        const currentStatus = effectiveStatus(record, today)
-        const result = transitionEsignRequest(currentStatus, event)
-        return result.ok
-          ? Effect.succeed(result.to)
-          : Effect.fail(new EsignRequestTransitionInvalid({ currentStatus, command: event }))
-      }
+      const save = (decision: EsignRequestDecision) =>
+        Effect.gen(function* () {
+          yield* requests.save(decision.request)
+          for (const event of decision.events) yield* events.publish(event)
+        })
 
       const loadTemplates = (ids: ReadonlyArray<string>) =>
         Effect.forEach(ids, (id) => templates.find(id)).pipe(Effect.map((found) => found.map(Option.getOrUndefined)))
 
-      /** 도장이 행위자 회사의 지우지 않은 도장인지 봅니다. 다른 회사 도장 ID는 없는 것과 같습니다. */
-      const isOwnSeal = (actor: Actor, companySealId: string) =>
-        Effect.map(seals.findActive(actor.companyId, companySealId), Option.isSome)
+      /** 회사의 지우지 않은 도장 ID입니다. */
+      const activeSealIds = (actor: Actor) =>
+        Effect.map(
+          seals.list(actor.companyId),
+          (all) => new Set<string>(all.filter((seal) => seal.deletedAt === undefined).map((seal) => seal.id)),
+        )
 
-      /** 초안 내용을 검사하고 수신자의 빈 값을 인사 정보로 채웁니다. */
-      const prepareDraft = Effect.fn('EsignRequests.prepareDraft')(function* (
+      const findEmployee = (actor: Actor, employeeId: Id<'employee'> | undefined, today: string) =>
+        employeeId === undefined
+          ? Effect.succeed(undefined)
+          : Effect.map(directory.findEmployee(actor.companyId, employeeId, today), Option.getOrUndefined)
+
+      /** 초안 판정에 필요한 템플릿·직원·도장을 읽습니다. */
+      const draftFacts = Effect.fn('EsignRequests.draftFacts')(function* (
         actor: Actor,
         draft: typeof EsignRequestDraft.Type,
         today: string,
       ) {
-        const violations: Violation[] = []
-        const found = yield* loadTemplates(draft.templateIds)
-        found.forEach((template, index) => {
-          if (template === undefined || template.kind.endsWith('_CERTIFICATE')) {
-            violations.push({ field: `templateIds[${index}]`, code: 'NOT_FOUND' })
-          }
-        })
-        const { employeeId } = draft.recipient
-        const employee =
-          employeeId === undefined
-            ? undefined
-            : Option.getOrUndefined(yield* directory.findEmployee(actor.companyId, employeeId, today))
-        if (employeeId !== undefined && employee === undefined) {
-          violations.push({ field: 'recipient.employeeId', code: 'NOT_FOUND' })
-        }
-        if (draft.companySealId !== undefined && !(yield* isOwnSeal(actor, draft.companySealId))) {
-          violations.push({ field: 'companySealId', code: 'NOT_FOUND' })
-        }
-        const name = draft.recipient.name ?? employee?.name
-        if (name === undefined || name.trim() === '') violations.push({ field: 'recipient.name', code: 'REQUIRED' })
-        if (violations.length > 0 || name === undefined) return yield* new EsignRequestInvalid({ violations })
         return {
-          title: draft.title,
-          recipient: {
-            employeeId,
-            name,
-            email: draft.recipient.email ?? employee?.email,
-            phone: draft.recipient.phone ?? employee?.phone,
-            isForeigner: draft.recipient.isForeigner ?? employee?.isForeigner ?? false,
-            nationalityCode: draft.recipient.nationalityCode ?? employee?.nationalityCode,
-            visaCode: draft.recipient.visaCode ?? employee?.visaCode,
-          },
-          templateIds: draft.templateIds,
-          fieldValues: draft.fieldValues ?? {},
-          hiddenFields: draft.hiddenFields ?? {},
-          companySealId: draft.companySealId,
-          dueDate: draft.dueDate,
+          templates: yield* loadTemplates(draft.templateIds),
+          employee: yield* findEmployee(actor, draft.recipient.employeeId, today),
+          activeSealIds: yield* activeSealIds(actor),
         }
-      })
-
-      /** 발송 검증을 하고 링크를 만들어 보냅니다. 메일이 실패하면 `SEND_FAILED`로 남깁니다. */
-      const deliver = Effect.fn('EsignRequests.deliver')(function* (
-        actor: Actor,
-        record: EsignRequestRecord,
-        now: { iso: string; today: string },
-      ) {
-        const found = yield* loadTemplates(record.templateIds)
-        const employee =
-          record.recipient.employeeId === undefined
-            ? undefined
-            : Option.getOrUndefined(
-                yield* directory.findEmployee(actor.companyId, record.recipient.employeeId, now.today),
-              )
-        const sourceValues: Record<string, unknown> =
-          employee === undefined ? {} : { 'employee.name': employee.name, 'employee.joinDate': employee.joinDate }
-        const check = validateEsignSend({
-          recipient: record.recipient,
-          documents: found.map((template: EsignTemplateRecord | undefined, index) => ({
-            index,
-            templateActive: template?.isActive ?? false,
-            fields: template?.fields ?? [],
-            defaultCompanySealId: template?.defaultCompanySealId,
-          })),
-          fieldValues: record.fieldValues,
-          hiddenFields: record.hiddenFields,
-          sourceValues,
-          companySealId: record.companySealId,
-        })
-        // 템플릿 기본 도장이나 그새 지운 도장도 보낼 때 다시 확인합니다.
-        if (check.companySealId !== undefined && !(yield* isOwnSeal(actor, check.companySealId))) {
-          check.violations.push({ field: 'companySealId', code: 'NOT_FOUND' })
-        }
-        if (check.violations.length > 0) return yield* new EsignRequestInvalid({ violations: check.violations })
-        const token = randomBytes(24).toString('base64url')
-        const signingUrl = `${SIGNING_URL_BASE}${token}`
-        const delivery = yield* notifier.sendSigningLink({
-          companyId: actor.companyId,
-          email: record.recipient.email ?? '',
-          title: record.title,
-          url: signingUrl,
-        })
-        const next: EsignRequestRecord = {
-          ...record,
-          status: delivery.ok ? 'PENDING' : 'SEND_FAILED',
-          companySealId: check.companySealId as Id<'companySeal'> | undefined,
-          dueDate: dueDateOnSend(
-            record.dueDate !== undefined && record.dueDate >= now.today ? record.dueDate : undefined,
-            now.today,
-          ),
-          sentAt: now.iso,
-          linkTokenHash: hashToken(token),
-          verifyFailures: 0,
-          sessions: [],
-          version: record.version + 1,
-          updatedAt: now.iso,
-        }
-        yield* requests.save(next)
-        if (delivery.ok) {
-          yield* events.publish({
-            type: 'esign_request.sent',
-            companyId: actor.companyId,
-            requestId: next.id,
-            at: now.iso,
-          })
-        }
-        return { ...toView(next, now.today), signingUrl }
       })
 
       return EsignRequests.of({
@@ -269,37 +178,33 @@ export class EsignRequests extends Context.Service<
 
         create: Effect.fn('EsignRequests.create')(function* (actor, draft) {
           const now = yield* clock
-          const prepared = yield* prepareDraft(actor, draft, now.today)
-          const record: EsignRequestRecord = {
-            id: newId('esignRequest'),
-            companyId: actor.companyId,
-            status: 'DRAFT',
-            ...prepared,
-            verifyFailures: 0,
-            sessions: [],
-            version: 1,
-            createdAt: now.iso,
-            updatedAt: now.iso,
-          }
-          yield* requests.save(record)
-          return toView(record, now.today)
+          const decision = yield* Effect.fromResult(
+            decideEsignRequestCreation(
+              { id: newId('esignRequest'), companyId: actor.companyId },
+              draft,
+              yield* draftFacts(actor, draft, now.today),
+              now,
+            ),
+          )
+          yield* save(decision)
+          return toView(decision.request, now.today)
         }),
 
         update: Effect.fn('EsignRequests.update')(function* (actor, id, draft, expectedVersion) {
           const now = yield* clock
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          yield* transition(record, now.today, 'UPDATE')
-          const prepared = yield* prepareDraft(actor, draft, now.today)
-          const next: EsignRequestRecord = { ...record, ...prepared, version: record.version + 1, updatedAt: now.iso }
-          yield* requests.save(next)
-          return toView(next, now.today)
+          const decision = yield* Effect.fromResult(
+            decideEsignRequestUpdate(record, draft, yield* draftFacts(actor, draft, now.today), now),
+          )
+          yield* save(decision)
+          return toView(decision.request, now.today)
         }),
 
         remove: Effect.fn('EsignRequests.remove')(function* (actor, id) {
           const now = yield* clock
           const record = yield* find(actor, id)
-          yield* transition(record, now.today, 'DELETE')
+          yield* Effect.fromResult(decideEsignRequestRemoval(record, now.today))
           yield* requests.remove(actor.companyId, id)
         }),
 
@@ -307,36 +212,43 @@ export class EsignRequests extends Context.Service<
           const now = yield* clock
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          yield* transition(record, now.today, command)
-          return yield* deliver(actor, record, now)
+          const plan = yield* Effect.fromResult(
+            planEsignRequestSend(
+              record,
+              command,
+              {
+                templates: yield* loadTemplates(record.templateIds),
+                employee: yield* findEmployee(actor, record.recipient.employeeId, now.today),
+                activeSealIds: yield* activeSealIds(actor),
+              },
+              now.today,
+            ),
+          )
+          const token = randomBytes(24).toString('base64url')
+          const signingUrl = `${SIGNING_URL_BASE}${token}`
+          const delivery = yield* notifier.sendSigningLink({
+            companyId: actor.companyId,
+            email: record.recipient.email ?? '',
+            title: record.title,
+            url: signingUrl,
+          })
+          const decision = decideEsignRequestSend(
+            record,
+            plan,
+            { delivered: delivery.ok, linkTokenHash: hashToken(token) },
+            now,
+          )
+          yield* save(decision)
+          return { ...toView(decision.request, now.today), signingUrl }
         }),
 
         apply: Effect.fn('EsignRequests.apply')(function* (actor, id, command, expectedVersion) {
           const now = yield* clock
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          const status = yield* transition(record, now.today, command)
-          if (status === 'DELETED')
-            return yield* new EsignRequestTransitionInvalid({ currentStatus: record.status, command })
-          const next: EsignRequestRecord = {
-            ...record,
-            status,
-            ...(command === 'REVERT_TO_DRAFT' ? { dueDate: undefined, sentAt: undefined } : {}),
-            linkTokenHash: command === 'VOID' ? record.linkTokenHash : undefined,
-            sessions: [],
-            version: record.version + 1,
-            updatedAt: now.iso,
-          }
-          yield* requests.save(next)
-          if (command === 'VOID') {
-            yield* events.publish({
-              type: 'esign_request.voided',
-              companyId: actor.companyId,
-              requestId: id,
-              at: now.iso,
-            })
-          }
-          return toView(next, now.today)
+          const decision = yield* Effect.fromResult(decideEsignRequestCommand(record, command, now))
+          yield* save(decision)
+          return toView(decision.request, now.today)
         }),
 
         expireOverdue: Effect.fn('EsignRequests.expireOverdue')(function* (companyId) {
@@ -345,8 +257,7 @@ export class EsignRequests extends Context.Service<
           for (const record of yield* requests.list(companyId)) {
             const decision = decideExpire(record, now.today, now.iso)
             if (decision === null) continue
-            yield* requests.save(decision.request)
-            for (const event of decision.events) yield* events.publish(event)
+            yield* save(decision)
             expired += 1
           }
           return expired
@@ -354,30 +265,4 @@ export class EsignRequests extends Context.Service<
       })
     }),
   )
-}
-
-/**
- * 기한이 지난 서명 대기·진행 중 요청을 만료합니다. 바꿀 것이 없으면 `null`입니다(시스템 커맨드, [domain-model.md](../../../../../../docs/design/domain-model.md)).
- *
- * 링크 토큰과 서명 세션을 지워 링크를 닫습니다. 다시 보내면(`:resend`) 새 링크가 나갑니다.
- */
-export function decideExpire(
-  record: EsignRequestRecord,
-  today: string,
-  at: string,
-): { request: EsignRequestRecord; events: DocumentEvent[] } | null {
-  if (!isOverdue(record.status, record.dueDate, today)) return null
-  const result = transitionEsignRequest(record.status, 'EXPIRE')
-  if (!result.ok || result.to === 'DELETED') return null
-  return {
-    request: {
-      ...record,
-      status: result.to,
-      linkTokenHash: undefined,
-      sessions: [],
-      version: record.version + 1,
-      updatedAt: at,
-    },
-    events: [{ type: 'esign_request.expired', companyId: record.companyId, requestId: record.id, at }],
-  }
 }

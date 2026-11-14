@@ -89,7 +89,7 @@ stateDiagram-v2
 
 - **`PENDING`과 `IN_PROGRESS`의 경계는 본인확인 성공입니다.** 링크 열람만으로는 바뀌지 않습니다. 레거시 구현과 같습니다
 - **`IN_PROGRESS`도 취소할 수 있습니다.** 화면은 "서명 전"에만 버튼을 보였지만, 서명 중인 사람이 끝내지 않는 경우를 정리할 길이 필요합니다
-- **기한 만료는 정기 작업이 처리합니다(2026-11-14, #81).** `documents.esign-expiry`가 매일 00:05(회사 시간대)에 `dueDate`가 지난 서명 대기·진행 중 요청을 `EXPIRED`로 바꾸고, 링크 토큰·서명 세션을 지우고, `esign_request.expired`를 냅니다(시스템 커맨드 `expireOverdue`, 판정 `decideExpire`, [esign-expiry-task.ts](../../apps/api/src/modules/documents/esign/esign-expiry-task.ts)). 기한은 `dueDate` 당일까지라 다음날 00:00부터 만료이고 몇 분은 여유입니다. 조회는 상태를 바꾸지 않지만, 작업이 늦어도 조회와 링크는 `dueDate`가 지났으면 만료로 답합니다(`effectiveStatus`)
+- **기한 만료는 정기 작업이 처리합니다(2026-11-14, #81).** `documents.esign-expiry`가 매일 00:05(회사 시간대)에 `dueDate`가 지난 서명 대기·진행 중 요청을 `EXPIRED`로 바꾸고, 링크 토큰·서명 세션을 지우고, `esign_request.expired`를 냅니다(시스템 커맨드 `expireOverdue`, 판정 `decideExpire`([esign-request.aggregate.ts](../../apps/api/src/modules/documents/esign/esign-request.aggregate.ts)), 작업 [esign-expiry-task.ts](../../apps/api/src/modules/documents/esign/esign-expiry-task.ts)). 기한은 `dueDate` 당일까지라 다음날 00:00부터 만료이고 몇 분은 여유입니다. 조회는 상태를 바꾸지 않지만, 작업이 늦어도 조회와 링크는 `dueDate`가 지났으면 만료로 답합니다(`effectiveStatus`)
 - 기본 서명 기한은 발송일 + 16일입니다(매뉴얼 스크린샷 2026.06.23 → 07.09). 발송 시 과거 날짜는 422 `ESIGN_DUE_DATE_PAST`입니다
 
 ### 발송 검증

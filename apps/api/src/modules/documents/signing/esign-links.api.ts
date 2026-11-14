@@ -9,7 +9,7 @@ import {
   EsignVerificationFailed,
   EsignVerificationLocked,
   SignerSessionInvalid,
-} from './signing.ts'
+} from './signing-errors.ts'
 
 const params = { token: Schema.String }
 
