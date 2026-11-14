@@ -3,6 +3,8 @@ import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { PayrollContractRepository } from '../contracts/payroll-contract.ts'
 import { WorkContractRepository } from '../contracts/work-contract.ts'
+import { decidePayrollContractSigning } from '../contracts/payroll-contract.aggregate.ts'
+import { decideWorkContractSigning } from '../contracts/work-contract.aggregate.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { documentCategoryOf, signedContractLinks } from './employee-document-rules.ts'
 import { EmployeeDocumentRepository, type EmployeeDocumentRecord } from './employee-document.ts'
@@ -54,21 +56,15 @@ export class SignedDocumentIntake extends Context.Service<
         to: Id<'document'> | undefined,
         from?: Id<'document'>,
       ) {
-        const applies = (current: Id<'document'> | undefined) => from === undefined || current === from
         if (link.type === 'WORK_CONTRACT') {
           const found = yield* workContracts.find(companyId, link.id)
-          if (Option.isSome(found) && applies(found.value.signedDocumentId))
-            yield* workContracts.save({ ...found.value, signedDocumentId: to })
+          const decision = Option.isSome(found) ? decideWorkContractSigning(found.value, to, from) : undefined
+          if (decision !== undefined) yield* workContracts.save(decision.workContract)
         } else {
           const found = yield* payrollContracts.find(companyId, link.id)
-          if (Option.isSome(found) && applies(found.value.signedDocumentId))
-            // 응답 ETag가 버전이라 연결이 바뀌면 버전도 올립니다.
-            yield* payrollContracts.save({
-              ...found.value,
-              signedDocumentId: to,
-              version: found.value.version + 1,
-              updatedAt: DateTime.formatIso(yield* DateTime.now),
-            })
+          const at = DateTime.formatIso(yield* DateTime.now)
+          const decision = Option.isSome(found) ? decidePayrollContractSigning(found.value, to, at, from) : undefined
+          if (decision !== undefined) yield* payrollContracts.save(decision.payrollContract)
         }
       })
 

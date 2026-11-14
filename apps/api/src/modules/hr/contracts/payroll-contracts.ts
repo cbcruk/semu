@@ -5,9 +5,8 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
-import { MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE } from '../../payroll/payroll.public.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { EmployeeKindNotSupported, EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
+import { EmployeeNotFound, type EmployeeKindNotSupported } from '../employees/employee.ts'
 import { CompanyWorkforceSize } from '../ports/company-workforce-size.ts'
 import { PersonalDataAccessLog } from '../../../shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../../../shared/personal-data/personal-data-cipher.ts'
@@ -16,19 +15,21 @@ import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/i
 import { appliedEnrollment } from '../social-insurance/applied-enrollment.ts'
 import { SocialInsuranceSettingRepository } from '../social-insurance/social-insurance-setting.ts'
 import { entryInEffect } from '../tax-withholding/tax-withholding-history.ts'
-import { evaluatePayrollContract } from './payroll-contract-evaluation.ts'
+import {
+  decidePayrollContractCreation,
+  decidePayrollContractUpdate,
+  type PayrollContractFacts,
+} from './payroll-contract.aggregate.ts'
 import { type RemunerationChange, remunerationChanges } from './remuneration-change.ts'
 import {
   maskAccountNumber,
-  PayrollContractInput as PayrollContractInputSchema,
-  PayrollContractInvalid,
+  type PayrollContractInvalid,
   PayrollContractNotFound,
   PayrollContractRepository,
   type PayrollContract,
   type PayrollContractInput,
   type PayrollContractRecord,
 } from './payroll-contract.ts'
-import { MINIMUM_HOURLY_WAGE_2026 } from './wage-calculation.ts'
 import { contractInForce, workContractStatus } from './work-contract-period.ts'
 import { WorkContractRepository } from './work-contract.ts'
 
@@ -41,7 +42,7 @@ function samePayload(a: RemunerationChange['payload'], b: RemunerationChange['pa
  * 급여계약 관리입니다. 근로소득자(`WAGE`)만 가질 수 있습니다.
  *
  * 저장할 때마다 파생 금액(기본급·기준시급·통상시급·수습시급·고정수당·최저임금 판정)을 다시 계산해 둡니다.
- * 최저시급은 아직 Payroll 기준표에 연결하지 않아 {@link MINIMUM_HOURLY_WAGE_2026}을 씁니다.
+ * 최저시급은 아직 Payroll 기준표에 연결하지 않아 `MINIMUM_HOURLY_WAGE_2026`을 씁니다. 판정은 `payroll-contract.aggregate.ts`입니다.
  * 수습 지급률은 계약 시작일에 유효한 근로계약에서 읽습니다.
  * 자동계산 고정수당의 가산 배수는 저장할 때의 사업장 규모(`CompanyWorkforceSize`, Payroll 급여 설정)로 고릅니다. 상시 5명 이상이면
  * Payroll `MULTIPLIERS_FIVE_OR_MORE`, 4명 이하면 `MULTIPLIERS_UNDER_FIVE`입니다. 규모가 나중에 바뀌어도 저장한 파생 금액은
@@ -107,31 +108,18 @@ export class PayrollContracts extends Context.Service<
             ),
           )
 
-      const requireWage = (employee: EmployeeRecord) =>
-        employee.kind === 'WAGE' ? Effect.void : Effect.fail(new EmployeeKindNotSupported({ kind: employee.kind }))
-
-      /** 입력을 평가하고 계좌번호를 암호화해 저장할 필드를 만듭니다. */
-      const prepare = Effect.fn('PayrollContracts.prepare')(function* (
+      /** 판정에 넘길 사실을 읽고 계좌번호를 봉인합니다. */
+      const factsOf = Effect.fn('PayrollContracts.factsOf')(function* (
         actor: Actor,
         employeeId: Id<'employee'>,
         input: PayrollContractInput,
       ) {
-        const workContract = contractInForce(
-          (yield* workContracts.list(actor.companyId)).filter((contract) => contract.employeeId === employeeId),
-          input.startDate,
-        )
-        const fiveOrMore = yield* workforceSize.hasFiveOrMoreEmployees(actor.companyId)
-        const evaluation = evaluatePayrollContract(input, {
-          minimumHourlyWage: MINIMUM_HOURLY_WAGE_2026,
-          premiumMultipliers: fiveOrMore ? MULTIPLIERS_FIVE_OR_MORE : MULTIPLIERS_UNDER_FIVE,
-          probationPayRatePpm: workContract?.probation?.payRatePpm,
-          probationMonths: workContract?.probation?.months,
-        })
-        if (evaluation.violations.length > 0)
-          return yield* new PayrollContractInvalid({ violations: evaluation.violations })
-        const { account, ...terms } = input
+        const { account } = input
         return {
-          ...terms,
+          workContracts: (yield* workContracts.list(actor.companyId)).filter(
+            (contract) => contract.employeeId === employeeId,
+          ),
+          hasFiveOrMoreEmployees: yield* workforceSize.hasFiveOrMoreEmployees(actor.companyId),
           ...(account === undefined
             ? {}
             : {
@@ -145,9 +133,7 @@ export class PayrollContracts extends Context.Service<
                   accountHolder: account.accountHolder,
                 },
               }),
-          derived: evaluation.derived,
-          warnings: evaluation.warnings,
-        }
+        } satisfies PayrollContractFacts
       })
 
       /**
@@ -229,18 +215,20 @@ export class PayrollContracts extends Context.Service<
 
         create: Effect.fn('PayrollContracts.create')(function* (actor, employeeId, input) {
           const employee = yield* findEmployee(actor, employeeId)
-          yield* requireWage(employee)
-          const fields = yield* prepare(actor, employeeId, input)
           const at = yield* now
-          const record: PayrollContractRecord = {
-            id: newId('payrollContract'),
-            companyId: actor.companyId,
-            employeeId,
-            ...fields,
-            version: 1,
-            createdAt: at,
-            updatedAt: at,
-          }
+          const { payrollContract: record } = yield* Effect.fromResult(
+            decidePayrollContractCreation(
+              {
+                id: newId('payrollContract'),
+                companyId: actor.companyId,
+                employeeId,
+                employeeKind: employee.kind,
+                terms: input,
+              },
+              yield* factsOf(actor, employeeId, input),
+              at,
+            ),
+          )
           yield* contracts.save(record)
           yield* syncRemunerationFilings(actor.companyId, employeeId, at)
           return toView(record, yield* today)
@@ -253,18 +241,9 @@ export class PayrollContracts extends Context.Service<
         update: Effect.fn('PayrollContracts.update')(function* (actor, id, input, expectedVersion) {
           const current = yield* findContract(actor, id)
           yield* checkVersion(current.version, expectedVersion)
-          const fields = yield* prepare(actor, current.employeeId, input)
-          const record: PayrollContractRecord = {
-            id: current.id,
-            companyId: current.companyId,
-            employeeId: current.employeeId,
-            ...fields,
-            // 서명한 연봉계약서는 근로조건이 그대로일 때만 남깁니다. 계좌만 바꾸면 다시 서명받을 일이 아닙니다.
-            signedDocumentId: sameTerms(current, input) ? current.signedDocumentId : undefined,
-            version: current.version + 1,
-            createdAt: current.createdAt,
-            updatedAt: yield* now,
-          }
+          const { payrollContract: record } = yield* Effect.fromResult(
+            decidePayrollContractUpdate(current, input, yield* factsOf(actor, current.employeeId, input), yield* now),
+          )
           yield* contracts.save(record)
           yield* syncRemunerationFilings(actor.companyId, current.employeeId, record.updatedAt)
           return toView(record, yield* today)
@@ -291,21 +270,5 @@ export class PayrollContracts extends Context.Service<
         }),
       })
     }),
-  )
-}
-
-/** 계좌를 뺀 근로조건이 같은지입니다. 빈 값(`undefined`)과 빠진 키는 같게 봅니다. */
-function sameTerms(current: PayrollContractRecord, input: PayrollContractInput): boolean {
-  const keys = Object.keys(PayrollContractInputSchema.fields).filter((key) => key !== 'account')
-  const pick = (source: object) =>
-    canonical(Object.fromEntries(keys.map((key) => [key, (source as Record<string, unknown>)[key]])))
-  return pick(current) === pick(input)
-}
-
-function canonical(value: unknown): string {
-  return JSON.stringify(value, (_key, inner: unknown) =>
-    inner !== null && typeof inner === 'object' && !Array.isArray(inner)
-      ? Object.fromEntries(Object.entries(inner).toSorted(([a], [b]) => a.localeCompare(b)))
-      : inner,
   )
 }
