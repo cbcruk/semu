@@ -110,4 +110,36 @@ describe('정기 작업 billing.withdrawal-results', () => {
 
     expect(runs[0]).toMatchObject({ status: 'FAILED', lastError: 'CmsUnavailable' })
   })
+
+  it('한 출금일에 닿지 못해도 다른 출금일은 반영하고, 같은 결제 줄이 두 번 와도 한 번만 반영합니다', async () => {
+    const down = Layer.succeed(
+      CmsGateway,
+      CmsGateway.of({
+        registerAccount: () => Effect.die('쓰지 않음'),
+        withdrawalResults: (withdrawnOn, items) =>
+          withdrawnOn === '2026-09-25'
+            ? Effect.fail(new CmsUnavailable())
+            : Effect.succeed(
+                Option.some(
+                  items.flatMap((item) => [item, item]).map((item) => ({ paymentId: item.paymentId, succeeded: true })),
+                ),
+              ),
+      }),
+    )
+    const [runs, payment] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const repository = yield* PaymentRepository
+        // 시드의 실패 결제를 9월 25일 재출금(RETRYING)으로 둡니다. 그날 결과 파일은 장애로 읽지 못합니다.
+        const failedOne = (yield* repository.listAll()).find((row) => row.id === DEMO_PAYMENT_IDS.failed)!
+        yield* repository.save({ ...failedOne, status: 'RETRYING', failureReason: undefined })
+        yield* at('2026-11-26T15:00:00')
+        yield* (yield* Scheduler).runDue()
+        const all = yield* repository.listAll()
+        return [yield* (yield* Scheduler).runs(), all.find((row) => row.id === DEMO_PAYMENT_IDS.scheduled)] as const
+      }).pipe(Effect.provide(layer(down)), Effect.provide(TestClock.layer())),
+    )
+
+    expect(runs[0]).toMatchObject({ status: 'FAILED', lastError: 'CmsUnavailable' })
+    expect(payment).toMatchObject({ status: 'PAID', version: 2 })
+  })
 })

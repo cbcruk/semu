@@ -242,7 +242,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 |---|---|---|
 | `reconcile(today, companyId?)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 모든 회사로 부름(2026-11-14 #81, #105). 구독 시작·해지·해지 철회와 출금 계좌 등록이 그 회사로 같은 트랜잭션에서 부름. 출금일이 오지 않은 `SCHEDULED` 결제를 취소·갱신하고, 출금일 3일 전부터 전날까지는(`schedulingMonthOn`) 그달 빠진 결제 예정을 만듦 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음. 맞는 결제는 그대로 둠 |
 | `scheduleMonth(month)` | 그달 결제 예정 만들기만. `reconcile`이 씀 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음 |
-| `recordWithdrawal(paymentId, result)` | 정기 작업 `billing.withdrawal-results`가 매일 15:00에 결과 파일의 줄마다 부름(2026-11-14, #109) | 이미 반영된 결과는 그대로 둠 |
+| `recordWithdrawal(paymentId, result)` | 정기 작업 `billing.withdrawal-results`가 매일 15:00에 결과 파일의 줄마다 부름(2026-11-14, #109). 같은 결제 줄은 처음 하나만 쓰고, 닿지 못한 출금일은 건너뛰어 다른 출금일을 계속 읽은 뒤 작업을 실패로 남겨 재시도함 | 이미 반영된 결과는 그대로 둠 |
 | `awaitingResults(today)` | 같은 작업이 결과를 기다리는 결제를 출금일별로 묶음(`withdrawalsAwaitingResult`: `SCHEDULED`·`RETRYING`이고 결과 반영일이 오늘이거나 지남) | 읽기만 함 |
 
 ## 오류 코드
