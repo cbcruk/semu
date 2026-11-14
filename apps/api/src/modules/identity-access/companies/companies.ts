@@ -7,12 +7,17 @@ import type { Actor } from '../actor.types.ts'
 import { AuditLog } from '../audit/audit-log.ts'
 import { MembershipRepository } from '../members/membership-repository.ts'
 import { describeDefect } from '../../../shared/problem/defect-log.ts'
-import { normalizeBusinessNumber } from './business-number.ts'
 import { BusinessStatusCheck } from './business-status-check.ts'
 import { CompanyRepository } from './company-repository.ts'
-import { BusinessClosed, BusinessNumberInvalid, CompanyAlreadyRegistered } from './company.ts'
-import type { Company, CompanyPatch, CompanyRegistration } from './company.ts'
-import { isRegistrationBlocked } from './registration-business-status.ts'
+import { decideCompanyRegistration, decideCompanyUpdate, planCompanyRegistration } from './company.aggregate.ts'
+import type {
+  BusinessClosed,
+  BusinessNumberInvalid,
+  Company,
+  CompanyAlreadyRegistered,
+  CompanyPatch,
+  CompanyRegistration,
+} from './company.ts'
 
 /** 지금 회사(테넌트) 조회·수정과 새 회사 등록입니다. */
 export class Companies extends Context.Service<
@@ -66,60 +71,38 @@ export class Companies extends Context.Service<
       ) {
         const company = yield* current(actor)
         yield* checkVersion(company.version, expectedVersion)
-        const next: Company = { ...company, ...patch, version: company.version + 1 }
-        yield* companies.save(next)
-        yield* audit.record({
-          action: 'COMPANY_UPDATED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: actor.companyId,
-          detail: Object.keys(patch).join(','),
-        })
-        return next
+        const decision = decideCompanyUpdate(company, patch, actor)
+        yield* companies.save(decision.company)
+        for (const entry of decision.audit) yield* audit.record(entry)
+        return decision.company
       })
 
       const register = Effect.fn('Companies.register')(function* (
         userId: Id<'user'>,
         registration: CompanyRegistration,
       ) {
-        const businessNumber = normalizeBusinessNumber(registration.businessNumber)
-        if (businessNumber === undefined) return yield* new BusinessNumberInvalid({})
-        if (Option.isSome(yield* companies.findByBusinessNumber(businessNumber))) {
-          return yield* new CompanyAlreadyRegistered({})
-        }
-        if (isRegistrationBlocked(yield* businessStatusOf(businessNumber))) return yield* new BusinessClosed({})
+        const { businessNumber } = yield* Effect.fromResult(planCompanyRegistration(registration))
+        const alreadyRegistered = Option.isSome(yield* companies.findByBusinessNumber(businessNumber))
+        // 이미 등록된 번호면 판정이 먼저 거부하므로 바깥 조회를 하지 않습니다.
+        const businessStatus = alreadyRegistered ? undefined : yield* businessStatusOf(businessNumber)
         const now = yield* Clock.currentTimeMillis
-        const nowIso = new Date(now).toISOString()
-        const company: Company = {
-          id: newId('company', now),
-          name: registration.name,
-          businessNumber,
-          businessType: registration.businessType,
-          ...(registration.phone === undefined ? {} : { phone: registration.phone }),
-          representatives: [],
-          createdAt: nowIso,
-          version: 1,
-        }
-        yield* companies.save(company)
-        yield* memberships.save({
-          id: newId('membership', now),
-          companyId: company.id,
-          userId,
-          access: 'ADMIN',
-          roleIds: [],
-          isOwner: true,
-          joinedAt: nowIso,
-          version: 1,
-        })
-        yield* audit.record({
-          action: 'COMPANY_REGISTERED',
-          companyId: company.id,
-          actorUserId: userId,
-          actorKind: 'CLIENT',
-          targetId: company.id,
-        })
-        return company
+        const decision = yield* Effect.fromResult(
+          decideCompanyRegistration(
+            {
+              companyId: newId('company', now),
+              membershipId: newId('membership', now),
+              userId,
+              at: new Date(now).toISOString(),
+            },
+            registration,
+            businessNumber,
+            { alreadyRegistered, businessStatus },
+          ),
+        )
+        yield* companies.save(decision.company)
+        yield* memberships.save(decision.membership)
+        for (const entry of decision.audit) yield* audit.record(entry)
+        return decision.company
       })
 
       return Companies.of({ current, update, register })
