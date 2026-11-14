@@ -16,7 +16,7 @@ import { lossDateOf } from '../insurance-filings/insurance-filing-rules.ts'
 import { LeaveRepository, type LeaveRecord } from '../leaves/leave.ts'
 import { OrganizationRepository } from '../organization/organization.ts'
 import { SeveranceSettlementLookup } from '../ports/severance-settlement-lookup.ts'
-import { checkResignation, isSeveranceSettled } from '../retirement/retirement-rules.ts'
+import { checkResignation, isSeveranceSettled, latestCompletedInterimDate } from '../retirement/retirement-rules.ts'
 import {
   birthDateFromRegistrationNumber,
   maskIdentityNumber,
@@ -216,13 +216,13 @@ export class Employees extends Context.Service<
         }
       })
 
-      /** Payroll에 물어 퇴직금 정산이 끝난 직원이면 409입니다. */
-      const guardSettlement = (record: EmployeeRecord) =>
+      /** Payroll에 물어 퇴직금 정산이 끝난 직원이면 409입니다. 그 직원의 정산을 돌려줍니다. */
+      const guardSettlement = (record: EmployeeRecord, command: 'DELETE' | 'RESIGNATION') =>
         settlements
-          .statusesOf(record.companyId, record.id)
+          .settlementsOf(record.companyId, record.id)
           .pipe(
-            Effect.flatMap((statuses) =>
-              isSeveranceSettled(statuses) ? Effect.fail(new RetirementCompleted({})) : Effect.void,
+            Effect.flatMap((found) =>
+              isSeveranceSettled(found, command) ? Effect.fail(new RetirementCompleted({})) : Effect.succeed(found),
             ),
           )
 
@@ -320,7 +320,7 @@ export class Employees extends Context.Service<
 
         remove: Effect.fn('Employees.remove')(function* (actor, id) {
           const record = yield* find(actor, id)
-          yield* guardSettlement(record)
+          yield* guardSettlement(record, 'DELETE')
           yield* employees.remove(actor.companyId, id)
           // 없는 직원의 신고가 대리인 큐에 남지 않게 열린 신고를 모두 닫습니다.
           yield* filings.withdrawEmployee(actor.companyId, id, yield* nowIso)
@@ -346,8 +346,11 @@ export class Employees extends Context.Service<
         resign: Effect.fn('Employees.resign')(function* (actor, id, resignation, expectedVersion) {
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
-          yield* guardSettlement(record)
-          const rejection = checkResignation(resignation, { joinDate: record.joinDate })
+          const found = yield* guardSettlement(record, 'RESIGNATION')
+          const rejection = checkResignation(resignation, {
+            joinDate: record.joinDate,
+            interimSettlementDate: latestCompletedInterimDate(found),
+          })
           if (rejection !== undefined) return yield* new ResignationRejected({ reason: rejection })
           const now = yield* nowIso
           const next: EmployeeRecord = { ...record, resignation, version: record.version + 1, updatedAt: now }
@@ -375,7 +378,7 @@ export class Employees extends Context.Service<
           const record = yield* find(actor, id)
           yield* checkVersion(record.version, expectedVersion)
           if (record.resignation === undefined) return yield* new ResignationRejected({ reason: 'NOT_RESIGNED' })
-          yield* guardSettlement(record)
+          yield* guardSettlement(record, 'RESIGNATION')
           const now = yield* nowIso
           const { resignation: _, ...rest } = record
           const next: EmployeeRecord = { ...rest, version: record.version + 1, updatedAt: now }

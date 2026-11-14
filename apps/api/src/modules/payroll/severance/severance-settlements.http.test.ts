@@ -4,7 +4,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import { SqliteDatabase } from '../../../shared/persistence/unit-of-work.ts'
 import { TEST_COMPANY_ID } from '../../identity-access/testing.ts'
-import { payrollTestApp } from '../payroll-testing.ts'
+import { clockAt, payrollTestApp } from '../payroll-testing.ts'
 import { testEmployee } from '../payroll-test-fixtures.ts'
 import { PayrollEmployeeDirectory } from '../ports/payroll-employee-directory.ts'
 import { PayrollEventPublisher } from '../ports/payroll-events.ts'
@@ -539,5 +539,187 @@ describe('/severance-settlements HR 퇴직일 대조 (목록은 HR에 한 번 �
 
     expect(list.body.items).toEqual([])
     expect(calls.leaveDatesOf).toBe(0)
+  })
+})
+
+describe('/severance-settlements 중간정산과 기산일', () => {
+  const WORKER = 'emp_01JBQ000000000000000000021' as Id<'employee'>
+  const NEWBIE = 'emp_01JBQ000000000000000000022' as Id<'employee'>
+  const LEFT_A = 'emp_01JBQ000000000000000000023' as Id<'employee'>
+  const interimApp = payrollTestApp([
+    clockAt('2026-11-14T10:00:00+09:00'),
+    PayrollEmployeeDirectory.layerMemory([
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: WORKER }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: NEWBIE, joinDate: '2026-06-01' }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: LEFT_A, leaveDate: '2026-09-30' }) },
+    ]),
+  ])
+  afterAll(() => interimApp.dispose())
+
+  const createInterim = (employeeId: string, settlementDate: string, interimReason = 'HOME_PURCHASE') =>
+    interimApp.request('POST', '/severance-settlements', {
+      body: { kind: 'INTERIM', employeeId, settlementDate, interimReason, input: { threeMonthWages: 9_000_000 } },
+    })
+  const run = (id: string, command: 'complete' | 'reopen') =>
+    interimApp.request('POST', `/severance-settlements/${id}:${command}`)
+
+  let firstId = ''
+  let secondId = ''
+
+  it('재직 중인 직원의 중간정산은 입사일부터 기준일까지를 정산합니다', async () => {
+    const response = await createInterim(WORKER, '2026-01-31', 'RENT_DEPOSIT')
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({
+      kind: 'INTERIM',
+      interimReason: 'RENT_DEPOSIT',
+      joinDate: '2024-01-01',
+      serviceStartDate: '2024-01-01',
+      lastWorkDate: '2026-01-31',
+      status: 'CALCULATED',
+      retirementMismatch: null,
+      result: { eligible: true, serviceDays: 762 },
+      allowedActions: ['UPDATE', 'COMPLETE', 'EXCLUDE'],
+    })
+    firstId = response.body.id
+  })
+
+  it('계산됨 정산이 있으면 다음 중간정산은 409이고, 완료하면 그 기준일 다음 날부터 받습니다', async () => {
+    expect((await createInterim(WORKER, '2026-06-30')).body).toMatchObject({
+      code: 'SEVERANCE_SETTLEMENT_EXISTS',
+      settlementId: firstId,
+    })
+    expect((await run(firstId, 'complete')).body.status).toBe('COMPLETED')
+
+    for (const date of ['2026-01-31', '2026-11-15']) {
+      const response = await createInterim(WORKER, date)
+      expect(response.status).toBe(422)
+      expect(response.body).toMatchObject({
+        code: 'SEVERANCE_INTERIM_DATE_INVALID',
+        earliestDate: '2026-02-01',
+        latestDate: '2026-11-14',
+      })
+    }
+  })
+
+  it('전세금·보증금 사유는 한 번만 받습니다', async () => {
+    const response = await createInterim(WORKER, '2026-06-30', 'RENT_DEPOSIT')
+
+    expect(response.status).toBe(422)
+    expect(response.body).toMatchObject({ code: 'SEVERANCE_NOT_APPLICABLE', reason: 'RENT_DEPOSIT_ALREADY_USED' })
+  })
+
+  it('다음 중간정산은 앞 중간정산 다음 날부터 근속일수를 셉니다', async () => {
+    const response = await createInterim(WORKER, '2026-06-30')
+
+    expect(response.status).toBe(201)
+    expect(response.body).toMatchObject({
+      serviceStartDate: '2026-02-01',
+      result: { eligible: true, serviceDays: 150 },
+    })
+    secondId = response.body.id
+  })
+
+  it('늦은 정산이 완료돼 있으면 앞 중간정산을 다시 열거나 완료할 수 없습니다', async () => {
+    expect((await run(secondId, 'complete')).body.status).toBe('COMPLETED')
+
+    const reopened = await run(firstId, 'reopen')
+
+    expect(reopened.status).toBe(409)
+    expect(reopened.body).toMatchObject({ code: 'SEVERANCE_LATER_SETTLEMENT_COMPLETED', settlementId: secondId })
+  })
+
+  it('앞 중간정산이 취소돼 기산일이 바뀌면 다시 계산하기 전에는 완료할 수 없습니다', async () => {
+    expect((await run(secondId, 'reopen')).body.status).toBe('CALCULATED')
+    expect((await run(firstId, 'reopen')).body.status).toBe('CALCULATED')
+
+    const completed = await run(secondId, 'complete')
+    expect(completed.status).toBe(409)
+    expect(completed.body).toMatchObject({ code: 'SEVERANCE_SERVICE_START_CHANGED', serviceStartDate: '2024-01-01' })
+
+    const second = await interimApp.request('GET', `/severance-settlements/${secondId}`)
+    const recalculated = await interimApp.request('PATCH', `/severance-settlements/${secondId}`, {
+      headers: { 'if-match': second.headers.get('etag') ?? '' },
+      body: {},
+    })
+    expect(recalculated.body).toMatchObject({ serviceStartDate: '2024-01-01', result: { serviceDays: 912 } })
+    expect((await run(secondId, 'complete')).body.status).toBe('COMPLETED')
+
+    const first = await run(firstId, 'complete')
+    expect(first.status).toBe(409)
+    expect(first.body).toMatchObject({ code: 'SEVERANCE_LATER_SETTLEMENT_COMPLETED', settlementId: secondId })
+  })
+
+  it('근속 1년 미만이거나 이미 퇴사한 직원은 중간정산할 수 없습니다', async () => {
+    const newbie = await createInterim(NEWBIE, '2026-10-31')
+    const left = await createInterim(LEFT_A, '2026-06-30')
+
+    expect(newbie.body).toMatchObject({ code: 'SEVERANCE_NOT_APPLICABLE', reason: 'SERVICE_UNDER_ONE_YEAR' })
+    expect(left.body).toMatchObject({ code: 'SEVERANCE_NOT_APPLICABLE', reason: 'ALREADY_LEFT' })
+  })
+})
+
+describe('/severance-settlement-candidates', () => {
+  const LEFT_A = 'emp_01JBQ000000000000000000031' as Id<'employee'>
+  const SETTLED = 'emp_01JBQ000000000000000000032' as Id<'employee'>
+  const SHORT = 'emp_01JBQ000000000000000000033' as Id<'employee'>
+  const OLD = 'emp_01JBQ000000000000000000034' as Id<'employee'>
+  const PENSION = 'emp_01JBQ000000000000000000035' as Id<'employee'>
+  const WORKING = 'emp_01JBQ000000000000000000036' as Id<'employee'>
+  const candidateApp = payrollTestApp([
+    clockAt('2026-11-14T10:00:00+09:00'),
+    PayrollEmployeeDirectory.layerMemory([
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: LEFT_A, leaveDate: '2026-09-30' }) },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: SETTLED, leaveDate: '2026-08-31' }) },
+      {
+        companyId: TEST_COMPANY_ID,
+        employee: testEmployee({ id: SHORT, joinDate: '2026-03-01', leaveDate: '2026-10-31' }),
+      },
+      {
+        companyId: TEST_COMPANY_ID,
+        employee: testEmployee({ id: OLD, joinDate: '2020-01-01', leaveDate: '2023-06-30' }),
+      },
+      {
+        companyId: TEST_COMPANY_ID,
+        employee: testEmployee({ id: PENSION, leaveDate: '2026-09-30', retirementBenefitType: 'DEFINED_CONTRIBUTION' }),
+      },
+      { companyId: TEST_COMPANY_ID, employee: testEmployee({ id: WORKING }) },
+    ]),
+  ])
+  afterAll(() => candidateApp.dispose())
+
+  it('3년 안에 퇴사한 퇴직금 제도 직원 중 정산이 없는 직원을 퇴직일 순으로 보여 줍니다', async () => {
+    const settled = await candidateApp.request('POST', '/severance-settlements', {
+      body: { employeeId: SETTLED, input: { threeMonthWages: 9_000_000 } },
+    })
+    expect(settled.status).toBe(201)
+
+    const response = await candidateApp.request('GET', '/severance-settlement-candidates')
+
+    expect(response.status).toBe(200)
+    expect(response.body.items).toEqual([
+      {
+        employeeId: LEFT_A,
+        employeeName: expect.any(String),
+        joinDate: '2024-01-01',
+        leaveDate: '2026-09-30',
+        serviceStartDate: '2024-01-01',
+        eligible: true,
+      },
+      expect.objectContaining({ employeeId: SHORT, leaveDate: '2026-10-31', eligible: false }),
+    ])
+  })
+
+  it('기간을 넓히면 오래된 퇴사자도 보여 주고, 정산을 제외하면 다시 후보입니다', async () => {
+    const all = await candidateApp.request('GET', '/severance-settlement-candidates?from=2020-01-01')
+    expect(all.body.items.map((item: { employeeId: string }) => item.employeeId)).toEqual([OLD, LEFT_A, SHORT])
+
+    const list = await candidateApp.request('GET', '/severance-settlements')
+    const settled = list.body.items.find((item: { employeeId: string }) => item.employeeId === SETTLED)
+    await candidateApp.request('POST', `/severance-settlements/${settled.id}:exclude`, {
+      body: { reason: '다시 계산' },
+    })
+    const after = await candidateApp.request('GET', '/severance-settlement-candidates?from=2026-08-01&to=2026-08-31')
+    expect(after.body.items.map((item: { employeeId: string }) => item.employeeId)).toEqual([SETTLED])
   })
 })

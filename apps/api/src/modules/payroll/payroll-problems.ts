@@ -192,7 +192,14 @@ export class SeveranceNotApplicable extends HttpApiError.Problem<SeveranceNotApp
   { type: problemType('SEVERANCE_NOT_APPLICABLE'), status: 422, title: 'Severance pay does not apply' },
   {
     code: Schema.tag('SEVERANCE_NOT_APPLICABLE'),
-    reason: Schema.Literals(['NOT_LEFT', 'NOT_SEVERANCE_PAY_PLAN']),
+    reason: Schema.Literals([
+      'NOT_LEFT',
+      'NOT_SEVERANCE_PAY_PLAN',
+      'ALREADY_LEFT',
+      'SERVICE_UNDER_ONE_YEAR',
+      'RENT_DEPOSIT_ALREADY_USED',
+      'NO_SERVICE_AFTER_INTERIM',
+    ]),
   },
 ) {}
 
@@ -223,7 +230,7 @@ export class SeveranceRetirementMismatch extends HttpApiError.Problem<SeveranceR
   },
   {
     code: Schema.tag('SEVERANCE_RETIREMENT_MISMATCH'),
-    reason: Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED']),
+    reason: Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED', 'LEFT_BEFORE_INTERIM']),
     lastWorkDate: Schema.String,
     leaveDate: Schema.NullOr(Schema.String),
   },
@@ -281,4 +288,37 @@ export class PayrollRowItemInvalid extends HttpApiError.Problem<PayrollRowItemIn
       Schema.Struct({ field: Schema.String, code: Schema.Literals(['NOT_FOUND', 'ARCHIVED', 'DUPLICATED']) }),
     ),
   },
+) {}
+
+/** 중간정산 기준일이 받을 수 있는 범위(마지막 완료 중간정산 다음 날부터 오늘까지) 밖입니다. */
+export class SeveranceInterimDateInvalid extends HttpApiError.Problem<SeveranceInterimDateInvalid>()(
+  'SeveranceInterimDateInvalid',
+  {
+    type: problemType('SEVERANCE_INTERIM_DATE_INVALID'),
+    status: 422,
+    title: 'Interim settlement date is out of range',
+  },
+  { code: Schema.tag('SEVERANCE_INTERIM_DATE_INVALID'), earliestDate: Schema.String, latestDate: Schema.String },
+) {}
+
+/** 계산한 뒤 앞선 중간정산이 완료·취소되어 기산일이 바뀌었습니다. `PATCH`로 다시 계산한 뒤 완료합니다. */
+export class SeveranceServiceStartChanged extends HttpApiError.Problem<SeveranceServiceStartChanged>()(
+  'SeveranceServiceStartChanged',
+  {
+    type: problemType('SEVERANCE_SERVICE_START_CHANGED'),
+    status: 409,
+    title: 'Service start date changed since the settlement was calculated',
+  },
+  { code: Schema.tag('SEVERANCE_SERVICE_START_CHANGED'), serviceStartDate: Schema.String },
+) {}
+
+/** 기준일이 더 늦은 완료 정산이 있어 이 중간정산을 완료하거나 다시 열 수 없습니다. 늦은 정산의 기산일이 틀어집니다. */
+export class SeveranceLaterSettlementCompleted extends HttpApiError.Problem<SeveranceLaterSettlementCompleted>()(
+  'SeveranceLaterSettlementCompleted',
+  {
+    type: problemType('SEVERANCE_LATER_SETTLEMENT_COMPLETED'),
+    status: 409,
+    title: 'A later settlement of the employee is completed',
+  },
+  { code: Schema.tag('SEVERANCE_LATER_SETTLEMENT_COMPLETED'), settlementId: Schema.String },
 ) {}

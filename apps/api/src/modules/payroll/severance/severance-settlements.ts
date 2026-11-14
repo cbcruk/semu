@@ -3,6 +3,7 @@ import { checkVersion } from '../../../shared/http/versioning.ts'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
+import { addDays, daysBetween } from '../../../shared/time/calendar.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
@@ -10,8 +11,11 @@ import { calculateSeverancePay } from '../engine/severance-pay.ts'
 import {
   EmployeeNotFound,
   type RateTableNotFound,
+  SeveranceInterimDateInvalid,
+  SeveranceLaterSettlementCompleted,
   SeveranceNotApplicable,
   SeverancePaymentDateInvalid,
+  SeveranceServiceStartChanged,
   SeveranceRetirementMismatch,
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
@@ -29,9 +33,18 @@ import {
   type SeveranceCommand,
   type SeveranceInputSchema,
   type SeveranceSettlement,
+  type SeveranceSettlementCandidate,
   severanceResponse,
   type UpdateSeveranceSettlement,
 } from './severance-settlement.ts'
+import {
+  interimDateRange,
+  interimRejectionOf,
+  kindOf,
+  lastCompletedInterimBefore,
+  laterCompletedSettlementOf,
+  serviceStartDateOf,
+} from './severance-interim.ts'
 import { retirementMismatchOf } from './severance-retirement.ts'
 import { SeveranceSettlementRepository } from './severance-settlement-repository.ts'
 import type { SeveranceSettlementRecord, SeveranceStatus } from './severance-settlement.types.ts'
@@ -55,6 +68,9 @@ type SeveranceError =
   | SeverancePaymentDateInvalid
   | SeveranceRetirementMismatch
   | SeveranceSettlementExists
+  | SeveranceInterimDateInvalid
+  | SeveranceServiceStartChanged
+  | SeveranceLaterSettlementCompleted
   | EmployeeNotFound
   | RateTableNotFound
   | WithholdingFiled
@@ -83,9 +99,7 @@ export const listSettlements = (filter: {
       records.map((record) => record.employeeId),
     )
     return {
-      items: records.map((record) =>
-        severanceResponse(record, retirementMismatchOf(record.lastWorkDate, leaveDates.get(record.employeeId))),
-      ),
+      items: records.map((record) => severanceResponse(record, mismatchOf(record, leaveDates.get(record.employeeId)))),
     }
   })
 
@@ -95,8 +109,8 @@ function paymentMonthOf(record: SeveranceSettlementRecord): string | undefined {
 }
 
 /**
- * 지급일이 마지막 근무일보다 앞서면 422입니다. 퇴직금은 퇴직으로 생기는 지급이라 퇴직 전에 줄 수 없습니다
- * (중간정산은 아직 없음). 마지막 근무일 당일은 받습니다. 현행 `complete`가 지급일이 없으면 이 날로 채웠습니다.
+ * 지급일이 마지막 근무일(중간정산은 기준일)보다 앞서면 422입니다. 퇴직금은 퇴직·중간정산으로 생기는 지급이라 그 전에 줄 수 없습니다.
+ * 당일은 받습니다. 현행 `complete`가 지급일이 없으면 이 날로 채웠습니다.
  */
 function checkPaymentDate(
   lastWorkDate: string,
@@ -117,39 +131,80 @@ export const getSettlement = (
   })
 
 /**
- * 퇴사한 직원의 퇴직금을 계산해 정산을 만듭니다. 퇴직금 제도(`SEVERANCE_PAY`) 직원만 받고,
- * 같은 마지막 근무일로 제외되지 않은 정산이 있으면 409입니다. 퇴직소득세는 퇴직월 기준표를 씁니다.
+ * 정산을 만듭니다. 퇴직 정산은 퇴사한 직원의 HR 퇴직일까지, 중간정산은 재직 중인 직원의 기준일까지의 퇴직금입니다.
+ *
+ * 퇴직 정산은 퇴직금 제도(`SEVERANCE_PAY`) 직원만 받고, 같은 마지막 근무일로 제외되지 않은 정산이 있으면 409입니다.
+ * 마지막 완료 중간정산이 퇴직일과 같거나 늦으면 정산할 기간이 없어 422 `NO_SERVICE_AFTER_INTERIM`입니다.
+ * 근속일수는 기산일(마지막 완료 중간정산 다음 날, 없으면 입사일)부터 셉니다. 퇴직소득세는 마지막 근무일 달의 기준표를 씁니다.
  */
 export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type): Run<Response> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'severance-settlement:create', plans: PLANS, requiresTerms: true })
     const now = new Date(yield* Clock.currentTimeMillis).toISOString()
-    const found = yield* (yield* PayrollEmployeeDirectory).find(
-      actor.companyId,
-      payload.employeeId,
-      companyDate(Date.parse(now)),
-    )
+    const today = companyDate(Date.parse(now))
+    const found = yield* (yield* PayrollEmployeeDirectory).find(actor.companyId, payload.employeeId, today)
     if (Option.isNone(found)) return yield* new EmployeeNotFound({})
     const employee = found.value
-    if (employee.leaveDate === null) return yield* new SeveranceNotApplicable({ reason: 'NOT_LEFT' })
-    if (employee.retirementBenefitType !== 'SEVERANCE_PAY') {
-      return yield* new SeveranceNotApplicable({ reason: 'NOT_SEVERANCE_PAY_PLAN' })
-    }
     const repository = yield* SeveranceSettlementRepository
-    const existing = (yield* repository.list(actor.companyId)).find(
-      (record) =>
-        record.employeeId === employee.id && record.lastWorkDate === employee.leaveDate && record.status !== 'EXCLUDED',
-    )
-    if (existing !== undefined) return yield* new SeveranceSettlementExists({ settlementId: existing.id })
-    yield* checkPaymentDate(employee.leaveDate, payload.paymentDate)
-    const calculated = yield* calculate(employee.joinDate, employee.leaveDate, payload.input)
+    const settlements = (yield* repository.list(actor.companyId)).filter((record) => record.employeeId === employee.id)
+    let lastWorkDate: string
+    let interim: Pick<SeveranceSettlementRecord, 'kind' | 'interimReason'>
+    if (payload.kind === 'INTERIM') {
+      const rejection = interimRejectionOf({
+        retirementBenefitType: employee.retirementBenefitType,
+        leaveDate: employee.leaveDate,
+        joinDate: employee.joinDate,
+        settlementDate: payload.settlementDate,
+        reason: payload.interimReason,
+        settlements,
+        employeeId: employee.id,
+      })
+      const range = interimDateRange(employee.joinDate, settlements, employee.id, today)
+      if (payload.settlementDate < range.earliestDate || payload.settlementDate > range.latestDate) {
+        return yield* new SeveranceInterimDateInvalid(range)
+      }
+      if (rejection !== null) return yield* new SeveranceNotApplicable({ reason: rejection })
+      // 아직 완료하지 않은 정산이 있으면 그것부터 끝냅니다. 기준일이 엇갈린 계산됨 정산이 둘이면 기산일이 서로를 따라 바뀝니다.
+      const open = settlements.find(
+        (record) => record.status === 'CALCULATED' || record.lastWorkDate === payload.settlementDate,
+      )
+      if (open !== undefined && open.status !== 'EXCLUDED') {
+        return yield* new SeveranceSettlementExists({ settlementId: open.id })
+      }
+      lastWorkDate = payload.settlementDate
+      interim = { kind: 'INTERIM', interimReason: payload.interimReason }
+    } else {
+      if (employee.leaveDate === null) return yield* new SeveranceNotApplicable({ reason: 'NOT_LEFT' })
+      if (employee.retirementBenefitType !== 'SEVERANCE_PAY') {
+        return yield* new SeveranceNotApplicable({ reason: 'NOT_SEVERANCE_PAY_PLAN' })
+      }
+      const leaveDate = employee.leaveDate
+      const existing = settlements.find(
+        (record) =>
+          kindOf(record) === 'RETIREMENT' && record.lastWorkDate === leaveDate && record.status !== 'EXCLUDED',
+      )
+      if (existing !== undefined) return yield* new SeveranceSettlementExists({ settlementId: existing.id })
+      if (lastCompletedInterimBefore(settlements, employee.id, addDays(leaveDate, 1)) !== undefined) {
+        if (serviceStartDateOf(employee.joinDate, settlements, employee.id, addDays(leaveDate, 1)) > leaveDate) {
+          return yield* new SeveranceNotApplicable({ reason: 'NO_SERVICE_AFTER_INTERIM' })
+        }
+      }
+      lastWorkDate = leaveDate
+      interim = {}
+    }
+    yield* checkPaymentDate(lastWorkDate, payload.paymentDate)
+    const serviceStartDate = serviceStartDateOf(employee.joinDate, settlements, employee.id, lastWorkDate)
+    const calculated = yield* calculate(employee.joinDate, serviceStartDate, lastWorkDate, payload.input)
     const record: SeveranceSettlementRecord = {
       id: newId('severanceSettlement'),
       companyId: actor.companyId,
       employeeId: employee.id,
       employeeName: employee.name,
+      kind: interim.kind ?? 'RETIREMENT',
+      ...(interim.interimReason === undefined ? {} : { interimReason: interim.interimReason }),
       joinDate: employee.joinDate,
-      lastWorkDate: employee.leaveDate,
+      serviceStartDate,
+      lastWorkDate,
       ...(payload.paymentDate === undefined ? {} : { paymentDate: payload.paymentDate }),
       status: 'CALCULATED',
       input: { ...payload.input },
@@ -161,6 +216,54 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
     yield* saveWithWithholding(undefined, record)
     // 방금 읽은 HR 퇴직일로 만들었으므로 어긋남이 없습니다.
     return severanceResponse(record, null)
+  })
+
+/**
+ * 퇴직금 정산 후보입니다. 기간 안에 퇴사한 퇴직금 제도 직원 중 그 퇴직의 정산(제외 말고)이 없는 직원이고, 퇴직일 순입니다.
+ *
+ * 기간은 퇴직일 기준이고 기본값은 3년 전 오늘부터 오늘까지입니다(퇴직금 청구권 소멸시효 3년, 근로자퇴직급여 보장법 제10조).
+ * 마지막 완료 중간정산이 퇴직일과 같거나 늦어 정산할 기간이 없는 직원은 빠집니다.
+ */
+export const listCandidates = (filter: {
+  readonly from?: string
+  readonly to?: string
+}): Run<{ items: Array<typeof SeveranceSettlementCandidate.Type> }, AccessDenied> =>
+  Effect.gen(function* () {
+    const actor = yield* authorize({ permission: 'severance-settlement:read', plans: PLANS, requiresTerms: true })
+    const today = companyDate(yield* Clock.currentTimeMillis)
+    const to = filter.to ?? today
+    const from = filter.from ?? `${String(Number(today.slice(0, 4)) - 3)}${today.slice(4)}`
+    if (from > to) return { items: [] }
+    const employees = yield* (yield* PayrollEmployeeDirectory).listWageEarners(actor.companyId, {
+      start: from,
+      end: to,
+    })
+    const settlements = yield* (yield* SeveranceSettlementRepository).list(actor.companyId)
+    const items = employees.flatMap((employee) => {
+      const leaveDate = employee.leaveDate
+      if (leaveDate === null || leaveDate < from || leaveDate > to) return []
+      if (employee.retirementBenefitType !== 'SEVERANCE_PAY') return []
+      const settled = settlements.some(
+        (record) =>
+          record.employeeId === employee.id &&
+          kindOf(record) === 'RETIREMENT' &&
+          record.lastWorkDate === leaveDate &&
+          record.status !== 'EXCLUDED',
+      )
+      const serviceStartDate = serviceStartDateOf(employee.joinDate, settlements, employee.id, addDays(leaveDate, 1))
+      if (settled || serviceStartDate > leaveDate) return []
+      return [
+        {
+          employeeId: employee.id,
+          employeeName: employee.name,
+          joinDate: employee.joinDate,
+          leaveDate,
+          serviceStartDate,
+          eligible: daysBetween(employee.joinDate, leaveDate) + 1 >= 365,
+        },
+      ]
+    })
+    return { items: items.toSorted((a, b) => a.leaveDate.localeCompare(b.leaveDate)) }
   })
 
 /**
@@ -183,9 +286,13 @@ export const updateSettlement = (
     const { paymentDate: _previous, ...rest } = record
     const paymentDate = patch.paymentDate === undefined ? record.paymentDate : (patch.paymentDate ?? undefined)
     yield* checkPaymentDate(record.lastWorkDate, paymentDate)
-    const calculated = yield* calculate(record.joinDate, record.lastWorkDate, input)
+    // 다시 계산할 때 기산일도 지금의 완료 중간정산으로 다시 정합니다. `SEVERANCE_SERVICE_START_CHANGED`를 푸는 길입니다.
+    const settlements = yield* (yield* SeveranceSettlementRepository).list(actor.companyId)
+    const serviceStartDate = serviceStartDateOf(record.joinDate, settlements, record.employeeId, record.lastWorkDate)
+    const calculated = yield* calculate(record.joinDate, serviceStartDate, record.lastWorkDate, input)
     const next: SeveranceSettlementRecord = {
       ...rest,
+      serviceStartDate,
       ...(paymentDate === undefined ? {} : { paymentDate }),
       input: { ...input },
       ...calculated,
@@ -223,13 +330,30 @@ export const transitionSettlement = (
       return yield* new SeveranceTransitionInvalid({ settlementStatus: record.status, action: command })
     }
     const employee = yield* currentLeaveDate(record.companyId, record.employeeId)
-    const mismatch = retirementMismatchOf(record.lastWorkDate, employee)
+    const mismatch = mismatchOf(record, employee)
     if (command === 'COMPLETE' && mismatch !== null) {
       return yield* new SeveranceRetirementMismatch({
         reason: mismatch,
         lastWorkDate: record.lastWorkDate,
         leaveDate: employee?.leaveDate ?? null,
       })
+    }
+    if (command === 'COMPLETE' || command === 'REOPEN') {
+      const settlements = yield* (yield* SeveranceSettlementRepository).list(record.companyId)
+      if (command === 'COMPLETE') {
+        const serviceStartDate = serviceStartDateOf(
+          record.joinDate,
+          settlements,
+          record.employeeId,
+          record.lastWorkDate,
+        )
+        if (serviceStartDate !== (record.serviceStartDate ?? record.joinDate)) {
+          return yield* new SeveranceServiceStartChanged({ serviceStartDate })
+        }
+      }
+      // 중간정산을 완료하거나 다시 열면 그 뒤 정산의 기산일이 바뀝니다. 늦은 정산이 이미 완료됐으면 막습니다.
+      const later = kindOf(record) === 'INTERIM' ? laterCompletedSettlementOf(settlements, record) : undefined
+      if (later !== undefined) return yield* new SeveranceLaterSettlementCompleted({ settlementId: later.id })
     }
     const next: SeveranceSettlementRecord = {
       ...record,
@@ -246,8 +370,13 @@ export const transitionSettlement = (
 /** 정산 응답입니다. HR 퇴직일을 지금 읽어 `retirementMismatch`를 붙입니다. */
 function respond(record: SeveranceSettlementRecord): Effect.Effect<Response, never, PayrollEmployeeDirectory> {
   return currentLeaveDate(record.companyId, record.employeeId).pipe(
-    Effect.map((employee) => severanceResponse(record, retirementMismatchOf(record.lastWorkDate, employee))),
+    Effect.map((employee) => severanceResponse(record, mismatchOf(record, employee))),
   )
+}
+
+/** 정산 종류에 맞춰 HR의 지금 퇴직과 대조합니다. */
+function mismatchOf(record: SeveranceSettlementRecord, employee: { readonly leaveDate: string | null } | undefined) {
+  return retirementMismatchOf(record.lastWorkDate, employee, kindOf(record))
 }
 
 /** HR의 지금 퇴직일입니다. HR에 없으면 `undefined`입니다. */
@@ -315,13 +444,14 @@ function findOrFail(
 
 function calculate(
   joinDate: string,
+  serviceStartDate: string,
   lastWorkDate: string,
   input: typeof SeveranceInputSchema.Type,
 ): Effect.Effect<Pick<SeveranceSettlementRecord, 'result' | 'rateTable'>, RateTableNotFound, RateTableRepository> {
   return Effect.gen(function* () {
     const rates = yield* resolveOrFail(lastWorkDate.slice(0, 7))
     return {
-      result: calculateSeverancePay({ joinDate, lastWorkDate, ...input }, rates.table),
+      result: calculateSeverancePay({ joinDate, serviceStartDate, lastWorkDate, ...input }, rates.table),
       rateTable: rates.table.effectiveFrom,
     }
   })

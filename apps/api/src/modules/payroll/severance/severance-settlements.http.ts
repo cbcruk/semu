@@ -5,6 +5,7 @@ import { expectedVersion, withEtag } from '../../../shared/http/versioning.ts'
 import {
   createSettlement,
   getSettlement,
+  listCandidates,
   listSettlements,
   type SeveranceDeps,
   transitionSettlement,
@@ -18,6 +19,7 @@ export const SeveranceSettlementsHttpLive = HttpApiBuilder.group(Api, 'severance
     const version = (headers: { readonly 'if-match'?: string }) => expectedVersion(headers['if-match'])
     return handlers
       .handle('list', ({ query }) => listSettlements(query).pipe(Effect.provideContext(context)))
+      .handle('candidates', ({ query }) => listCandidates(query).pipe(Effect.provideContext(context)))
       .handle('create', ({ payload }) =>
         createSettlement(payload).pipe(Effect.map(withEtag), Effect.provideContext(context)),
       )

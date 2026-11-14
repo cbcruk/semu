@@ -280,9 +280,9 @@ POST   /leaves/{leaveId}:return                   { returnDate }  If-Match → �
 
 `POST /employees/{employeeId}:resign`과 `:cancel-resignation`이 맡습니다. 퇴직 사유 코드표는 고용보험 상실사유 코드를 그대로 씁니다(`GET /reference/leaving-reasons`).
 
-- 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`)
+- 퇴직일은 입사일 이후, 중간정산일 이후여야 합니다(422 `LEAVE_DATE_BEFORE_INTERIM`). 중간정산일은 Payroll에서 **완료한** 마지막 중간정산의 기준일입니다(2026-11-14, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 퇴직 정보의 중간정산일(`retirementPlan.interimSettlement`)은 아직 저장하지 않습니다
 - 고른 (상세)사유는 상실신고(`LOSS`)에 그대로 들어갑니다
-- 퇴직금 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. HR은 정산 상태를 저장하지 않고 커맨드마다 포트 `SeveranceSettlementLookup`으로 Payroll에 묻습니다([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
+- 퇴직 정산이 `COMPLETED`면 `:resign`(다시 퇴사), `:cancel-resignation`, `DELETE`가 409 `RETIREMENT_COMPLETED`입니다. 완료한 중간정산은 재직 중 지급이라 `DELETE`만 막습니다(2026-11-14). HR은 정산 상태를 저장하지 않고 커맨드마다 포트 `SeveranceSettlementLookup`으로 Payroll에 묻습니다([severance-settlement-lookup.ts](../../apps/api/src/modules/hr/ports/severance-settlement-lookup.ts), [hr-payroll.ts](../../apps/api/src/wiring/hr-payroll.ts))
   - 그 직원의 정산 중 하나라도 `COMPLETED`면 막습니다. 지급한 퇴직금은 그 퇴직일·근속기간으로 계산했고 지급월 원천세 퇴직소득(A22)에 들어가 있어서입니다. 제외 후 새 정산처럼 정산이 여럿이어도 같습니다
   - `CALCULATED`(지급 전)와 `EXCLUDED`(정산하지 않음)는 막지 않습니다. 현행도 완료만 막았습니다
   - 그래서 계산됨 정산이 HR 퇴직과 어긋날 수 있습니다. HR은 정산에 쓰지 않고, Payroll이 `:complete` 때 퇴직일을 다시 읽어 어긋나면 409 `SEVERANCE_RETIREMENT_MISMATCH`로 막고 목록에 `retirementMismatch`를 보입니다([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))
@@ -521,7 +521,7 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | `HrDirectory` (`hr.public.ts`) | 구현: 직원 조회·목록·기간 재직자, 퇴직일 일괄 조회(`listLeaveDates`), 유효 근로계약, 유효 급여계약(`findPayrollContract`, 계좌는 마스킹), 적용 중인 소득세 공제(`findTaxWithholding`, 공제대상 가족 수는 인적공제 대상자에서 셈), 겹치는 휴직, 4대보험 가입 여부(`socialInsuranceOf`, 저장 설정 또는 권장값), 주민번호 원문(열람 기록). 인적공제 목록(`listDependants`)·퇴직 조회와 `revealPaymentAccount`는 미구현 |
 | 4대보험 신고 (`/insurance-filings`) | 구현, HTTP 테스트. 취득·상실·휴직·복직·보수 변경·피부양자 신고를 종류별 `payload`로 열고, 목록·조회와 대리인 `:complete`·`:fail` |
 | 인적공제 대상자 (`GET/POST /employees/{id}/family-members`, `GET/PUT/DELETE /family-members/{id}`, `registration-number:reveal`) | 구현, HTTP 테스트. `WAGE`만, 주민번호 암호화·열람 기록, 공제대상 가족 수 파생, 피부양자 취득·상실 신고. 첨부 미구현 |
-| 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
+| 퇴직금 정산 가드 (`SeveranceSettlementLookup.settlementsOf`) | 구현, HTTP 테스트. 삭제·퇴사·퇴사 취소가 Payroll에 물어, 완료한 퇴직 정산(삭제는 완료한 중간정산도)이 있으면 409 `RETIREMENT_COMPLETED`, 퇴직일이 완료 중간정산 기준일보다 앞서면 422 `LEAVE_DATE_BEFORE_INTERIM`([퇴직](#퇴직)) |
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |
 | 문서 보관함 (`GET /employees/{id}/documents?category=`, `POST /employees/{id}/documents`, `GET /employee-documents/{id}`, `GET /employee-documents/{id}/file`, `DELETE /employee-documents/{id}`) | 구현, HTTP 테스트. 전자서명 완료본과 직접 올린 문서가 들어오고, 파일은 공통 파일 저장소(D7)에 둡니다. 증명서 발급(`certificate.issued`)은 아직 넣지 않습니다. 직원을 지워도 문서는 남습니다 |
 | 메모, 가족 첨부, 엑셀 내보내기 | 미구현 |

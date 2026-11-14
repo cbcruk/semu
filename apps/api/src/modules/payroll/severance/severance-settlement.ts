@@ -18,13 +18,42 @@ export const SeveranceInputSchema = Schema.Struct({
   ordinaryDailyWage: Schema.optionalKey(Won),
 })
 
-/** `POST /severance-settlements` 본문입니다. */
-export const CreateSeveranceSettlement = Schema.Struct({
+/** 중간정산 사유입니다(근로자퇴직급여 보장법 시행령 제3조제1항). */
+export const InterimSettlementReasonSchema = Schema.Literals([
+  'HOME_PURCHASE',
+  'RENT_DEPOSIT',
+  'MEDICAL_TREATMENT',
+  'BANKRUPTCY',
+  'PERSONAL_REHABILITATION',
+  'WAGE_PEAK',
+  'WORK_HOURS_REDUCTION',
+  'LEGAL_WORK_HOURS_REDUCTION',
+  'GOVERNMENT_NOTICE',
+])
+
+/** 퇴직 정산 만들기입니다. 마지막 근무일은 HR 퇴직일입니다. `kind`를 빼면 퇴직 정산입니다. */
+const CreateRetirementSettlement = Schema.Struct({
+  kind: Schema.optionalKey(Schema.Literal('RETIREMENT')),
   employeeId: IdSchema('employee'),
   input: SeveranceInputSchema,
   /** 퇴직금 지급일입니다. 없으면 완료할 때 마지막 근무일로 채웁니다. */
   paymentDate: Schema.optionalKey(CalendarDate),
 })
+
+/** 재직 중 중간정산 만들기입니다. 기준일(`settlementDate`)까지의 퇴직금을 정산합니다. */
+const CreateInterimSettlement = Schema.Struct({
+  kind: Schema.Literal('INTERIM'),
+  employeeId: IdSchema('employee'),
+  /** 정산 기준일입니다. 마지막 완료 중간정산 다음 날부터 오늘까지입니다. 그 다음 정산의 기산일은 이 날의 다음 날입니다. */
+  settlementDate: CalendarDate,
+  interimReason: InterimSettlementReasonSchema,
+  input: SeveranceInputSchema,
+  /** 지급일입니다. 기준일보다 앞설 수 없고, 없으면 완료할 때 기준일로 채웁니다. */
+  paymentDate: Schema.optionalKey(CalendarDate),
+})
+
+/** `POST /severance-settlements` 본문입니다. 퇴직 정산과 중간정산입니다. */
+export const CreateSeveranceSettlement = Schema.Union([CreateRetirementSettlement, CreateInterimSettlement])
 
 /**
  * `PATCH /severance-settlements/{id}` 본문입니다. 빠진 필드는 그대로 둡니다.
@@ -42,7 +71,14 @@ export const SeveranceSettlement = Schema.Struct({
   id: IdSchema('severanceSettlement'),
   employeeId: IdSchema('employee'),
   employeeName: Schema.String,
+  /** 정산 종류입니다. 퇴직(`RETIREMENT`)과 재직 중 중간정산(`INTERIM`)입니다. */
+  kind: Schema.Literals(['RETIREMENT', 'INTERIM']),
+  /** 중간정산 사유입니다. 퇴직 정산이면 `null`입니다. */
+  interimReason: Schema.NullOr(InterimSettlementReasonSchema),
   joinDate: Schema.String,
+  /** 계속근로기간의 기산일입니다. 마지막 완료 중간정산의 다음 날이고, 없으면 입사일입니다. 근속일수를 여기서 셉니다. */
+  serviceStartDate: Schema.String,
+  /** 마지막 근무일입니다. 중간정산이면 정산 기준일입니다. */
   lastWorkDate: Schema.String,
   /** 퇴직금 지급일입니다. 원천세 퇴직소득 그 외(A22)의 지급월입니다. 아직 정하지 않았거나 이 필드 전에 저장한 정산이면 `null`입니다. */
   paymentDate: Schema.NullOr(Schema.String),
@@ -51,7 +87,9 @@ export const SeveranceSettlement = Schema.Struct({
    * HR의 지금 퇴직과 어긋난 까닭입니다. 맞으면 `null`입니다. 저장하지 않고 읽을 때마다 HR 퇴직일과 대조합니다.
    * 어긋난 정산은 `:complete`가 409 `SEVERANCE_RETIREMENT_MISMATCH`이고 `allowedActions`에 `COMPLETE`가 없습니다.
    */
-  retirementMismatch: Schema.NullOr(Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED'])),
+  retirementMismatch: Schema.NullOr(
+    Schema.Literals(['EMPLOYEE_NOT_FOUND', 'NOT_LEFT', 'LEAVE_DATE_CHANGED', 'LEFT_BEFORE_INTERIM']),
+  ),
   input: SeveranceInputSchema,
   result: Schema.Struct({
     eligible: Schema.Boolean,
@@ -104,8 +142,23 @@ export function severanceResponse(
 ): typeof SeveranceSettlement.Type {
   return {
     ...record,
+    kind: record.kind ?? 'RETIREMENT',
+    interimReason: record.interimReason ?? null,
+    serviceStartDate: record.serviceStartDate ?? record.joinDate,
     paymentDate: record.paymentDate ?? null,
     retirementMismatch,
     allowedActions: severanceActions(record.status, retirementMismatch),
   }
 }
+
+/** 퇴직금 정산 후보 한 명입니다. 퇴사했고 퇴직금 제도인데 그 퇴직의 정산이 없는 직원입니다. */
+export const SeveranceSettlementCandidate = Schema.Struct({
+  employeeId: IdSchema('employee'),
+  employeeName: Schema.String,
+  joinDate: Schema.String,
+  leaveDate: Schema.String,
+  /** 계속근로기간의 기산일입니다. 마지막 완료 중간정산의 다음 날이고, 없으면 입사일입니다. */
+  serviceStartDate: Schema.String,
+  /** 입사일부터 퇴직일까지 1년 이상이라 퇴직금이 있는지입니다. 아니면 정산을 만들어도 0원입니다. */
+  eligible: Schema.Boolean,
+})

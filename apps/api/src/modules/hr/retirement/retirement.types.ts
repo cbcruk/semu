@@ -16,6 +16,14 @@ export type RetirementBenefitType = 'SEVERANCE_PAY' | 'DB' | 'DC'
  */
 export type SeveranceSettlementStatus = 'CALCULATED' | 'COMPLETED' | 'EXCLUDED'
 
+/** HR이 퇴직 커맨드를 판정할 때 보는 Payroll 정산 한 건입니다. 종류는 퇴직(`RETIREMENT`)과 중간정산(`INTERIM`)입니다. */
+export interface SeveranceSettlementSummary {
+  kind: 'RETIREMENT' | 'INTERIM'
+  status: SeveranceSettlementStatus
+  /** 마지막 근무일입니다. 중간정산이면 정산 기준일입니다. */
+  lastWorkDate: string
+}
+
 /** 퇴직금 중간정산 사유입니다. */
 export type InterimSettlementReason = (typeof INTERIM_SETTLEMENT_REASONS)[number]
 

@@ -40,7 +40,7 @@
 | 수당 지급배수 | `multipliers` (ppm) |
 | 산출방법 (요율 / 고지 / 간이세액표 / 직접 입력 / 미적용) | `deductionMethods`: `RATE`·`NOTICE`·`TAX_TABLE`·`MANUAL`·`NONE` |
 | 급여명세서 | `Payslip` (`psl_`, 행 하나) |
-| 퇴직금 정산 | `SeveranceSettlement` (`sev_`), `status`: `CALCULATED`·`COMPLETED`·`EXCLUDED` |
+| 퇴직금 정산 (퇴직 / 중간정산) | `SeveranceSettlement` (`sev_`), `kind`: `RETIREMENT`·`INTERIM`, `status`: `CALCULATED`·`COMPLETED`·`EXCLUDED` |
 | HR 퇴직과 어긋남 (직원 없음 / 퇴사 취소 / 퇴직일 바뀜) | `retirementMismatch`: `EMPLOYEE_NOT_FOUND` / `NOT_LEFT` / `LEAVE_DATE_CHANGED` |
 | 인건비 내역 | `LaborCostReport` |
 | 원천세 신고 잠금 | `withholdingFiled` |
@@ -384,7 +384,9 @@ POST /payslips:send     { payslipIds[] }      Idempotency-Key 필수(없으면 4
 
 ```
 GET   /severance-settlements?status=&paymentMonth=
-POST  /severance-settlements            { employeeId, input?, paymentDate? } 201 + ETag
+GET   /severance-settlement-candidates?from=&to=      퇴사했는데 정산이 없는 직원
+POST  /severance-settlements            { kind?: RETIREMENT, employeeId, input, paymentDate? } 201 + ETag
+POST  /severance-settlements            { kind: INTERIM, employeeId, settlementDate, interimReason, input, paymentDate? }
 GET   /severance-settlements/{settlementId}
 PATCH /severance-settlements/{settlementId}   { input?, paymentDate? }       If-Match, CALCULATED만
 POST  /severance-settlements/{settlementId}:complete | :reopen | :exclude {reason} | :include
@@ -400,7 +402,7 @@ stateDiagram-v2
 ```
 
 - HR의 퇴사일이 없으면 422 `SEVERANCE_NOT_APPLICABLE`(`NOT_LEFT`), 퇴직급여 형태가 퇴직금이 아니면(`DB`·`DC`) `NOT_SEVERANCE_PAY_PLAN`입니다. 같은 직원의 정산이 이미 있으면 409 `SEVERANCE_SETTLEMENT_EXISTS`(`settlementId`)입니다
-- 3개월 임금은 입력이 없으면 그 직원의 마감된 대장 행에서 가져옵니다. 상여·연차수당·통상임금(일)은 입력으로 받습니다
+- 3개월 임금(`threeMonthWages`)·상여·연차수당·통상임금(일)은 입력으로 받습니다. 마감된 대장 행에서 3개월 임금을 채우는 것은 아직 없습니다(2026-11-14에 문서를 코드에 맞춤)
 - 퇴직소득세는 **퇴직월** 기준표를 씁니다. 규칙은 [severance-pay](../reference/rules/severance-pay.md)입니다
 - **지급일(`paymentDate`).** 원천세 퇴직소득 그 외(A22)는 지급일의 달(지급월)에 셉니다(2026-11-07 결정, 퇴직금은 대장 행이 아니라 정산에 둠. 줄 코드는 2026-11-08 서식 확인으로 A21에서 A22로 고침, [severance-pay 근거](../reference/rules/severance-pay.md#근거)). 퇴직금은 퇴직월과 다른 달에 줄 수 있어(법정 기한은 퇴직 뒤 14일) 퇴직월로는 묶을 수 없습니다
   - 계산됨에서는 없어도 됩니다. 만들기·`PATCH`로 정하고 `PATCH`의 `null`은 지웁니다. `PATCH`에서 빠진 필드(`input` 포함)는 그대로 둡니다
@@ -422,7 +424,21 @@ stateDiagram-v2
   - 모든 상태에 붙입니다. 제외한 정산도 옛 퇴직일이면 표시되고, 완료한 정산은 HR 가드가 퇴직 변경을 막아 보통 `null`입니다
   - 입사일은 대조하지 않습니다. 계산됨 정산의 `PATCH`(다시 계산)도 막지 않습니다. 입력을 고쳐도 완료할 수 없어서입니다
   - HR이 Payroll 정산에 쓰는 명령(자동 제외 등)은 두지 않습니다
-- 중간정산, 후보 목록, 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
+- **중간정산(2026-11-14, #80).** 재직 중인 직원이 법이 정한 사유로 그때까지의 퇴직금을 미리 받는 정산입니다(근로자퇴직급여 보장법 제8조제2항). 종류 `kind: INTERIM`, 사유 `interimReason`, 정산 기준일 `settlementDate`(응답의 `lastWorkDate`)로 만들고, 그 뒤는 퇴직 정산과 같은 상태·지급일·원천세(A22)·신고 잠금을 탑니다. 판정은 순수 규칙 [severance-interim.ts](../../apps/api/src/modules/payroll/severance/severance-interim.ts)입니다
+  - 사유는 시행령 제3조제1항의 9가지입니다: `HOME_PURCHASE`(무주택자 주택 구입), `RENT_DEPOSIT`(무주택자 전세금·보증금), `MEDICAL_TREATMENT`(6개월 이상 요양), `BANKRUPTCY`(5년 안 파산선고), `PERSONAL_REHABILITATION`(5년 안 개인회생), `WAGE_PEAK`(임금피크제), `WORK_HOURS_REDUCTION`(근로시간 단축), `LEGAL_WORK_HOURS_REDUCTION`(법정 근로시간 단축), `GOVERNMENT_NOTICE`(재난 등 고시 사유). 값은 HR `INTERIM_SETTLEMENT_REASONS`와 같습니다. 증빙은 받지 않습니다
+  - 퇴직금 제도 직원이 아니면 422 `SEVERANCE_NOT_APPLICABLE`(`NOT_SEVERANCE_PAY_PLAN`), 이미 퇴사했으면 `ALREADY_LEFT`, 입사일부터 기준일까지 365일 미만이면 `SERVICE_UNDER_ONE_YEAR`, 제외하지 않은 전세금·보증금 중간정산이 있는데 또 그 사유면 `RENT_DEPOSIT_ALREADY_USED`(한 사업에서 1회)입니다
+  - 기준일은 마지막 완료 중간정산 다음 날(없으면 입사일)부터 오늘까지입니다. 밖이면 422 `SEVERANCE_INTERIM_DATE_INVALID`(`earliestDate`, `latestDate`)입니다. 앞으로의 날은 아직 생기지 않은 퇴직금입니다
+  - 계산됨 정산이 있는 직원은 그것을 끝내기 전에 새 중간정산을 만들 수 없습니다(409 `SEVERANCE_SETTLEMENT_EXISTS`). 같은 기준일의 제외하지 않은 정산도 같습니다
+  - 중간정산의 HR 대조는 직원이 HR에 있는지(`EMPLOYEE_NOT_FOUND`)와 기준일보다 앞서 퇴사하지 않았는지(`LEFT_BEFORE_INTERIM`)만 봅니다. 기준일 뒤의 퇴사는 그 뒤 기간의 퇴직 정산이 맡습니다
+- **기산일 재설정(`serviceStartDate`, 2026-11-14).** 모든 정산의 근속일수는 기산일, 곧 그 정산의 기준일 전에 **완료한** 마지막 중간정산의 다음 날(없으면 입사일)부터 셉니다. 퇴직금도 퇴직소득세의 근속연수도 이 기간입니다. 1년 이상 근무했는지는 입사일로 봅니다. 그래서 중간정산 뒤 1년이 안 돼 퇴직해도 그 기간의 퇴직금이 있습니다
+  - 기산일은 계산할 때(만들기·`PATCH`) 정해 정산에 저장합니다. 그 뒤 앞선 중간정산이 완료·다시 열기로 바뀌면 `:complete`가 409 `SEVERANCE_SERVICE_START_CHANGED`(`serviceStartDate`: 지금 기산일)입니다. `PATCH`(빈 본문도 됨)로 다시 계산한 뒤 완료합니다
+  - 중간정산의 `:complete`·`:reopen`은 같은 직원의 기준일이 더 늦은 **완료** 정산이 있으면 409 `SEVERANCE_LATER_SETTLEMENT_COMPLETED`(`settlementId`)입니다. 완료한 늦은 정산의 기산일과 금액이 틀어지기 때문입니다. 늦은 정산을 먼저 다시 엽니다
+  - 퇴직 정산은 마지막 완료 중간정산이 퇴직일과 같거나 늦으면 정산할 기간이 없어 422 `SEVERANCE_NOT_APPLICABLE`(`NO_SERVICE_AFTER_INTERIM`)입니다
+  - 이 필드 전에 저장한 정산은 `kind`·`serviceStartDate`가 없고 퇴직·입사일로 읽습니다
+  - semu 밖에서 한 중간정산은 기준일이 지난 중간정산으로 만들어 완료하면 기산일에 들어갑니다. 지급일이 그 달이면 원천세 합계에도 들어가므로, 이미 신고한 달이면 지급일을 정하지 않거나 신고 잠금(409)을 따릅니다. HR 퇴직 정보의 중간정산일(`retirementPlan.interimSettlement`)은 아직 저장하지 않습니다
+- **HR 퇴직과의 맞춤.** HR은 `SeveranceSettlementLookup.settlementsOf`로 정산의 종류·상태·기준일을 받습니다. 완료한 **퇴직** 정산이 있으면 퇴사·퇴사 취소를, 완료 정산이 종류와 상관없이 있으면 직원 삭제를 409 `RETIREMENT_COMPLETED`로 막고, 퇴직일이 완료 중간정산 기준일보다 앞서면 422 `LEAVE_DATE_BEFORE_INTERIM`입니다([hr.md 퇴직](hr.md#퇴직))
+- **정산 후보(`GET /severance-settlement-candidates`, 2026-11-14).** 퇴직일이 기간(`from`~`to`, 기본값은 3년 전 오늘부터 오늘, 퇴직금 청구권 소멸시효 근로자퇴직급여 보장법 제10조) 안인 퇴직금 제도 근로소득자 중, 그 퇴직일의 퇴직 정산(제외 말고)이 없는 직원을 퇴직일 순으로 줍니다. 항목은 `employeeId`, `employeeName`, `joinDate`, `leaveDate`, `serviceStartDate`, `eligible`(입사일부터 1년 이상)입니다. 정산할 기간이 없는 직원(마지막 완료 중간정산이 퇴직일 이후)은 빠집니다. 현행의 중간정산 후보(`interim-candidates`)는 사유가 직원 신청에서 오므로 두지 않습니다
+- 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
 ## 인건비
 
@@ -518,12 +534,14 @@ flowchart LR
 | 409 | `WAGE_ROW_ON_ADDITIONAL_LEDGER` | 추가 대장에 근로 행 | |
 | 409 | `WAGE_INCOME_DUPLICATED` | 같은 귀속월 같은 직원의 두 번째 근로 행 | `ledgerId` |
 | 409 | `PAYROLL_LEDGER_HAS_ADDITIONAL` | 추가 대장이 있는 정기 대장 삭제 | |
-| 409 | `SEVERANCE_SETTLEMENT_EXISTS` | 같은 직원의 두 번째 정산 | `settlementId` |
+| 409 | `SEVERANCE_SETTLEMENT_EXISTS` | 같은 퇴직의 두 번째 정산, 계산됨 정산이 있는 직원의 중간정산 | `settlementId` |
+| 409 | `SEVERANCE_SERVICE_START_CHANGED` | 계산한 뒤 앞선 중간정산이 바뀌어 기산일이 달라짐(`:complete`) | `serviceStartDate` |
+| 409 | `SEVERANCE_LATER_SETTLEMENT_COMPLETED` | 기준일이 더 늦은 완료 정산이 있어 중간정산을 완료·다시 열 수 없음 | `settlementId` |
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
 | 409 | `EARNER_DUPLICATE` | 같은 회사에 같은 신원번호의 소득자 | `duplicateEarnerId` |
 | 409 | `EARNER_IN_USE` | 대장 행이 가리키는 소득자 삭제 | |
 | 409 | `PAYROLL_ITEM_ARCHIVED` | 지운 지급·공제 항목 수정 | |
-| 409 | `SEVERANCE_RETIREMENT_MISMATCH` | 정산의 마지막 근무일이 HR의 지금 퇴직과 어긋나 `:complete` 불가 | `reason`, `lastWorkDate`, `leaveDate` |
+| 409 | `SEVERANCE_RETIREMENT_MISMATCH` | 정산의 마지막 근무일이 HR의 지금 퇴직과 어긋나 `:complete` 불가. 중간정산은 직원이 없거나 기준일 전에 퇴사(`LEFT_BEFORE_INTERIM`) | `reason`, `lastWorkDate`, `leaveDate` |
 | 409 | `IDEMPOTENCY_KEY_IN_PROGRESS` | 같은 키의 명세서 발송이 아직 처리 중 | |
 | 412 | `VERSION_MISMATCH` | `If-Match`가 현재 버전과 다름 | `currentVersion` |
 | 422 | `PAYROLL_ROW_PAYEE_INVALID` | 근로 행에 직원 없음(`EMPLOYEE_REQUIRED`), 근로 외 행에 직원·소득자 없음(`PAYEE_REQUIRED`), 둘 다 줌(`PAYEE_AMBIGUOUS`), 명부에 없는 소득자(`EARNER_NOT_FOUND`), 소득 종류 변경(`INCOME_TYPE_CHANGED`) | `reason` |
@@ -532,7 +550,8 @@ flowchart LR
 | 422 | `EARNER_INVALID` | 신원번호 형식 오류(`INVALID_FORMAT`), 종류만 바꾸고 번호 없음(`REQUIRED`) | `violations` |
 | 422 | `EMPLOYEE_NOT_FOUND` | HR에 없는 직원 | |
 | 422 | `RATE_TABLE_NOT_FOUND` | 그 달에 적용할 기준표 없음 | `month` |
-| 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전이거나 퇴직금 제도가 아님 | `reason` |
+| 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전(`NOT_LEFT`), 퇴직금 제도 아님, 중간정산인데 퇴사함(`ALREADY_LEFT`)·1년 미만·전세 사유 재사용, 중간정산 뒤 정산할 기간 없음(`NO_SERVICE_AFTER_INTERIM`) | `reason` |
+| 422 | `SEVERANCE_INTERIM_DATE_INVALID` | 중간정산 기준일이 마지막 완료 중간정산 다음 날~오늘 밖 | `earliestDate`, `latestDate` |
 | 422 | `SEVERANCE_PAYMENT_DATE_INVALID` | 퇴직금 지급일이 마지막 근무일보다 앞섬 | `lastWorkDate` |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | 같은 키, 다른 본문의 명세서 발송 | |
 | 428 | `IDEMPOTENCY_KEY_REQUIRED` | 키 없는 명세서 발송 | |
@@ -640,10 +659,10 @@ flowchart LR
 | 120 | `POST .../:s/temp-save/` | `PATCH /severance-settlements/{settlementId} { input, paymentDate }` |
 | 121 | `POST .../:s/complete/` | `PATCH { input, paymentDate }`(바뀐 것이 있으면) + `POST /severance-settlements/{settlementId}:complete`. 지급일이 없으면 마지막 근무일 |
 | 122 | `POST .../:s/reopen/` | `POST /severance-settlements/{settlementId}:reopen` |
-| 123 | `GET .../interim-candidates/` | 미구현 (중간정산) |
-| 124 | `POST .../` `{ kind, employee_ids }` | `POST /severance-settlements { employeeId }` (퇴직만, 한 명씩) |
+| 123 | `GET .../interim-candidates/` | 없앰. 중간정산은 사유가 직원 신청에서 오므로 `POST /severance-settlements { kind: INTERIM, … }`로 바로 만듦 |
+| 124 | `POST .../` `{ kind, employee_ids }` | `POST /severance-settlements { kind, employeeId, … }` (퇴직·중간정산, 한 명씩) |
 | 125 | `DELETE .../:s/` | 없앰. 정산은 지우지 않고 `:exclude`로 뺌 |
-| 126 | `GET .../retirement-candidates/` | 미구현. HR 퇴사자 중 정산이 없는 사람 |
+| 126 | `GET .../retirement-candidates/` | `GET /severance-settlement-candidates?from=&to=` |
 | 127 | `POST .../:s/exclude/` | `POST /severance-settlements/{settlementId}:exclude { reason }` |
 | 128 | `POST .../:s/include/` | `POST /severance-settlements/{settlementId}:include` |
 
@@ -679,7 +698,7 @@ flowchart LR
 | 급여대장·행·재계산·전이 8개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
 | 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 원천세 금액은 싣지 않음 |
 | 명세서 조회·발송 `Job` | 구현. `PayslipMailer.layerFake` |
-| 퇴직금 정산 (퇴직) | 구현 (메모리). 원천세 합계(`RETIREMENT`)·지급월 신호(`payroll_pay_month.withholding_changed`)·신고 잠금·완료 때 HR 퇴직일 대조(`retirementMismatch`) 포함 |
+| 퇴직금 정산 (퇴직·중간정산·후보) | 구현, HTTP 테스트. 원천세 합계(`RETIREMENT`)·지급월 신호(`payroll_pay_month.withholding_changed`)·신고 잠금·완료 때 HR 퇴직일 대조(`retirementMismatch`), 중간정산과 기산일 재설정(2026-11-14), 정산 후보 포함. 상태별 건수는 미구현 |
 | 인건비 보고서, `PayrollLaborCost`, `PayrollLedgerSummary`, `PayrollWithholdingTotals`, `SeveranceSettlementQuery` | 구현 |
 | 포트 연결 (`PayrollEmployeeDirectory`, `WithholdingFilingLock`, `PayrollEventPublisher`) | `src/wiring/`에서 HR·Tax에 연결. 지급 단위·기본급·시급·일급은 HR 급여계약, 공제대상 가족 수·8–20세 자녀 수·원천징수 비율·직접 입력 세액은 HR 소득세 공제 설정, 4대보험 가입 여부는 HR 4대보험 설정(없으면 판정 권장값)에서 읽고, 그 값이 없는 직원만 기본값(월급제 300만 원, 가족 1명, 100%)을 씀. 퇴직급여 제도는 HR에 없어 언제나 퇴직금([payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts)). `PayslipMailer`는 Integrations 메일 연동이 없어 가짜 |
 | 엑셀 가져오기 `Job`, 양식 | 설계만 |

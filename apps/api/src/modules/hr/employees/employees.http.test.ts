@@ -296,6 +296,73 @@ describe('퇴직금 정산 가드(RETIREMENT_COMPLETED)', () => {
   })
 })
 
+describe('퇴직금 중간정산과 퇴사', () => {
+  /** 재직 중 직원과 Payroll에서 완료한 중간정산을 만듭니다(기준일 2026-01-31). */
+  const hireWithInterim = async () => {
+    const created = await hire()
+    const id: string = created.body.id
+    const interim = await app.json('POST', '/severance-settlements', {
+      body: {
+        kind: 'INTERIM',
+        employeeId: id,
+        settlementDate: '2026-01-31',
+        interimReason: 'HOME_PURCHASE',
+        input: { threeMonthWages: 9_000_000 },
+      },
+    })
+    expect(interim.status).toBe(201)
+    expect((await app.json('POST', `/severance-settlements/${interim.body.id}:complete`)).body.status).toBe('COMPLETED')
+    return { id, interimId: interim.body.id as string }
+  }
+
+  it('완료한 중간정산이 있어도 퇴사·퇴사 취소는 막지 않고 삭제만 막습니다', async () => {
+    const { id } = await hireWithInterim()
+
+    const resigned = await app.json('POST', `/employees/${id}:resign`, {
+      body: { leaveDate: '2026-06-30', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
+    })
+    const canceled = await app.json('POST', `/employees/${id}:cancel-resignation`)
+    const removed = await app.json('DELETE', `/employees/${id}`)
+
+    expect(resigned.status).toBe(200)
+    expect(canceled.status).toBe(200)
+    expect(removed.status).toBe(409)
+    expect(removed.body).toMatchObject({ code: 'RETIREMENT_COMPLETED' })
+  })
+
+  it('퇴직일이 완료한 중간정산 기준일보다 앞서면 422 LEAVE_DATE_BEFORE_INTERIM입니다', async () => {
+    const { id } = await hireWithInterim()
+
+    const resigned = await app.json('POST', `/employees/${id}:resign`, {
+      body: { leaveDate: '2026-01-30', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
+    })
+
+    expect(resigned.status).toBe(422)
+    expect(resigned.body).toMatchObject({ reason: 'LEAVE_DATE_BEFORE_INTERIM' })
+  })
+
+  it('퇴직 정산은 중간정산 다음 날부터 근속일수를 셉니다', async () => {
+    const { id } = await hireWithInterim()
+    await app.json('POST', `/employees/${id}:resign`, {
+      body: { leaveDate: '2026-06-30', leavingReasonCode: '23', leavingDetailReasonCode: '23-2' },
+    })
+
+    const settlement = await app.json('POST', '/severance-settlements', {
+      body: { employeeId: id, input: { threeMonthWages: 9_000_000 } },
+    })
+
+    expect(settlement.status).toBe(201)
+    expect(settlement.body).toMatchObject({
+      kind: 'RETIREMENT',
+      interimReason: null,
+      joinDate: '2024-01-02',
+      serviceStartDate: '2026-02-01',
+      lastWorkDate: '2026-06-30',
+      result: { eligible: true, serviceDays: 150 },
+    })
+  })
+})
+
 describe('4대보험', () => {
   it('초단시간 근로자는 제외를 권합니다', async () => {
     const created = await hire()
