@@ -4,16 +4,12 @@ import { checkVersion } from '../../../shared/http/versioning.ts'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
-import { companyDate } from '../../../shared/time/company-date.ts'
-import { daysBetween } from '../../../shared/time/calendar.ts'
 import type { CurrentActor } from '../../identity-access/actor.ts'
 import type { Actor, Permission } from '../../identity-access/actor.types.ts'
 import { authorize, type AccessDenied } from '../../identity-access/authorization.ts'
 import { EarnerRepository } from '../earners/earner-repository.ts'
 import type { EarnerRecord } from '../earners/earner.ts'
-import { defaultRowItems, rowItemViolations } from '../items/payroll-item-rules.ts'
 import { PayrollItemRepository } from '../items/payroll-item-repository.ts'
-import type { PayrollItemCatalog } from '../items/payroll-item.types.ts'
 import { LEDGER_PLANS } from '../payroll-access.ts'
 import {
   AdditionalLedgerBlocked,
@@ -32,25 +28,26 @@ import {
 } from '../payroll-problems.ts'
 import { PayrollEmployeeDirectory, type PayrollEmployee } from '../ports/payroll-employee-directory.ts'
 import { PayrollEventPublisher } from '../ports/payroll-events.ts'
-import { WithholdingFilingLock } from '../ports/withholding-filing-lock.ts'
-import type { RateTableRepository } from '../rate-tables/rate-table-repository.ts'
-import { resolveOrFail } from '../rate-tables/rate-tables.ts'
-import type { EmployeeSnapshot, PayrollRowInputValue } from '../rows/payroll-row-input.ts'
-import { calculateRow } from '../rows/row-calculation.ts'
-import { PayrollSettingRepository } from '../settings/payroll-setting-repository.ts'
-import type { PayrollSettingRecord } from '../settings/payroll-setting.types.ts'
 import { PayrollPlanCheck } from '../ports/payroll-plan-check.ts'
-import {
-  additionalLedgerBlocker,
-  attributionMonthOn,
-  defaultPaymentDate,
-  duplicatedWageIncome,
-  paymentMonthOf,
-  wagePeriodOf,
-} from './ledger-rules.ts'
-import { canEditInput, decideTransition } from './ledger-status.ts'
+import { WithholdingFilingLock } from '../ports/withholding-filing-lock.ts'
+import { RateTableRepository } from '../rate-tables/rate-table-repository.ts'
+import { PayrollSettingRepository } from '../settings/payroll-setting-repository.ts'
+import { attributionMonthOn, paymentMonthOf } from './ledger-rules.ts'
 import type { LedgerStatus, LedgerTransition } from './ledger-status.types.ts'
-import { ledgerMonthsTouched, payMonthChanges } from './pay-month.ts'
+import {
+  decideLedgerCreation,
+  decideLedgerDeletion,
+  decideLedgerHeaderUpdate,
+  decideLedgerRecalculation,
+  decideLedgerTransition,
+  decideRowAddition,
+  decideRowDeletion,
+  decideRowUpdate,
+  planLedgerCreation,
+  type LedgerCalculationFacts,
+  type LedgerDecision,
+  type LedgerDecisionContext,
+} from './payroll-ledger.aggregate.ts'
 import type {
   AddPayrollRow,
   CreatePayrollLedger,
@@ -61,7 +58,13 @@ import type {
 } from './payroll-ledger.ts'
 import { ledgerResponse, rowResponse } from './payroll-ledger.ts'
 import { PayrollLedgerRepository } from './payroll-ledger-repository.ts'
-import type { PayrollEarner, PayrollLedgerRecord, PayrollRowRecord } from './payroll-ledger.types.ts'
+import type { PayrollLedgerRecord } from './payroll-ledger.types.ts'
+
+/**
+ * 급여대장 커맨드 처리기입니다. 읽기 → 권한 → 판정(`payroll-ledger.aggregate.ts`) → 저장만 합니다. 판정에 필요한 사실(같은 회사의
+ * 대장, 기준표·설정·항목 카탈로그, 원천세 신고 여부, HR 직원·소득자 명부)은 여기서 읽어 넘기고, 판정이 만든 대장과 지급월 이벤트를
+ * {@link save}가 함께 저장·발행합니다.
+ */
 
 /** 급여대장 유스케이스가 쓰는 저장소와 포트입니다. */
 export type LedgerDeps =
@@ -150,40 +153,7 @@ export const listRows = (
 export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<LedgerResponse> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:create', plans: LEDGER_PLANS, requiresTerms: true })
-    const repository = yield* PayrollLedgerRepository
-    const setting = yield* (yield* PayrollSettingRepository).get(actor.companyId)
-    const before = yield* repository.list(actor.companyId)
-    const sameMonth = before.filter((ledger) => ledger.attributionMonth === payload.attributionMonth)
-    const regular = sameMonth.find((ledger) => ledger.kind === 'REGULAR')
-    const kind = sameMonth.length === 0 ? 'REGULAR' : 'ADDITIONAL'
-    const paymentDate =
-      payload.paymentDate ?? regular?.paymentDate ?? defaultPaymentDate(payload.attributionMonth, setting)
-    const paymentMonth = paymentMonthOf(paymentDate)
-    const filed = yield* (yield* WithholdingFilingLock).isFiled(actor.companyId, paymentMonth)
-    const now = yield* nowIso
-    if (kind === 'ADDITIONAL') {
-      const blocker = additionalLedgerBlocker({
-        attributionMonth: payload.attributionMonth,
-        paymentDate,
-        today: companyDate(Date.parse(now)),
-        ledgers: before,
-        withholdingFiled: filed,
-      })
-      if (blocker === 'WITHHOLDING_FILED') return yield* new WithholdingFiled({ paymentMonth })
-      if (blocker !== null) return yield* new AdditionalLedgerBlocked({ reason: blocker })
-    } else if (filed) {
-      return yield* new WithholdingFiled({ paymentMonth })
-    }
-    const draft = yield* draftLedger(actor.companyId, {
-      kind,
-      attributionMonth: payload.attributionMonth,
-      paymentDate,
-      title: payload.title,
-      setting,
-      now,
-    })
-    const ledger = yield* calculateAll(draft, now)
-    yield* saveWithEvents(actor.companyId, before, ledger)
+    const ledger = yield* create(actor.companyId, payload)
     return yield* respond(actor, ledger)
   })
 
@@ -208,27 +178,19 @@ export const createScheduledRegularLedger = (
     const plans = yield* (yield* PayrollPlanCheck).plansOf(companyId)
     if (!LEDGER_PLANS.some((plan) => plans.has(plan))) return 'NO_PLAN'
     const attributionMonth = attributionMonthOn(today, setting.wagePeriodStartDay)
-    const before = yield* (yield* PayrollLedgerRepository).list(companyId)
-    if (before.some((ledger) => ledger.attributionMonth === attributionMonth)) return 'EXISTS'
-    const paymentDate = defaultPaymentDate(attributionMonth, setting)
-    if (yield* (yield* WithholdingFilingLock).isFiled(companyId, paymentMonthOf(paymentDate)))
-      return 'WITHHOLDING_FILED'
-    const now = yield* nowIso
-    const draft = yield* draftLedger(companyId, {
-      kind: 'REGULAR',
-      attributionMonth,
-      paymentDate,
-      title: undefined,
-      setting,
-      now,
-    })
-    yield* saveWithEvents(companyId, before, yield* calculateAll(draft, now))
-    return 'CREATED'
+    const ledgers = yield* (yield* PayrollLedgerRepository).list(companyId)
+    if (ledgers.some((ledger) => ledger.attributionMonth === attributionMonth)) return 'EXISTS'
+    return yield* create(companyId, { attributionMonth }).pipe(
+      Effect.as('CREATED' as const),
+      Effect.catchTag('WithholdingFiled', () => Effect.succeed('WITHHOLDING_FILED' as const)),
+      // 귀속월에 대장이 없으므로 정기 대장이고, 추가 대장 규칙은 걸리지 않습니다.
+      Effect.catchTag('AdditionalLedgerBlocked', (error) => Effect.die(error)),
+    )
   })
 
 /**
- * 대장 머리(제목·지급일)를 고칩니다. 신고 잠금은 변경이 건드리는 지급월({@link ledgerMonthsTouched})을 봅니다.
- * 신고된 달로 지급일을 옮기거나 신고된 달 안에서 고칠 수 없지만, 마감 전 대장을 신고된 달에서 빼낼 수는 있습니다.
+ * 대장 머리(제목·지급일)를 고칩니다. 신고 잠금은 변경이 건드리는 지급월을 봅니다. 신고된 달로 지급일을 옮기거나 신고된 달 안에서
+ * 고칠 수 없지만, 마감 전 대장을 신고된 달에서 빼낼 수는 있습니다.
  */
 export const updateLedger = (
   id: Id<'payrollLedger'>,
@@ -237,34 +199,29 @@ export const updateLedger = (
 ): Run<LedgerResponse> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* inputEditable(actor, id, expected)
-    const now = yield* nowIso
-    let next: PayrollLedgerRecord = { ...ledger, ...patch, version: ledger.version + 1, updatedAt: now }
-    yield* rejectFiledMonths(actor.companyId, ledgerMonthsTouched(ledger, next))
-    if (paymentMonthOf(next.paymentDate) !== paymentMonthOf(ledger.paymentDate)) {
-      next = yield* calculateAll(next, now)
-    }
-    yield* saveWithEvents(actor.companyId, before, next)
-    return yield* respond(actor, next)
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const months = [paymentMonthOf(ledger.paymentDate), paymentMonthOf(patch.paymentDate ?? ledger.paymentDate)]
+    const facts = { ledgers, filedPaymentMonths: yield* filedAmong(actor.companyId, months) }
+    const calculation = yield* calculationFacts(actor.companyId)
+    const decision = yield* Effect.fromResult(
+      decideLedgerHeaderUpdate(ledger, patch, { ...facts, ...calculation }, yield* contextOf(actor)),
+    )
+    yield* save(decision)
+    return yield* respond(actor, decision.ledger)
   })
 
 /** 입력 중인 대장을 지웁니다. 추가 대장이 딸린 정기 대장은 추가 대장을 먼저 지워야 합니다. */
 export const deleteLedger = (id: Id<'payrollLedger'>, expected: number | undefined): Run<void> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:delete', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
-    if (ledger.status !== 'DRAFT') {
-      return yield* new PayrollLedgerTransitionInvalid({ ledgerStatus: ledger.status, action: 'DELETE' })
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
     }
-    if (
-      ledger.kind === 'REGULAR' &&
-      before.some((other) => other.id !== ledger.id && other.attributionMonth === ledger.attributionMonth)
-    ) {
-      return yield* new PayrollLedgerHasAdditional({})
-    }
-    const repository = yield* PayrollLedgerRepository
-    yield* repository.remove(actor.companyId, id)
-    yield* publishChanges(actor.companyId, before, yield* repository.list(actor.companyId))
+    const decision = yield* Effect.fromResult(decideLedgerDeletion(ledger, facts, yield* contextOf(actor)))
+    yield* (yield* PayrollLedgerRepository).remove(actor.companyId, id)
+    yield* publish(decision.events)
   })
 
 /** 행을 추가하고 바로 계산합니다. */
@@ -275,27 +232,25 @@ export const addRow = (
 ): Run<{ ledger: PayrollLedgerRecord; row: RowResponse }> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
-    const now = yield* nowIso
-    const payee = yield* payeeOf(actor, ledger, before, payload)
-    yield* checkRowItems(actor.companyId, payload.input, undefined)
-    const row: PayrollRowRecord = {
-      id: newId('payrollRow'),
-      employeeId: payee.employeeId,
-      earnerId: payee.earnerId,
-      payeeName: payee.payeeName,
-      earner: payee.earner,
-      input: payload.input,
-      snapshot: payee.snapshot,
-      result: null,
-      updatedAt: now,
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const employee =
+      payload.employeeId === undefined
+        ? Option.none<PayrollEmployee>()
+        : yield* (yield* PayrollEmployeeDirectory).find(actor.companyId, payload.employeeId, ledger.wagePeriod.end)
+    const earner =
+      payload.earnerId === undefined
+        ? Option.none<EarnerRecord>()
+        : yield* (yield* EarnerRepository).find(actor.companyId, payload.earnerId)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
+      ...(yield* calculationFacts(actor.companyId)),
+      employee: Option.getOrUndefined(employee),
+      earner: Option.getOrUndefined(earner),
     }
-    const next = yield* calculateAll(
-      { ...ledger, rows: [...ledger.rows, row], version: ledger.version + 1, updatedAt: now },
-      now,
-    )
-    yield* saveWithEvents(actor.companyId, before, next)
-    return { ledger: next, row: rowResponse(next, next.rows.at(-1) ?? row) }
+    const decision = yield* Effect.fromResult(decideRowAddition(ledger, payload, facts, yield* contextOf(actor)))
+    yield* save(decision)
+    return { ledger: decision.ledger, row: rowResponse(decision.ledger, decision.row) }
   })
 
 /** 행 입력을 고치고 다시 계산합니다. 소득 구분은 바꿀 수 없습니다. 소득자는 행을 다시 넣어야 바뀝니다. */
@@ -307,41 +262,29 @@ export const updateRow = (
 ): Run<{ ledger: PayrollLedgerRecord; row: RowResponse }> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
-    const row = ledger.rows.find((candidate) => candidate.id === rowId)
-    if (row === undefined) return yield* new PayrollRowNotFound({})
-    if (patch.input.incomeType !== row.input.incomeType) {
-      return yield* new PayrollRowPayeeInvalid({ reason: 'INCOME_TYPE_CHANGED' })
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
+      ...(yield* calculationFacts(actor.companyId)),
     }
-    yield* checkRowItems(actor.companyId, patch.input, row.input)
-    const now = yield* nowIso
-    const updated: PayrollRowRecord = { ...row, input: patch.input, updatedAt: now }
-    const next = yield* calculateAll(
-      {
-        ...ledger,
-        rows: ledger.rows.map((candidate) => (candidate.id === rowId ? updated : candidate)),
-        version: ledger.version + 1,
-        updatedAt: now,
-      },
-      now,
+    const decision = yield* Effect.fromResult(
+      decideRowUpdate(ledger, rowId, patch.input, facts, yield* contextOf(actor)),
     )
-    yield* saveWithEvents(actor.companyId, before, next)
-    return { ledger: next, row: rowResponse(next, next.rows.find((candidate) => candidate.id === rowId) ?? updated) }
+    yield* save(decision)
+    return { ledger: decision.ledger, row: rowResponse(decision.ledger, decision.row) }
   })
 
 /** 행을 지웁니다. */
 export const deleteRow = (id: Id<'payrollLedger'>, rowId: Id<'payrollRow'>, expected: number | undefined): Run<void> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
-    if (!ledger.rows.some((row) => row.id === rowId)) return yield* new PayrollRowNotFound({})
-    const now = yield* nowIso
-    yield* saveWithEvents(actor.companyId, before, {
-      ...ledger,
-      rows: ledger.rows.filter((row) => row.id !== rowId),
-      version: ledger.version + 1,
-      updatedAt: now,
-    })
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
+    }
+    yield* save(yield* Effect.fromResult(decideRowDeletion(ledger, rowId, facts, yield* contextOf(actor))))
   })
 
 /**
@@ -351,36 +294,35 @@ export const deleteRow = (id: Id<'payrollLedger'>, rowId: Id<'payrollRow'>, expe
 export const recalculateLedger = (id: Id<'payrollLedger'>, expected: number | undefined): Run<LedgerResponse> =>
   Effect.gen(function* () {
     const actor = yield* authorize({ permission: 'payroll-ledger:update', plans: LEDGER_PLANS, requiresTerms: true })
-    const { ledger, before } = yield* editable(actor, id, expected)
+    const { ledger, ledgers } = yield* load(actor, id, expected)
     const directory = yield* PayrollEmployeeDirectory
-    const earners = yield* EarnerRepository
-    const now = yield* nowIso
-    const rows: PayrollRowRecord[] = []
+    const registry = yield* EarnerRepository
+    const employees = new Map<Id<'employee'>, PayrollEmployee>()
+    const earners = new Map<Id<'earner'>, EarnerRecord>()
     for (const row of ledger.rows) {
-      if (row.employeeId === null) {
-        const earner = row.earnerId === null ? Option.none() : yield* earners.find(actor.companyId, row.earnerId)
-        rows.push(
-          Option.isSome(earner)
-            ? { ...row, payeeName: earner.value.name, earner: earnerFromRegistry(earner.value) }
-            : row,
-        )
-        continue
+      if (row.employeeId !== null) {
+        const found = yield* directory.find(actor.companyId, row.employeeId, ledger.wagePeriod.end)
+        if (Option.isSome(found)) employees.set(row.employeeId, found.value)
+      } else if (row.earnerId !== null) {
+        const found = yield* registry.find(actor.companyId, row.earnerId)
+        if (Option.isSome(found)) earners.set(row.earnerId, found.value)
       }
-      const found = yield* directory.find(actor.companyId, row.employeeId, ledger.wagePeriod.end)
-      rows.push(
-        Option.isSome(found)
-          ? { ...row, snapshot: snapshotOf(found.value), payeeName: found.value.name, earner: earnerOf(found.value) }
-          : row,
-      )
     }
-    const next = yield* calculateAll({ ...ledger, rows, version: ledger.version + 1, updatedAt: now }, now)
-    yield* saveWithEvents(actor.companyId, before, next)
-    return yield* respond(actor, next)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
+      ...(yield* calculationFacts(actor.companyId)),
+      employees,
+      earners,
+    }
+    const decision = yield* Effect.fromResult(decideLedgerRecalculation(ledger, facts, yield* contextOf(actor)))
+    yield* save(decision)
+    return yield* respond(actor, decision.ledger)
   })
 
 /**
- * 상태 커맨드를 실행합니다. 전이표({@link decideTransition})가 허락해야 하고, 입력을 마치는 전이(제출·직접 마감)는
- * 모든 행을 다시 계산합니다. 지급월의 대장이 모두 마감되거나 마감이 풀리면 이벤트를 냅니다.
+ * 상태 커맨드를 실행합니다. 전이표가 허락해야 하고, 입력을 마치는 전이(제출·직접 마감)는 모든 행을 다시 계산합니다.
+ * 지급월의 대장이 모두 마감되거나 마감이 풀리면 이벤트를 냅니다.
  */
 export const transitionLedger = (
   id: Id<'payrollLedger'>,
@@ -394,36 +336,119 @@ export const transitionLedger = (
       plans: LEDGER_PLANS,
       requiresTerms: true,
     })
-    const repository = yield* PayrollLedgerRepository
-    const before = yield* repository.list(actor.companyId)
-    const ledger = before.find((candidate) => candidate.id === id)
-    if (ledger === undefined) return yield* new PayrollLedgerNotFound({})
-    yield* checkVersion(ledger.version, expected)
-    const paymentMonth = paymentMonthOf(ledger.paymentDate)
-    const filed = yield* (yield* WithholdingFilingLock).isFiled(actor.companyId, paymentMonth)
-    const decision = decideTransition(transition, {
-      status: ledger.status,
-      workflow: ledger.workflow,
-      actor: actor.kind,
-      withholdingFiled: filed,
-    })
-    if (!decision.ok) {
-      return yield* decision.reason === 'WITHHOLDING_FILED'
-        ? new WithholdingFiled({ paymentMonth })
-        : new PayrollLedgerTransitionInvalid({ ledgerStatus: ledger.status, action: transition })
+    const { ledger, ledgers } = yield* load(actor, id, expected)
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(actor.companyId, [paymentMonthOf(ledger.paymentDate)]),
+      ...(yield* calculationFacts(actor.companyId)),
     }
-    const now = yield* nowIso
-    let next: PayrollLedgerRecord = { ...ledger, status: decision.to, version: ledger.version + 1, updatedAt: now }
-    if (ledger.status === 'DRAFT') next = yield* calculateAll(next, now)
-    if (transition === 'REJECT') next = { ...next, rejection: { reason: reason ?? '', rejectedAt: now } }
-    if (transition === 'REQUEST_APPROVAL') next = { ...next, rejection: null }
-    if (decision.to === 'CLOSED') next = { ...next, closedAt: now }
-    if (transition === 'REOPEN') next = { ...next, closedAt: null, reopenReason: reason ?? '' }
-    yield* saveWithEvents(actor.companyId, before, next)
-    return yield* respond(actor, next)
+    const decision = yield* Effect.fromResult(
+      decideLedgerTransition(ledger, transition, reason, facts, yield* contextOf(actor)),
+    )
+    yield* save(decision)
+    return yield* respond(actor, decision.ledger)
   })
 
 const nowIso = Effect.map(Clock.currentTimeMillis, (millis) => new Date(millis).toISOString())
+
+/** 대장을 만듭니다. 요청과 정기 작업이 함께 씁니다. */
+function create(
+  companyId: Id<'company'>,
+  payload: { attributionMonth: string; paymentDate?: string | undefined; title?: string | undefined },
+): Effect.Effect<PayrollLedgerRecord, AdditionalLedgerBlocked | WithholdingFiled | RateTableNotFound, LedgerDeps> {
+  return Effect.gen(function* () {
+    const ledgers = yield* (yield* PayrollLedgerRepository).list(companyId)
+    const calculation = yield* calculationFacts(companyId)
+    const plan = planLedgerCreation(payload, ledgers, calculation.setting)
+    const wageEarners =
+      plan.kind === 'REGULAR'
+        ? yield* (yield* PayrollEmployeeDirectory).listWageEarners(companyId, plan.wagePeriod)
+        : []
+    const facts = {
+      ledgers,
+      filedPaymentMonths: yield* filedAmong(companyId, [paymentMonthOf(plan.paymentDate)]),
+      ...calculation,
+      wageEarners,
+    }
+    const decision = yield* Effect.fromResult(
+      decideLedgerCreation({ ...payload, id: newId('payrollLedger'), companyId }, facts, yield* nowIso),
+    )
+    yield* save(decision)
+    return decision.ledger
+  })
+}
+
+/** 같은 회사의 대장을 모두 읽고 그중 대상을 찾습니다. 버전(`If-Match`)을 봅니다. */
+function load(
+  actor: Actor,
+  id: Id<'payrollLedger'>,
+  expected: number | undefined,
+): Effect.Effect<
+  { ledger: PayrollLedgerRecord; ledgers: ReadonlyArray<PayrollLedgerRecord> },
+  PayrollLedgerNotFound | VersionMismatch,
+  PayrollLedgerRepository
+> {
+  return Effect.gen(function* () {
+    const ledgers = yield* (yield* PayrollLedgerRepository).list(actor.companyId)
+    const ledger = ledgers.find((candidate) => candidate.id === id)
+    if (ledger === undefined) return yield* new PayrollLedgerNotFound({})
+    yield* checkVersion(ledger.version, expected)
+    return { ledger, ledgers }
+  })
+}
+
+/** 판정 문맥입니다. */
+function contextOf(actor: Actor): Effect.Effect<LedgerDecisionContext> {
+  return Effect.map(nowIso, (at) => ({ at, actor: { kind: actor.kind } }))
+}
+
+/** 행 계산에 쓰는 기준표 전체와 회사 설정·항목 카탈로그입니다. */
+function calculationFacts(
+  companyId: Id<'company'>,
+): Effect.Effect<
+  LedgerCalculationFacts,
+  never,
+  RateTableRepository | PayrollSettingRepository | PayrollItemRepository
+> {
+  return Effect.gen(function* () {
+    const tables = yield* (yield* RateTableRepository).list()
+    return {
+      rateTables: tables.map((record) => record.table),
+      setting: yield* (yield* PayrollSettingRepository).get(companyId),
+      catalog: yield* (yield* PayrollItemRepository).catalog(companyId),
+    }
+  })
+}
+
+/** `paymentMonths` 중 원천세가 신고된 달입니다. */
+function filedAmong(
+  companyId: Id<'company'>,
+  paymentMonths: readonly string[],
+): Effect.Effect<ReadonlySet<string>, never, WithholdingFilingLock> {
+  return Effect.gen(function* () {
+    const lock = yield* WithholdingFilingLock
+    const filed = new Set<string>()
+    for (const paymentMonth of new Set(paymentMonths)) {
+      if (yield* lock.isFiled(companyId, paymentMonth)) filed.add(paymentMonth)
+    }
+    return filed
+  })
+}
+
+/** 판정한 대장을 저장하고 그 변경이 낸 지급월 이벤트를 냅니다. */
+function save(decision: LedgerDecision): Effect.Effect<void, never, PayrollLedgerRepository | PayrollEventPublisher> {
+  return Effect.gen(function* () {
+    yield* (yield* PayrollLedgerRepository).save(decision.ledger)
+    yield* publish(decision.events)
+  })
+}
+
+function publish(events: LedgerDecision['events']): Effect.Effect<void, never, PayrollEventPublisher> {
+  return Effect.gen(function* () {
+    const publisher = yield* PayrollEventPublisher
+    for (const event of events) yield* publisher.publish(event)
+  })
+}
 
 function findOrFail(
   companyId: Id<'company'>,
@@ -444,328 +469,4 @@ function respond(
     const filed = yield* (yield* WithholdingFilingLock).isFiled(ledger.companyId, paymentMonthOf(ledger.paymentDate))
     return ledgerResponse(ledger, actor.kind, filed)
   })
-}
-
-/** 행위자가 지금 입력을 고칠 수 있는 대장을 읽습니다. 버전·상태·신고 잠금을 차례로 봅니다. */
-function editable(
-  actor: Actor,
-  id: Id<'payrollLedger'>,
-  expected: number | undefined,
-): Effect.Effect<
-  { ledger: PayrollLedgerRecord; before: ReadonlyArray<PayrollLedgerRecord> },
-  PayrollLedgerNotFound | VersionMismatch | PayrollLedgerReadOnly | WithholdingFiled,
-  PayrollLedgerRepository | WithholdingFilingLock
-> {
-  return Effect.gen(function* () {
-    const found = yield* inputEditable(actor, id, expected)
-    yield* rejectFiledMonths(actor.companyId, [paymentMonthOf(found.ledger.paymentDate)])
-    return found
-  })
-}
-
-/** 행위자가 지금 입력을 고칠 수 있는 대장을 읽습니다. 버전·상태만 보고, 신고 잠금은 부르는 쪽이 건드리는 달로 봅니다. */
-function inputEditable(
-  actor: Actor,
-  id: Id<'payrollLedger'>,
-  expected: number | undefined,
-): Effect.Effect<
-  { ledger: PayrollLedgerRecord; before: ReadonlyArray<PayrollLedgerRecord> },
-  PayrollLedgerNotFound | VersionMismatch | PayrollLedgerReadOnly,
-  PayrollLedgerRepository
-> {
-  return Effect.gen(function* () {
-    const before = yield* (yield* PayrollLedgerRepository).list(actor.companyId)
-    const ledger = before.find((candidate) => candidate.id === id)
-    if (ledger === undefined) return yield* new PayrollLedgerNotFound({})
-    yield* checkVersion(ledger.version, expected)
-    if (!canEditInput(ledger.status, actor.kind))
-      return yield* new PayrollLedgerReadOnly({ ledgerStatus: ledger.status })
-    return { ledger, before }
-  })
-}
-
-/** 지급월 중 원천세가 신고된 첫 달이 있으면 409 `WITHHOLDING_FILED`로 거부합니다. */
-function rejectFiledMonths(
-  companyId: Id<'company'>,
-  paymentMonths: readonly string[],
-): Effect.Effect<void, WithholdingFiled, WithholdingFilingLock> {
-  return Effect.gen(function* () {
-    const lock = yield* WithholdingFilingLock
-    for (const paymentMonth of paymentMonths) {
-      if (yield* lock.isFiled(companyId, paymentMonth)) return yield* new WithholdingFiled({ paymentMonth })
-    }
-  })
-}
-
-/**
- * 새 행의 소득자를 정합니다. 근로 행은 정기 대장에만, 직원·귀속월마다 하나만 넣을 수 있습니다. 그 밖의 행은 직원이나
- * 소득자 명부의 소득자 중 하나를 가리킵니다. 이름과 소득자 사본은 직원이면 HR에서, 소득자면 명부에서 복사합니다.
- */
-function payeeOf(
-  actor: Actor,
-  ledger: PayrollLedgerRecord,
-  ledgers: ReadonlyArray<PayrollLedgerRecord>,
-  payload: typeof AddPayrollRow.Type,
-): Effect.Effect<
-  Pick<PayrollRowRecord, 'employeeId' | 'earnerId' | 'payeeName' | 'earner' | 'snapshot'>,
-  WageRowOnAdditionalLedger | PayrollRowPayeeInvalid | EmployeeNotFound | WageIncomeDuplicated,
-  PayrollEmployeeDirectory | EarnerRepository
-> {
-  return Effect.gen(function* () {
-    if (payload.employeeId !== undefined && payload.earnerId !== undefined) {
-      return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_AMBIGUOUS' })
-    }
-    if (isWage(payload.input) && ledger.kind === 'ADDITIONAL') return yield* new WageRowOnAdditionalLedger({})
-    if (isWage(payload.input) && payload.employeeId === undefined) {
-      return yield* new PayrollRowPayeeInvalid({ reason: 'EMPLOYEE_REQUIRED' })
-    }
-    if (payload.earnerId !== undefined) {
-      const earner = yield* (yield* EarnerRepository).find(actor.companyId, payload.earnerId)
-      if (Option.isNone(earner)) return yield* new PayrollRowPayeeInvalid({ reason: 'EARNER_NOT_FOUND' })
-      return {
-        employeeId: null,
-        earnerId: payload.earnerId,
-        payeeName: earner.value.name,
-        earner: earnerFromRegistry(earner.value),
-        snapshot: null,
-      }
-    }
-    if (payload.employeeId === undefined) return yield* new PayrollRowPayeeInvalid({ reason: 'PAYEE_REQUIRED' })
-    const found = yield* (yield* PayrollEmployeeDirectory).find(
-      actor.companyId,
-      payload.employeeId,
-      ledger.wagePeriod.end,
-    )
-    if (Option.isNone(found)) return yield* new EmployeeNotFound({})
-    if (isWage(payload.input)) {
-      const existing = ledgers.flatMap((other) =>
-        other.rows
-          .filter((row) => row.employeeId !== null && isWage(row.input))
-          .map((row) => ({
-            ledgerId: other.id,
-            attributionMonth: other.attributionMonth,
-            employeeId: row.employeeId ?? '',
-          })),
-      )
-      const duplicated = duplicatedWageIncome(existing, {
-        attributionMonth: ledger.attributionMonth,
-        employeeId: payload.employeeId,
-      })
-      if (duplicated !== null) return yield* new WageIncomeDuplicated({ ledgerId: duplicated })
-    }
-    return {
-      employeeId: payload.employeeId,
-      earnerId: null,
-      payeeName: found.value.name,
-      earner: earnerOf(found.value),
-      snapshot: isWage(payload.input) ? snapshotOf(found.value) : null,
-    }
-  })
-}
-
-/** 대장의 모든 행을 귀속월·지급월 기준표와 회사 설정으로 계산합니다. */
-function calculateAll(
-  ledger: PayrollLedgerRecord,
-  now: string,
-): Effect.Effect<
-  PayrollLedgerRecord,
-  RateTableNotFound,
-  RateTableRepository | PayrollSettingRepository | PayrollItemRepository
-> {
-  return Effect.gen(function* () {
-    const attributionRates = yield* resolveOrFail(ledger.attributionMonth)
-    const paymentRates = yield* resolveOrFail(paymentMonthOf(ledger.paymentDate))
-    const setting = yield* (yield* PayrollSettingRepository).get(ledger.companyId)
-    const context = {
-      attributionMonth: ledger.attributionMonth,
-      attributionRates: attributionRates.table,
-      paymentRates: paymentRates.table,
-      setting,
-      catalog: yield* (yield* PayrollItemRepository).catalog(ledger.companyId),
-    }
-    return {
-      ...ledger,
-      calculatedAt: now,
-      rows: ledger.rows.map((row) => ({ ...row, result: calculateRow(row.input, row.snapshot, context) })),
-    }
-  })
-}
-
-/** 행이 가리키는 지급·공제 항목을 회사 카탈로그와 맞춰 봅니다({@link rowItemViolations}). */
-function checkRowItems(
-  companyId: Id<'company'>,
-  input: PayrollRowInputValue,
-  previous: PayrollRowInputValue | undefined,
-): Effect.Effect<void, PayrollRowItemInvalid, PayrollItemRepository> {
-  return Effect.gen(function* () {
-    const catalog = yield* (yield* PayrollItemRepository).catalog(companyId)
-    const violations = rowItemViolations(input, previous, catalog)
-    if (violations.length > 0) return yield* new PayrollRowItemInvalid({ violations })
-  })
-}
-
-/** 새 대장 레코드(계산 전)입니다. 정기 대장이면 임금산정 기간에 재직한 근로소득자로 행을 채웁니다. */
-function draftLedger(
-  companyId: Id<'company'>,
-  input: {
-    kind: 'REGULAR' | 'ADDITIONAL'
-    attributionMonth: string
-    paymentDate: string
-    title: string | undefined
-    setting: PayrollSettingRecord
-    now: string
-  },
-): Effect.Effect<PayrollLedgerRecord, never, PayrollEmployeeDirectory | PayrollItemRepository> {
-  return Effect.gen(function* () {
-    const wagePeriod = wagePeriodOf(input.attributionMonth, input.setting.wagePeriodStartDay)
-    const employees =
-      input.kind === 'REGULAR' ? yield* (yield* PayrollEmployeeDirectory).listWageEarners(companyId, wagePeriod) : []
-    const catalog = yield* (yield* PayrollItemRepository).catalog(companyId)
-    const [year, month] = input.attributionMonth.split('-')
-    return {
-      id: newId('payrollLedger'),
-      companyId: companyId,
-      kind: input.kind,
-      workflow: input.setting.workflow,
-      status: 'DRAFT',
-      title: input.title ?? `${year}년 ${Number(month)}월 ${input.kind === 'REGULAR' ? '급여' : '추가 급여'}`,
-      attributionMonth: input.attributionMonth,
-      paymentDate: input.paymentDate,
-      wagePeriod,
-      rows: employees.map((employee) => ({
-        id: newId('payrollRow'),
-        employeeId: employee.id,
-        earnerId: null,
-        payeeName: employee.name,
-        earner: earnerOf(employee),
-        input: initialWageInput(employee, wagePeriod, catalog),
-        snapshot: snapshotOf(employee),
-        result: null,
-        updatedAt: input.now,
-      })),
-      rejection: null,
-      reopenReason: null,
-      calculatedAt: null,
-      closedAt: null,
-      version: 1,
-      createdAt: input.now,
-      updatedAt: input.now,
-    } satisfies PayrollLedgerRecord
-  })
-}
-
-/** 대장을 저장하고, 지급월 마감 상태가 바뀌었으면 이벤트를 냅니다. */
-function saveWithEvents(
-  companyId: Id<'company'>,
-  before: ReadonlyArray<PayrollLedgerRecord>,
-  ledger: PayrollLedgerRecord,
-): Effect.Effect<void, never, PayrollLedgerRepository | PayrollEventPublisher> {
-  return Effect.gen(function* () {
-    const repository = yield* PayrollLedgerRepository
-    yield* repository.save(ledger)
-    yield* publishChanges(companyId, before, yield* repository.list(companyId))
-  })
-}
-
-function publishChanges(
-  companyId: Id<'company'>,
-  before: ReadonlyArray<PayrollLedgerRecord>,
-  after: ReadonlyArray<PayrollLedgerRecord>,
-): Effect.Effect<void, never, PayrollEventPublisher> {
-  return Effect.gen(function* () {
-    const publisher = yield* PayrollEventPublisher
-    const occurredAt = yield* nowIso
-    for (const change of payMonthChanges(before, after)) {
-      if (change.kind === 'REOPENED') {
-        yield* publisher.publish({
-          type: 'payroll_pay_month.reopened',
-          eventId: newId('event'),
-          companyId,
-          paymentMonth: change.paymentMonth,
-          occurredAt,
-        })
-        continue
-      }
-      const ledgers = after.filter((ledger) => paymentMonthOf(ledger.paymentDate) === change.paymentMonth)
-      yield* publisher.publish({
-        type: 'payroll_pay_month.closed',
-        eventId: newId('event'),
-        companyId,
-        paymentMonth: change.paymentMonth,
-        ledgerIds: ledgers.map((ledger) => ledger.id),
-        occurredAt,
-      })
-    }
-  })
-}
-
-function isWage(input: PayrollRowInputValue): boolean {
-  return input.incomeType === 'WAGE_MONTHLY' || input.incomeType === 'WAGE_HOURLY' || input.incomeType === 'WAGE_DAILY'
-}
-
-/** HR 직원 정보를 소득자 사본으로 바꿉니다. HR은 주민번호가 없는 직원의 가린 값을 빈 문자열로 주므로 `null`로 둡니다. */
-function earnerOf(employee: PayrollEmployee): PayrollEarner {
-  return {
-    email: employee.email,
-    registrationNumberMasked: employee.registrationNumberMasked === '' ? null : employee.registrationNumberMasked,
-    departmentName: employee.departmentName,
-  }
-}
-
-/** 소득자 명부의 소득자를 소득자 사본으로 바꿉니다. 신원번호는 명부가 가려 둔 값입니다. */
-function earnerFromRegistry(earner: EarnerRecord): PayrollEarner {
-  return {
-    email: earner.email,
-    registrationNumberMasked: earner.registrationNumberMasked,
-    departmentName: earner.departmentName,
-  }
-}
-
-/** HR 직원 정보를 행 스냅숏으로 바꿉니다. */
-export function snapshotOf(employee: PayrollEmployee): EmployeeSnapshot {
-  const ratio = employee.incomeTax.withholdingRatePpm
-  return {
-    dependants: Math.max(1, employee.incomeTax.dependants),
-    childrenAged8To20: employee.incomeTax.childrenAged8To20,
-    ...(employee.incomeTax.childcareChildren === null
-      ? {}
-      : {
-          childcareChildren: employee.incomeTax.childcareChildren.count,
-          childcareChildrenEffectiveFrom: employee.incomeTax.childcareChildren.effectiveFrom,
-        }),
-    withholdingRatePpm: ratio === 800_000 || ratio === 1_200_000 ? ratio : 1_000_000,
-    manualIncomeTax: employee.incomeTax.manualAmount,
-    socialInsurance: { ...employee.socialInsurance },
-    monthlyStandardHours: employee.monthlyStandardHours,
-    dailyRestMinutes: employee.dailyRestMinutes,
-  }
-}
-
-/**
- * 정기 대장의 근로 행 초기 입력입니다. 월급제가 임금산정 기간 중에 입사·퇴사했으면 역일 기준 일할계산을 넣습니다.
- * 회사 카탈로그의 기본 금액이 있는 지급 항목과 `FIXED` 공제 항목을 미리 넣습니다({@link defaultRowItems}).
- */
-export function initialWageInput(
-  employee: PayrollEmployee,
-  period: { start: string; end: string },
-  catalog: PayrollItemCatalog,
-): PayrollRowInputValue {
-  const { paymentItems, otherDeductions } = defaultRowItems(catalog)
-  const items = {
-    ...(paymentItems.length === 0 ? {} : { paymentItems }),
-    ...(otherDeductions.length === 0 ? {} : { otherDeductions }),
-  }
-  if (employee.paymentUnit === 'HOURLY') return { incomeType: 'WAGE_HOURLY', hourlyWage: employee.hourlyWage, ...items }
-  if (employee.paymentUnit === 'DAILY')
-    return { incomeType: 'WAGE_DAILY', dailyWage: employee.dailyWage, workedDays: 0, ...items }
-  const from = employee.joinDate > period.start ? employee.joinDate : period.start
-  const to = employee.leaveDate !== null && employee.leaveDate < period.end ? employee.leaveDate : period.end
-  const totalDays = daysBetween(period.start, period.end) + 1
-  const payableDays = Math.max(0, daysBetween(from, to) + 1)
-  return {
-    incomeType: 'WAGE_MONTHLY',
-    basePay: employee.basePay,
-    ...(payableDays < totalDays ? { proration: { method: 'CALENDAR_DAYS' as const, payableDays, totalDays } } : {}),
-    ...items,
-  }
 }
