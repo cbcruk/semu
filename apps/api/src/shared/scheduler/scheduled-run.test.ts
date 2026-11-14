@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decideClaim, finishRun } from './scheduled-run.ts'
+import { decideClaim, finishRun, renewLease } from './scheduled-run.ts'
 import type { RetryPolicy, ScheduledRunRecord } from './scheduled-run.ts'
 
 const POLICY: RetryPolicy = { maxAttempts: 2, baseDelayMs: 60_000, leaseMs: 600_000 }
@@ -51,5 +51,25 @@ describe('decideClaim', () => {
       kind: 'GIVE_UP',
       record: { status: 'FAILED', lastError: 'LEASE_EXPIRED', nextAttemptAt: null },
     })
+  })
+})
+
+describe('renewLease', () => {
+  it('아직 이 실행의 기록이면 지금부터 임대를 다시 늘립니다. 임대 시각이 지났어도 아무도 잡지 않았으면 늘립니다', () => {
+    const own = started()
+    const later = T0 + 700_000
+
+    expect(renewLease(own, own, later, POLICY)?.leaseUntil).toBe(new Date(later + 600_000).toISOString())
+  })
+
+  it('다른 실행기가 다시 잡았거나 끝났으면 임대를 잃습니다', () => {
+    const own = started()
+    const reclaimed = decideClaim(own, IDENTITY, T0 + 600_001, POLICY)
+    if (reclaimed.kind !== 'START') throw new Error('다시 잡지 못했습니다')
+    const finished = finishRun(own, { ok: true, result: null }, T0 + 1000, POLICY)
+
+    expect(renewLease(reclaimed.record, own, T0 + 600_002, POLICY)).toBeNull()
+    expect(renewLease(finished, own, T0 + 2000, POLICY)).toBeNull()
+    expect(renewLease(undefined, own, T0 + 2000, POLICY)).toBeNull()
   })
 })

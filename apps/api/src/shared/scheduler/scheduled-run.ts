@@ -117,6 +117,30 @@ export function finishRun(
   }
 }
 
+/**
+ * 실행 중인 슬롯의 임대를 `now`부터 다시 `leaseMs`만큼 늘립니다. 기록이 아직 이 실행(`own`, 같은 시도 횟수와 시작 시각)의
+ * `RUNNING`이면 늘린 기록이고, 다른 실행기가 이미 잡았거나 끝냈으면 `null`(임대를 잃음)입니다.
+ *
+ * 임대 시각이 지났더라도 아무도 잡지 않았으면 아직 이 실행의 것이므로 늘립니다.
+ */
+export function renewLease(
+  existing: ScheduledRunRecord | undefined,
+  own: ScheduledRunRecord,
+  now: number,
+  policy: RetryPolicy,
+): ScheduledRunRecord | null {
+  if (!isSameRun(existing, own) || existing.status !== 'RUNNING') return null
+  return { ...existing, leaseUntil: new Date(now + policy.leaseMs).toISOString() }
+}
+
+/** 기록이 `own`과 같은 실행(같은 시도 횟수와 시작 시각)인지 봅니다. 다른 실행기가 다시 잡으면 시도 횟수가 늘어 달라집니다. */
+export function isSameRun(
+  existing: ScheduledRunRecord | undefined,
+  own: ScheduledRunRecord,
+): existing is ScheduledRunRecord {
+  return existing !== undefined && existing.attempts === own.attempts && existing.startedAt === own.startedAt
+}
+
 /** 실행 기록의 ID입니다. */
 export function runIdOf(task: string, slot: string): string {
   return `${task}@${slot}`
