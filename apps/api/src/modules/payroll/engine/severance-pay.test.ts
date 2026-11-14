@@ -39,6 +39,21 @@ describe('calculateSeverancePay', () => {
 
     expect(result).toMatchObject({ eligible: false, severancePay: 0, retirementIncomeTax: 0 })
   })
+
+  it('중간정산 뒤에는 기산일부터 근속일수를 세고, 1년 이상인지는 입사일로 봅니다', () => {
+    const result = calculateSeverancePay(
+      {
+        joinDate: '2024-01-01',
+        serviceStartDate: '2026-02-01',
+        lastWorkDate: '2026-10-31',
+        threeMonthWages: 9_000_000,
+      },
+      rates,
+    )
+
+    // 2026-02-01 ~ 2026-10-31 = 273일, 9,000,000 × 30 × 273 ÷ (92 × 365)
+    expect(result).toMatchObject({ eligible: true, serviceDays: 273, severancePay: 2_195_056 })
+  })
 })
 
 describe('averageWagePeriodDays', () => {

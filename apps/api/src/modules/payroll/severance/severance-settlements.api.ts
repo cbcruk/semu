@@ -7,16 +7,24 @@ import {
   ACCESS_ERRORS,
   EmployeeNotFound,
   RateTableNotFound,
+  SeveranceInterimDateInvalid,
+  SeveranceLaterSettlementCompleted,
   SeveranceNotApplicable,
   SeverancePaymentDateInvalid,
+  SeveranceServiceStartChanged,
   SeveranceRetirementMismatch,
   SeveranceSettlementExists,
   SeveranceSettlementNotFound,
   SeveranceTransitionInvalid,
   WithholdingFiled,
 } from '../payroll-problems.ts'
-import { YearMonthString } from '../payroll-schema.ts'
-import { CreateSeveranceSettlement, SeveranceSettlement, UpdateSeveranceSettlement } from './severance-settlement.ts'
+import { CalendarDate, YearMonthString } from '../payroll-schema.ts'
+import {
+  CreateSeveranceSettlement,
+  SeveranceSettlement,
+  SeveranceSettlementCandidate,
+  UpdateSeveranceSettlement,
+} from './severance-settlement.ts'
 
 const params = { settlementId: IdSchema('severanceSettlement') }
 const ifMatch = { 'if-match': Schema.optionalKey(Schema.String) }
@@ -30,6 +38,9 @@ const WRITE_ERRORS = [
   SeverancePaymentDateInvalid,
   SeveranceRetirementMismatch,
   SeveranceSettlementExists,
+  SeveranceInterimDateInvalid,
+  SeveranceServiceStartChanged,
+  SeveranceLaterSettlementCompleted,
   EmployeeNotFound,
   RateTableNotFound,
   WithholdingFiled,
@@ -52,6 +63,18 @@ export class SeveranceSettlementsGroup extends HttpApiGroup.make('severance-sett
         paymentMonth: Schema.optionalKey(YearMonthString),
       },
       success: Schema.Struct({ items: Schema.Array(SeveranceSettlement) }),
+      error: ACCESS_ERRORS,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get('candidates', '/severance-settlement-candidates', {
+      query: {
+        /** 퇴직일이 이 날 이후인 직원입니다. 기본값은 3년 전 오늘입니다(퇴직금 청구권 소멸시효). */
+        from: Schema.optionalKey(CalendarDate),
+        /** 퇴직일이 이 날 이전인 직원입니다. 기본값은 오늘입니다. */
+        to: Schema.optionalKey(CalendarDate),
+      },
+      success: Schema.Struct({ items: Schema.Array(SeveranceSettlementCandidate) }),
       error: ACCESS_ERRORS,
     }),
   )

@@ -64,7 +64,8 @@ export function retirementIncomeTax(
  *
  * `평균임금(일) = (3개월 임금 + 연간 상여 × 3/12 + 연차수당 × 3/12) ÷ 3개월 역일수`이고, 통상임금(일)이 더 높으면
  * 그것을 씁니다. `퇴직금 = 평균임금 × 30 × 재직일수 ÷ 365`를 분수 그대로 계산해 한 번만 원 미만 절사합니다.
- * 표시용 평균임금은 원 미만 절사입니다. 재직일수(입사일과 마지막 근무일 포함)가 365일 미만이면 대상이 아니고 0입니다.
+ * 표시용 평균임금은 원 미만 절사입니다. 입사일부터 마지막 근무일까지(양 끝 포함) 365일 미만이면 대상이 아니고 0입니다.
+ * 중간정산을 했으면 재직일수는 기산일(`serviceStartDate`)부터 셉니다. 그래서 중간정산 뒤 1년이 안 돼 퇴직해도 그 기간의 퇴직금이 있습니다.
  *
  * @example 월 3,000,000원으로 2년 10개월
  * ```ts
@@ -75,13 +76,14 @@ export function retirementIncomeTax(
  * ```
  */
 export function calculateSeverancePay(input: SeveranceInput, rates: PayrollRateTable): SeveranceResult {
-  const 재직일수 = daysBetween(input.joinDate, input.lastWorkDate) + 1
+  const 계속근로일수 = daysBetween(input.joinDate, input.lastWorkDate) + 1
+  const 재직일수 = daysBetween(input.serviceStartDate ?? input.joinDate, input.lastWorkDate) + 1
   const 산정기간일수 = input.threeMonthDays ?? averageWagePeriodDays(input.lastWorkDate)
   const 임금총액 =
     input.threeMonthWages + mulDiv(input.annualBonus ?? 0, 3, 12) + mulDiv(input.annualLeavePay ?? 0, 3, 12)
   const 평균임금 = mulDiv(임금총액, 1, 산정기간일수)
   const 통상임금적용인가 = input.ordinaryDailyWage !== undefined && input.ordinaryDailyWage * 산정기간일수 > 임금총액
-  const 퇴직금대상인가 = 재직일수 >= 365
+  const 퇴직금대상인가 = 계속근로일수 >= 365 && 재직일수 >= 1
   const 퇴직금 = !퇴직금대상인가
     ? 0
     : 통상임금적용인가

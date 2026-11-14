@@ -327,6 +327,11 @@ export interface PayrollRowResult {
 /** {@link calculateSeverancePay}의 입력입니다. 날짜는 `YYYY-MM-DD`입니다. */
 export interface SeveranceInput {
   joinDate: string
+  /**
+   * 계속근로기간의 기산일입니다. 중간정산을 했으면 마지막 중간정산 기준일 다음 날이고, 없으면 입사일입니다.
+   * 퇴직금과 퇴직소득세의 근속일수는 여기서 셉니다. 1년 이상 근무했는지는 입사일로 봅니다.
+   */
+  serviceStartDate?: string
   /** 마지막 근무일입니다. 퇴직일(산정사유 발생일)은 그다음 날입니다. */
   lastWorkDate: string
   /** 퇴직일 이전 3개 역월에 지급한 임금입니다. */
