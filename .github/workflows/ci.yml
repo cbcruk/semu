@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: apps/api
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # pnpm 버전은 apps/api/package.json의 packageManager를 따릅니다
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/api/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/api/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm format:check
+      - run: pnpm test
+      # 같은 테스트를 SQLite 저장소로 한 번 더 돌립니다(트랜잭션·outbox 경로)
+      - run: pnpm test:sqlite
