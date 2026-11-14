@@ -8,11 +8,12 @@ import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeNotFound } from '../employees/employee.ts'
+import { decideDocumentRemoval, decideDocumentUpload } from './employee-document.aggregate.ts'
 import {
   ARCHIVE_CONTENT_TYPES,
   DocumentFileMissing,
   DocumentFileTypeNotAllowed,
-  DocumentLocked,
+  type DocumentLocked,
   EmployeeDocumentNotFound,
   EmployeeDocumentRepository,
   type EmployeeDocument,
@@ -121,21 +122,18 @@ export class EmployeeDocuments extends Context.Service<
             bytes: upload.bytes,
             createdBy: actor.userId,
           })
-          const record: EmployeeDocumentRecord = {
-            id: newId('document'),
-            companyId: actor.companyId,
-            employeeId,
-            category: upload.category,
-            origin: 'UPLOAD',
-            title: upload.title,
-            fileId: file.id,
-            fileName: file.name,
-            contentType: file.contentType,
-            status: 'ACTIVE',
-            createdBy: actor.userId,
-            createdAt: DateTime.formatIso(yield* DateTime.now),
-            links: [],
-          }
+          const { document: record } = decideDocumentUpload(
+            {
+              id: newId('document'),
+              companyId: actor.companyId,
+              employeeId,
+              category: upload.category,
+              title: upload.title,
+              createdBy: actor.userId,
+            },
+            file,
+            DateTime.formatIso(yield* DateTime.now),
+          )
           yield* documents.save(record)
           return toView(record)
         }),
@@ -156,7 +154,7 @@ export class EmployeeDocuments extends Context.Service<
 
         remove: Effect.fn('EmployeeDocuments.remove')(function* (actor, id) {
           const document = yield* find(actor, id)
-          if (document.origin !== 'UPLOAD') return yield* new DocumentLocked({ origin: document.origin })
+          yield* Effect.fromResult(decideDocumentRemoval(document))
           yield* documents.remove(document.id)
         }),
       })
