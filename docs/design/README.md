@@ -83,6 +83,7 @@ flowchart LR
 | [payroll.md](payroll.md) | 계산 엔진, 급여대장 상태 머신, 퇴직금 |
 | [bookkeeping.md](bookkeeping.md) | 증빙·분류·입출금·결산 |
 | [assistant.md](assistant.md) | AI 비서와 지원사업 추천 |
+| [domain-model.md](domain-model.md) | 커맨드·애그리거트·이벤트·뷰·정책: 일관성 규칙, 묶은 경계, 정책, 옮기는 단계 |
 | [events.md](events.md) | 도메인 이벤트와 컨텍스트 간 연계 |
 | [compliance.md](compliance.md) | 세법·개인정보 법적 요구가 설계에 주는 제약 |
 | [review.md](review.md) | 설계 검토: 현행 대비 매핑, 위험, 결정 필요 사항 |
