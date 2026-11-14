@@ -243,3 +243,158 @@ describe('전자서명 완료를 문서 보관함에 반영', () => {
     expect(noEmployee.status).toBe(404)
   })
 })
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3])
+
+async function upload(
+  employeeId: string,
+  query = 'title=%EC%9E%AC%EC%A7%81%EC%A6%9D%EB%AA%85&category=OTHER&fileName=%EC%82%AC%EB%B3%B8.png',
+  token?: string,
+) {
+  return app.json('POST', `/employees/${employeeId}/documents?${query}`, {
+    raw: { bytes: PNG, contentType: 'image/png' },
+    token,
+  })
+}
+
+describe('문서 내려받기·직접 올리기·지우기', () => {
+  it('서명 완료본을 PDF로 내려받습니다', async () => {
+    const employeeId = await hire()
+    await signed({ employeeId }, [EMPLOYMENT_CONTRACT], { '0': contractFields['0'] })
+    const [document] = (await app.json('GET', `/employees/${employeeId}/documents`)).body.items
+    expect(document).toMatchObject({ fileName: '2026 근로·연봉계약.pdf', contentType: 'application/pdf' })
+
+    const response = await app.request('GET', `/employee-documents/${document.id}/file`, {
+      token: 'viewer',
+      headers: { 'x-access-reason': encodeURIComponent('계약 확인') },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('application/pdf')
+    expect(response.headers.get('content-disposition')).toBe(
+      `attachment; filename*=UTF-8''${encodeURIComponent('2026 근로·연봉계약.pdf')}`,
+    )
+    const text = Buffer.from(await response.arrayBuffer()).toString('latin1')
+    expect(text.startsWith('%PDF-1.4')).toBe(true)
+    expect(text.trimEnd().endsWith('%%EOF')).toBe(true)
+  })
+
+  it('직접 올린 문서는 보관함에 들어오고 올린 그대로 내려받습니다', async () => {
+    const employeeId = await hire()
+    const created = await upload(employeeId)
+    expect(created.status).toBe(201)
+    expect(created.body).toMatchObject({
+      employeeId,
+      origin: 'UPLOAD',
+      category: 'OTHER',
+      title: '재직증명',
+      fileName: '사본.png',
+      contentType: 'image/png',
+      status: 'ACTIVE',
+      links: [],
+    })
+    expect(created.body).not.toHaveProperty('esignRequestId')
+    expect(created.body).not.toHaveProperty('signedAt')
+
+    const response = await app.request('GET', `/employee-documents/${created.body.id}/file`, {
+      headers: { 'x-access-reason': 'check' },
+    })
+    expect(response.headers.get('content-type')).toBe('image/png')
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(PNG)
+    const list = await app.json('GET', `/employees/${employeeId}/documents?category=OTHER`)
+    expect(list.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id])
+  })
+
+  it('파일 이름의 따옴표·괄호·별표도 Content-Disposition에서 %로 바꿉니다', async () => {
+    const employeeId = await hire()
+    const query = `title=a&category=OTHER&fileName=${encodeURIComponent("계약서(최종)*'.png")}`
+    const created = await upload(employeeId, query)
+    const response = await app.request('GET', `/employee-documents/${created.body.id}/file`, {
+      headers: { 'x-access-reason': 'check' },
+    })
+    expect(response.headers.get('content-disposition')).toBe(
+      `attachment; filename*=UTF-8''${encodeURIComponent('계약서')}%28${encodeURIComponent('최종')}%29%2A%27.png`,
+    )
+  })
+
+  it('허용하지 않는 형식은 415이고 아무것도 남지 않습니다', async () => {
+    const employeeId = await hire()
+    const response = await app.request(
+      'POST',
+      `/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.exe`,
+      {
+        raw: { bytes: PNG, contentType: 'application/x-msdownload' },
+      },
+    )
+    expect(response.status).toBe(415)
+    expect((await app.json('GET', `/employees/${employeeId}/documents`)).body.items).toEqual([])
+  })
+
+  it('형식은 보낸 Content-Type이 아니라 내용으로 정합니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json(
+      'POST',
+      `/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.png`,
+      {
+        raw: { bytes: new TextEncoder().encode('MZ not an image'), contentType: 'image/png' },
+      },
+    )
+    expect(response.status).toBe(415)
+    expect(response.body).toMatchObject({
+      code: 'FILE_TYPE_NOT_ALLOWED',
+      allowedContentTypes: ['application/pdf', 'image/png', 'image/jpeg'],
+    })
+  })
+
+  it('내려받으려면 열람 사유가 있어야 합니다', async () => {
+    const employeeId = await hire()
+    const created = await upload(employeeId)
+    expect((await app.request('GET', `/employee-documents/${created.body.id}/file`)).status).toBe(400)
+  })
+
+  it('빈 파일은 413 FILE_SIZE_INVALID입니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json(
+      'POST',
+      `/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.png`,
+      {
+        raw: { bytes: new Uint8Array(), contentType: 'image/png' },
+      },
+    )
+    expect(response.status).toBe(413)
+    expect(response.body).toMatchObject({ code: 'FILE_SIZE_INVALID' })
+  })
+
+  it('읽기 권한만 있으면 올리거나 지울 수 없습니다', async () => {
+    const employeeId = await hire()
+    expect((await upload(employeeId, undefined, 'viewer')).status).toBe(403)
+    const created = await upload(employeeId)
+    expect((await app.json('DELETE', `/employee-documents/${created.body.id}`, { token: 'viewer' })).status).toBe(403)
+  })
+
+  it('없는 직원에게는 올릴 수 없습니다', async () => {
+    const response = await upload('emp_01JBQ0000000000000000000ZZ')
+    expect(response.status).toBe(404)
+    expect(response.body).toMatchObject({ code: 'EMPLOYEE_NOT_FOUND' })
+  })
+
+  it('직접 올린 문서는 지우고, 서명 완료본은 409 DOCUMENT_LOCKED입니다', async () => {
+    const employeeId = await hire()
+    const created = await upload(employeeId)
+    expect((await app.json('DELETE', `/employee-documents/${created.body.id}`)).status).toBe(204)
+    expect((await app.json('GET', `/employee-documents/${created.body.id}`)).status).toBe(404)
+
+    await signed({ employeeId }, [EMPLOYMENT_CONTRACT], { '0': contractFields['0'] })
+    const [document] = (await app.json('GET', `/employees/${employeeId}/documents`)).body.items
+    const locked = await app.json('DELETE', `/employee-documents/${document.id}`)
+    expect(locked.status).toBe(409)
+    expect(locked.body).toMatchObject({ code: 'DOCUMENT_LOCKED', origin: 'ESIGN' })
+  })
+
+  it('없는 문서의 본문은 404입니다', async () => {
+    const response = await app.json('GET', '/employee-documents/doc_01JBQ0000000000000000000ZZ/file', {
+      headers: { 'x-access-reason': 'check' },
+    })
+    expect(response.status).toBe(404)
+    expect(response.body).toMatchObject({ code: 'EMPLOYEE_DOCUMENT_NOT_FOUND' })
+  })
+})

@@ -349,17 +349,20 @@ GET    /employees/{employeeId}/memo                 → { content, updatedAt, up
 PUT    /employees/{employeeId}/memo                 If-Match { content }  빈 문자열이면 비움
 GET    /employees/{employeeId}/memo/revisions
 GET    /employees/{employeeId}/documents?category=
-POST   /employees/{employeeId}/documents            multipart { category, file }
+POST   /employees/{employeeId}/documents?title=&category=&fileName=   본문 = 파일(PDF·PNG·JPEG)
 GET    /employee-documents/{documentId}
-GET    /employee-documents/{documentId}/file        열람 기록
+GET    /employee-documents/{documentId}/file        X-Access-Reason, 열람 기록
 DELETE /employee-documents/{documentId}             origin=UPLOAD만
 GET    /reference/document-categories
 ```
 
 - 카테고리는 `CONTRACT` / `CERTIFICATE` / `CONSENT` / `RESIGNATION` / `OTHER`, 출처는 `UPLOAD` / `ESIGN` / `CERTIFICATE`입니다. 전자서명 완료본과 발급 증명서는 Documents 이벤트로 서버가 넣습니다
-- 파일은 PDF·JPEG·PNG, 10MB 이하이고 MIME은 서버가 내용으로 판정합니다(클라이언트가 보낸 `mime_type`을 믿지 않습니다)
-- 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않습니다(409 `DOCUMENT_LOCKED`)
-- 지금은 두 조회(`GET …/documents`, `GET /employee-documents/{id}`)만 있고 전자서명 완료본만 들어옵니다. 응답은 `status`(`ACTIVE`/`VOIDED`), `esignRequestId`, `signedAt`, 확정한 계약 `links[]`를 담습니다([전자서명 반영](#전자서명-반영), [구현 상태](#구현-상태))
+- 파일은 PDF·JPEG·PNG, 10MB 이하이고 형식은 서버가 내용(앞 바이트)으로 판정합니다. 클라이언트가 보낸 `Content-Type`을 믿지 않습니다(415 `FILE_TYPE_NOT_ALLOWED`). 계약에 없는 `Content-Type`은 계약 단계에서 415입니다
+- 올리기는 멀티파트가 아니라 요청 바디가 파일 본문이고 제목·카테고리·파일 이름은 쿼리로 받습니다(2026-11-14). 파일은 공통 파일 저장소에 둡니다([conventions.md](conventions.md#파일), D7)
+- 내려받기(`…/file`)는 직원 읽기 권한(`employee:read`)으로 확인하고, 계약서·증명서에 개인정보가 있어 `X-Access-Reason`을 받아 열람 기록(`employee-document:<id>:file`)에 남깁니다. 무효가 된 서명 문서도 기록이라 내려받을 수 있습니다
+- 올리기·지우기는 `employee:update`입니다. 지운 직원에게는 올릴 수 없습니다(404 `EMPLOYEE_NOT_FOUND`)
+- 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않습니다(409 `DOCUMENT_LOCKED`). 직접 올린 문서를 지워도 파일 본문은 남깁니다
+- 응답은 `origin`(`ESIGN`/`UPLOAD`), `status`(`ACTIVE`/`VOIDED`), `fileName`·`contentType`, 전자서명 완료본이면 `esignRequestId`·`signedAt`, 확정한 계약 `links[]`, 들어온 시각 `createdAt`을 담습니다. 목록은 서명 시각(없으면 들어온 시각)이 늦은 것부터입니다([전자서명 반영](#전자서명-반영), [구현 상태](#구현-상태))
 
 ## 개인정보
 
@@ -435,6 +438,9 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | `INSURANCE_FILING_TRANSITION_INVALID` | 409 | 닫힌 신고 처리 |
 | `FAMILY_MEMBER_DEPENDANT_REGISTERED` | 409 | 공단에 등록된 피부양자 가족 삭제 |
 | `DOCUMENT_LOCKED` | 409 | 서명·발급에서 온 문서 삭제 |
+| `FILE_TYPE_NOT_ALLOWED` | 415 | 문서 보관함에 올린 파일이 내용으로 보아 PDF·PNG·JPEG가 아님 |
+| `FILE_SIZE_INVALID` | 413 | 빈 파일이거나 10MB 초과 |
+| `DOCUMENT_FILE_MISSING` | 404 | 문서의 파일 본문이 저장소에 없음(저장소가 깨졌을 때만) |
 | `EMPLOYEE_KIND_NOT_SUPPORTED` | 422 | `WAGE`가 아닌 직원에 하위 리소스 |
 | `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_DATE_BEFORE_JOIN` | 422 | 퇴직일 검증 |
 | `LEAVING_REASON_INVALID` | 422 | 사유·상세사유 조합이 없음 |
@@ -517,7 +523,7 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | 인적공제 대상자 (`GET/POST /employees/{id}/family-members`, `GET/PUT/DELETE /family-members/{id}`, `registration-number:reveal`) | 구현, HTTP 테스트. `WAGE`만, 주민번호 암호화·열람 기록, 공제대상 가족 수 파생, 피부양자 취득·상실 신고. 첨부 미구현 |
 | 퇴직금 정산 가드 (`SeveranceSettlementLookup`) | 구현, HTTP 테스트. 삭제·다시 퇴사·퇴사 취소가 Payroll에 물어 완료 정산이 있으면 409 `RETIREMENT_COMPLETED`([퇴직](#퇴직)) |
 | 퇴직 정보(급여 형태·중간정산) | 미구현 |
-| 문서 보관함 (`GET /employees/{id}/documents?category=`, `GET /employee-documents/{id}`) | 구현, HTTP 테스트. 전자서명 완료본만 들어옵니다. 직접 올리기·파일 내려받기·삭제(`DOCUMENT_LOCKED`)는 파일 저장소(D7)가 없어 미구현이고, 증명서 발급(`certificate.issued`)도 아직 넣지 않습니다. 직원을 지워도 문서는 남습니다 |
+| 문서 보관함 (`GET /employees/{id}/documents?category=`, `POST /employees/{id}/documents`, `GET /employee-documents/{id}`, `GET /employee-documents/{id}/file`, `DELETE /employee-documents/{id}`) | 구현, HTTP 테스트. 전자서명 완료본과 직접 올린 문서가 들어오고, 파일은 공통 파일 저장소(D7)에 둡니다. 증명서 발급(`certificate.issued`)은 아직 넣지 않습니다. 직원을 지워도 문서는 남습니다 |
 | 메모, 가족 첨부, 엑셀 내보내기 | 미구현 |
 | 이벤트 구독 | `esign_request.completed`·`esign_request.voided` 구현(outbox, [전자서명 반영](#전자서명-반영)) |
 | 이벤트 발행 | 미구현 |

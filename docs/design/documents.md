@@ -243,7 +243,7 @@ GET /document-forms/{documentFormCode}/file
 |---|---|---|
 | `HrDirectory` (HR `hr.public.ts`) | 수신자·증명서 값, 본인확인 기대값 | HR 메모리 저장소 |
 | `DocumentNotifier` | 서명 요청·완료·만료 메일·알림톡, 증명서 링크 | 메모리 outbox, `@fail.invalid` 주소는 실패 |
-| `PdfRenderer` | 완료본, 증명서 | 결정적인 텍스트 PDF |
+| `PdfRenderer` | 완료본, 증명서 | 제목과 입력값을 글자로 적은 한 쪽짜리 PDF를 공통 파일 저장소에 넣음(`layerMinimal`, D7). 내려받기는 HR 문서 보관함이 맡음 |
 | `SignerIdentityVerifier` | `:verify` | 이름 + 생년월일 비교 |
 | `DocumentEvents` | `esign_request.*`, `certificate.*` | 메모리 목록 |
 

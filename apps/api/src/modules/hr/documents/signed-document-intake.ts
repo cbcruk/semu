@@ -98,8 +98,12 @@ export class SignedDocumentIntake extends Context.Service<
             origin: 'ESIGN',
             title: request.title,
             fileId: request.fileId,
+            // 서명 완료본은 Documents가 `<제목>.pdf`로 저장합니다(`PdfRenderer`).
+            fileName: `${request.title}.pdf`,
+            contentType: 'application/pdf',
             esignRequestId: request.esignRequestId,
             signedAt: request.signedAt,
+            createdAt: DateTime.formatIso(yield* DateTime.now),
             status: voidedAt === undefined ? 'ACTIVE' : 'VOIDED',
             voidedAt,
             links,

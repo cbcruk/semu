@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
 import { Context, Effect, Layer } from 'effect'
+import { FileStore } from '../../../shared/files/file-store.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { identityMatches } from '../signing/signer-verification.ts'
+import { minimalPdf } from './minimal-pdf.ts'
 import type { signedTermsOf } from '../signing/signed-terms.ts'
 import type { DocumentKind, SignedTerms } from '../signing/signed-terms.types.ts'
 
@@ -43,20 +44,38 @@ export class PdfRenderer extends Context.Service<
   PdfRenderer,
   { render(input: { companyId: Id<'company'>; title: string; values: unknown }): Effect.Effect<Id<'file'>> }
 >()('semu/documents/PdfRenderer') {
-  /** 입력의 해시로 결정적인 파일 ID를 돌려줍니다. */
-  static readonly layerFake = Layer.succeed(
+  /**
+   * 제목과 입력값을 글자로 적은 한 쪽짜리 PDF({@link minimalPdf})를 공통 파일 저장소에 넣습니다. 서식 렌더러가 생기기 전까지 씁니다.
+   * 서버가 만든 파일이라 올린 사람(`createdBy`)은 없습니다.
+   */
+  static readonly layerMinimal = Layer.effect(
     PdfRenderer,
-    PdfRenderer.of({
-      render: (input) =>
-        Effect.sync(() => {
-          const digest = createHash('sha256').update(JSON.stringify(input)).digest('hex').toUpperCase()
-          const crockford = digest
-            .replace(/[^0-9A-HJKMNP-TV-Z]/g, '')
-            .padEnd(24, '0')
-            .slice(0, 24)
-          return `fle_01${crockford}` as Id<'file'>
-        }),
+    Effect.gen(function* () {
+      const files = yield* FileStore
+      return PdfRenderer.of({
+        render: (input) =>
+          Effect.map(
+            files.put({
+              companyId: input.companyId,
+              name: `${input.title}.pdf`,
+              contentType: 'application/pdf',
+              bytes: minimalPdf(input.title, valueLines(input.values)),
+              createdBy: null,
+            }),
+            (file) => file.id,
+          ),
+      })
     }),
+  )
+}
+
+/** 입력값을 `키: 값` 줄로 펼칩니다. 템플릿마다 값이 묶여 있으면(`{ "0": {...} }`) 그대로 한 단계 들어갑니다. */
+function valueLines(values: unknown, prefix = ''): string[] {
+  if (values === null || typeof values !== 'object') return [`${prefix}${String(values)}`]
+  return Object.entries(values).flatMap(([key, value]) =>
+    value !== null && typeof value === 'object'
+      ? valueLines(value, `${prefix}${key}.`)
+      : [`${prefix}${key}: ${String(value)}`],
   )
 }
 

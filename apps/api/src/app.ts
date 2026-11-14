@@ -26,6 +26,7 @@ import {
   UnitOfWorkMiddleware,
 } from './shared/persistence/persistence.layer.ts'
 import { DataKey } from './shared/crypto/data-key.ts'
+import { FileStore } from './shared/files/file-store.ts'
 import { PersonalDataAccessLog } from './shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from './shared/personal-data/personal-data-cipher.ts'
 import { describeDefect } from './shared/problem/defect-log.ts'
@@ -141,7 +142,7 @@ const CiphersFakeLive = Layer.mergeAll(
 type Ciphers = PersonalDataCipher | AccountNumberCipher | CredentialVault
 
 /**
- * 저장소, 컨텍스트 사이 어댑터(`WiringLive`), 수집 큐를 `persistence`(표·트랜잭션·outbox)와 암호화(`ciphers`) 위에 쌓습니다.
+ * 저장소, 컨텍스트 사이 어댑터(`WiringLive`), 수집 큐를 공통 파일 저장소(`FileStore`, D7)와 `persistence`(표·트랜잭션·outbox), 암호화(`ciphers`) 위에 쌓습니다.
  *
  * 저장소는 컨텍스트마다 하나만 만들고, 핸들러와 어댑터가 같은 인스턴스를 씁니다. 한 컨텍스트에 쓴 값이 다른 컨텍스트에 바로 보입니다.
  * Integrations의 수집 큐는 Bookkeeping으로 가는 `ScrapedRecordSink`가 필요해 어댑터 위에 얹습니다.
@@ -151,6 +152,7 @@ const storesOn = <E>(persistence: Layer.Layer<TableFactory | UnitOfWork | Outbox
   ScrapQueueInlineLive.pipe(
     Layer.provideMerge(WiringLive),
     Layer.provideMerge(ContextStoresLive),
+    Layer.provideMerge(FileStore.layer),
     Layer.provideMerge(Layer.merge(persistence, ciphers)),
   )
 
