@@ -4,7 +4,14 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { testActor } from '../../identity-access/testing.ts'
 import { CertificateRepository } from '../certificates/certificate-repository.ts'
 import { CredentialVault } from '../credentials/credential-vault.ts'
-import { demoCertificates, demoCompanyProfiles, demoIntegrations, DEMO_INTEGRATION_IDS } from '../demo-seed.ts'
+import {
+  demoCertificates,
+  demoCompanyProfiles,
+  demoDelegations,
+  demoIntegrations,
+  DEMO_INTEGRATION_IDS,
+} from '../demo-seed.ts'
+import { DelegationRepository } from '../hometax-delegations/hometax-delegation.ts'
 import { IntegrationRepository } from '../integrations/integration-repository.ts'
 import { Integrations } from '../integrations/integrations.ts'
 import { CompanyProfiles } from '../ports/company-profiles.ts'
@@ -24,6 +31,7 @@ function setup() {
     IntegrationRepository.layerMemory(demoIntegrations()),
     CertificateRepository.layerMemory(demoCertificates()),
     ScrapRequestRepository.layerMemory(),
+    DelegationRepository.layerMemory(demoDelegations()),
     CredentialVault.layerMemory(),
     ScrapingGateway.layerFake,
     CompanyProfiles.layerMemory(demoCompanyProfiles()),

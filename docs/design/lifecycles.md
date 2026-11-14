@@ -152,6 +152,6 @@ flowchart TD
 - **반영.** 레코드마다 거절 이유를 돌려주고 나머지는 반영합니다. 다시 와도 사람이 고친 분류·거래처·메모는 지킵니다([bookkeeping.md](bookkeeping.md#수집-반영-integrations--bookkeeping), [scraped-record-ingestion](../reference/rules/scraped-record-ingestion.md))
 - **예상 부가세.** Tax가 Bookkeeping의 공개 조회로 증빙을 받아 법인은 분기, 개인은 반기로 계산합니다. 홈 카드의 기한은 Tax 세무 일정에서 받습니다([tax.md](tax.md#예상-부가세), [estimated-vat](../reference/rules/estimated-vat.md))
 - **신고.** 부가세 신고 건만 매입매출장 확인 단계(`LEDGER_PENDING`)를 거칩니다. 예정고지 건은 자료 요청 없이 고지서로 끝납니다([tax.md](tax.md#상태))
-- **정기 수집.** 은행·카드·PG·배달·올라는 매일 정기 수집합니다([integrations.md](integrations.md#수집-요청)). 홈택스는 수임동의 확인 전이라 정기 수집이 없습니다
-- **구현되지 않은 것.** 홈택스 정기 수집, `evidence.ingested`·`job.completed` 이벤트가 없습니다([integrations.md](integrations.md#구현-상태), [events.md](events.md#이벤트-목록)). 홈택스 수임동의가 없는 회사의 홈택스 수집을 거절하는 규칙은 [compliance.md](compliance.md#권한-범위와-대리인)에만 있습니다
+- **정기 수집.** 은행·카드·홈택스·PG·배달·올라는 매일 정기 수집합니다([integrations.md](integrations.md#수집-요청)). 홈택스는 동의한 수임동의가 있는 회사만 수집합니다([integrations.md](integrations.md#수임동의-확인))
+- **구현되지 않은 것.** `evidence.ingested`·`job.completed` 이벤트가 없습니다([integrations.md](integrations.md#구현-상태), [events.md](events.md#이벤트-목록))
 - 통합 테스트: [scraping-bookkeeping-tax.test.ts](../../apps/api/test/integration/scraping-bookkeeping-tax.test.ts)

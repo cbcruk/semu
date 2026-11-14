@@ -19,7 +19,7 @@
 
 ### scrap-cooldown
 
-[규칙 문서](../../reference/rules/scrap-cooldown.md) · 케이스 17 · 질문 6
+[규칙 문서](../../reference/rules/scrap-cooldown.md) · 케이스 17 · 질문 7
 
 | # | 질문 | 권장 | 근거 |
 |---|---|---|---|
@@ -27,8 +27,9 @@
 | 2 | 쿨다운 단위(서비스/연동/항목) | **따름:** 기관 종류(`institutionType`) 단위입니다. `integrationId`·`itemKey`로 범위를 좁혀도 같은 종류의 쿨다운을 씁니다 | 수집 업체 호출이 기관 로그인 단위라 항목별로 풀면 같은 계정에 연속 로그인합니다 |
 | 3 | 진행 중인 시스템 수집이 버튼을 막는데 `remainSeconds`는 0 | **바꿈:** 진행 중이면 `reason: RUNNING`과 타임아웃까지 남은 초를 `retryAfterSeconds`로 줍니다. 429도 같은 값입니다 | 화면이 "수집 중"과 남은 시간을 함께 그릴 수 있습니다 |
 | 4 | 일부 항목만 실패해도 묶음 전체가 `FAIL` | **바꿈:** `PARTIALLY_SUCCEEDED`이고 항목별 결과를 `result.items`에 줍니다 | [conventions.md](../conventions.md#비동기-작업)의 `Job` 상태를 따릅니다 |
-| 5 | 정기 수집 주기가 서버에 없음 | **바꿈:** 스케줄러가 기관별 주기 정책(`SCHEDULED_SCRAP_TIMES`)으로 `requester: SYSTEM` 요청을 만듭니다(#107, #109). 은행 1일은 매일 한 번으로 읽었고, 홈택스는 수임동의 확인 전이라 넣지 않았습니다 | 매뉴얼의 주기(은행 1일, PG 10·22시, 배달 10시 5일치, 올라 06시, 지원금 04시)를 서버가 책임집니다 |
+| 5 | 정기 수집 주기가 서버에 없음 | **바꿈:** 스케줄러가 기관별 주기 정책(`SCHEDULED_SCRAP_TIMES`)으로 `requester: SYSTEM` 요청을 만듭니다(#107, #109). 은행 1일은 매일 한 번으로 읽었습니다. 홈택스는 매일 08:00이고 질문 7의 수임동의 확인을 거칩니다(#119) | 매뉴얼의 주기(은행 1일, PG 10·22시, 배달 10시 5일치, 올라 06시, 지원금 04시)를 서버가 책임집니다 |
 | 6 | `corporationNumberUnused`가 무엇을 바꾸는지 | **가정:** `options`로 받아 어댑터에 그대로 넘깁니다 | 학습용 가정. 수집 업체 API 옵션이라 문서를 받을 수 없습니다. 서버가 뜻을 해석하지 않고 넘기는 쪽이 틀릴 일이 적습니다 |
+| 7 | "수임동의가 없는 회사의 홈택스 수집은 거절"([compliance.md](../compliance.md#권한-범위와-대리인))을 누구의 수집에 거는지 | **바꿈:** 세무대리인(`actor.kind: AGENCY`)의 수동 수집과 정기(`SYSTEM`) 수집은 동의한(`AGREED`) 수임동의가 있어야 합니다. 수동은 422 `HOMETAX_DELEGATION_REQUIRED`, 전체 수집은 `skipped`의 `DELEGATION_REQUIRED`, 정기 수집은 그 회사를 건너뜁니다. 회사 사용자(`CLIENT`)는 수임 없이 자기 자격 증명으로 수집합니다(2026-11-14, #119) | 수임동의는 대리인이 납세자 자료를 볼 근거이고 `TAXATION` 플랜에만 있습니다. 모두에게 걸면 수임이 없는 무료 회사의 홈택스 수집이 막힙니다. 사람 없이 매일 도는 수집은 대리인이 기장하는 회사에만 돌립니다. 무료 회사에도 정기 수집을 돌리기로 하면 정기 수집의 확인을 플랜으로 가릅니다 |
 
 **바뀌는 케이스:**
 - `system request still running blocks the button but reports 0 seconds`: `remainSeconds: 0` → `reason: RUNNING`, `retryAfterSeconds: 540`

@@ -62,6 +62,7 @@
 - **설계 반영**
   - 세무 대리인 직원은 배정된 회사에만 접근하고, 그 회사의 액세스 토큰으로만 동작합니다. 모든 동작은 감사 로그에 `actor.kind = AGENCY`로 남습니다 ([identity-access.md](identity-access.md))
   - 홈택스 수임동의 상태를 서버가 갖고, 동의가 없는 회사의 홈택스 수집은 거절합니다
+  - **현재 구현:** 세무대리인의 수동 수집과 정기 수집이 동의한(`AGREED`) 수임동의를 확인합니다(422 `HOMETAX_DELEGATION_REQUIRED`). 회사 사용자가 자기 자격 증명으로 하는 수집은 수임과 관계없습니다([rule-decisions/integrations.md](rule-decisions/integrations.md#scrap-cooldown) 질문 7)
 
 ## AI 비서
 
