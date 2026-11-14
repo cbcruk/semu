@@ -251,6 +251,38 @@ describe('임대 갱신', () => {
     expect(result.done).toEqual(['1:com_a', '2:com_a', '2:com_b', '2:com_c'])
     expect(result.runs).toMatchObject([{ status: 'SUCCEEDED', attempts: 2 }])
   })
+
+  it('회사별로 나누지 않는 작업이 임대를 넘겨 다른 실행기가 잡았으면 끝날 때 기록을 덮어쓰지 않습니다', async () => {
+    let second: Scheduler['Service'] | undefined
+    let runs = 0
+    const task: ScheduledTask<UnitOfWork> = {
+      name: 'test.whole',
+      spec: { kind: 'DAILY', at: '03:00' },
+      retry: { maxAttempts: 3, baseDelayMs: 60_000, leaseMs: 10 * 60_000 },
+      run: () =>
+        Effect.gen(function* () {
+          const runner = ++runs
+          if (runner !== 1) return 'second'
+          yield* TestClock.adjust('11 minutes')
+          yield* second!.runDue()
+          return 'first'
+        }),
+    }
+
+    const [outcome, records] = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(kst('2026-11-14T03:00:00'))
+          const first = Context.get(yield* Layer.build(Scheduler.layer([task])), Scheduler)
+          second = Context.get(yield* Layer.build(Scheduler.layer([task])), Scheduler)
+          return [(yield* first.runDue())[0]!.outcome, yield* first.runs()] as const
+        }),
+      ).pipe(Effect.provide(sharedMemory), Effect.provide(TestClock.layer())),
+    )
+
+    expect(outcome).toBe('LEASE_LOST')
+    expect(records).toMatchObject([{ status: 'SUCCEEDED', attempts: 2, result: 'second' }])
+  })
 })
 
 describe('eachCompany', () => {
