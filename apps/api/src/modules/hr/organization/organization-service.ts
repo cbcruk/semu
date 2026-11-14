@@ -4,13 +4,14 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { isOrganizationNameTaken, isOrganizationUnitInUse } from './organization-rules.ts'
+import { decideUnitCreation, decideUnitRemoval, decideUnitRename, decideUnitReorder } from './organization.aggregate.ts'
+import { isOrganizationUnitInUse } from './organization-rules.ts'
 import {
-  OrganizationNameTaken,
-  OrganizationOrderMismatch,
   OrganizationRepository,
-  OrganizationUnitInUse,
   OrganizationUnitNotFound,
+  type OrganizationNameTaken,
+  type OrganizationOrderMismatch,
+  type OrganizationUnitInUse,
   type OrganizationUnitKind,
   type OrganizationUnitRecord,
 } from './organization.ts'
@@ -64,20 +65,15 @@ export class Organization extends Context.Service<
           .list(companyId)
           .pipe(Effect.map((all) => all.filter((unit) => unit.kind === kind).sort((a, b) => a.order - b.order)))
 
-      const view = (unit: OrganizationUnitRecord) =>
-        employees.list(unit.companyId).pipe(
-          Effect.map((all) => {
-            const assigned = all.filter((employee) =>
-              unit.kind === 'DEPARTMENT' ? employee.departmentId === unit.id : employee.positionId === unit.id,
-            ).length
-            return {
-              id: unit.id,
-              name: unit.name,
-              order: unit.order,
-              inUse: isOrganizationUnitInUse({ everAssigned: unit.everAssigned, assignedEmployeeCount: assigned }),
-              version: unit.version,
-            }
-          }),
+      const view = (unit: OrganizationUnitRecord): Effect.Effect<OrganizationUnitView> =>
+        assignedCount(unit).pipe(
+          Effect.map((assigned) => ({
+            id: unit.id,
+            name: unit.name,
+            order: unit.order,
+            inUse: isOrganizationUnitInUse({ everAssigned: unit.everAssigned, assignedEmployeeCount: assigned }),
+            version: unit.version,
+          })),
         )
 
       const find = (companyId: Id<'company'>, kind: OrganizationUnitKind, id: string) =>
@@ -91,48 +87,45 @@ export class Organization extends Context.Service<
           ),
         )
 
+      const assignedCount = (unit: OrganizationUnitRecord) =>
+        employees
+          .list(unit.companyId)
+          .pipe(
+            Effect.map(
+              (all) =>
+                all.filter((employee) =>
+                  unit.kind === 'DEPARTMENT' ? employee.departmentId === unit.id : employee.positionId === unit.id,
+                ).length,
+            ),
+          )
+
       return Organization.of({
         list: (companyId, kind) => unitsOf(companyId, kind).pipe(Effect.flatMap((all) => Effect.forEach(all, view))),
         create: Effect.fn('Organization.create')(function* (companyId, kind, name) {
-          const existing = yield* unitsOf(companyId, kind)
-          if (isOrganizationNameTaken(name, existing)) return yield* new OrganizationNameTaken({})
-          const unit: OrganizationUnitRecord = {
-            id: kind === 'DEPARTMENT' ? newId('department') : newId('position'),
-            companyId,
-            kind,
-            name: name.trim(),
-            order: existing.length,
-            everAssigned: false,
-            version: 1,
-          }
+          const { unit } = yield* Effect.fromResult(
+            decideUnitCreation(
+              { id: kind === 'DEPARTMENT' ? newId('department') : newId('position'), companyId, kind, name },
+              yield* unitsOf(companyId, kind),
+            ),
+          )
           yield* units.save(unit)
           return yield* view(unit)
         }),
         rename: Effect.fn('Organization.rename')(function* (companyId, kind, id, name, expectedVersion) {
-          const unit = yield* find(companyId, kind, id)
-          yield* checkVersion(unit.version, expectedVersion)
-          if (isOrganizationNameTaken(name, yield* unitsOf(companyId, kind), unit.id)) {
-            return yield* new OrganizationNameTaken({})
-          }
-          const next = { ...unit, name: name.trim(), version: unit.version + 1 }
-          yield* units.save(next)
-          return yield* view(next)
+          const current = yield* find(companyId, kind, id)
+          yield* checkVersion(current.version, expectedVersion)
+          const { unit } = yield* Effect.fromResult(decideUnitRename(current, name, yield* unitsOf(companyId, kind)))
+          yield* units.save(unit)
+          return yield* view(unit)
         }),
         remove: Effect.fn('Organization.remove')(function* (companyId, kind, id) {
           const unit = yield* find(companyId, kind, id)
-          if ((yield* view(unit)).inUse) return yield* new OrganizationUnitInUse({ kind })
+          yield* Effect.fromResult(decideUnitRemoval(unit, yield* assignedCount(unit)))
           yield* units.remove(companyId, id)
         }),
         reorder: Effect.fn('Organization.reorder')(function* (companyId, kind, ids) {
-          const existing = yield* unitsOf(companyId, kind)
-          const known = new Set(existing.map((unit) => unit.id as string))
-          if (ids.length !== known.size || new Set(ids).size !== ids.length || ids.some((id) => !known.has(id))) {
-            return yield* new OrganizationOrderMismatch({})
-          }
-          for (const unit of existing) {
-            const order = ids.indexOf(unit.id)
-            if (order !== unit.order) yield* units.save({ ...unit, order, version: unit.version + 1 })
-          }
+          const decision = yield* Effect.fromResult(decideUnitReorder(yield* unitsOf(companyId, kind), ids))
+          yield* Effect.forEach(decision.units, units.save, { discard: true })
           return yield* unitsOf(companyId, kind).pipe(Effect.flatMap((all) => Effect.forEach(all, view)))
         }),
       })
