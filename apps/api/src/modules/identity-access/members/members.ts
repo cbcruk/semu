@@ -8,17 +8,14 @@ import { UserRepository } from '../accounts/user-repository.ts'
 import type { Actor } from '../actor.types.ts'
 import { AuditLog } from '../audit/audit-log.ts'
 import { RoleRepository } from '../roles/role-repository.ts'
-import { RoleNotFound } from '../roles/role.ts'
+import type { RoleNotFound } from '../roles/role.ts'
 import { Sessions } from '../sessions/sessions.ts'
 import { MembershipRepository } from './membership-repository.ts'
-import { LastAdmin, MemberNotFound, OwnerImmutable } from './membership.ts'
-import type { Member, MemberAccess, Membership } from './membership.ts'
+import { decideMemberAccessChange, decideMemberRemoval, type MemberAccessInput } from './membership.aggregate.ts'
+import { MemberNotFound } from './membership.ts'
+import type { LastAdmin, Member, Membership, OwnerImmutable } from './membership.ts'
 
-/** 접근 수준 변경 입력입니다. */
-export interface MemberAccessInput {
-  access: MemberAccess
-  roleIds: ReadonlyArray<Id<'role'>>
-}
+export type { MemberAccessInput }
 
 /** 회사 구성원 조회, 접근 수준 변경, 내보내기입니다. 세무 대리인 배정은 구성원이 아니므로 여기 나오지 않습니다. */
 export class Members extends Context.Service<
@@ -96,41 +93,29 @@ export class Members extends Context.Service<
       ) {
         const membership = yield* find(actor, userId)
         yield* checkVersion(membership.version, expectedVersion)
-        if (membership.isOwner && input.access !== 'ADMIN') return yield* new OwnerImmutable({})
-        if (membership.access === 'ADMIN' && input.access !== 'ADMIN' && (yield* otherAdmins(actor, userId)) === 0) {
-          return yield* new LastAdmin({})
-        }
-        const roleIds = input.access === 'ADMIN' ? [] : [...new Set(input.roleIds)]
-        for (const roleId of roleIds) {
-          if (Option.isNone(yield* roles.find(actor.companyId, roleId))) return yield* new RoleNotFound({})
-        }
-        const next: Membership = { ...membership, access: input.access, roleIds, version: membership.version + 1 }
-        yield* memberships.save(next)
+        const companyRoleIds = new Set<string>((yield* roles.listByCompany(actor.companyId)).map((role) => role.id))
+        const decision = yield* Effect.fromResult(
+          decideMemberAccessChange(
+            membership,
+            input,
+            { otherAdminCount: yield* otherAdmins(actor, userId), companyRoleIds },
+            actor,
+          ),
+        )
+        yield* memberships.save(decision.membership)
         yield* sessions.invalidateAccess(userId, actor.companyId)
-        yield* audit.record({
-          action: 'MEMBER_ACCESS_CHANGED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: userId,
-          detail: `${input.access}:${roleIds.join(',')}`,
-        })
-        return yield* toMember(actor, next)
+        for (const entry of decision.audit) yield* audit.record(entry)
+        return yield* toMember(actor, decision.membership)
       })
 
       const remove = Effect.fn('Members.remove')(function* (actor: Actor, userId: Id<'user'>) {
         const membership = yield* find(actor, userId)
-        if (membership.isOwner) return yield* new OwnerImmutable({})
-        if (membership.access === 'ADMIN' && (yield* otherAdmins(actor, userId)) === 0) return yield* new LastAdmin({})
+        const decision = yield* Effect.fromResult(
+          decideMemberRemoval(membership, yield* otherAdmins(actor, userId), actor),
+        )
         yield* memberships.remove(actor.companyId, userId)
         yield* sessions.invalidateAccess(userId, actor.companyId)
-        yield* audit.record({
-          action: 'MEMBER_REMOVED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: userId,
-        })
+        for (const entry of decision.audit) yield* audit.record(entry)
       })
 
       return Members.of({ list, get, changeAccess, remove })
