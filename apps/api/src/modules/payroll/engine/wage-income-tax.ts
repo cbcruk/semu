@@ -73,6 +73,20 @@ export function progressiveTax(taxBase: number, rates: PayrollRateTable): number
   return Math.max(0, applyPpm(taxBase, 세율구간.ratePpm) - 세율구간.progressiveDeduction)
 }
 
+/** 총급여액의 근로소득공제입니다(소득세법 제47조제1항, 한도 포함). 원 미만 절사입니다. */
+export function earnedIncomeDeductionOf(totalPay: number, rates: PayrollRateTable): number {
+  const 근로소득세기준 = rates.wageIncomeTax
+  return Math.min(
+    evaluateLinear(근로소득세기준.earnedIncomeDeduction, totalPay),
+    근로소득세기준.earnedIncomeDeductionCap,
+  )
+}
+
+/** 산출세액과 총급여액의 근로소득세액공제입니다(소득세법 제59조제1항, 제2항 한도 포함). */
+export function earnedIncomeCreditOf(calculatedTax: number, totalPay: number, rates: PayrollRateTable): number {
+  return Math.min(한도전근로소득세액공제(calculatedTax, rates), 근로소득세액공제한도(totalPay, rates))
+}
+
 /** 8~20세 자녀 수에 따른 월 자녀세액공제입니다. 간이세액에서 뺍니다. */
 export function childTaxCredit(children: number, rates: PayrollRateTable): number {
   const 자녀세액공제기준 = rates.wageIncomeTax.childCreditMonthly

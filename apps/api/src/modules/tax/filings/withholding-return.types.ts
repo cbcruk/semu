@@ -2,8 +2,11 @@
  * 원천세 합계의 소득 종류입니다. Payroll이 지급월마다 이 종류로 모아 줍니다.
  *
  * `RETIREMENT`(퇴직소득)는 Payroll이 지급일이 그 달인 완료 퇴직금 정산에서 모읍니다. 대장이 없는 달에도 올 수 있습니다.
+ * `WAGE_MID_YEAR_SETTLEMENT`(중도퇴사 연말정산)·`WAGE_ANNUAL_SETTLEMENT`(연말정산)는 확정한 근로소득 정산이고, 세액은
+ * 차감징수세액이라 환급이면 음수입니다.
  */
-export type WithholdingIncomeKind = 'WAGE' | 'DAILY' | 'BUSINESS' | 'OTHER' | 'RETIREMENT'
+export type WithholdingIncomeKind =
+  'WAGE' | 'WAGE_MID_YEAR_SETTLEMENT' | 'WAGE_ANNUAL_SETTLEMENT' | 'DAILY' | 'BUSINESS' | 'OTHER' | 'RETIREMENT'
 
 /**
  * 기타소득의 구분입니다. `PERSONAL_SERVICE`는 소득세법 제21조제1항제19호의 인적용역, `GENERAL`은 그 밖의 기타소득입니다.
@@ -13,9 +16,10 @@ export type OtherIncomeCategory = 'PERSONAL_SERVICE' | 'GENERAL'
 
 /**
  * 원천징수이행상황신고서 제1쪽에서 한 소득 종류의 합계를 적는 줄의 소득구분 코드입니다.
- * `A01` 근로 간이세액, `A03` 근로 일용근로, `A22` 퇴직 그 외, `A25` 사업 매월징수, `A59` 기타 인적용역, `A42` 기타 그 외.
+ * `A01` 근로 간이세액, `A02` 근로 중도퇴사, `A03` 근로 일용근로, `A04` 근로 연말정산(정기), `A22` 퇴직 그 외,
+ * `A25` 사업 매월징수, `A59` 기타 인적용역, `A42` 기타 그 외.
  */
-export type WithholdingLineCode = 'A01' | 'A03' | 'A22' | 'A25' | 'A59' | 'A42'
+export type WithholdingLineCode = 'A01' | 'A02' | 'A03' | 'A04' | 'A22' | 'A25' | 'A59' | 'A42'
 
 /** 그 줄이 속한 소득의 가감계 코드입니다. `A10` 근로, `A20` 퇴직, `A30` 사업, `A40` 기타. */
 export type WithholdingSubtotalCode = 'A10' | 'A20' | 'A30' | 'A40'

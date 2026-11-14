@@ -49,7 +49,11 @@ describe('휴직 삭제', () => {
       }).pipe(Effect.provide(layer)),
     )
 
-    expect(filings.map(({ kind, status }) => ({ kind, status }))).toEqual([
+    // 같은 밀리초에 만든 신고는 ID 순서가 정해지지 않아 종류로 줄 세웁니다.
+    const byKind = filings
+      .map(({ kind, status }) => ({ kind, status }))
+      .toSorted((a, b) => a.kind.localeCompare(b.kind))
+    expect(byKind).toEqual([
       { kind: 'LEAVE', status: 'WITHDRAWN' },
       { kind: 'RETURN', status: 'WITHDRAWN' },
     ])

@@ -1,4 +1,4 @@
-# Payroll: 계산 엔진·급여대장·명세서·퇴직금·인건비
+# Payroll: 계산 엔진·급여대장·명세서·퇴직금·근로소득 정산·인건비
 
 급여 계산 엔진, 요율·간이세액 기준표, 회사 급여 설정, 소득자 명부, 급여대장(급여 아웃소싱과 직접 운영 모두), 급여명세서 발송, 퇴직금 정산, Bookkeeping에 주는 인건비 집계를 다룹니다. 코드는 [`apps/api/src/modules/payroll/`](../../apps/api/src/modules/payroll/)에 있습니다. 근거 자료는 [`docs/reference/spec/payroll.md`](../reference/spec/payroll.md)(이하 스펙), 매뉴얼 `alfred-manual/05-급여/`, `alfred-manual/08-설정/03-급여-설정.md`, 재설계 전 구현 `apps/api/legacy/src/modules/payroll/`입니다.
 
@@ -441,6 +441,40 @@ stateDiagram-v2
 - **정산 후보(`GET /severance-settlement-candidates`, 2026-11-14).** 퇴직일이 기간(`from`~`to`, 기본값은 3년 전 오늘부터 오늘, 퇴직금 청구권 소멸시효 근로자퇴직급여 보장법 제10조) 안인 퇴직금 제도 근로소득자 중, 그 퇴직일의 퇴직 정산(제외 말고)이 없는 직원을 퇴직일 순으로 줍니다. 항목은 `employeeId`, `employeeName`, `joinDate`, `leaveDate`, `serviceStartDate`, `eligible`(입사일부터 1년 이상)입니다. 정산할 기간이 없는 직원(마지막 완료 중간정산이 퇴직일 이후)은 빠집니다. 현행의 중간정산 후보(`interim-candidates`)는 사유가 직원 신청에서 오므로 두지 않습니다
 - 상태별 건수는 아직 없습니다([구현 상태](#구현-상태))
 
+## 근로소득 정산
+
+중도퇴사자 연말정산과 연말정산입니다(2026-11-14, #80). 그해 귀속 근로소득의 결정세액을 계산해 매달 뗀 원천세(기납부세액)와의 차이(차감징수세액)를 정하고, 확정하면 지급월 원천세 합계에 따로 들어갑니다(원천세 신고서 A02·A04).
+
+```
+GET    /wage-tax-settlements?year=&status=&paymentMonth=
+POST   /wage-tax-settlements                 { kind: MID_YEAR|ANNUAL, employeeId, year, input?, paymentDate? } 201 + ETag
+GET    /wage-tax-settlements/{settlementId}
+PATCH  /wage-tax-settlements/{settlementId}  { input?, paymentDate? }   If-Match, CALCULATED만
+POST   /wage-tax-settlements/{settlementId}:complete | :reopen
+DELETE /wage-tax-settlements/{settlementId}  CALCULATED만
+```
+
+```mermaid
+stateDiagram-v2
+  [*] --> CALCULATED: POST (퇴사·재직, 마감된 근로소득 확인)
+  CALCULATED --> COMPLETED: :complete (다시 계산, 지급일 채움)
+  COMPLETED --> CALCULATED: :reopen
+  CALCULATED --> [*]: DELETE
+```
+
+- **종류.** `MID_YEAR`(중도퇴사, A02)는 그해 12월 31일 전에 퇴사한 직원만 받습니다. 아니면 422 `WAGE_SETTLEMENT_NOT_APPLICABLE`(`NOT_LEFT_IN_YEAR`)입니다. 12월 31일 퇴사자는 연말정산 대상입니다. `ANNUAL`(연말정산, A04)은 그해가 끝난 뒤(`YEAR_NOT_ENDED`), 12월 31일에 재직한 직원만 받습니다(`NOT_EMPLOYED_AT_YEAR_END`). 그해 마감된 근로 행이 없으면 `NO_WAGE_IN_YEAR`입니다. 같은 직원·연도·종류의 정산이 있으면 409 `WAGE_SETTLEMENT_EXISTS`(`settlementId`)입니다
+- **소득과 기납부세액.** 귀속월이 그해인 **마감된** 대장의 그 직원 근로 행(월급·시급·일급 근로, 일용은 뺌)을 더합니다. 총급여는 과세 지급액, 연금보험료공제는 국민연금 근로자 부담분, 특별소득공제는 건강·장기요양·고용보험료 근로자 부담분, 기납부세액은 행의 소득세·지방소득세입니다. 공제대상가족 수는 HR 소득세 공제 설정의 정산 기준일(퇴사일, 연말정산은 12월 31일) 값입니다
+- **계산.** 순수 규칙 [wage-tax-settlement-rules.ts](../../apps/api/src/modules/payroll/wage-settlements/wage-tax-settlement-rules.ts)가 합니다. 근로소득공제(한도) → 인적공제(1명 150만원) → 연금보험료공제 → 보험료 특별소득공제(소득세법 제52조제1항)와 그 밖의 소득공제(입력 `otherIncomeDeductions`) → 과세표준 → 기본세율 → 근로소득세액공제(한도) → 그 밖의 세액공제(입력 `otherTaxCredits`) 또는 표준세액공제 → 결정세액입니다. 기준표는 퇴사월(연말정산은 그해 12월)의 것입니다
+  - 특별세액공제를 신청하지 않으면 표준세액공제 13만원을 받습니다(소득세법 제59조의4제9항, 원문 미대조로 기준표 검증 상태 `unverified`). 표준세액공제는 건강·장기요양·고용보험료 소득공제를 대신하지 않아 과세표준은 두 방법이 같고, 그 밖의 세액공제 합계와 13만원 중 결정세액이 적은 쪽을 골라 `deductionMethod`(`ITEMIZED`·`STANDARD`)로 보여 줍니다(2026-11-14 리뷰에서 고침). 그 밖의 소득공제 입력은 두 방법 모두에 빼므로 신용카드 등 조세특례제한법 소득공제를 넣습니다. 표준세액공제와 함께 받을 수 없는 주택자금 특별소득공제는 모델링하지 않습니다
+  - 차감징수세액(`balanceIncomeTax`, `balanceLocalIncomeTax`)은 결정세액 − 기납부세액이고 10원 미만은 0 쪽으로 버립니다. 음수면 환급입니다
+  - 자녀세액공제·연금계좌·보험료·의료비·교육비·기부금·월세 세액공제와 주택자금·신용카드 소득공제는 계산하지 않고 근로자가 낸 신고서의 합계를 입력으로 받습니다. 종전 근무지 소득 합산, 비과세·감면 소득, 지방소득세 환급의 서식 기재 위치는 모델링하지 않습니다
+- **다시 계산.** `PATCH`와 `:complete`는 그때의 마감된 대장과 HR 값으로 다시 계산합니다. 확정한 금액이 확정할 때의 대장과 맞게 하려는 것입니다. 그사이 퇴사일이 바뀌어 정산할 수 없게 되면 422입니다
+- **지급일과 원천세.** 지급일이 그 달인 **확정** 정산이 지급월 원천세 합계의 `WAGE_MID_YEAR_SETTLEMENT`(A02)·`WAGE_ANNUAL_SETTLEMENT`(A04) 줄입니다. 인원은 직원 수, 총지급액은 그해 총지급액, 과세 지급액은 총급여, 세액은 차감징수세액(환급이면 음수)입니다
+  - `:complete` 때 지급일이 없으면 중도퇴사는 퇴사일, 연말정산은 다음 해 2월 말일로 채웁니다(연말정산은 다음 해 2월분 급여를 줄 때, 소득세법 제137조). 중도퇴사는 그해 1월 1일, 연말정산은 다음 해 1월 1일보다 앞서면 422 `WAGE_SETTLEMENT_PAYMENT_DATE_INVALID`(`earliestDate`)입니다
+  - 확정·다시 열기로 합계가 바뀐 지급월마다 `payroll_pay_month.withholding_changed`를 냅니다. 건드린 지급월(새로 정하거나 옮긴 지급일의 달 포함)이 신고됐으면 409 `WITHHOLDING_FILED`입니다. 퇴직금 정산과 같은 규칙입니다
+  - 확정한 정산은 다시 열어야 고치거나 지울 수 있습니다(409 `WAGE_SETTLEMENT_TRANSITION_INVALID`). 계산됨 정산은 원천세에 들지 않아 지워도 신호가 없습니다
+- 근로소득 원천징수영수증·지급명세서 제출, 연말정산 간소화 자료 수집, 분납(소득세법 제137조제4항)은 없습니다
+
 ## 인건비
 
 ```
@@ -526,6 +560,7 @@ flowchart LR
 | 404 | `RATE_TABLE_ID_NOT_FOUND` | 없는 기준표 ID | |
 | 404 | `PAYSLIP_NOT_FOUND` | 없거나 마감 전 대장의 행 | |
 | 404 | `SEVERANCE_SETTLEMENT_NOT_FOUND` | 없는 정산 | |
+| 404 | `WAGE_SETTLEMENT_NOT_FOUND` | 없는 근로소득 정산 | |
 | 404 | `EARNER_NOT_FOUND` | 명부에 없거나 다른 회사 소득자 | |
 | 404 | `PAYROLL_ITEM_NOT_FOUND` | 없거나 다른 회사의 지급·공제 항목 | |
 | 409 | `PAYROLL_LEDGER_TRANSITION_INVALID` | 상태·운영 방식·행위자가 전이와 맞지 않음 | `ledgerStatus`, `action` |
@@ -539,6 +574,8 @@ flowchart LR
 | 409 | `SEVERANCE_SERVICE_START_CHANGED` | 계산한 뒤 앞선 중간정산이 바뀌어 기산일이 달라짐(`:complete`) | `serviceStartDate` |
 | 409 | `SEVERANCE_LATER_SETTLEMENT_COMPLETED` | 기준일이 더 늦은 완료 정산이 있어 중간정산을 완료·다시 열 수 없음 | `settlementId` |
 | 409 | `SEVERANCE_TRANSITION_INVALID` | 상태와 맞지 않는 정산 커맨드·수정 | `settlementStatus`, `action` |
+| 409 | `WAGE_SETTLEMENT_EXISTS` | 같은 직원·연도·종류의 두 번째 근로소득 정산 | `settlementId` |
+| 409 | `WAGE_SETTLEMENT_TRANSITION_INVALID` | 상태와 맞지 않는 근로소득 정산 커맨드·수정·삭제 | `settlementStatus`, `action` |
 | 409 | `EARNER_DUPLICATE` | 같은 회사에 같은 신원번호의 소득자 | `duplicateEarnerId` |
 | 409 | `EARNER_IN_USE` | 대장 행이 가리키는 소득자 삭제 | |
 | 409 | `PAYROLL_ITEM_ARCHIVED` | 지운 지급·공제 항목 수정 | |
@@ -554,6 +591,8 @@ flowchart LR
 | 422 | `SEVERANCE_NOT_APPLICABLE` | 퇴사 전(`NOT_LEFT`), 퇴직금 제도 아님, 중간정산인데 퇴사함(`ALREADY_LEFT`)·1년 미만·전세 사유 재사용, 중간정산 뒤 정산할 기간 없음(`NO_SERVICE_AFTER_INTERIM`) | `reason` |
 | 422 | `SEVERANCE_INTERIM_DATE_INVALID` | 중간정산 기준일이 마지막 완료 중간정산 다음 날~오늘 밖 | `earliestDate`, `latestDate` |
 | 422 | `SEVERANCE_PAYMENT_DATE_INVALID` | 퇴직금 지급일이 마지막 근무일보다 앞섬 | `lastWorkDate` |
+| 422 | `WAGE_SETTLEMENT_NOT_APPLICABLE` | 그해 중도퇴사 아님(`NOT_LEFT_IN_YEAR`), 그해가 안 끝남(`YEAR_NOT_ENDED`), 12월 31일에 재직 안 함(`NOT_EMPLOYED_AT_YEAR_END`), 마감된 근로소득 없음(`NO_WAGE_IN_YEAR`) | `reason` |
+| 422 | `WAGE_SETTLEMENT_PAYMENT_DATE_INVALID` | 정산 지급일이 그 종류의 가장 이른 날보다 앞섬 | `earliestDate` |
 | 422 | `IDEMPOTENCY_KEY_REUSED` | 같은 키, 다른 본문의 명세서 발송 | |
 | 428 | `IDEMPOTENCY_KEY_REQUIRED` | 키 없는 명세서 발송 | |
 | 503 | `PAYSLIP_SEND_INTERRUPTED` | 메일 연동 오류로 발송이 중간에 멈춤. 같은 키로 다시 보내면 나머지만 보냄 | |
@@ -706,7 +745,7 @@ flowchart LR
 | 지급·공제 항목 카탈로그(표준 항목, 회사 항목 CRUD·보관, 행 참조, 정기 대장 기본 항목) | 구현 ([items/](../../apps/api/src/modules/payroll/items/), `payroll_payment_items`·`payroll_deduction_items` 표) |
 | 근무 일정 정책, 카드 단위 항목 일괄 수정(현행 `payment-items/bulk`) | 없음 |
 | 행 결과 수동 덮어쓰기(고지액 입력 외) | 없음 |
-| 중간정산, 후보 목록, `LEAVE_DATE_BEFORE_INTERIM` | 없음 |
+| 근로소득 정산 (중도퇴사·연말정산, 원천세 A02·A04) | 구현, HTTP 테스트(2026-11-14). 공제 항목 대부분은 입력 합계, 종전 근무지·원천징수영수증·간소화 자료는 없음 |
 | 데스크 내보내기, 담당자 메모, 시프티, 명세서 PDF, CSV 내보내기 | 없음 |
 
 규칙 픽스처 14개 59건은 모두 [engine.fixtures.test.ts](../../apps/api/src/modules/payroll/engine/engine.fixtures.test.ts)와 [ledger.fixtures.test.ts](../../apps/api/src/modules/payroll/ledgers/ledger.fixtures.test.ts)로 옮겼습니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
