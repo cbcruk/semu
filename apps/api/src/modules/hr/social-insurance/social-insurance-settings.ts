@@ -8,15 +8,16 @@ import { WorkContractRepository } from '../contracts/work-contract.ts'
 import { contractInForce } from '../contracts/work-contract-period.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
-import { entryInEffect, upsertEntry } from '../tax-withholding/tax-withholding-history.ts'
+import { entryInEffect } from '../tax-withholding/tax-withholding-history.ts'
 import { DEFAULT_ENROLLMENT, determineEligibility } from './insurance-eligibility.ts'
 import type { EligibilityResult, Insurance, InsuranceEnrollment } from './insurance-eligibility.types.ts'
-import { eligibilityMismatches, enrollmentViolations } from './social-insurance-setting-rules.ts'
+import { eligibilityMismatches } from './social-insurance-setting-rules.ts'
+import { decideSocialInsuranceSettingSave } from './social-insurance-setting.aggregate.ts'
 import {
   type SocialInsuranceSetting,
   type SocialInsuranceSettingEntry,
   type SocialInsuranceSettingInput,
-  SocialInsuranceSettingInvalid,
+  type SocialInsuranceSettingInvalid,
   SocialInsuranceSettingNotFound,
   type SocialInsuranceSettingRecord,
   SocialInsuranceSettingRepository,
@@ -158,15 +159,14 @@ export class SocialInsuranceSettings extends Context.Service<
             Option.match(current, { onNone: () => 0, onSome: (found) => found.version }),
             expectedVersion,
           )
-          const violations = enrollmentViolations(input)
-          if (violations.length > 0) return yield* new SocialInsuranceSettingInvalid({ violations })
-          const record: SocialInsuranceSettingRecord = {
-            id: employeeId,
-            companyId: actor.companyId,
-            entries: upsertEntry(Option.match(current, { onNone: () => [], onSome: (found) => found.entries }), input),
-            version: Option.match(current, { onNone: () => 1, onSome: (found) => found.version + 1 }),
-            updatedAt: DateTime.formatIso(yield* DateTime.now),
-          }
+          const { setting: record } = yield* Effect.fromResult(
+            decideSocialInsuranceSettingSave(
+              { companyId: actor.companyId, employeeId },
+              Option.getOrUndefined(current),
+              input,
+              DateTime.formatIso(yield* DateTime.now),
+            ),
+          )
           yield* settings.save(record)
           return yield* toView(employee, record, input, input.effectiveFrom)
         }),
