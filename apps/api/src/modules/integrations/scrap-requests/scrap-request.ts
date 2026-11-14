@@ -106,8 +106,10 @@ export const ScrapAvailabilityItem = Schema.Struct({
   institutionType: InstitutionTypeSchema,
   isConnected: Schema.Boolean,
   canRequest: Schema.Boolean,
-  /** `RUNNING`이면 화면은 남은 시간 대신 "수집 중"을 보입니다. */
-  /** `DELEGATION_REQUIRED`는 세무대리인이 수임동의 없는 회사의 홈택스를 수집하려 할 때입니다. */
+  /**
+   * `RUNNING`이면 화면은 남은 시간 대신 "수집 중"을 보입니다. `DELEGATION_REQUIRED`는 세무대리인이 수임동의 없는 회사의 홈택스를
+   * 수집하려 할 때입니다.
+   */
   reason: Schema.optionalKey(Schema.Literals(['RUNNING', 'COOLDOWN', 'NOT_CONNECTED', 'DELEGATION_REQUIRED'])),
   retryAfterSeconds: Schema.optionalKey(Schema.Int),
   latestRequestId: Schema.optionalKey(ScrapRequestId),
