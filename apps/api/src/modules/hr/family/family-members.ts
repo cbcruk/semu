@@ -9,33 +9,27 @@ import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employee.ts'
+import { EmployeeNotFound, type EmployeeKindNotSupported } from '../employees/employee.ts'
 import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/insurance-filing-repository.ts'
-import { OPEN_STATUSES } from '../insurance-filings/insurance-filing-rules.ts'
-import type { InsuranceFiling, InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
-import { maskIdentityNumber } from '../shared/identity-number.ts'
-import { dependantChange, isRegisteredDependant, validateFamilyMember } from './family-member-rules.ts'
 import {
-  FamilyMemberDependantRegistered,
-  FamilyMemberInvalid,
+  decideFamilyMemberCreation,
+  decideFamilyMemberRemoval,
+  decideFamilyMemberUpdate,
+  planFamilyMember,
+  planFamilyMemberCreation,
+  type DependantFiling,
+  type DependantFilingChange,
+  type FamilyMemberPlan,
+} from './family-member.aggregate.ts'
+import {
   FamilyMemberNotFound,
   FamilyMemberRepository,
   type FamilyMember,
+  type FamilyMemberDependantRegistered,
   type FamilyMemberInput,
+  type FamilyMemberInvalid,
   type FamilyMemberRecord,
 } from './family-member.ts'
-
-type DependantFiling = Extract<InsuranceFiling, { kind: 'DEPENDANT' }>
-
-function samePayload(a: InsuranceFilingPayloads['DEPENDANT'], b: InsuranceFilingPayloads['DEPENDANT']): boolean {
-  return (
-    a.familyMemberId === b.familyMemberId &&
-    a.change === b.change &&
-    a.name === b.name &&
-    a.relation === b.relation &&
-    a.birthDate === b.birthDate
-  )
-}
 
 /**
  * 근로소득자의 가족(인적공제 대상자) 관리입니다. 근로소득자(`WAGE`)만 가질 수 있습니다.
@@ -103,39 +97,13 @@ export class FamilyMembers extends Context.Service<
       const toView = ({ companyId: _, registrationNumberEncrypted: _encrypted, ...rest }: FamilyMemberRecord) =>
         stripUndefined(rest) as FamilyMember
 
-      /** 입력을 검사해 저장할 필드를 만듭니다. 주민번호를 비우면 지웁니다. */
-      const resolve = Effect.fn('FamilyMembers.resolve')(function* (input: FamilyMemberInput) {
-        const terms = {
-          relation: input.relation,
-          birthDate: input.birthDate,
-          registrationNumber: input.registrationNumber,
-          taxFreeTarget: input.taxFreeTarget ?? false,
-          yearEndTarget: input.yearEndTarget ?? false,
-          yearEndDependantType: input.yearEndDependantType ?? 'NOT_ELIGIBLE',
-          healthInsuranceDependant: input.healthInsuranceDependant ?? false,
-        }
-        const result = validateFamilyMember(terms, yield* today)
-        if (result.violations.length > 0) return yield* new FamilyMemberInvalid({ violations: result.violations })
-        const { registrationNumber: _, ...fields } = terms
-        return {
-          ...fields,
-          name: input.name,
-          isForeigner: input.isForeigner ?? false,
-          registrationNumberEncrypted:
-            result.registrationNumber === undefined
-              ? undefined
-              : yield* cipher.encrypt('registrationNumber', result.registrationNumber),
-          registrationNumberMasked:
-            result.registrationNumber === undefined ? undefined : maskIdentityNumber(result.registrationNumber, 'RRN'),
-        }
-      })
+      /** 검사를 통과한 입력의 번호를 봉인합니다. */
+      const seal = (plan: FamilyMemberPlan) =>
+        plan.registrationNumber === undefined
+          ? Effect.succeed(undefined)
+          : cipher.encrypt('registrationNumber', plan.registrationNumber)
 
-      /**
-       * 피부양자 신고를 가족의 지금 상태에 맞춥니다. 공단에 등록된 상태(마지막 완료 신고)와 원하는 상태가 다르면 취득·상실
-       * 신고를 열고, 같으면 열린 신고를 닫습니다. 내용이 같은 열린 신고는 그대로 둡니다. 가족을 지울 때는 `wanted`가
-       * `false`이고, 등록된 피부양자는 지울 수 없으므로 열린 취득 신고만 닫습니다.
-       */
-      const dependantFilingsOf = (member: FamilyMemberRecord) =>
+      const dependantFilingsOf = (member: Pick<FamilyMemberRecord, 'id' | 'companyId' | 'employeeId'>) =>
         filings
           .listByEmployee(member.companyId, member.employeeId)
           .pipe(
@@ -149,39 +117,27 @@ export class FamilyMembers extends Context.Service<
             ),
           )
 
-      const syncDependantFiling = Effect.fn('FamilyMembers.syncDependantFiling')(function* (
+      /** 판정이 알려 준 피부양자 신고 변경을 그 순서대로 합니다. */
+      const applyFilings = Effect.fn('FamilyMembers.applyFilings')(function* (
         member: FamilyMemberRecord,
-        wanted: boolean,
-        at: string,
+        changes: ReadonlyArray<DependantFilingChange>,
       ) {
+        if (changes.length === 0) return
+        const at = yield* nowIso
         const source = { type: 'FAMILY_MEMBER', id: member.id } as const
-        const own = yield* dependantFilingsOf(member)
-        const change = dependantChange(wanted, own)
-        const payload: InsuranceFilingPayloads['DEPENDANT'] | undefined =
-          change === undefined
-            ? undefined
-            : {
-                familyMemberId: member.id,
-                change,
-                name: member.name,
-                relation: member.relation,
-                birthDate: member.birthDate,
-              }
-        const open = own.filter((filing) => OPEN_STATUSES.includes(filing.status))
-        if (payload === undefined ? open.length === 0 : open.some((filing) => samePayload(filing.payload, payload))) {
-          return
+        for (const change of changes) {
+          if (change.action === 'WITHDRAW') yield* filings.withdraw(member.companyId, source, 'DEPENDANT', at)
+          else
+            yield* filings.save(
+              pendingFiling(
+                { companyId: member.companyId, employeeId: member.employeeId },
+                'DEPENDANT',
+                source,
+                change.payload,
+                at,
+              ),
+            )
         }
-        yield* filings.withdraw(member.companyId, source, 'DEPENDANT', at)
-        if (payload === undefined) return
-        yield* filings.save(
-          pendingFiling(
-            { companyId: member.companyId, employeeId: member.employeeId },
-            'DEPENDANT',
-            source,
-            payload,
-            at,
-          ),
-        )
       })
 
       return FamilyMembers.of({
@@ -197,41 +153,41 @@ export class FamilyMembers extends Context.Service<
 
         create: Effect.fn('FamilyMembers.create')(function* (actor, employeeId, input) {
           const employee = yield* findEmployee(actor, employeeId)
-          if (employee.kind !== 'WAGE') return yield* new EmployeeKindNotSupported({ kind: employee.kind })
-          const member: FamilyMemberRecord = {
-            id: newId('familyMember'),
-            companyId: actor.companyId,
-            employeeId,
-            ...(yield* resolve(input)),
-            version: 1,
-          }
+          const plan = yield* Effect.fromResult(planFamilyMemberCreation(input, yield* today, employee.kind))
+          const owner = { id: newId('familyMember'), companyId: actor.companyId, employeeId }
+          const { member, filings: changes } = decideFamilyMemberCreation(
+            owner,
+            plan,
+            yield* seal(plan),
+            yield* dependantFilingsOf(owner),
+          )
           yield* members.save(member)
-          yield* syncDependantFiling(member, member.healthInsuranceDependant, yield* nowIso)
+          yield* applyFilings(member, changes)
           return toView(member)
         }),
 
         update: Effect.fn('FamilyMembers.update')(function* (actor, id, input, expectedVersion) {
           const current = yield* findMember(actor, id)
           yield* checkVersion(current.version, expectedVersion)
-          const next: FamilyMemberRecord = {
-            id: current.id,
-            companyId: current.companyId,
-            employeeId: current.employeeId,
-            ...(yield* resolve(input)),
-            version: current.version + 1,
-          }
-          yield* members.save(next)
-          yield* syncDependantFiling(next, next.healthInsuranceDependant, yield* nowIso)
-          return toView(next)
+          const plan = yield* Effect.fromResult(planFamilyMember(input, yield* today))
+          const { member, filings: changes } = decideFamilyMemberUpdate(
+            current,
+            plan,
+            yield* seal(plan),
+            yield* dependantFilingsOf(current),
+          )
+          yield* members.save(member)
+          yield* applyFilings(member, changes)
+          return toView(member)
         }),
 
         remove: Effect.fn('FamilyMembers.remove')(function* (actor, id) {
           const member = yield* findMember(actor, id)
-          if (isRegisteredDependant(yield* dependantFilingsOf(member))) {
-            return yield* new FamilyMemberDependantRegistered({})
-          }
+          const { filings: changes } = yield* Effect.fromResult(
+            decideFamilyMemberRemoval(member, yield* dependantFilingsOf(member)),
+          )
           yield* members.remove(actor.companyId, member.id)
-          yield* syncDependantFiling(member, false, yield* nowIso)
+          yield* applyFilings(member, changes)
         }),
 
         revealRegistrationNumber: Effect.fn('FamilyMembers.revealRegistrationNumber')(function* (actor, id, reason) {
