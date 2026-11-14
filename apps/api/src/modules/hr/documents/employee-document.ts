@@ -13,6 +13,9 @@ import {
 } from '../shared/hr-schemas.ts'
 import type { EmployeeDocumentCategory, EmployeeDocumentLink } from './employee-document.types.ts'
 
+/** 보관함에 올릴 수 있는 형식입니다. 서버가 내용(앞 바이트)으로 판정합니다. */
+export const ARCHIVE_CONTENT_TYPES = ['application/pdf', 'image/png', 'image/jpeg'] as const
+
 /** 문서 보관함 카테고리입니다. */
 export const EmployeeDocumentCategorySchema = Schema.Literals([
   'CONTRACT',
@@ -22,18 +25,25 @@ export const EmployeeDocumentCategorySchema = Schema.Literals([
   'OTHER',
 ])
 
-/** 문서 보관함 문서 응답입니다. 지금은 전자서명 완료본만 들어옵니다. */
+/** 문서 보관함 문서 응답입니다. 전자서명 완료본과 직접 올린 문서가 들어옵니다. */
 export const EmployeeDocument = Schema.Struct({
   id: EmployeeDocumentId,
   employeeId: EmployeeId,
   category: EmployeeDocumentCategorySchema,
-  /** 문서가 들어온 곳입니다. 직접 올리기(`UPLOAD`)와 증명서 발급(`CERTIFICATE`)은 아직 없습니다. */
-  origin: Schema.Literals(['ESIGN']),
+  /** 문서가 들어온 곳입니다. 전자서명 완료본(`ESIGN`)과 직접 올린 문서(`UPLOAD`)입니다. 증명서 발급(`CERTIFICATE`)은 아직 없습니다. */
+  origin: Schema.Literals(['ESIGN', 'UPLOAD']),
   title: Schema.String,
-  /** 서명 완료 PDF입니다. 내려받기는 파일 저장소가 생기면 붙입니다. */
+  /** 문서 파일입니다. 본문은 `GET /employee-documents/{id}/file`로 내려받습니다. */
   fileId: FileId,
-  esignRequestId: EsignRequestId,
-  signedAt: Schema.String,
+  /** 파일 이름과 형식입니다. 내려받을 때 그대로 씁니다. */
+  fileName: Schema.String,
+  contentType: Schema.String,
+  /** 전자서명 완료본의 서명 요청입니다. */
+  esignRequestId: Schema.optionalKey(EsignRequestId),
+  /** 전자서명이 끝난 시각입니다. 전자서명 완료본에만 있습니다. */
+  signedAt: Schema.optionalKey(Schema.String),
+  /** 보관함에 들어온 시각입니다. 목록은 서명 시각(없으면 이 시각)이 늦은 것부터입니다. */
+  createdAt: Schema.String,
   /** 서명 요청을 무효로 하면 `VOIDED`입니다. 문서는 남습니다. */
   status: Schema.Literals(['ACTIVE', 'VOIDED']),
   voidedAt: Schema.optionalKey(Schema.String),
@@ -55,17 +65,22 @@ export interface EmployeeDocumentRecord {
   companyId: Id<'company'>
   employeeId: Id<'employee'>
   category: EmployeeDocumentCategory
-  origin: 'ESIGN'
+  origin: 'ESIGN' | 'UPLOAD'
   title: string
   fileId: Id<'file'>
-  esignRequestId: Id<'esignRequest'>
-  signedAt: string
+  fileName: string
+  contentType: string
+  esignRequestId?: Id<'esignRequest'> | undefined
+  signedAt?: string | undefined
+  /** 직접 올린 사용자입니다. 전자서명 완료본은 없습니다. */
+  createdBy?: Id<'user'> | undefined
+  createdAt: string
   status: 'ACTIVE' | 'VOIDED'
   voidedAt?: string | undefined
   links: ReadonlyArray<EmployeeDocumentLink>
 }
 
-/** 문서 보관함 저장소입니다. 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않습니다. */
+/** 문서 보관함 저장소입니다. 서명·발급에서 온 문서는 원본 보존을 위해 지우지 않고, 직접 올린 문서만 지웁니다. */
 export class EmployeeDocumentRepository extends Context.Service<
   EmployeeDocumentRepository,
   {
@@ -76,6 +91,8 @@ export class EmployeeDocumentRepository extends Context.Service<
       esignRequestId: Id<'esignRequest'>,
     ): Effect.Effect<Option.Option<EmployeeDocumentRecord>>
     save(record: EmployeeDocumentRecord): Effect.Effect<void>
+    /** 직접 올린 문서만 지웁니다. 서명·발급 문서는 서비스가 막습니다. */
+    remove(id: Id<'document'>): Effect.Effect<void>
     /**
      * 보관함에 넣기 전에 무효가 된 요청을 적어 둡니다. outbox 재전달로 완료가 무효보다 늦게 와도 무효로 넣기 위해서입니다.
      */
@@ -110,6 +127,7 @@ export class EmployeeDocumentRepository extends Context.Service<
               Option.fromNullishOr(records.find((record) => record.esignRequestId === esignRequestId)),
             ),
           save: (record) => table.put(record),
+          remove: (id) => table.remove(id),
           markVoided: (companyId, esignRequestId, at) => voids.put({ id: esignRequestId, companyId, voidedAt: at }),
           voidedAt: (companyId, esignRequestId) =>
             Effect.map(
@@ -132,4 +150,32 @@ export class EmployeeDocumentNotFound extends HttpApiError.Problem<EmployeeDocum
   'EmployeeDocumentNotFound',
   { type: problemType('EMPLOYEE_DOCUMENT_NOT_FOUND'), status: 404, title: 'Employee document not found' },
   { code: Schema.tag('EMPLOYEE_DOCUMENT_NOT_FOUND') },
+) {}
+
+/** 전자서명·발급에서 온 문서는 원본 보존을 위해 지울 수 없습니다. 직접 올린 문서만 지웁니다. */
+export class DocumentLocked extends HttpApiError.Problem<DocumentLocked>()(
+  'DocumentLocked',
+  { type: problemType('DOCUMENT_LOCKED'), status: 409, title: 'Signed or issued documents cannot be deleted' },
+  { code: Schema.tag('DOCUMENT_LOCKED'), origin: Schema.Literals(['ESIGN', 'UPLOAD']) },
+) {}
+
+/** 보관함에 올릴 수 없는 파일입니다. 형식은 내용(앞 바이트)으로 판정하고, 받는 형식은 PDF·PNG·JPEG입니다. */
+export class DocumentFileTypeNotAllowed extends HttpApiError.Problem<DocumentFileTypeNotAllowed>()(
+  'DocumentFileTypeNotAllowed',
+  { type: problemType('FILE_TYPE_NOT_ALLOWED'), status: 415, title: 'File type is not allowed' },
+  { code: Schema.tag('FILE_TYPE_NOT_ALLOWED'), allowedContentTypes: Schema.Array(Schema.String) },
+) {}
+
+/** 파일이 크기 한도를 넘거나 비어 있습니다. */
+export class DocumentFileSizeInvalid extends HttpApiError.Problem<DocumentFileSizeInvalid>()(
+  'DocumentFileSizeInvalid',
+  { type: problemType('FILE_SIZE_INVALID'), status: 413, title: 'File is empty or too large' },
+  { code: Schema.tag('FILE_SIZE_INVALID'), maxBytes: Schema.Number },
+) {}
+
+/** 보관함 문서의 파일 본문이 저장소에 없습니다. 저장소가 깨졌을 때만 생깁니다. */
+export class DocumentFileMissing extends HttpApiError.Problem<DocumentFileMissing>()(
+  'DocumentFileMissing',
+  { type: problemType('DOCUMENT_FILE_MISSING'), status: 404, title: 'Document file is missing' },
+  { code: Schema.tag('DOCUMENT_FILE_MISSING') },
 ) {}

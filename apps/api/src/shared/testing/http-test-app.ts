@@ -20,6 +20,8 @@ export interface HttpTestAppOptions {
 export interface HttpTestRequest {
   /** JSON으로 보낼 본문입니다. 있으면 `content-type: application/json`을 붙입니다. */
   body?: unknown
+  /** 그대로 보낼 바이너리 본문과 그 `content-type`입니다. 파일 올리기에 씁니다. `body`와 함께 주지 않습니다. */
+  raw?: { bytes: Uint8Array; contentType: string }
   /** `Authorization: Bearer`로 보낼 access token입니다. */
   token?: string | undefined
   /** `Cookie` 헤더 값입니다. */
@@ -89,12 +91,14 @@ export function httpTestApp(options: HttpTestAppOptions = {}): HttpTestApp {
       ...Object.fromEntries(Object.entries(init.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value])),
     }
     if (init.body !== undefined) headers['content-type'] = 'application/json'
+    if (init.raw !== undefined) headers['content-type'] = init.raw.contentType
     if (init.ifMatch !== undefined) headers['if-match'] = init.ifMatch
     if (init.idempotencyKey !== undefined) headers['idempotency-key'] = init.idempotencyKey
     if (init.cookie !== undefined) headers['cookie'] = init.cookie
     const requestInit: RequestInit = { method, headers }
     if (init.signal !== undefined) requestInit.signal = init.signal
     if (init.body !== undefined) requestInit.body = JSON.stringify(init.body)
+    if (init.raw !== undefined) requestInit.body = init.raw.bytes
     return app.handler(new Request(`http://localhost${basePath}${path}`, requestInit))
   }
   return {

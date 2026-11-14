@@ -172,6 +172,17 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 - 끝나면 `job.completed` 이벤트를 보냅니다 ([events.md](events.md)). 클라이언트는 폴링 대신 이벤트를 받습니다
 - 현행 수집 폴링(`PROGRESS|SUCCESS|FAIL`), 분류 규칙 일괄 적용(`rule_apply_jobs`), 엑셀 업로드, 내보내기가 모두 이 형태가 됩니다
 
+## 파일
+
+파일은 공통 파일 저장소(`FileStore`, [D7](review.md#결정))에 둡니다. 파일 ID는 `fle_`입니다.
+
+- **파일에는 따로 권한이 없습니다.** 파일 ID만 받아 내려주는 엔드포인트를 두지 않습니다. 파일을 붙인 리소스가 자기 경로로 내려줍니다. 예: `GET /employee-documents/{id}/file`(직원 읽기 권한)
+- **올리기는 붙일 리소스의 쓰기 엔드포인트가 본문을 받습니다.** 본문은 요청 바디 그대로이고(`Content-Type`이 파일 형식), 이름 같은 값은 쿼리로 받습니다. 예: `POST /employees/{id}/documents?title=&category=&fileName=`. 받는 형식마다 계약에 적어, 다른 `Content-Type`은 415입니다. 형식은 다시 내용(앞 바이트)으로 판정해 보낸 `Content-Type`을 믿지 않습니다(`FILE_TYPE_NOT_ALLOWED`). 한 파일은 10MB까지입니다(`FILE_SIZE_INVALID`)
+- **내려받기 응답**은 본문 그대로이고 `Content-Type`은 저장한 형식, `Content-Disposition`은 `attachment; filename*=UTF-8''<이름>`입니다. 개인정보가 든 문서는 열람 사유(`X-Access-Reason`)를 받아 열람 기록에 남깁니다
+- **다른 회사의 파일은 없는 것과 같습니다.** `FileStore.find`·`read`가 회사를 함께 받습니다
+- **본문은 지우지 않습니다.** 붙인 리소스(직접 올린 문서)를 지워도 감사·분쟁을 위해 본문은 남깁니다
+- 서버가 만드는 파일(전자서명 완료 PDF)은 올린 사람이 없습니다(`createdBy: null`)
+
 ## 감사와 열람 기록
 
 - 모든 쓰기 요청은 감사 로그에 `actor`, `company`, `resource`, `action`, `before/after 해시`, `ip`를 남깁니다. 세무 대리인의 동작은 `actor.kind = AGENCY`로 구분합니다

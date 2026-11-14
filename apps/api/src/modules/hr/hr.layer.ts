@@ -34,6 +34,7 @@ import { LeavesHttpLive } from './leaves/leaves.http.ts'
 import { Organization } from './organization/organization-service.ts'
 import { OrganizationHttpLive } from './organization/organization.http.ts'
 import { OrganizationRepository } from './organization/organization.ts'
+import { FileStore } from '../../shared/files/file-store.ts'
 import { PersonalDataAccessLog } from '../../shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from '../../shared/personal-data/personal-data-cipher.ts'
 import { SocialInsuranceSettingRepository } from './social-insurance/social-insurance-setting.ts'
@@ -110,8 +111,8 @@ export const HrStoreLive = Layer.mergeAll(
   EmployeeDocumentRepository.layer(),
 )
 
-/** {@link HrStoreLive}를 메모리 표와 가짜 암호화로 채우고 열람 기록을 함께 넣습니다. */
-export const HrMemoryStoreLive = Layer.merge(HrStoreLive, PersonalDataAccessLog.layer).pipe(
+/** {@link HrStoreLive}를 메모리 표와 가짜 암호화로 채우고 열람 기록과 공통 파일 저장소를 함께 넣습니다. */
+export const HrMemoryStoreLive = Layer.mergeAll(HrStoreLive, PersonalDataAccessLog.layer, FileStore.layer).pipe(
   Layer.provideMerge(PersonalDataCipher.layerFake),
   Layer.provide(TableFactory.layerMemory),
 )
