@@ -1,4 +1,5 @@
 import { Context, Effect, Layer, Option } from 'effect'
+import type { Result } from 'effect'
 import { paginate } from '../../../shared/http/pagination.ts'
 import type { PageOf, PageQuery } from '../../../shared/http/pagination.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
@@ -10,12 +11,11 @@ import { ActionCards } from '../action-cards/action-cards.ts'
 import { documentViewClosesReviewCard } from '../action-cards/action-card-rules.ts'
 import { TaxEvents } from '../tax.public.ts'
 import { currentInstant, descendingKey } from '../tax-time.ts'
-import type { FilingCommand, FilingStatus, TaxType } from '../tax.types.ts'
-import {
+import type { FilingStatus, TaxType } from '../tax.types.ts'
+import type {
   FilingActorNotAllowed,
   FilingDocumentNotFound,
   FilingLocked,
-  FilingNotFound,
   FilingRequirementsPending,
   FilingTransitionInvalid,
   RequirementAutoLinked,
@@ -23,42 +23,29 @@ import {
   RequirementHasFiles,
   RequirementNotFound,
 } from './filing.ts'
+import { FilingNotFound } from './filing.ts'
 import type { Filing, FilingSummary } from './filing.ts'
-import type {
-  FilingDocumentId,
-  FilingDocumentRecord,
-  FilingHistoryRecord,
-  FilingRecord,
-  RequirementRecord,
-} from './filing.types.ts'
-import { attachDocument, isDocumentVisibleToClient } from './filing-documents.ts'
+import {
+  decideDocumentAdd,
+  decideDocumentView,
+  decideFilingCommand,
+  decidePayrollLedgerRelink,
+  decideRequirementAnswer,
+  decideRequirementFileAttach,
+  decideRequirementFileDetach,
+  hasAutoLinkedRequirements,
+} from './filing.aggregate.ts'
+import type { FilingCommandInput, FilingDecision, FilingDecisionContext } from './filing.aggregate.ts'
+import type { FilingDocumentId, FilingDocumentRecord, FilingHistoryRecord, FilingRecord } from './filing.types.ts'
 import { FilingRepository } from './filing-repository.ts'
-import { answerRequirement, responseAfterFiles } from './filing-requirements.ts'
 import type { RequirementAnswer, RequirementCode } from './filing-requirements.types.ts'
-import { CLIENT_EDITABLE_STATUSES, transitionFiling } from './filing-status.ts'
-import { filingStatusChanged, toFiling, toFilingSummary, transitionFacts } from './filing-view.ts'
-import { PayrollLedgers, relinkAutoRequirements } from './payroll-ledgers.ts'
+import { toFiling, toFilingSummary } from './filing-view.ts'
+import { PayrollLedgers } from './payroll-ledgers.ts'
 import { monthsBetween, withholdingReturnLines } from './withholding-return.ts'
 import type { WithholdingReturnMonth } from './withholding-return.types.ts'
 import { WithholdingTotals } from './withholding-totals.ts'
 
-/** 커맨드마다 함께 받는 입력입니다. */
-export type FilingCommandInput =
-  | { command: 'REQUEST'; submitDue: string; message?: string }
-  | { command: 'SUBMIT' | 'UNSUBMIT' | 'START_REVIEW' | 'CONFIRM_LEDGER' | 'START_PREPARING' | 'CLOSE' }
-  | { command: 'REJECT'; reason: string; submitDue: string }
-  | { command: 'UPLOAD_LEDGER'; ledgerFileId: Id<'file'> }
-  | { command: 'DISPUTE_LEDGER'; reason: string }
-  | {
-      command: 'FILE'
-      payableAmount: number
-      paymentDue?: string
-      returnFileId: Id<'file'>
-      paymentSlipFileId?: Id<'file'>
-    }
-  | { command: 'RECORD_NOTICE'; payableAmount: number; paymentDue: string; noticeFileId: Id<'file'> }
-  | { command: 'PAY'; paidOn: string }
-  | { command: 'CANCEL'; reason: string }
+export type { FilingCommandInput } from './filing.aggregate.ts'
 
 /** 신고 건 목록 조건입니다. */
 export interface FilingListQuery extends PageQuery {
@@ -83,9 +70,6 @@ export type RequirementWriteError =
 
 /** 끝난 상태입니다. 목록의 `open` 조건이 씁니다. */
 export const CLOSED_STATUSES: ReadonlyArray<FilingStatus> = ['SETTLED', 'CANCELED']
-
-/** 신고서·납부서를 붙이거나 바꿀 수 있는 상태입니다. */
-const DOCUMENT_STATUSES: ReadonlyArray<FilingStatus> = ['PREPARING', 'FILED']
 
 /** 세무 신고 건 작업입니다. 고객과 세무 대리인이 같은 신고 건을 다루고, 커맨드마다 할 수 있는 행위자가 정해져 있습니다. */
 export class Filings extends Context.Service<
@@ -173,6 +157,13 @@ export class Filings extends Context.Service<
             Effect.flatMap(Option.match({ onNone: () => Effect.fail(new FilingNotFound({})), onSome: Effect.succeed })),
           )
 
+      /** 판정 결과를 저장하고, 그 변경이 낸 이벤트를 같은 트랜잭션에 냅니다. */
+      const save = (decision: FilingDecision) =>
+        Effect.gen(function* () {
+          yield* repository.save(decision.filing)
+          if (decision.events.length > 0) yield* events.publish(decision.events)
+        })
+
       const list = Effect.fn('Filings.list')(function* (actor: Actor, query: FilingListQuery) {
         const { today } = yield* currentInstant
         const filings = yield* repository.list(actor.companyId, {
@@ -225,79 +216,26 @@ export class Filings extends Context.Service<
       ) {
         const filing = yield* find(actor, id)
         yield* checkVersion(filing.version, expectedVersion)
-        const result = transitionFiling(filing.status, input.command, actor.kind, transitionFacts(filing))
-        if (!result.ok) {
-          switch (result.code) {
-            case 'FILING_ACTOR_NOT_ALLOWED':
-              return yield* new FilingActorNotAllowed({
-                action: input.command,
-                requiredActorKind: result.requiredActor!,
-              })
-            case 'FILING_REQUIREMENTS_PENDING':
-              return yield* new FilingRequirementsPending({
-                requirementCodes: transitionFacts(filing).pendingRequirementCodes as RequirementCode[],
-              })
-            case 'FILING_TRANSITION_INVALID':
-              return yield* new FilingTransitionInvalid({ currentStatus: filing.status, command: input.command })
-          }
-        }
-
-        const { now, today } = yield* currentInstant
-        const next: FilingRecord = {
-          ...filing,
-          ...commandPatch(filing, input, now),
-          status: result.to,
-          history: [...filing.history, historyEntry(actor, input, filing.status, result.to, now, result.onBehalfOf)],
-          version: filing.version + 1,
-          updatedAt: now,
-        }
-        yield* repository.save(next)
-        yield* cards.applyFilingTrigger(next, input.command, now)
-        if (filing.status !== next.status) yield* events.publish([filingStatusChanged(filing, next, now)])
-        return toFiling(next, actor.kind, today)
+        const { today, context } = yield* decisionContext(actor)
+        const decision = yield* Effect.fromResult(decideFilingCommand(filing, input, context))
+        yield* save(decision)
+        yield* cards.applyFilingTrigger(decision.filing, input.command, context.at)
+        return toFiling(decision.filing, actor.kind, today)
       })
 
       const editRequirement = Effect.fn('Filings.editRequirement')(function* (
         actor: Actor,
         id: Id<'filing'>,
-        code: RequirementCode,
-        change: (requirement: RequirementRecord) => Effect.Effect<RequirementRecord, RequirementWriteError>,
-        historyType: FilingHistoryRecord['type'],
-        detail: FilingHistoryRecord['detail'],
+        decide: (
+          filing: FilingRecord,
+          context: FilingDecisionContext,
+        ) => Result.Result<FilingDecision, RequirementWriteError>,
       ) {
         const filing = yield* find(actor, id)
-        const requirement = filing.requirements.find((candidate) => candidate.code === code)
-        if (requirement === undefined) return yield* new RequirementNotFound({})
-        if (requirement.autoLinked) return yield* new RequirementAutoLinked({})
-        if (!CLIENT_EDITABLE_STATUSES.includes(filing.status))
-          return yield* new FilingLocked({ currentStatus: filing.status })
-
-        const { now, today } = yield* currentInstant
-        const changed = yield* change(requirement)
-        const next: FilingRecord = {
-          ...filing,
-          requirements: filing.requirements.map((candidate) =>
-            candidate.code === code ? { ...changed, updatedBy: actor.userId, updatedAt: now } : candidate,
-          ),
-          history: [
-            ...filing.history,
-            {
-              type: historyType,
-              actorKind: actor.kind,
-              actorId: actor.userId,
-              // 제출 자료는 고객 몫이라 대리인이 고치면 고객 대신 한 일로 남깁니다.
-              ...(actor.kind === 'AGENCY' ? { onBehalfOf: 'CLIENT' as const } : {}),
-              fromStatus: null,
-              toStatus: null,
-              detail: { code, ...detail },
-              occurredAt: now,
-            },
-          ],
-          version: filing.version + 1,
-          updatedAt: now,
-        }
-        yield* repository.save(next)
-        return toFiling(next, actor.kind, today)
+        const { today, context } = yield* decisionContext(actor)
+        const decision = yield* Effect.fromResult(decide(filing, context))
+        yield* save(decision)
+        return toFiling(decision.filing, actor.kind, today)
       })
 
       const answer = (
@@ -305,55 +243,13 @@ export class Filings extends Context.Service<
         id: Id<'filing'>,
         code: RequirementCode,
         input: { response: RequirementAnswer; note?: string | null },
-      ) =>
-        editRequirement(
-          actor,
-          id,
-          code,
-          (requirement) => {
-            const result = answerRequirement(
-              { autoLinked: false, fileCount: requirement.fileIds.length },
-              input.response,
-            )
-            if (!result.ok) return Effect.fail(new RequirementHasFiles({}))
-            return Effect.succeed({
-              ...requirement,
-              response: result.response,
-              ...(input.note === undefined ? {} : { note: input.note }),
-            })
-          },
-          'REQUIREMENT_ANSWERED',
-          { response: input.response },
-        )
+      ) => editRequirement(actor, id, (filing, context) => decideRequirementAnswer(filing, code, input, context))
 
       const attachRequirementFile = (actor: Actor, id: Id<'filing'>, code: RequirementCode, fileId: Id<'file'>) =>
-        editRequirement(
-          actor,
-          id,
-          code,
-          (requirement) => {
-            const fileIds = requirement.fileIds.includes(fileId)
-              ? requirement.fileIds
-              : [...requirement.fileIds, fileId]
-            return Effect.succeed({ ...requirement, fileIds, response: responseAfterFiles(fileIds.length) })
-          },
-          'REQUIREMENT_FILE_ADDED',
-          { fileId },
-        )
+        editRequirement(actor, id, (filing, context) => decideRequirementFileAttach(filing, code, fileId, context))
 
       const detachRequirementFile = (actor: Actor, id: Id<'filing'>, code: RequirementCode, fileId: Id<'file'>) =>
-        editRequirement(
-          actor,
-          id,
-          code,
-          (requirement) => {
-            if (!requirement.fileIds.includes(fileId)) return Effect.fail(new RequirementFileNotFound({}))
-            const fileIds = requirement.fileIds.filter((candidate) => candidate !== fileId)
-            return Effect.succeed({ ...requirement, fileIds, response: responseAfterFiles(fileIds.length) })
-          },
-          'REQUIREMENT_FILE_REMOVED',
-          { fileId },
-        )
+        editRequirement(actor, id, (filing, context) => decideRequirementFileDetach(filing, code, fileId, context))
 
       const addDocument = Effect.fn('Filings.addDocument')(function* (
         actor: Actor,
@@ -361,32 +257,10 @@ export class Filings extends Context.Service<
         document: { type: 'RETURN' | 'PAYMENT_SLIP'; fileId: Id<'file'> },
       ) {
         const filing = yield* find(actor, id)
-        if (actor.kind !== 'AGENCY') {
-          return yield* new FilingActorNotAllowed({ action: 'ADD_DOCUMENT', requiredActorKind: 'AGENCY' })
-        }
-        if (!DOCUMENT_STATUSES.includes(filing.status)) return yield* new FilingLocked({ currentStatus: filing.status })
-        const { now, today } = yield* currentInstant
-        const next: FilingRecord = {
-          ...filing,
-          documents: attachDocument(filing.documents, document, now),
-          ...(document.type === 'PAYMENT_SLIP' && filing.status === 'FILED' ? { paymentSlipSentAt: now } : {}),
-          history: [
-            ...filing.history,
-            {
-              type: 'DOCUMENT_ADDED',
-              actorKind: actor.kind,
-              actorId: actor.userId,
-              fromStatus: null,
-              toStatus: null,
-              detail: { ...document },
-              occurredAt: now,
-            },
-          ],
-          version: filing.version + 1,
-          updatedAt: now,
-        }
-        yield* repository.save(next)
-        return toFiling(next, actor.kind, today)
+        const { today, context } = yield* decisionContext(actor)
+        const decision = yield* Effect.fromResult(decideDocumentAdd(filing, document, context))
+        yield* save(decision)
+        return toFiling(decision.filing, actor.kind, today)
       })
 
       const viewDocument = Effect.fn('Filings.viewDocument')(function* (
@@ -395,25 +269,14 @@ export class Filings extends Context.Service<
         documentId: FilingDocumentId,
       ) {
         const filing = yield* find(actor, id)
-        const document = filing.documents.find((candidate) => candidate.id === documentId)
-        if (
-          document === undefined ||
-          (actor.kind === 'CLIENT' && !isDocumentVisibleToClient(document, filing.status))
-        ) {
-          return yield* new FilingDocumentNotFound({})
+        const { context } = yield* decisionContext(actor)
+        const decision = yield* Effect.fromResult(decideDocumentView(filing, documentId, context))
+        if (decision.filing === null) return decision.document
+        yield* repository.save(decision.filing)
+        if (documentViewClosesReviewCard(decision.document.type, actor.kind)) {
+          yield* cards.closeFilingCard(filing, 'REVIEW_FILING_RESULT', context.at)
         }
-        if (actor.kind !== 'CLIENT' || document.firstViewedAt !== null) return document
-
-        const { now } = yield* currentInstant
-        const viewed = { ...document, firstViewedAt: now }
-        yield* repository.save({
-          ...filing,
-          documents: filing.documents.map((candidate) => (candidate.id === documentId ? viewed : candidate)),
-        })
-        if (documentViewClosesReviewCard(document.type, actor.kind)) {
-          yield* cards.closeFilingCard(filing, 'REVIEW_FILING_RESULT', now)
-        }
-        return viewed
+        return decision.document
       })
 
       const syncPayrollLedger = Effect.fn('Filings.syncPayrollLedger')(function* (
@@ -426,13 +289,13 @@ export class Filings extends Context.Service<
         })
         const { now } = yield* currentInstant
         for (const filing of filings) {
-          if (filing.status === 'CANCELED') continue
-          const relinked = yield* relinkAutoRequirements(payrollLedgers, filing, now, {
+          if (filing.status === 'CANCELED' || !hasAutoLinkedRequirements(filing)) continue
+          const summary = yield* payrollLedgers.summaryFor(companyId, filing.periodStart, filing.periodEnd)
+          const decision = decidePayrollLedgerRelink(filing, summary, now, {
             paymentMonth,
             lastDay: lastDayOfMonth(paymentMonth),
           })
-          if (!relinked.changed) continue
-          yield* repository.save({ ...relinked.filing, version: filing.version + 1, updatedAt: now })
+          if (decision !== null) yield* save(decision)
         }
       })
 
@@ -453,72 +316,9 @@ export class Filings extends Context.Service<
   )
 }
 
-/** 커맨드가 바꾸는 신고 건 값입니다. 상태·이력·버전은 `apply`가 맡습니다. */
-function commandPatch(filing: FilingRecord, input: FilingCommandInput, now: string): Partial<FilingRecord> {
-  switch (input.command) {
-    case 'REQUEST':
-      return { submitDue: input.submitDue }
-    case 'REJECT':
-      return { submitDue: input.submitDue }
-    case 'UPLOAD_LEDGER':
-      return {
-        documents: attachDocument(filing.documents, { type: 'LEDGER', fileId: input.ledgerFileId }, now),
-        ledgerUploadedAt: now,
-        ledgerConfirmedAt: null,
-      }
-    case 'CONFIRM_LEDGER':
-      return { ledgerConfirmedAt: now }
-    case 'DISPUTE_LEDGER':
-      return { ledgerDisputeCount: filing.ledgerDisputeCount + 1 }
-    case 'FILE': {
-      let documents = attachDocument(filing.documents, { type: 'RETURN', fileId: input.returnFileId }, now)
-      if (input.paymentSlipFileId !== undefined) {
-        documents = attachDocument(documents, { type: 'PAYMENT_SLIP', fileId: input.paymentSlipFileId }, now)
-      }
-      const hasSlip = documents.some((document) => document.type === 'PAYMENT_SLIP' && document.replacedAt === null)
-      return {
-        documents,
-        payableAmount: input.payableAmount,
-        paymentDue: input.paymentDue ?? filing.paymentDue ?? filing.dueDate,
-        paymentSlipSentAt: hasSlip ? now : null,
-      }
-    }
-    case 'RECORD_NOTICE':
-      return {
-        documents: attachDocument(filing.documents, { type: 'NOTICE', fileId: input.noticeFileId }, now),
-        payableAmount: input.payableAmount,
-        paymentDue: input.paymentDue,
-        paymentSlipSentAt: now,
-      }
-    case 'PAY':
-      return { settlement: 'PAID', paidOn: input.paidOn }
-    case 'CLOSE':
-      return { settlement: (filing.payableAmount ?? 0) < 0 ? 'REFUND' : 'NO_PAYMENT' }
-    default:
-      return {}
-  }
-}
-
-function historyEntry(
-  actor: Actor,
-  input: FilingCommandInput,
-  from: FilingStatus,
-  to: FilingStatus,
-  now: string,
-  onBehalfOf: 'CLIENT' | undefined,
-): FilingHistoryRecord {
-  const { command, ...rest } = input
-  const detail = Object.fromEntries(
-    Object.entries(rest).filter(([, value]) => value !== undefined),
-  ) as FilingHistoryRecord['detail']
-  return {
-    type: command as FilingCommand,
-    actorKind: actor.kind,
-    actorId: actor.userId,
-    ...(onBehalfOf === undefined ? {} : { onBehalfOf }),
-    fromStatus: from,
-    toStatus: to,
-    detail,
-    occurredAt: now,
-  }
-}
+/** 요청의 행위자와 지금 시각으로 판정 문맥을 만듭니다. 오늘(`today`)은 응답의 파생 필드에 씁니다. */
+const decisionContext = (actor: Actor) =>
+  Effect.map(currentInstant, ({ now, today }) => ({
+    today,
+    context: { at: now, actor: { kind: actor.kind, userId: actor.userId } } satisfies FilingDecisionContext,
+  }))
