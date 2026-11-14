@@ -191,21 +191,6 @@ export class Employees extends Context.Service<
 
       const settlementsOf = (record: EmployeeRecord) => settlements.settlementsOf(record.companyId, record.id)
 
-      const markAssigned = (record: EmployeeRecord) =>
-        Effect.forEach(
-          [record.departmentId, record.positionId].filter((id) => id !== undefined),
-          (id) =>
-            units.find(record.companyId, id).pipe(
-              Effect.flatMap(
-                Option.match({
-                  onNone: () => Effect.void,
-                  onSome: (unit) => (unit.everAssigned ? Effect.void : units.save({ ...unit, everAssigned: true })),
-                }),
-              ),
-            ),
-          { discard: true },
-        )
-
       return Employees.of({
         list: Effect.fn('Employees.list')(function* (actor, filter) {
           const asOf = filter.asOf ?? (yield* today)
@@ -225,11 +210,11 @@ export class Employees extends Context.Service<
             isForeigner: input.isForeigner ?? false,
           })
           const now = yield* nowIso
-          const { employee: record } = yield* Effect.fromResult(
+          const { employee: record, assignedUnits } = yield* Effect.fromResult(
             decideEmployeeCreation({ ...input, id: newId('employee'), companyId: actor.companyId }, facts, now),
           )
           yield* employees.save(record)
-          yield* markAssigned(record)
+          yield* Effect.forEach(assignedUnits, units.save, { discard: true })
           if (record.kind === 'WAGE' && record.registrationNumberEncrypted !== undefined) {
             yield* queueFiling(record, 'ACQUISITION', { acquisitionDate: record.joinDate }, now)
           }
@@ -243,9 +228,11 @@ export class Employees extends Context.Service<
             ...patch,
             isForeigner: patch.isForeigner ?? record.isForeigner,
           })
-          const { employee: next } = yield* Effect.fromResult(decideEmployeeUpdate(record, patch, facts, yield* nowIso))
+          const { employee: next, assignedUnits } = yield* Effect.fromResult(
+            decideEmployeeUpdate(record, patch, facts, yield* nowIso),
+          )
           yield* employees.save(next)
-          yield* markAssigned(next)
+          yield* Effect.forEach(assignedUnits, units.save, { discard: true })
           return yield* viewOf(next)
         }),
 

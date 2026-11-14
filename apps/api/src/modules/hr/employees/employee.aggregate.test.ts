@@ -114,6 +114,19 @@ describe('직원 수정 판정', () => {
     expect(result.success.employee.version).toBe(before.version + 1)
   })
 
+  it('부서를 배치하면 그 부서의 배치 표시를 켜서 함께 돌려주고, 이미 켜진 단위는 다시 저장하지 않습니다', () => {
+    const placed = decideEmployeeUpdate(record(), { departmentId: DEPARTMENT }, NO_NUMBER, AT)
+    const again = decideEmployeeUpdate(
+      record({ departmentId: DEPARTMENT }),
+      { name: '박세무' },
+      { ...NO_NUMBER, units: UNITS.map((unit) => ({ ...unit, everAssigned: true })) },
+      AT,
+    )
+    if (Result.isFailure(placed) || Result.isFailure(again)) throw new Error('판정 실패')
+    expect(placed.success.assignedUnits).toEqual([{ ...UNITS[0], everAssigned: true }])
+    expect(again.success.assignedUnits).toEqual([])
+  })
+
   it('자기 자신은 중복으로 보지 않습니다', () => {
     const result = decideEmployeeUpdate(
       record(),
