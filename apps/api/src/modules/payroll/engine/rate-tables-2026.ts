@@ -283,7 +283,7 @@ export const RATES_2026_01: PayrollRateTable = {
     ),
     'wageIncomeTax.tableMinimumPay': confirmed(`${SIMPLE_TAX_TABLE_2024} 제6호 첫 행 770천원`),
     'wageIncomeTax.simpleTaxTable': confirmed(
-      `${SIMPLE_TAX_TABLE_2024} 제6호 표 646행과 10,000천원 행(300만원·1명 74,350원). 홈택스 엑셀과 법령 PDF를 옮긴 두 자료가 모두 같음(2026-11-14)`,
+      `${SIMPLE_TAX_TABLE_2024} 제6호 표 646행과 10,000천원 행(300만원·1명 74,350원). 홈택스 엑셀·법령 PDF의 공개 전사본 2종을 대조해 모두 같음, 원본 미대조(2026-11-14, #99)`,
     ),
     'wageIncomeTax.taxRoundingUnit': confirmed(
       `국고금관리법 제47조제1항: 국고금 수입의 10원 미만 끝수는 계산하지 않음. ${law('국고금관리법', '제47조')}`,
@@ -362,7 +362,7 @@ export const RATES_2026_03: PayrollRateTable = {
     'wageIncomeTax.tableRowBands': confirmed(`${SIMPLE_TAX_TABLE_2026} 제6호 월급여액 구간`),
     'wageIncomeTax.tableMinimumPay': confirmed(`${SIMPLE_TAX_TABLE_2026} 제6호 첫 행 770천원`),
     'wageIncomeTax.simpleTaxTable': confirmed(
-      `${SIMPLE_TAX_TABLE_2026} 제6호: 표 금액은 2024 별표와 같음(홈택스 "근로소득 간이세액표_2026.03.01.xlsx"와 대조, 2026-11-14)`,
+      `${SIMPLE_TAX_TABLE_2026} 제6호: 표 금액은 2024 별표와 같음(홈택스 "근로소득 간이세액표_2026.03.01.xlsx" 전사본과 대조, 원본 미대조, #99)`,
     ),
   },
 }

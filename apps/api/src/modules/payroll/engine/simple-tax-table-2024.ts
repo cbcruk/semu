@@ -8,6 +8,7 @@ import type { SimpleTaxTable } from './rate-table.types.ts'
  *
  * 출처는 국세청 홈택스 "근로소득 간이세액표_2026.03.01.xlsx"와 국가법령정보센터 별표 PDF를 각각 옮긴 두 자료이고,
  * 646행 × 11열과 10,000천원 행이 모두 같은 것을 확인했습니다(2026-11-14, `docs/reference/rules/simple-income-tax.md`).
+ * 두 자료 모두 공개 전사본이라 원본과의 대조는 #99에 남겼습니다.
  * 행은 `[하한(이상), 상한(미만), 공제대상가족 1명 … 11명]`이고 금액은 원입니다.
  */
 export const OFFICIAL_SIMPLE_TAX_TABLE_2024: SimpleTaxTable = {
