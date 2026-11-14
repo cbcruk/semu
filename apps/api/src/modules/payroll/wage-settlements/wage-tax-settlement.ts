@@ -9,7 +9,7 @@ const Year = Schema.String.pipe(Schema.check(Schema.isPattern(/^\d{4}$/)))
 
 /** 근로자가 소득·세액공제 신고서로 낸 금액 중 엔진이 계산하지 않는 것입니다. */
 export const WageSettlementInputSchema = Schema.Struct({
-  /** 그 밖의 소득공제 합계(주택자금, 신용카드 등)입니다. */
+  /** 그 밖의 소득공제 합계(신용카드 등 조세특례제한법 소득공제)입니다. 표준세액공제를 받아도 뺍니다. */
   otherIncomeDeductions: Schema.optionalKey(Won),
   /** 그 밖의 세액공제 합계(자녀, 연금계좌, 보험료·의료비·교육비·기부금, 월세 등)입니다. */
   otherTaxCredits: Schema.optionalKey(Won),

@@ -100,11 +100,13 @@ export function earliestSettlementPaymentDate(kind: WageSettlementKind, year: st
  * 한 해 근로소득의 결정세액과 차감징수세액을 계산합니다.
  *
  * 단계: 총급여 → 근로소득공제(한도) → 근로소득금액 → 인적공제(기본공제 1인 150만원 × 공제대상가족) → 연금보험료공제(국민연금
- * 근로자 부담분) → 특별소득공제(건강·장기요양·고용보험료)와 그 밖의 소득공제(입력) → 과세표준 → 기본세율 → 근로소득세액공제(한도)
- * → 그 밖의 세액공제(입력) → 결정세액. 지방소득세는 결정세액의 10%(10원 미만 절사)입니다.
+ * 근로자 부담분) → 보험료 특별소득공제(건강·장기요양·고용보험료 근로자 부담분, 소득세법 제52조제1항)와 그 밖의 소득공제(입력) →
+ * 과세표준 → 기본세율 → 근로소득세액공제(한도) → 그 밖의 세액공제(입력) 또는 표준세액공제 → 결정세액. 지방소득세는 결정세액의
+ * 10%(10원 미만 절사)입니다.
  *
- * 특별소득공제·특별세액공제를 신청하지 않으면 표준세액공제(연 13만원)를 받습니다(소득세법 제59조의4제9항). 두 방법을 모두 계산해
- * 결정세액이 적은 쪽을 고릅니다(같으면 특별공제). 차감징수세액은 결정세액 − 기납부세액이고 10원 미만은 0 쪽으로 버립니다. 음수면 환급입니다.
+ * 특별세액공제를 신청하지 않으면 표준세액공제(연 13만원)를 받습니다(소득세법 제59조의4제9항, 원문 미대조). 표준세액공제는 보험료
+ * 소득공제를 대신하지 않으므로 과세표준은 두 방법이 같고, 그 밖의 세액공제 합계와 13만원 중 결정세액이 적은 쪽을 고릅니다(같으면
+ * 특별세액공제). 주택자금 특별소득공제는 표준세액공제와 함께 받을 수 없지만 따로 모델링하지 않습니다. 차감징수세액은 결정세액 − 기납부세액이고 10원 미만은 0 쪽으로 버립니다. 음수면 환급입니다.
  *
  * 자녀세액공제(소득세법 제59조의2)·연금계좌·의료비 등은 따로 계산하지 않고 그 밖의 세액공제 입력으로 받습니다.
  */
@@ -124,15 +126,12 @@ export function calculateWageSettlement(
   const 그밖의소득공제 = input.otherIncomeDeductions ?? 0
   const 그밖의세액공제 = input.otherTaxCredits ?? 0
 
-  const 결정 = (특별공제: boolean) => {
-    const 과세표준 = Math.max(
-      0,
-      근로소득금액 - 인적공제 - 연금보험료공제 - (특별공제 ? 보험료공제 + 그밖의소득공제 : 0),
-    )
-    const 산출세액 = progressiveTax(과세표준, rates)
-    const 근로소득세액공제 = earnedIncomeCreditOf(산출세액, 총급여, rates)
-    const 표준세액공제 = 특별공제 ? 0 : 근로소득세기준.standardTaxCredit
-    const 결정세액 = Math.max(0, 산출세액 - 근로소득세액공제 - 표준세액공제 - (특별공제 ? 그밖의세액공제 : 0))
+  const 과세표준 = Math.max(0, 근로소득금액 - 인적공제 - 연금보험료공제 - 보험료공제 - 그밖의소득공제)
+  const 산출세액 = progressiveTax(과세표준, rates)
+  const 근로소득세액공제 = earnedIncomeCreditOf(산출세액, 총급여, rates)
+  const 결정 = (특별세액공제: boolean) => {
+    const 표준세액공제 = 특별세액공제 ? 0 : 근로소득세기준.standardTaxCredit
+    const 결정세액 = Math.max(0, 산출세액 - 근로소득세액공제 - 표준세액공제 - (특별세액공제 ? 그밖의세액공제 : 0))
     return { 과세표준, 산출세액, 근로소득세액공제, 표준세액공제, 결정세액 }
   }
   const 특별 = 결정(true)
@@ -146,13 +145,13 @@ export function calculateWageSettlement(
     earnedIncome: 근로소득금액,
     personalDeduction: 인적공제,
     pensionDeduction: 연금보험료공제,
-    insuranceDeduction: 특별공제인가 ? 보험료공제 : 0,
-    otherIncomeDeductions: 특별공제인가 ? 그밖의소득공제 : 0,
+    insuranceDeduction: 보험료공제,
+    otherIncomeDeductions: 그밖의소득공제,
     taxBase: 고른.과세표준,
     calculatedTax: 고른.산출세액,
     earnedIncomeCredit: 고른.근로소득세액공제,
     standardTaxCredit: 고른.표준세액공제,
-    otherTaxCredits: 특별공제인가 ? Math.min(그밖의세액공제, Math.max(0, 고른.산출세액 - 고른.근로소득세액공제)) : 0,
+    otherTaxCredits: 특별공제인가 ? Math.min(그밖의세액공제, Math.max(0, 산출세액 - 근로소득세액공제)) : 0,
     deductionMethod: 특별공제인가 ? 'ITEMIZED' : 'STANDARD',
     determinedTax: 고른.결정세액,
     determinedLocalIncomeTax: 결정지방소득세,

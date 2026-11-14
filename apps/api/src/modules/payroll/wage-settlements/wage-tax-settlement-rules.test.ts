@@ -131,11 +131,12 @@ describe('지급일', () => {
 })
 
 describe('calculateWageSettlement', () => {
-  it('특별소득공제가 표준세액공제보다 유리하면 특별공제로 결정세액을 계산합니다', () => {
+  it('그 밖의 세액공제가 표준세액공제보다 많으면 특별세액공제로 결정세액을 계산합니다', () => {
     // 총급여 3,600만원: 근로소득공제 750만 + (3,600만 − 1,500만) × 15% = 1,065만
     // 과세표준 2,535만 − 150만 − 171만 − 182.4만 = 2,031.6만 → 산출세액 2,031.6만 × 15% − 126만 = 1,787,400
-    // 근로소득세액공제 min(71.5만 + 48.74만 × 30%, 74만 − 300만 × 0.8%) = 716,000 → 결정세액 1,071,400
-    const result = calculateWageSettlement(YEAR_TOTALS, 1, {}, RATES_2026_01)
+    // 근로소득세액공제 min(71.5만 + 48.74만 × 30%, 74만 − 300만 × 0.8%) = 716,000
+    // 그 밖의 세액공제 20만원 → 결정세액 871,400 (표준세액공제면 941,400)
+    const result = calculateWageSettlement(YEAR_TOTALS, 1, { otherTaxCredits: 200_000 }, RATES_2026_01)
 
     expect(result).toEqual({
       totalPay: 36_000_000,
@@ -149,31 +150,29 @@ describe('calculateWageSettlement', () => {
       calculatedTax: 1_787_400,
       earnedIncomeCredit: 716_000,
       standardTaxCredit: 0,
-      otherTaxCredits: 0,
+      otherTaxCredits: 200_000,
       deductionMethod: 'ITEMIZED',
-      determinedTax: 1_071_400,
-      determinedLocalIncomeTax: 107_140,
+      determinedTax: 871_400,
+      determinedLocalIncomeTax: 87_140,
       withheldIncomeTax: 1_000_000,
       withheldLocalIncomeTax: 100_000,
-      balanceIncomeTax: 71_400,
-      balanceLocalIncomeTax: 7_140,
+      balanceIncomeTax: -128_600,
+      balanceLocalIncomeTax: -12_860,
     })
   })
 
-  it('특별공제할 것이 없으면 표준세액공제 13만원을 받습니다', () => {
-    // 과세표준 2,214만 → 산출세액 2,061,000 − 716,000 − 130,000 = 1,215,000 (특별공제면 1,345,000)
-    const result = calculateWageSettlement(
-      { ...YEAR_TOTALS, healthInsurance: 0, employmentInsurance: 0 },
-      1,
-      {},
-      RATES_2026_01,
-    )
+  it('그 밖의 세액공제가 13만원보다 적으면 표준세액공제를 받고 보험료 소득공제는 그대로 둡니다', () => {
+    // 과세표준·산출세액은 같고 1,787,400 − 716,000 − 130,000 = 941,400 (특별세액공제 5만원이면 1,021,400)
+    const result = calculateWageSettlement(YEAR_TOTALS, 1, { otherTaxCredits: 50_000 }, RATES_2026_01)
 
     expect(result).toMatchObject({
       deductionMethod: 'STANDARD',
-      insuranceDeduction: 0,
+      insuranceDeduction: 1_824_000,
+      taxBase: 20_316_000,
       standardTaxCredit: 130_000,
-      determinedTax: 1_215_000,
+      otherTaxCredits: 0,
+      determinedTax: 941_400,
+      balanceIncomeTax: -58_600,
     })
   })
 
@@ -245,8 +244,8 @@ describe('원천세 줄', () => {
         headcount: 2,
         grossPay: 76_800_000,
         taxablePay: 72_000_000,
-        incomeTax: 142_800,
-        localIncomeTax: 14_280,
+        incomeTax: -117_200,
+        localIncomeTax: -11_720,
       },
       {
         incomeKind: 'WAGE_ANNUAL_SETTLEMENT',
@@ -254,8 +253,8 @@ describe('원천세 줄', () => {
         headcount: 1,
         grossPay: 38_400_000,
         taxablePay: 36_000_000,
-        incomeTax: 71_400,
-        localIncomeTax: 7_140,
+        incomeTax: -58_600,
+        localIncomeTax: -5_860,
       },
     ])
     const totals = withholdingTotalsPaidIn(
