@@ -1,5 +1,5 @@
 import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
-import { Clock, Context, Effect, Layer, Option } from 'effect'
+import { Clock, Context, Effect, Layer, Option, Result } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { AccessTokens, hashAccessToken } from '../access-tokens.ts'
@@ -8,6 +8,7 @@ import { ActorDirectory } from '../access/actor-directory.ts'
 import { isAgentKind } from '../access/agent-directory.ts'
 import { verifyPassword } from '../accounts/password-hash.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
+import { decideSignIn, planSignIn, type UserChange, type UserRejection } from '../accounts/user.aggregate.ts'
 import { AccountLocked, InvalidCredentials, normalizeEmail, toUserProfile } from '../accounts/user.ts'
 import type { UserRecord } from '../accounts/user.ts'
 import { AuditLog } from '../audit/audit-log.ts'
@@ -29,8 +30,7 @@ export const SHORT_SESSION_SECONDS = 86_400
 /** `staySignedIn`으로 로그인한 세션의 수명(초)입니다. */
 export const LONG_SESSION_SECONDS = 14 * 86_400
 
-/** 이만큼 연속으로 틀리면 계정을 잠급니다. */
-export const MAX_FAILED_SIGN_INS = 5
+export { MAX_FAILED_SIGN_INS } from '../accounts/user.aggregate.ts'
 
 /** 공개 데모 계정의 로그인 ID입니다. 데모 계정은 읽기만 합니다. */
 export const DEMO_EMAIL = 'demo@semu.example'
@@ -194,28 +194,29 @@ export class Sessions extends Context.Service<
         return { grant: bound.grant, refreshToken: `${session.id}.${secret}`, refreshMaxAge: lifetime }
       })
 
+      /** 판정이 남기라는 사용자 변경과 감사 기록을 저장합니다. */
+      const applyUserChange = Effect.fn('Sessions.applyUserChange')(function* (change: UserChange) {
+        if (change.user !== undefined) yield* users.save(change.user)
+        for (const entry of change.audit) yield* audit.record(entry)
+      })
+
+      /** 거부를 돌려줍니다. 남길 것이 있으면 저장하고 실패 응답에도 커밋합니다(M1). */
+      const reject = <E>(rejection: UserRejection<E>) =>
+        Effect.gen(function* () {
+          if (rejection.keep !== undefined) {
+            yield* applyUserChange(rejection.keep)
+            yield* keepChanges
+          }
+          return yield* Effect.fail(rejection.error)
+        })
+
       const signIn = Effect.fn('Sessions.signIn')(function* (input: SignInInput) {
-        const found = yield* users.findByEmail(normalizeEmail(input.email))
-        if (Option.isNone(found) || found.value.status !== 'ACTIVE' || found.value.isDemo) {
-          yield* audit.record({ action: 'SIGN_IN_FAILED', detail: 'unknown or inactive account' })
-          yield* keepChanges
-          return yield* new InvalidCredentials({})
-        }
-        const user = found.value
-        if (user.failedSignInCount >= MAX_FAILED_SIGN_INS) return yield* new AccountLocked({})
-        if (!verifyPassword(input.password, user.passwordHash)) {
-          const failed = user.failedSignInCount + 1
-          yield* users.save({ ...user, failedSignInCount: failed })
-          yield* audit.record({
-            action: failed >= MAX_FAILED_SIGN_INS ? 'ACCOUNT_LOCKED' : 'SIGN_IN_FAILED',
-            actorUserId: user.id,
-          })
-          yield* keepChanges
-          return yield* failed >= MAX_FAILED_SIGN_INS
-            ? Effect.fail(new AccountLocked({}))
-            : Effect.fail(new InvalidCredentials({}))
-        }
-        if (user.failedSignInCount > 0) yield* users.save({ ...user, failedSignInCount: 0 })
+        const planned = planSignIn(Option.getOrUndefined(yield* users.findByEmail(normalizeEmail(input.email))))
+        if (Result.isFailure(planned)) return yield* reject(planned.failure)
+        const user = planned.success
+        const decided = decideSignIn(user, verifyPassword(input.password, user.passwordHash))
+        if (Result.isFailure(decided)) return yield* reject(decided.failure)
+        yield* applyUserChange(decided.success)
         const issued = yield* open(user.id, { staySignedIn: input.staySignedIn ?? false, companyId: input.companyId })
         yield* audit.record({ action: 'SIGN_IN_SUCCEEDED', actorUserId: user.id, companyId: issued.grant.company?.id })
         return issued

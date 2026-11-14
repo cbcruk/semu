@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Option, Schema } from 'effect'
 import { ActorDirectory } from '../access/actor-directory.ts'
 import { hashPassword, verifyPassword } from '../accounts/password-hash.ts'
-import { passwordViolations } from '../accounts/password-policy.ts'
+import { decidePasswordChange, planPasswordChange } from '../accounts/user.aggregate.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
 import {
   DemoReadOnly,
@@ -108,19 +108,18 @@ export class MeService extends Context.Service<
         input: { currentPassword: string; newPassword: string },
       ) {
         if (actor.isDemo) return yield* new DemoReadOnly({})
-        const user = yield* users.findById(actor.userId)
-        if (Option.isNone(user) || !verifyPassword(input.currentPassword, user.value.passwordHash)) {
-          return yield* new InvalidCredentials({})
-        }
-        const violations = passwordViolations(input.newPassword)
-        if (violations.length > 0) {
-          return yield* new PasswordPolicyViolated({
-            violations: violations.map((code) => ({ field: 'newPassword', code })),
-          })
-        }
-        yield* users.save({ ...user.value, passwordHash: hashPassword(input.newPassword), failedSignInCount: 0 })
+        const found = Option.getOrUndefined(yield* users.findById(actor.userId))
+        const user = yield* Effect.fromResult(
+          planPasswordChange(
+            found,
+            found !== undefined && verifyPassword(input.currentPassword, found.passwordHash),
+            input.newPassword,
+          ),
+        )
+        const change = decidePasswordChange(user, hashPassword(input.newPassword), actor.companyId)
+        yield* users.save(change.user)
         yield* sessions.revokeAll(actor.userId, 'PASSWORD_CHANGED')
-        yield* audit.record({ action: 'PASSWORD_CHANGED', actorUserId: actor.userId, companyId: actor.companyId })
+        for (const entry of change.audit) yield* audit.record(entry)
       })
 
       return MeService.of({ profile, changePassword })
