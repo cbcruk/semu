@@ -1,4 +1,4 @@
-import { Clock, Context, Effect, Layer, Option } from 'effect'
+import { Clock, Context, Effect, Layer } from 'effect'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../actor.types.ts'
@@ -7,14 +7,10 @@ import { Sessions } from '../sessions/sessions.ts'
 import { TermRepository } from './term-repository.ts'
 import { applicablePurposes, consentStatus } from './terms-consent.ts'
 import type { TermPurpose } from './terms-consent.types.ts'
-import { RequiredTermDeclined, RequiredTermsMissing, TermVersionOutdated } from './term.ts'
-import type { AgreementRecord, Term, TermAgreement } from './term.ts'
+import { decideSignupAgreements, decideTermResponses, type TermDecision } from './term-agreement.aggregate.ts'
+import type { RequiredTermDeclined, RequiredTermsMissing, Term, TermAgreement, TermVersionOutdated } from './term.ts'
 
-/** 약관 응답 하나입니다. */
-export interface TermDecision {
-  termId: Id<'term'>
-  agreed: boolean
-}
+export type { TermDecision }
 
 /** 약관 조회와 동의 기록입니다. */
 export class Terms extends Context.Service<
@@ -75,35 +71,9 @@ export class Terms extends Context.Service<
 
       const decide = Effect.fn('Terms.decide')(function* (actor: Actor, decisions: ReadonlyArray<TermDecision>) {
         const applicable = yield* repository.listCurrent(applicablePurposes(actor.plans), yield* today)
-        const outdated = decisions.filter((decision) => !applicable.some((term) => term.id === decision.termId))
-        if (outdated.length > 0) return yield* new TermVersionOutdated({ termIds: outdated.map((d) => d.termId) })
-        const declined = decisions.flatMap((decision) => {
-          const term = applicable.find((entry) => entry.id === decision.termId)
-          return term !== undefined && term.required && !decision.agreed ? [term.code] : []
-        })
-        if (declined.length > 0) return yield* new RequiredTermDeclined({ termCodes: declined })
-
-        const decidedAt = yield* nowIso
-        yield* repository.appendAgreements(
-          decisions.map((decision): AgreementRecord => {
-            const term = applicable.find((entry) => entry.id === decision.termId)!
-            return {
-              userId: actor.userId,
-              termId: term.id,
-              code: term.code,
-              version: term.version,
-              agreed: decision.agreed,
-              decidedAt,
-            }
-          }),
-        )
-        yield* audit.record({
-          action: 'TERMS_DECIDED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          detail: decisions.map((d) => `${d.termId}=${d.agreed ? 'AGREED' : 'DECLINED'}`).join(','),
-        })
+        const decision = yield* Effect.fromResult(decideTermResponses(applicable, decisions, actor, yield* nowIso))
+        yield* repository.appendAgreements(decision.agreements)
+        for (const entry of decision.audit) yield* audit.record(entry)
         yield* sessions.invalidateAccess(actor.userId)
         return yield* agreementsOf(actor)
       })
@@ -113,26 +83,8 @@ export class Terms extends Context.Service<
         agreedTermIds: ReadonlyArray<Id<'term'>>,
       ) {
         const terms = yield* repository.listCurrent(['SIGNUP'], yield* today)
-        const unknown: string[] = []
-        for (const id of agreedTermIds) {
-          if (terms.some((term) => term.id === id)) continue
-          const found = yield* repository.findById(id)
-          unknown.push(Option.isSome(found) ? found.value.id : id)
-        }
-        if (unknown.length > 0) return yield* new TermVersionOutdated({ termIds: unknown })
-        const missing = terms.filter((term) => term.required && !agreedTermIds.includes(term.id))
-        if (missing.length > 0) return yield* new RequiredTermsMissing({ termCodes: missing.map((term) => term.code) })
-        const decidedAt = yield* nowIso
-        yield* repository.appendAgreements(
-          terms.map((term) => ({
-            userId,
-            termId: term.id,
-            code: term.code,
-            version: term.version,
-            agreed: agreedTermIds.includes(term.id),
-            decidedAt,
-          })),
-        )
+        const decision = yield* Effect.fromResult(decideSignupAgreements(terms, agreedTermIds, userId, yield* nowIso))
+        yield* repository.appendAgreements(decision.agreements)
       })
 
       return Terms.of({ current, agreementsOf, decide, recordSignup })
