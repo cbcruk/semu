@@ -650,6 +650,37 @@ describe('/severance-settlements 중간정산과 기산일', () => {
     expect(first.body).toMatchObject({ code: 'SEVERANCE_LATER_SETTLEMENT_COMPLETED', settlementId: secondId })
   })
 
+  it('같은 기준일의 제외한 중간정산이 있어도 계산됨 정산이 있으면 409입니다', async () => {
+    const other = 'emp_01JBQ000000000000000000024' as Id<'employee'>
+    const app2 = payrollTestApp([
+      clockAt('2026-11-14T10:00:00+09:00'),
+      PayrollEmployeeDirectory.layerMemory([{ companyId: TEST_COMPANY_ID, employee: testEmployee({ id: other }) }]),
+    ])
+    try {
+      const create = (settlementDate: string) =>
+        app2.request('POST', '/severance-settlements', {
+          body: {
+            kind: 'INTERIM',
+            employeeId: other,
+            settlementDate,
+            interimReason: 'HOME_PURCHASE',
+            input: { threeMonthWages: 9_000_000 },
+          },
+        })
+      const excluded = await create('2026-03-31')
+      await app2.request('POST', `/severance-settlements/${excluded.body.id}:exclude`, { body: { reason: '다시' } })
+      const calculated = await create('2026-06-30')
+      expect(calculated.status).toBe(201)
+
+      const again = await create('2026-03-31')
+
+      expect(again.status).toBe(409)
+      expect(again.body).toMatchObject({ code: 'SEVERANCE_SETTLEMENT_EXISTS', settlementId: calculated.body.id })
+    } finally {
+      await app2.dispose()
+    }
+  })
+
   it('근속 1년 미만이거나 이미 퇴사한 직원은 중간정산할 수 없습니다', async () => {
     const newbie = await createInterim(NEWBIE, '2026-10-31')
     const left = await createInterim(LEFT_A, '2026-06-30')

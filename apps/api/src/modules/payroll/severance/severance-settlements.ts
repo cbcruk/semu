@@ -166,11 +166,11 @@ export const createSettlement = (payload: typeof CreateSeveranceSettlement.Type)
       if (rejection !== null) return yield* new SeveranceNotApplicable({ reason: rejection })
       // 아직 완료하지 않은 정산이 있으면 그것부터 끝냅니다. 기준일이 엇갈린 계산됨 정산이 둘이면 기산일이 서로를 따라 바뀝니다.
       const open = settlements.find(
-        (record) => record.status === 'CALCULATED' || record.lastWorkDate === payload.settlementDate,
+        (record) =>
+          record.status !== 'EXCLUDED' &&
+          (record.status === 'CALCULATED' || record.lastWorkDate === payload.settlementDate),
       )
-      if (open !== undefined && open.status !== 'EXCLUDED') {
-        return yield* new SeveranceSettlementExists({ settlementId: open.id })
-      }
+      if (open !== undefined) return yield* new SeveranceSettlementExists({ settlementId: open.id })
       lastWorkDate = payload.settlementDate
       interim = { kind: 'INTERIM', interimReason: payload.interimReason }
     } else {

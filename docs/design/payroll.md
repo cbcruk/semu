@@ -434,6 +434,7 @@ stateDiagram-v2
   - 기산일은 계산할 때(만들기·`PATCH`) 정해 정산에 저장합니다. 그 뒤 앞선 중간정산이 완료·다시 열기로 바뀌면 `:complete`가 409 `SEVERANCE_SERVICE_START_CHANGED`(`serviceStartDate`: 지금 기산일)입니다. `PATCH`(빈 본문도 됨)로 다시 계산한 뒤 완료합니다
   - 중간정산의 `:complete`·`:reopen`은 같은 직원의 기준일이 더 늦은 **완료** 정산이 있으면 409 `SEVERANCE_LATER_SETTLEMENT_COMPLETED`(`settlementId`)입니다. 완료한 늦은 정산의 기산일과 금액이 틀어지기 때문입니다. 늦은 정산을 먼저 다시 엽니다
   - 퇴직 정산은 마지막 완료 중간정산이 퇴직일과 같거나 늦으면 정산할 기간이 없어 422 `SEVERANCE_NOT_APPLICABLE`(`NO_SERVICE_AFTER_INTERIM`)입니다
+  - 퇴직소득세도 정산마다 그 기간(기산일~기준일)의 퇴직금으로 따로 계산합니다. 중간정산으로 받은 퇴직금은 그때 퇴직소득으로 원천징수를 끝냈기 때문입니다. 근로자가 중간정산분과 최종 퇴직분을 합쳐 다시 계산해 달라고 하는 정산특례(소득세법 제148조제2항)는 모델링하지 않습니다(원문 미대조, 근로자 신청 사항)
   - 이 필드 전에 저장한 정산은 `kind`·`serviceStartDate`가 없고 퇴직·입사일로 읽습니다
   - semu 밖에서 한 중간정산은 기준일이 지난 중간정산으로 만들어 완료하면 기산일에 들어갑니다. 지급일이 그 달이면 원천세 합계에도 들어가므로, 이미 신고한 달이면 지급일을 정하지 않거나 신고 잠금(409)을 따릅니다. HR 퇴직 정보의 중간정산일(`retirementPlan.interimSettlement`)은 아직 저장하지 않습니다
 - **HR 퇴직과의 맞춤.** HR은 `SeveranceSettlementLookup.settlementsOf`로 정산의 종류·상태·기준일을 받습니다. 완료한 **퇴직** 정산이 있으면 퇴사·퇴사 취소를, 완료 정산이 종류와 상관없이 있으면 직원 삭제를 409 `RETIREMENT_COMPLETED`로 막고, 퇴직일이 완료 중간정산 기준일보다 앞서면 422 `LEAVE_DATE_BEFORE_INTERIM`입니다([hr.md 퇴직](hr.md#퇴직))
