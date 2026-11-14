@@ -263,12 +263,13 @@ Tax 신고 건을 옮기며 정한 규약입니다(2026-11-14). 다음 애그리
 - **계산에 쓰는 참조 데이터는 사실로 넘깁니다.** 기준표는 코드에 컴파일된 참조 데이터라 서비스가 전체 판을 읽어 넘기고(`LedgerCalculationFacts`), 판정이 귀속월·지급월의 판을 고릅니다. 그래서 행을 저장할 때의 계산도 판정 안에서 하고, 그 달의 기준표가 없으면 거부(`RATE_TABLE_NOT_FOUND`)입니다
 - **판정이 무엇을 읽을지 정하면 순수 계획 함수를 함께 내보냅니다.** 대장 만들기는 종류(정기·추가)와 지급일을 정해야 신고 잠금을 물을 지급월과 HR 근로소득자를 읽을지가 정해집니다. 서비스는 `planLedgerCreation`으로 그것을 알아낸 뒤 읽고, 판정도 같은 함수를 부릅니다
 - **다른 컨텍스트의 사실은 커맨드가 건드릴 수 있는 범위만 읽습니다.** 원천세 신고 잠금은 지급월 집합(`filedPaymentMonths`)으로 받고, 서비스는 대장의 지급월과 바꾸려는 지급일의 달만 묻습니다. 판정이 거부하더라도 읽기에 부수 효과가 없으면 미리 읽습니다(행 추가의 HR 직원·명부 소득자)
+- **정산 둘은 같은 모양입니다.** 퇴직금·근로소득 정산은 HR 직원(근로소득 정산은 오늘과 정산 기준일 두 번, `wageSettlementBasisDate`)과 같은 회사 정산·대장, 기준표 전체, 신고 잠금을 사실로 받고, 원천세 합계가 바뀐 지급월 이벤트(`payroll_pay_month.withholding_changed`)를 판정이 만듭니다. 확정할 지급일처럼 판정이 채우는 값의 달은 `completionPaymentDate` 같은 순수 함수로 서비스가 먼저 알아 신고 잠금을 묻습니다
 - **같은 회사의 다른 대장에 걸친 이벤트도 판정이 만듭니다.** 지급월 마감·해제 이벤트는 같은 회사 대장 전체(`ledgers`)의 앞뒤를 비교해 판정이 만들고, 서비스는 `save(decision)`으로 저장·발행만 합니다
 
 ## 단계
 
 1. **시범: Tax 신고 건.** 마쳤습니다([filing.aggregate.ts](../../apps/api/src/modules/tax/filings/filing.aggregate.ts)). 동작은 바꾸지 않았습니다. 정한 것은 아래 [시범에서 정한 것](#시범에서-정한-것)에 있습니다
-2. **나머지 애그리거트.** 묶은 경계 표의 묶음과 거부하며 남기는 커맨드(M1)부터 옮깁니다. 컨텍스트 묶음마다 PR 하나이고 동작은 바꾸지 않습니다. 순서는 Payroll → HR → Documents → Identity & Access → Billing → Integrations → Bookkeeping입니다. Payroll은 큰 애그리거트부터 나눠 옮깁니다. 급여대장을 마쳤고(2026-11-14), 퇴직금 정산·근로소득 정산·나머지(설정·소득자 명부·항목)가 남았습니다
+2. **나머지 애그리거트.** 묶은 경계 표의 묶음과 거부하며 남기는 커맨드(M1)부터 옮깁니다. 컨텍스트 묶음마다 PR 하나이고 동작은 바꾸지 않습니다. 순서는 Payroll → HR → Documents → Identity & Access → Billing → Integrations → Bookkeeping입니다. Payroll은 큰 애그리거트부터 나눠 옮깁니다. 급여대장, 퇴직금 정산([severance-settlement.aggregate.ts](../../apps/api/src/modules/payroll/severance/severance-settlement.aggregate.ts)), 근로소득 정산([wage-tax-settlement.aggregate.ts](../../apps/api/src/modules/payroll/wage-settlements/wage-tax-settlement.aggregate.ts))을 마쳤고(2026-11-14), 판정할 규칙이 패치 하나뿐인 설정·소득자 명부·항목이 남았습니다
 3. **정책 기반.** 이벤트 행과 정책별 커서, 정책 실행기를 만들고([M2](#결정)) 지금 있는 채널 둘을 정책으로 옮깁니다
 4. **트랜잭션에서 정책으로 옮기기.** 위 [정책](#정책) 표의 "같은 트랜잭션"·"요청 안에서 호출"을 하나씩 옮깁니다. 응답이 바뀌는 것은 컨텍스트 문서를 함께 고칩니다
 
