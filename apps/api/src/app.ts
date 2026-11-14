@@ -18,7 +18,9 @@ import {
   IntegrationsHttpLive,
   IntegrationsStoreLive,
   ScrapQueueInlineLive,
+  ScrapRequestsLive,
 } from './modules/integrations/integrations.layer.ts'
+import { scheduledScrapTasks } from './modules/integrations/scrap-requests/scheduled-scrap-task.ts'
 import { PayrollHttpLive, PayrollStoreLive } from './modules/payroll/payroll.layer.ts'
 import { filingScheduleTask } from './modules/tax/calendar/filing-schedule-task.ts'
 import { FilingSchedulerLive, TaxHttpLive, TaxStoreLive } from './modules/tax/tax.layer.ts'
@@ -177,13 +179,19 @@ export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
  * | `documents.esign-expiry` | 매일 00:05 | 서명 기한이 지난 전자서명 요청 만료 |
  * | `tax.filing-schedule` | 매일 03:00 | 세무 기장 회사의 신고 건 만들기·기한 고치기·취소 |
  * | `billing.payment-schedule` | 매일 06:00 | 출금일 3일 전부터 전날까지 그달 월 이용료 결제 예정 만들기 |
+ * | `integrations.scrap.<기관>-<HHMM>` | 기관마다(`SCHEDULED_SCRAP_TIMES`) | 연동이 있는 회사마다 정기(시스템) 수집 요청 |
  */
-export const SCHEDULED_TASKS = [esignExpiryTask, filingScheduleTask, paymentScheduleTask] as const
+export const SCHEDULED_TASKS = [
+  esignExpiryTask,
+  filingScheduleTask,
+  paymentScheduleTask,
+  ...scheduledScrapTasks,
+] as const
 
 /** 정기 작업 실행기입니다. 시작할 때와 1분마다 지난 슬롯을 봅니다. 저장소·어댑터 위에 얹습니다. */
 const SchedulerLive = SchedulerRunnerLive().pipe(
   Layer.provide(Scheduler.layer(SCHEDULED_TASKS)),
-  Layer.provide(Layer.mergeAll(FilingSchedulerLive, PaymentsLive, EsignRequestsLive)),
+  Layer.provide(Layer.mergeAll(FilingSchedulerLive, PaymentsLive, EsignRequestsLive, ScrapRequestsLive)),
 )
 
 /** 서버가 정하는 실행 설정입니다. 테스트 앱은 정기 작업을 돌리지 않습니다. */

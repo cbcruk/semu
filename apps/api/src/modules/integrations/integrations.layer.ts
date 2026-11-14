@@ -32,7 +32,10 @@ import { ScrapRequestsHttpLive } from './scrap-requests/scrap-requests.http.ts'
 import { ScrapRequests } from './scrap-requests/scrap-requests.ts'
 import { ScrapQueue, ScrapWorker } from './scrap-requests/scrap-worker.ts'
 
-const ServicesLive = Layer.mergeAll(Integrations.layer, Certificates.layer, ScrapRequests.layer)
+/** 수집 요청 서비스입니다. 정기 수집 작업(`scheduled-scrap-task.ts`)도 씁니다. 저장소와 `ScrapQueue`는 호출하는 쪽이 넣습니다. */
+export const ScrapRequestsLive = ScrapRequests.layer
+
+const ServicesLive = Layer.mergeAll(Integrations.layer, Certificates.layer, ScrapRequestsLive)
 
 /**
  * 기관 연동·인증서·수집 요청·홈택스 수임동의 컨텍스트의 핸들러 전체입니다. 저장소와 외부 연동 포트는 호출하는 쪽이 넣습니다.
