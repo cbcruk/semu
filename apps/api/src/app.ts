@@ -6,6 +6,7 @@ import { Api } from './api.ts'
 import { AssistantHttpLive, AssistantStoreLive } from './modules/assistant/assistant.layer.ts'
 import { BillingHttpLive, BillingStoreLive, PaymentsLive } from './modules/billing/billing.layer.ts'
 import { paymentScheduleTask } from './modules/billing/payments/payment-schedule-task.ts'
+import { withdrawalResultTask } from './modules/billing/payments/withdrawal-result-task.ts'
 import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DocumentsHttpLive, DocumentsStoreLive, EsignRequestsLive } from './modules/documents/documents.layer.ts'
@@ -182,7 +183,8 @@ export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
  * | `documents.esign-expiry` | 매일 00:05 | 서명 기한이 지난 전자서명 요청 만료 |
  * | `tax.filing-schedule` | 매일 03:00 | 세무 기장 회사의 신고 건 만들기·기한 고치기·취소 |
  * | `payroll.regular-ledger` | 매일 04:00 | 자동 생성을 켠 회사에 임금산정 기간이 시작한 귀속월의 정기 급여대장 만들기 |
- * | `billing.payment-schedule` | 매일 06:00 | 출금일 3일 전부터 전날까지 그달 월 이용료 결제 예정 만들기 |
+ * | `billing.payment-schedule` | 매일 06:00 | 결제 예정을 구독·출금 동의에 다시 맞추고, 출금일 3일 전부터 전날까지 그달 월 이용료 결제 예정 만들기 |
+ * | `billing.withdrawal-results` | 매일 15:00 | 결과를 기다리는 출금일마다 CMS 결과 파일을 끌어와 결제 완료·실패 반영 |
  * | `integrations.scrap.<기관>-<HHMM>` | 기관마다(`SCHEDULED_SCRAP_TIMES`) | 연동이 있는 회사마다 정기(시스템) 수집 요청 |
  */
 export const SCHEDULED_TASKS = [
@@ -190,6 +192,7 @@ export const SCHEDULED_TASKS = [
   filingScheduleTask,
   regularLedgerTask,
   paymentScheduleTask,
+  withdrawalResultTask,
   ...scheduledScrapTasks,
 ] as const
 

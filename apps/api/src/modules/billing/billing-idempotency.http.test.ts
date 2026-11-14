@@ -1,4 +1,4 @@
-import { Effect, Layer } from 'effect'
+import { Effect, Layer, Option } from 'effect'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { Id } from '../../shared/ids/ids.types.ts'
 import { httpTestApp, type HttpTestApp, type HttpTestJson } from '../../shared/testing/http-test-app.ts'
@@ -34,6 +34,7 @@ function controlledCms(control: CmsControl) {
   return Layer.succeed(
     CmsGateway,
     CmsGateway.of({
+      withdrawalResults: () => Effect.succeed(Option.none()),
       registerAccount: (input) =>
         Effect.gen(function* () {
           control.calls.push(input.requestId)

@@ -29,6 +29,7 @@ import {
   plannedPayments,
   resultExpectedOn,
   schedulingMonthOn,
+  withdrawalsAwaitingResult,
 } from './payment-schedule.ts'
 import type { PaymentAction, PaymentEvent, PaymentStatus } from './payment-schedule.types.ts'
 import { PaymentNotFound, PaymentTransitionInvalid, RetryDateInvalid } from './payment.ts'
@@ -128,6 +129,8 @@ export class Payments extends Context.Service<
     reconcile(today: string, companyId?: Id<'company'>): Effect.Effect<PaymentReconciliation>
     /** CMS 결과를 반영합니다. 이미 반영된 결제(완료·실패)에 같은 결과가 다시 오면 그대로 둡니다. */
     recordWithdrawal(paymentId: PaymentId, result: WithdrawalResult): Effect.Effect<Option.Option<PaymentRecord>>
+    /** 출금 결과를 기다리는 결제를 출금일별로 돌려줍니다({@link withdrawalsAwaitingResult}). 결과 파일을 끌어올 때 씁니다. */
+    awaitingResults(today: string): Effect.Effect<Array<{ withdrawnOn: string; payments: PaymentRecord[] }>>
   }
 >()('semu/billing/Payments') {
   static readonly layer = Layer.effect(
@@ -316,6 +319,7 @@ export class Payments extends Context.Service<
           const created = month === null ? [] : yield* createScheduled(month, companyId)
           return { month, created, canceled, updated }
         }),
+        awaitingResults: (date) => payments.listAll().pipe(Effect.map((rows) => withdrawalsAwaitingResult(rows, date))),
         recordWithdrawal: Effect.fn(function* (paymentId, result) {
           const record = (yield* payments.listAll()).find((row) => row.id === paymentId)
           if (record === undefined) return Option.none()
