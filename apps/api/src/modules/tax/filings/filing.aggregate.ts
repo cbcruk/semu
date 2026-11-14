@@ -42,8 +42,8 @@ import { filingStatusChanged, transitionFacts } from './filing-view.ts'
  * 전이표(`filing-status.ts`)와 제출 자료 규칙(`filing-requirements.ts`)은 규칙 모듈에 그대로 두고 여기서 부릅니다.
  * 버전 검사(`If-Match`)는 동시성 규칙이라 서비스가 맡습니다.
  */
-
 /** 사람이 보낸 커맨드의 판정이 받는 시각과 행위자입니다. 일정 배치처럼 사람이 없는 시스템 커맨드는 문맥 없이 시각(`at`)만 받습니다. */
+export interface FilingDecisionContext {
 export interface FilingDecisionContext {
   /** 커맨드를 처리하는 시각입니다(RFC 3339). */
   at: string
