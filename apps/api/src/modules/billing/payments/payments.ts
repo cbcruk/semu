@@ -275,20 +275,27 @@ export class Payments extends Context.Service<
           const at = yield* nowIso
           const canceled: PaymentRecord[] = []
           const updated: PaymentRecord[] = []
+          // 출금 동의는 회사마다 한 번만 읽습니다.
+          const mandateIds = new Map<Id<'company'>, string | undefined>()
+          for (const companyOf of new Set(scheduled.map((row) => row.companyId))) {
+            mandateIds.set(companyOf, (yield* registeredMandate(companyOf))?.id)
+          }
           for (const payment of scheduled) {
             const subscription = rows.find((row) => row.id === payment.subscriptionId)
             const adjustment = adjustScheduledPayment({
               payment,
               subscription:
                 subscription === undefined ? undefined : { ...subscription, subscriptionId: subscription.id },
-              registeredMandateId: (yield* registeredMandate(payment.companyId))?.id,
+              registeredMandateId: mandateIds.get(payment.companyId),
               today: date,
             })
             if (adjustment.kind === 'KEEP') continue
             if (adjustment.kind === 'CANCEL') {
+              const status = paymentTransition(payment.status, 'CANCEL')
+              if (status === undefined) continue
               const record: PaymentRecord = {
                 ...payment,
-                status: 'CANCELED',
+                status,
                 canceledAt: at,
                 version: payment.version + 1,
               }
