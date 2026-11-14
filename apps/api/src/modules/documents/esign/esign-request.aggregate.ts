@@ -405,23 +405,21 @@ export function planSigningCompletion(
   const open = signerLinkStatus(record, now.today)
   if (Result.isFailure(open)) return Result.fail(open.failure)
   const status = open.success
-  {
-    const live =
-      sessionTokenHash !== undefined &&
-      record.sessions.some((session) => session.tokenHash === sessionTokenHash && session.expiresAt > now.iso)
-    if (!live) return Result.fail(new SignerSessionInvalid({}))
-    const moved = transitionEsignRequest(status, 'COMPLETE')
-    if (!moved.ok || moved.to === 'DELETED') return Result.fail(new EsignLinkClosed({ currentStatus: status }))
-    const fieldValues: Record<string, Readonly<Record<string, unknown>>> = { ...record.fieldValues }
-    for (const [index, values] of Object.entries(signerValues)) {
-      const template = templates[Number(index)]
-      if (template === undefined) continue
-      const signerKeys = new Set(template.fields.filter((field) => field.signer).map((field) => field.key))
-      const allowed = Object.fromEntries(Object.entries(values).filter(([key]) => signerKeys.has(key)))
-      fieldValues[index] = { ...fieldValues[index], ...allowed }
-    }
-    return Result.succeed({ status: moved.to, fieldValues })
+  const live =
+    sessionTokenHash !== undefined &&
+    record.sessions.some((session) => session.tokenHash === sessionTokenHash && session.expiresAt > now.iso)
+  if (!live) return Result.fail(new SignerSessionInvalid({}))
+  const moved = transitionEsignRequest(status, 'COMPLETE')
+  if (!moved.ok || moved.to === 'DELETED') return Result.fail(new EsignLinkClosed({ currentStatus: status }))
+  const fieldValues: Record<string, Readonly<Record<string, unknown>>> = { ...record.fieldValues }
+  for (const [index, values] of Object.entries(signerValues)) {
+    const template = templates[Number(index)]
+    if (template === undefined) continue
+    const signerKeys = new Set(template.fields.filter((field) => field.signer).map((field) => field.key))
+    const allowed = Object.fromEntries(Object.entries(values).filter(([key]) => signerKeys.has(key)))
+    fieldValues[index] = { ...fieldValues[index], ...allowed }
   }
+  return Result.succeed({ status: moved.to, fieldValues })
 }
 
 /**
