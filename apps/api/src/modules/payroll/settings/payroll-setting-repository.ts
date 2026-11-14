@@ -17,6 +17,8 @@ export class PayrollSettingRepository extends Context.Service<
   {
     get(companyId: Id<'company'>): Effect.Effect<PayrollSettingRecord>
     save(companyId: Id<'company'>, setting: PayrollSettingRecord): Effect.Effect<void>
+    /** 정기 대장 자동 생성을 켠 회사입니다. 회사를 건너 읽으므로 정기 작업만 씁니다. */
+    companiesAutoCreatingLedgers(): Effect.Effect<Id<'company'>[]>
   }
 >()('semu/payroll/PayrollSettingRepository') {
   /** `payroll_settings` 표에 둡니다. `seed`는 회사별 초기 설정이고, 표가 비어 있을 때 넣습니다. */
@@ -36,6 +38,12 @@ export class PayrollSettingRepository extends Context.Service<
                 : defaultPayrollSetting(),
             ),
           save: (companyId, setting) => table.put({ id: companyId, companyId, setting }),
+          companiesAutoCreatingLedgers: () =>
+            Effect.map(table.all(), (records) =>
+              records
+                .filter((record) => record.setting.autoCreateRegularLedger === true)
+                .map((record) => record.companyId),
+            ),
         })
       }),
     )

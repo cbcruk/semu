@@ -37,6 +37,8 @@ export const PayrollSetting = Schema.Struct({
   deductionMethods: DeductionMethodsSchema,
   /** 급여대장 운영 방식입니다. 급여 아웃소싱(`CLIENT_APPROVAL`)은 고객 승인으로 마감합니다. */
   workflow: Schema.Literals(['CLIENT_APPROVAL', 'DIRECT_CLOSE']),
+  /** 켜면 임금산정 기간이 시작한 날 새벽에 그 귀속월의 정기 대장을 정기 작업이 만듭니다. 기본은 끔입니다. */
+  autoCreateRegularLedger: Schema.Boolean,
   version: Schema.Int,
   updatedAt: Schema.NullOr(Schema.String),
 })
@@ -50,12 +52,13 @@ export const PayrollSettingPatch = Schema.Struct({
   multipliers: Schema.optionalKey(PremiumMultipliersSchema),
   deductionMethods: Schema.optionalKey(DeductionMethodsSchema),
   workflow: Schema.optionalKey(Schema.Literals(['CLIENT_APPROVAL', 'DIRECT_CLOSE'])),
+  autoCreateRegularLedger: Schema.optionalKey(Schema.Boolean),
 })
 
 /**
  * 아직 저장한 적 없는 회사의 기본 설정입니다. 현행 마이그레이션 기본값을 따릅니다.
  *
- * 매월 1일 시작, 같은 달 25일 지급, 5인 이상 배수, 국민연금·건강보험은 고지액, 고용보험은 요율, 소득세는 간이세액표입니다.
+ * 매월 1일 시작, 같은 달 25일 지급, 5인 이상 배수, 국민연금·건강보험은 고지액, 고용보험은 요율, 소득세는 간이세액표, 정기 대장 자동 생성은 끔입니다.
  */
 export function defaultPayrollSetting(): PayrollSettingRecord {
   return {
@@ -71,6 +74,7 @@ export function defaultPayrollSetting(): PayrollSettingRecord {
       incomeTax: 'TAX_TABLE',
     },
     workflow: 'DIRECT_CLOSE',
+    autoCreateRegularLedger: false,
     version: 0,
     updatedAt: null,
   }

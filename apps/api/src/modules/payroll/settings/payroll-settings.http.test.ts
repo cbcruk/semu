@@ -25,6 +25,7 @@ describe('/payroll-settings', () => {
       multipliers: { overtimeRatePpm: 1_500_000, nightRatePpm: 500_000 },
       deductionMethods: { nationalPension: 'NOTICE', employmentInsurance: 'RATE', incomeTax: 'TAX_TABLE' },
       workflow: 'DIRECT_CLOSE',
+      autoCreateRegularLedger: false,
     })
   })
 

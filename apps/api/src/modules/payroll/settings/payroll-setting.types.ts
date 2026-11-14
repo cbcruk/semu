@@ -16,6 +16,8 @@ export interface PayrollSettingRecord {
     incomeTax: IncomeTaxMethod
   }
   workflow: LedgerWorkflow
+  /** 매달 정기 대장을 정기 작업이 만들지입니다. */
+  autoCreateRegularLedger: boolean
   version: number
   updatedAt: string | null
 }
