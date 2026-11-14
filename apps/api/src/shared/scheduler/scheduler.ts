@@ -2,7 +2,7 @@ import { Cause, Clock, Context, Data, Effect, Exit, Layer, Option, Schedule } fr
 import { describeDefect } from '../problem/defect-log.ts'
 import { TableFactory } from '../persistence/record-table.ts'
 import { UnitOfWork } from '../persistence/unit-of-work.ts'
-import { DEFAULT_RETRY_POLICY, decideClaim, finishRun, runIdOf } from './scheduled-run.ts'
+import { DEFAULT_RETRY_POLICY, decideClaim, finishRun, isSameRun, renewLease, runIdOf } from './scheduled-run.ts'
 import type { RetryPolicy, ScheduledRunRecord } from './scheduled-run.ts'
 import { latestSlot } from './schedule-slot.ts'
 import type { ScheduleSlot, ScheduleSpec } from './schedule-slot.ts'
@@ -33,6 +33,20 @@ export class CompaniesFailed extends Data.TaggedError('CompaniesFailed')<{
   readonly failed: ReadonlyArray<{ readonly companyId: string; readonly error: string }>
 }> {}
 
+/**
+ * 실행 중에 슬롯의 임대를 잃었습니다. 임대 시각이 지나 다른 실행기가 같은 슬롯을 다시 잡았으므로, 이 실행은 남은 회사로 넘어가지
+ * 않고 멈춥니다. 실행 기록은 새로 잡은 실행기의 것이라 고치지 않습니다.
+ */
+export class LeaseLost extends Data.TaggedError('LeaseLost')<{}> {}
+
+/**
+ * 지금 도는 정기 작업 실행의 임대입니다. 실행기가 작업을 돌릴 때 넣고, {@link eachCompany}가 회사 하나를 시작하기 전마다
+ * `renew`로 임대를 늘립니다. 임대를 잃었으면 `false`입니다. 실행기 밖(테스트 등)에서는 늘 `true`인 기본값입니다.
+ */
+export const RunLease = Context.Reference<{ readonly renew: Effect.Effect<boolean> }>('semu/platform/RunLease', {
+  defaultValue: () => ({ renew: Effect.succeed(true) }),
+})
+
 /** 회사별 작업의 결과입니다. */
 export interface CompaniesSucceeded<A> {
   readonly succeeded: number
@@ -42,17 +56,22 @@ export interface CompaniesSucceeded<A> {
 /**
  * 항목(회사)마다 `work`를 한 트랜잭션으로 돌립니다. 한 회사가 실패해도 다음 회사로 넘어가고, 하나라도 실패했으면 끝에
  * {@link CompaniesFailed}로 실패합니다. 요청 하나가 트랜잭션 하나인 것처럼 정기 작업은 회사 하나가 트랜잭션 하나입니다.
+ *
+ * 회사 하나를 시작하기 전마다 실행의 임대를 늘립니다({@link RunLease}). 임대를 잃었으면 남은 회사를 돌리지 않고
+ * {@link LeaseLost}로 멈춥니다.
  */
 export const eachCompany = <T, A, E, R>(
   items: ReadonlyArray<T>,
   companyIdOf: (item: T) => string,
   work: (item: T) => Effect.Effect<A, E, R>,
-): Effect.Effect<CompaniesSucceeded<A>, CompaniesFailed, R | UnitOfWork> =>
+): Effect.Effect<CompaniesSucceeded<A>, CompaniesFailed | LeaseLost, R | UnitOfWork> =>
   Effect.gen(function* () {
     const unitOfWork = yield* UnitOfWork
+    const lease = yield* RunLease
     const results: Array<{ companyId: string; result: A }> = []
     const failed: Array<{ companyId: string; error: string }> = []
     for (const item of items) {
+      if (!(yield* lease.renew)) return yield* new LeaseLost()
       const exit = yield* Effect.exit(unitOfWork.run(work(item)))
       if (Exit.isSuccess(exit)) results.push({ companyId: companyIdOf(item), result: exit.value })
       else failed.push({ companyId: companyIdOf(item), error: describeCause(exit.cause) })
@@ -66,7 +85,7 @@ export interface SlotOutcome {
   readonly task: string
   readonly slot: string
   /** `ERRORED`는 슬롯 잡기·기록 저장에서 결함이 난 것입니다. 다음 틱에 다시 봅니다. */
-  readonly outcome: 'SUCCEEDED' | 'FAILED' | 'GAVE_UP' | 'SKIPPED' | 'ERRORED'
+  readonly outcome: 'SUCCEEDED' | 'FAILED' | 'GAVE_UP' | 'SKIPPED' | 'ERRORED' | 'LEASE_LOST'
 }
 
 /**
@@ -74,6 +93,7 @@ export interface SlotOutcome {
  *
  * - **중복 실행 방지:** 슬롯을 잡는 일(실행 기록 읽기·쓰기)을 한 트랜잭션에서 합니다. SQLite는 `BEGIN IMMEDIATE`로 쓰기 잠금을 먼저
  *   잡으므로 같은 파일을 연 프로세스가 둘이어도 한쪽만 `RUNNING`으로 씁니다. 잡은 쪽은 임대 시각까지 슬롯을 가집니다
+ * - **임대 갱신:** {@link eachCompany}가 회사마다 임대를 늘립니다. 임대를 잃은 실행은 멈추고 실행 기록을 덮어쓰지 않습니다
  * - **재시도:** 실패하면 {@link RetryPolicy}대로 나중 틱에 다시 시도합니다
  * - **시각:** Effect `Clock`을 읽습니다. 테스트는 `TestClock`으로 옮깁니다
  */
@@ -120,12 +140,45 @@ export class Scheduler extends Context.Service<
               yield* Effect.logError('Scheduled task gave up', { task: task.name, slot: slot.key })
               return { ...identity, outcome: 'GAVE_UP' as const }
             }
-            const exit = yield* Effect.exit(task.run(slot).pipe(Effect.provideContext(context)))
+            const runId = claim.record.id
+            const lease = {
+              renew: unitOfWork.run(
+                Effect.gen(function* () {
+                  const renewed = renewLease(
+                    Option.getOrUndefined(yield* table.get(runId)),
+                    claim.record,
+                    yield* Clock.currentTimeMillis,
+                    policy,
+                  )
+                  if (renewed !== null) yield* table.put(renewed)
+                  return renewed !== null
+                }),
+              ),
+            }
+            const exit = yield* Effect.exit(
+              task.run(slot).pipe(Effect.provideContext(context), Effect.provideService(RunLease, lease)),
+            )
+            if (Exit.isFailure(exit) && Cause.squash(exit.cause) instanceof LeaseLost) {
+              yield* Effect.logWarning('Scheduled task lost its lease', { task: task.name, slot: slot.key })
+              return { ...identity, outcome: 'LEASE_LOST' as const }
+            }
             const outcome = Exit.isSuccess(exit)
               ? { ok: true as const, result: exit.value ?? null }
               : { ok: false as const, error: describeCause(exit.cause) }
             const finished = finishRun(claim.record, outcome, yield* Clock.currentTimeMillis, policy)
-            yield* unitOfWork.run(table.put(finished))
+            // 임대가 지나 다른 실행기가 다시 잡은 뒤라면 그 실행의 기록을 덮어쓰지 않습니다.
+            const owned = yield* unitOfWork.run(
+              Effect.gen(function* () {
+                const latest = Option.getOrUndefined(yield* table.get(runId))
+                if (!isSameRun(latest, claim.record) || latest.status !== 'RUNNING') return false
+                yield* table.put({ ...finished, leaseUntil: latest.leaseUntil })
+                return true
+              }),
+            )
+            if (!owned) {
+              yield* Effect.logWarning('Scheduled task lost its lease', { task: task.name, slot: slot.key })
+              return { ...identity, outcome: 'LEASE_LOST' as const }
+            }
             if (!outcome.ok) {
               yield* Effect.logWarning('Scheduled task failed', {
                 task: task.name,
