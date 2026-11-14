@@ -9,6 +9,7 @@ import { EsignRequests } from './esign/esign-requests.ts'
 import { EsignRequestsHttpLive } from './esign/esign-requests.http.ts'
 import { CompanySealRepository } from './seals/company-seal.ts'
 import { CompanySealsHttpLive } from './seals/company-seals.http.ts'
+import { CompanySeals } from './seals/company-seals.ts'
 import { DocumentEvents, DocumentNotifier, PdfRenderer, SignerIdentityVerifier } from './shared/documents-ports.ts'
 import { EsignLinksHttpLive } from './signing/esign-links.http.ts'
 import { Signing } from './signing/signing.ts'
@@ -27,7 +28,7 @@ export const DocumentsHttpLive = Layer.mergeAll(
   EsignTemplatesHttpLive,
   CompanySealsHttpLive,
   CertificatesHttpLive,
-).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer)))
+).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer, CompanySeals.layer)))
 
 /**
  * 정기 작업 `documents.esign-expiry`([esign-expiry-task.ts](./esign/esign-expiry-task.ts))가 쓰는 전자서명 요청 서비스입니다.
