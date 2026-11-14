@@ -6,11 +6,11 @@ import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import type { Actor } from '../actor.types.ts'
 import { AuditLog } from '../audit/audit-log.ts'
 import { MembershipRepository } from '../members/membership-repository.ts'
-import { isGrantable } from '../permissions/permission-catalog.ts'
 import { Sessions } from '../sessions/sessions.ts'
 import { RoleRepository } from './role-repository.ts'
-import { PermissionNotGrantable, RoleNameTaken, RoleNotFound } from './role.ts'
-import type { Role, RoleInput, RoleRecord } from './role.ts'
+import { decideRoleCreation, decideRoleRemoval, decideRoleUpdate } from './role.aggregate.ts'
+import { RoleNotFound } from './role.ts'
+import type { PermissionNotGrantable, Role, RoleInput, RoleNameTaken, RoleRecord } from './role.ts'
 
 /**
  * 권한 그룹(회사별 권한 프리셋)입니다. 구성원의 권한은 기본 권한과 부여한 그룹 권한의 합집합입니다.
@@ -59,28 +59,9 @@ export class Roles extends Context.Service<
         return found.value
       })
 
-      const validate = Effect.fn(function* (actor: Actor, input: RoleInput, except?: Id<'role'>) {
-        const refused = input.permissions.filter((permission) => !isGrantable(permission))
-        if (refused.length > 0) return yield* new PermissionNotGrantable({ permissions: refused })
-        const others = yield* roles.listByCompany(actor.companyId)
-        if (others.some((role) => role.id !== except && role.name === input.name.trim())) {
-          return yield* new RoleNameTaken({})
-        }
-      })
-
-      const audited = (actor: Actor, action: 'ROLE_CREATED' | 'ROLE_UPDATED' | 'ROLE_DELETED', roleId: string) =>
-        audit.record({
-          action,
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: roleId,
-        })
-
-      const invalidateHolders = Effect.fn(function* (actor: Actor, roleId: Id<'role'>) {
-        for (const holder of yield* holders(actor.companyId, roleId)) {
-          yield* sessions.invalidateAccess(holder.userId, actor.companyId)
-        }
+      /** 판정이 알려 준 사용자의 access token을 폐기합니다(M5, 같은 트랜잭션). */
+      const invalidate = Effect.fn(function* (actor: Actor, userIds: ReadonlyArray<Id<'user'>>) {
+        for (const userId of userIds) yield* sessions.invalidateAccess(userId, actor.companyId)
       })
 
       const list = Effect.fn('Roles.list')(function* (actor: Actor) {
@@ -93,20 +74,19 @@ export class Roles extends Context.Service<
       })
 
       const create = Effect.fn('Roles.create')(function* (actor: Actor, input: RoleInput) {
-        yield* validate(actor, input)
+        const siblings = yield* roles.listByCompany(actor.companyId)
         const now = yield* Clock.currentTimeMillis
-        const record: RoleRecord = {
-          id: newId('role', now),
-          companyId: actor.companyId,
-          name: input.name.trim(),
-          permissions: [...new Set(input.permissions)].sort(),
-          ...(input.templateCode === undefined ? {} : { templateCode: input.templateCode }),
-          createdAt: new Date(now).toISOString(),
-          version: 1,
-        }
-        yield* roles.save(record)
-        yield* audited(actor, 'ROLE_CREATED', record.id)
-        return yield* toRole(record)
+        const decision = yield* Effect.fromResult(
+          decideRoleCreation(
+            { id: newId('role', now), createdAt: new Date(now).toISOString() },
+            input,
+            siblings,
+            actor,
+          ),
+        )
+        yield* roles.save(decision.role)
+        for (const entry of decision.audit) yield* audit.record(entry)
+        return yield* toRole(decision.role)
       })
 
       const update = Effect.fn('Roles.update')(function* (
@@ -117,33 +97,23 @@ export class Roles extends Context.Service<
       ) {
         const current = yield* find(actor, roleId)
         yield* checkVersion(current.version, expectedVersion)
-        yield* validate(actor, input, roleId)
-        const { templateCode: _, ...rest } = current
-        const next: RoleRecord = {
-          ...rest,
-          name: input.name.trim(),
-          permissions: [...new Set(input.permissions)].sort(),
-          ...(input.templateCode === undefined ? {} : { templateCode: input.templateCode }),
-          version: current.version + 1,
-        }
-        yield* roles.save(next)
-        yield* invalidateHolders(actor, roleId)
-        yield* audited(actor, 'ROLE_UPDATED', roleId)
-        return yield* toRole(next)
+        const siblings = yield* roles.listByCompany(actor.companyId)
+        const decision = yield* Effect.fromResult(
+          decideRoleUpdate(current, input, siblings, yield* holders(actor.companyId, roleId), actor),
+        )
+        yield* roles.save(decision.role)
+        yield* invalidate(actor, decision.invalidatedUserIds)
+        for (const entry of decision.audit) yield* audit.record(entry)
+        return yield* toRole(decision.role)
       })
 
       const remove = Effect.fn('Roles.remove')(function* (actor: Actor, roleId: Id<'role'>) {
-        yield* find(actor, roleId)
-        for (const holder of yield* holders(actor.companyId, roleId)) {
-          yield* memberships.save({
-            ...holder,
-            roleIds: holder.roleIds.filter((id) => id !== roleId),
-            version: holder.version + 1,
-          })
-          yield* sessions.invalidateAccess(holder.userId, actor.companyId)
-        }
+        const role = yield* find(actor, roleId)
+        const decision = decideRoleRemoval(role, yield* holders(actor.companyId, roleId), actor)
+        for (const membership of decision.memberships) yield* memberships.save(membership)
+        yield* invalidate(actor, decision.invalidatedUserIds)
         yield* roles.remove(actor.companyId, roleId)
-        yield* audited(actor, 'ROLE_DELETED', roleId)
+        for (const entry of decision.audit) yield* audit.record(entry)
       })
 
       return Roles.of({ list, get, create, update, remove })
