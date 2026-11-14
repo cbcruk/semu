@@ -211,7 +211,8 @@ export function makeMemoryTable<T extends TenantRecord>(seed: ReadonlyArray<T> =
   return Effect.map(makeMemoryRecordTable<T>({ seed, companyOf: (record) => record.companyId }), tenantTableOf)
 }
 
-function tenantTableOf<T extends TenantRecord>(table: RecordTable<T>): TenantTable<T> {
+/** 레코드 표를 회사 범위 표로 감쌉니다. 회사를 건너 읽는 조회가 필요한 저장소는 원래 표와 함께 씁니다. */
+export function tenantTableOf<T extends TenantRecord>(table: RecordTable<T>): TenantTable<T> {
   return {
     list: (companyId) => table.byCompany(companyId),
     find: (companyId, id) =>

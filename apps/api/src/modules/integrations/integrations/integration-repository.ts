@@ -1,5 +1,5 @@
 import { Context, Effect, Layer, Option } from 'effect'
-import { makeTenantTable, TableFactory } from '../../../shared/persistence/record-table.ts'
+import { TableFactory, tenantTableOf } from '../../../shared/persistence/record-table.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { InstitutionType } from '../institutions/institution.ts'
 import type { IntegrationRecord } from './integration.ts'
@@ -12,6 +12,8 @@ export class IntegrationRepository extends Context.Service<
     listByCompany(companyId: Id<'company'>, type?: InstitutionType): Effect.Effect<IntegrationRecord[]>
     save(integration: IntegrationRecord): Effect.Effect<void>
     remove(companyId: Id<'company'>, integrationId: Id<'integration'>): Effect.Effect<void>
+    /** 그 기관 종류의 연동이 있는 회사입니다. 회사를 건너 읽으므로 정기 수집 작업만 씁니다. */
+    companiesWith(type: InstitutionType): Effect.Effect<Id<'company'>[]>
   }
 >()('semu/integrations/IntegrationRepository') {
   /** `integrations_integrations` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
@@ -19,7 +21,11 @@ export class IntegrationRepository extends Context.Service<
     Layer.effect(
       IntegrationRepository,
       Effect.gen(function* () {
-        const table = yield* makeTenantTable<IntegrationRecord>('integrations_integrations', seed)
+        const records = yield* (yield* TableFactory).make<IntegrationRecord>('integrations_integrations', {
+          seed,
+          companyOf: (record) => record.companyId,
+        })
+        const table = tenantTableOf(records)
         return IntegrationRepository.of({
           find: (companyId, integrationId) => table.find(companyId, integrationId),
           listByCompany: (companyId, type) =>
@@ -34,6 +40,14 @@ export class IntegrationRepository extends Context.Service<
               ),
           save: (integration) => table.save(integration),
           remove: (companyId, integrationId) => table.remove(companyId, integrationId),
+          companiesWith: (type) =>
+            records
+              .all()
+              .pipe(
+                Effect.map((all) => [
+                  ...new Set(all.filter((record) => record.type === type).map((record) => record.companyId)),
+                ]),
+              ),
         })
       }),
     )

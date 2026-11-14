@@ -163,7 +163,11 @@ GET  /scrap-requests/{scrapRequestId}
 - 큐는 `ScrapQueue` 포트입니다. 메모리 구현은 같은 프로세스의 `ScrapWorker`가 바로 처리합니다
 - 워커는 자격 증명을 열어 `ScrapingGateway.scrape`를 부르고, 성공한 항목의 레코드를 `ScrapedRecordSink`로 넘기고, 연동·항목의 `lastScrap`을 갱신합니다
 - 공용 작업 조회 `GET /jobs/{jobId}`는 두지 않습니다([D11](review.md#결정)). `/scrap-requests/{id}`가 그 역할을 합니다
-- 정기 수집 주기(은행 등록 후 1일, PG 10시·22시, 배달 10시 5일치, 올라 익일 6시, 지원금 4시)는 스케줄러 정책으로 둡니다 (구현 전)
+- **정기 수집**은 공용 실행기([conventions.md 정기 작업](conventions.md#정기-작업))의 작업 `integrations.scrap.<기관>-<HHMM>`이 합니다. 시각표는 정책값 `SCHEDULED_SCRAP_TIMES`([scrap-schedule.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-schedule.ts))입니다
+  - PG 매일 10:00·22:00, 배달 플랫폼 매일 10:00, 올라 매일 06:00. 홈택스·카드·은행·지로는 정기 수집이 없습니다(열린 질문 8)
+  - 그 기관 종류의 연동이 있는 회사마다 한 트랜잭션으로 `requester: SYSTEM` 요청을 만듭니다. 멱등 키는 `schedule:<슬롯>#<기관 종류>`라 재시도해도 같은 슬롯의 요청은 하나입니다
+  - 시스템 요청은 쿨다운(`nextAvailableAt`)을 남기지 않고 사용자 쿨다운에 막히지도 않습니다. 앞 요청이 진행 중(타임아웃 전)이면 그 슬롯은 건너뜁니다
+  - 수집 기간은 기관 어댑터가 정합니다. 배달의 "5일치" 같은 기간을 요청 옵션으로 넘기지 않습니다
 
 ## 홈택스 수임동의
 
@@ -334,7 +338,7 @@ GET  /messenger-channels
 | 수임동의·사업자 상태·상담 채널 | [hometax-delegations/](../../apps/api/src/modules/integrations/hometax-delegations/), [business-statuses/](../../apps/api/src/modules/integrations/business-statuses/), [messenger-channels/](../../apps/api/src/modules/integrations/messenger-channels/) | [messenger-channels.http.test.ts](../../apps/api/src/modules/integrations/messenger-channels/messenger-channels.http.test.ts), [channel-token.fixtures.test.ts](../../apps/api/src/modules/integrations/messenger-channels/channel-token.fixtures.test.ts) |
 | 자격 증명 금고 | [credential-vault.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.ts) (메모리 키) | [credential-vault.test.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.test.ts) |
 
-구현하지 않은 것: 정기 수집 스케줄러, 인증서 만료 알림, `INACTIVE` 감지, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), 이벤트 발행, 감사 로그 기록, `If-Match`.
+구현하지 않은 것: 은행·카드·홈택스 정기 수집, 인증서 만료 알림, `INACTIVE` 감지, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), 이벤트 발행, 감사 로그 기록, `If-Match`.
 
 ## 열린 질문
 
@@ -345,3 +349,4 @@ GET  /messenger-channels
 5. `INACTIVE`를 주기 검사로 감지할지, 수집 실패로만 갱신할지
 6. 수집 레코드를 Bookkeeping에 넘길 때 같은 `externalId`를 다시 받는 경우의 처리(멱등 보장 주체)
 7. ~~공용 `Job` 조회(`GET /jobs/{id}`)를 어느 모듈이 가질지~~ 두지 않음([D11](review.md#결정), 2026-11-14). `job.completed` 이벤트는 받을 소비자가 생기면 정함
+8. 은행·카드·홈택스의 정기 수집 주기. 현행 자료의 "은행 등록 후 1일"이 등록 다음날 한 번인지 매일인지 분명하지 않아 정기 수집에 넣지 않았습니다. 지원금 공고 수집(4시)은 출처를 정하지 않았습니다([assistant.md 열린 질문 7](assistant.md#열린-질문))

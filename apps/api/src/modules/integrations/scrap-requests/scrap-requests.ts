@@ -93,6 +93,19 @@ export class ScrapRequests extends Context.Service<
     get(actor: Actor, requestId: Id<'scrapRequest'>): Effect.Effect<ScrapRequest, ScrapRequestNotFound>
     list(actor: Actor, type?: InstitutionType): Effect.Effect<ScrapRequest[]>
     availability(actor: Actor): Effect.Effect<ScrapAvailabilityView[]>
+    /**
+     * 정기 수집(시스템 요청)입니다. 정기 작업이 슬롯마다 부릅니다. 행위자·권한 검사가 없고 쿨다운을 남기지 않습니다.
+     *
+     * - 그 기관 종류의 연동이 없으면 `NOT_CONNECTED`
+     * - 같은 슬롯의 요청이 이미 있으면 그것을 두고 `REPLAYED`(키 `schedule:<슬롯>#<기관 종류>`)
+     * - 앞 요청이 아직 진행 중(타임아웃 전)이면 `RUNNING`. 사용자 쿨다운은 정기 수집을 막지 않습니다
+     * - 아니면 요청을 만들어 큐에 넣고 `CREATED`
+     */
+    requestScheduled(
+      companyId: Id<'company'>,
+      institutionType: InstitutionType,
+      slotKey: string,
+    ): Effect.Effect<'CREATED' | 'REPLAYED' | 'RUNNING' | 'NOT_CONNECTED'>
   }
 >()('semu/integrations/ScrapRequests') {
   /** 저장소와 큐 포트로 만듭니다. */
@@ -104,7 +117,8 @@ export class ScrapRequests extends Context.Service<
       const queue = yield* ScrapQueue
 
       const create = Effect.fn(function* (
-        actor: Actor,
+        requester:
+          { companyId: Id<'company'>; kind: 'USER'; userId: Id<'user'> } | { companyId: Id<'company'>; kind: 'SYSTEM' },
         input: ScrapRequestInput,
         idempotencyKey: string,
         isInitial: boolean,
@@ -112,24 +126,28 @@ export class ScrapRequests extends Context.Service<
         const now = yield* Clock.currentTimeMillis
         const record: ScrapRequestRecord = {
           id: newId('scrapRequest', now),
-          companyId: actor.companyId,
+          companyId: requester.companyId,
           institutionType: input.institutionType,
           ...(input.integrationId === undefined ? {} : { integrationId: input.integrationId }),
           ...(input.itemKey === undefined ? {} : { itemKey: input.itemKey }),
-          requester: 'USER',
-          requestedBy: actor.userId,
+          requester: requester.kind,
+          ...(requester.kind === 'USER' ? { requestedBy: requester.userId } : {}),
           status: 'QUEUED',
           isInitial,
           ...(input.options === undefined ? {} : { options: input.options }),
           idempotencyKey,
           createdAt: now,
           timeoutAt: now + SCRAP_TIMEOUT_SECONDS * 1000,
-          nextAvailableAt: now + SCRAP_COOLDOWN_SECONDS[input.institutionType] * 1000,
+          // 정기(시스템) 수집은 쿨다운을 만들지 않습니다.
+          ...(requester.kind === 'USER'
+            ? { nextAvailableAt: now + SCRAP_COOLDOWN_SECONDS[input.institutionType] * 1000 }
+            : {}),
         }
         yield* repository.save(record)
-        yield* queue.enqueue(actor.companyId, record.id)
+        yield* queue.enqueue(requester.companyId, record.id)
         return scrapRequestView(record, now)
       })
+      const userOf = (actor: Actor) => ({ companyId: actor.companyId, kind: 'USER' as const, userId: actor.userId })
 
       return ScrapRequests.of({
         request: Effect.fn(function* (actor, input, idempotencyKey) {
@@ -158,7 +176,7 @@ export class ScrapRequests extends Context.Service<
             })
           }
           return yield* create(
-            actor,
+            userOf(actor),
             input,
             idempotencyKey,
             scope.every((integration) => integration.lastScrap === undefined),
@@ -189,7 +207,7 @@ export class ScrapRequests extends Context.Service<
             }
             items.push(
               yield* create(
-                actor,
+                userOf(actor),
                 { institutionType: type },
                 key,
                 scope.every((integration) => integration.lastScrap === undefined),
@@ -197,6 +215,26 @@ export class ScrapRequests extends Context.Service<
             )
           }
           return { items, skipped }
+        }),
+        requestScheduled: Effect.fn(function* (companyId, institutionType, slotKey) {
+          const now = yield* Clock.currentTimeMillis
+          const connected = yield* integrations.listByCompany(companyId, institutionType)
+          if (connected.length === 0) return 'NOT_CONNECTED' as const
+          const key = `schedule:${slotKey}#${institutionType}`
+          if (Option.isSome(yield* repository.findByIdempotencyKey(companyId, key))) return 'REPLAYED' as const
+          const latest = Option.getOrUndefined(yield* repository.latest(companyId, institutionType))
+          const availability = scrapAvailability(
+            latest === undefined ? undefined : { ...latest, requester: 'SYSTEM' },
+            now,
+          )
+          if (!availability.canRequest) return 'RUNNING' as const
+          yield* create(
+            { companyId, kind: 'SYSTEM' },
+            { institutionType },
+            key,
+            connected.every((integration) => integration.lastScrap === undefined),
+          )
+          return 'CREATED' as const
         }),
         get: Effect.fn(function* (actor, requestId) {
           const found = yield* repository.find(actor.companyId, requestId)
