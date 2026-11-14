@@ -8,6 +8,7 @@ import type {
   PaymentPlanItem,
   PaymentStatus,
   ScheduledKey,
+  ScheduledPaymentAdjustment,
 } from './payment-schedule.types.ts'
 
 /** 월 이용료를 출금하는 날입니다. 현행 레거시 서버의 제안값(25일)을 따릅니다. */
@@ -37,8 +38,7 @@ export const SCHEDULE_LEAD_DAYS = 3
  * `today`(회사 시간대)에 결제 예정을 만들 달입니다. 그달 출금일의 {@link SCHEDULE_LEAD_DAYS}일 전부터 전날까지면 그 달이고, 아니면
  * `null`입니다. 출금일 당일에는 이미 CMS 요청이 나갔다고 보고 만들지 않습니다.
  *
- * 만든 뒤에는 구독 해지·출금 계좌 변경을 결제 예정에 다시 맞추지 않으므로, 만드는 날을 출금일 가까이로 좁혀 그 틈을 며칠로 둡니다.
- * 출금일이 공휴일로 다음 달로 넘어갈 수 있어 지난달 출금일도 봅니다.
+ * 만든 뒤의 구독 해지·출금 계좌 변경은 {@link adjustScheduledPayment}로 다시 맞춥니다. 출금일이 공휴일로 다음 달로 넘어갈 수 있어 지난달 출금일도 봅니다.
  */
 export function schedulingMonthOn(today: string, holidays: ReadonlySet<string>): string | null {
   const 이번달 = today.slice(0, 7)
@@ -60,11 +60,12 @@ export function noticeDate(withdrawalDate: string): string {
 }
 
 const 결제상태전이표: Record<PaymentStatus, Partial<Record<PaymentEvent, PaymentStatus>>> = {
-  SCHEDULED: { WITHDRAWAL_SUCCEEDED: 'PAID', WITHDRAWAL_FAILED: 'FAILED' },
+  SCHEDULED: { WITHDRAWAL_SUCCEEDED: 'PAID', WITHDRAWAL_FAILED: 'FAILED', CANCEL: 'CANCELED' },
   FAILED: { RETRY: 'RETRYING' },
   RETRYING: { WITHDRAWAL_SUCCEEDED: 'PAID', WITHDRAWAL_FAILED: 'FAILED' },
   PAID: { REFUND: 'REFUNDED' },
   REFUNDED: {},
+  CANCELED: {},
 }
 
 /** 사건이 일어난 뒤의 결제 상태입니다. 허용되지 않은 전이면 `undefined`입니다. */
@@ -106,4 +107,28 @@ export function plannedPayments(input: {
       amount: subscription.monthlyFee,
       scheduledOn: 출금일,
     }))
+}
+
+/**
+ * 이미 만든 결제 예정 하나를 지금 구독·출금 동의에 맞춥니다.
+ *
+ * - `SCHEDULED`가 아니거나 출금일이 오늘이거나 지났으면 그대로 둡니다. 출금일 당일에는 이미 CMS 요청이 나갔다고 봅니다
+ * - 구독이 없거나, 월 이용료가 0이거나, 출금일에 플랜을 쓸 수 없으면(해지 종료일이 출금일 전) 취소합니다
+ * - 금액이 지금 월 이용료와 다르거나 출금 계좌가 지금 `REGISTERED` 동의와 다르면 고칩니다. 동의가 없어졌으면 계좌를 비웁니다
+ */
+export function adjustScheduledPayment(input: {
+  payment: { status: PaymentStatus; scheduledOn: string; amount: number; mandateId?: string | undefined }
+  subscription: BillableSubscription | undefined
+  registeredMandateId: string | undefined
+  today: string
+}): ScheduledPaymentAdjustment {
+  const { payment, subscription } = input
+  if (payment.status !== 'SCHEDULED' || payment.scheduledOn <= input.today) return { kind: 'KEEP' }
+  if (subscription === undefined || subscription.monthlyFee <= 0 || !isEntitledOn(subscription, payment.scheduledOn)) {
+    return { kind: 'CANCEL' }
+  }
+  if (payment.amount === subscription.monthlyFee && payment.mandateId === input.registeredMandateId) {
+    return { kind: 'KEEP' }
+  }
+  return { kind: 'UPDATE', amount: subscription.monthlyFee, mandateId: input.registeredMandateId }
 }

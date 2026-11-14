@@ -1,3 +1,4 @@
+import { Payments } from '../payments/payments.ts'
 import { keepChanges } from '../../../shared/persistence/unit-of-work.ts'
 import { Clock, Context, Effect, Layer } from 'effect'
 import { outcomeUnknownOnDefect, runIdempotent } from '../../../shared/http/idempotency.ts'
@@ -9,7 +10,7 @@ import type {
   IdempotencyKeyReused,
 } from '../../../shared/problem/problem.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
-import { nowIso } from '../billing-access.ts'
+import { nowIso, today } from '../billing-access.ts'
 import { BillingIdempotency } from '../billing-idempotency.ts'
 import { BillingMandateRepository } from './billing-mandate-repository.ts'
 import { MandateRejected, maskAccountNumber } from './billing-mandate.ts'
@@ -64,6 +65,7 @@ export class BillingMandates extends Context.Service<
       const repository = yield* BillingMandateRepository
       const gateway = yield* CmsGateway
       const idempotency = yield* BillingIdempotency
+      const payments = yield* Payments
       return BillingMandates.of({
         list: (actor) =>
           repository.listByCompany(actor.companyId).pipe(Effect.map((rows) => rows.map(toBillingMandate))),
@@ -113,6 +115,8 @@ export class BillingMandates extends Context.Service<
                     registeredAt: now,
                   }
                   yield* repository.save(record)
+                  // 이미 만든 결제 예정의 출금 계좌를 새 동의로 바꿉니다.
+                  yield* payments.reconcile(yield* today, actor.companyId)
                   return toBillingMandate(record)
                 }),
               ),

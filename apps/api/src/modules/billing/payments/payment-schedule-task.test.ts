@@ -42,9 +42,9 @@ describe('정기 작업 billing.payment-schedule', () => {
 
     expect(december.length).toBeGreaterThan(0)
     expect(runs.map((run) => [run.slot, run.result])).toEqual([
-      ['2026-12-26T06:00', { month: '2026-12', created: 0 }],
-      ['2026-12-25T06:00', { month: '2026-12', created: december.length }],
-      ['2026-12-01T06:00', { month: null, created: 0 }],
+      ['2026-12-26T06:00', { month: '2026-12', created: 0, canceled: 0, updated: 0 }],
+      ['2026-12-25T06:00', { month: '2026-12', created: december.length, canceled: 0, updated: 0 }],
+      ['2026-12-01T06:00', { month: null, created: 0, canceled: 0, updated: 0 }],
     ])
   })
 
@@ -64,5 +64,25 @@ describe('정기 작업 billing.payment-schedule', () => {
 
     expect(december.length).toBeGreaterThan(0)
     expect(december.map((payment) => payment.subscriptionId)).not.toContain(canceledId)
+  })
+
+  it('만든 뒤 저장소에서 바로 해지된 구독의 결제 예정은 다음 날 작업이 취소하고 다시 만들지 않습니다', async () => {
+    const [december, canceledId] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const scheduler = yield* Scheduler
+        yield* at('2026-12-25T06:00:00')
+        yield* scheduler.runDue()
+        const subscriptions = yield* SubscriptionRepository
+        const active = (yield* subscriptions.listAll()).find((row) => row.status === 'ACTIVE' && row.monthlyFee > 0)!
+        // 커맨드를 거치지 않고 저장소에서 바뀐 해지(종료일 12월 26일)를 작업이 거둡니다.
+        yield* subscriptions.save({ ...active, status: 'CANCELLATION_SCHEDULED', endsOn: '2026-12-26' })
+        yield* at('2026-12-26T06:00:00')
+        yield* scheduler.runDue()
+        return [yield* decemberPayments, active.id] as const
+      }).pipe(Effect.provide(layer()), Effect.provide(TestClock.layer())),
+    )
+
+    const own = december.filter((payment) => payment.subscriptionId === canceledId)
+    expect(own).toMatchObject([{ status: 'CANCELED', canceledAt: expect.any(String) }])
   })
 })

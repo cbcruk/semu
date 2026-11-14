@@ -1,3 +1,4 @@
+import { Payments } from '../payments/payments.ts'
 import { Clock, Context, Effect, Layer } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import { checkVersion } from '../../../shared/http/versioning.ts'
@@ -72,6 +73,7 @@ export class Subscriptions extends Context.Service<
     Effect.gen(function* () {
       const repository = yield* SubscriptionRepository
       const contracts = yield* ServiceContractRepository
+      const payments = yield* Payments
 
       const load = (actor: Actor, subscriptionId: SubscriptionId) =>
         repository.find(actor.companyId, subscriptionId).pipe(
@@ -111,6 +113,7 @@ export class Subscriptions extends Context.Service<
             version: 1,
           }
           yield* repository.save(record)
+          yield* payments.reconcile(date, actor.companyId)
           return toSubscription(record, actor, date)
         }),
         change: Effect.fn(function* (actor, subscriptionId, command, options) {
@@ -130,6 +133,8 @@ export class Subscriptions extends Context.Service<
           }
           const updated: SubscriptionRecord = { ...record, status: next, endsOn, version: record.version + 1 }
           yield* repository.save(updated)
+          // 해지 예약·즉시 해지·되돌리기를 같은 트랜잭션에서 이미 만든 결제 예정에 맞춥니다.
+          yield* payments.reconcile(date, actor.companyId)
           return toSubscription(updated, actor, date)
         }),
       })
