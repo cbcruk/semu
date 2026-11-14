@@ -345,7 +345,7 @@ stateDiagram-v2
 ```
 GET  /payroll-ledgers/{ledgerId}/import-template?incomeType=WAGE_MONTHLY     양식 파일
 POST /payroll-ledgers/{ledgerId}/imports        { fileId, incomeType, mode: MERGE|REPLACE }   Idempotency-Key, If-Match → 202 Job
-GET  /jobs/{jobId}                                                                            결과: { imported, skipped, errors[] { rowNumber, column, code } }
+GET  /payroll-ledgers/{ledgerId}/imports/{importId}                                          결과: { imported, skipped, errors[] { rowNumber, column, code } }
 ```
 
 - 파일은 파일 저장소에 먼저 올리고 `fileId`만 넘깁니다(현행 회사 경로 밖 multipart를 없앰)
@@ -623,7 +623,7 @@ flowchart LR
 | 17 | `GET /cards/:c/can-create-additional-card/` | 없앰. `POST /payroll-ledgers`가 409 `ADDITIONAL_LEDGER_BLOCKED`(`reason`)로 답함 |
 | 18 | `GET /cards/:c/payslip/` | `GET /payslips?ledgerId=` |
 | 19 | `POST /cards/:c/payslip/` | 없앰. 계산식은 `breakdown[].formula`, 이메일은 행의 소득자 사본(`earner`) |
-| 20 | `GET /cards/:c/payslip/wage-salary/notifications/` | `GET /payslips?ledgerId=`의 `deliveries`, 발송 응답의 끝난 `Job`. 공용 `GET /jobs/{jobId}`는 미구현([#81](https://github.com/cbcruk/semu/issues/81)) |
+| 20 | `GET /cards/:c/payslip/wage-salary/notifications/` | `GET /payslips?ledgerId=`의 `deliveries`, 발송 응답의 끝난 `Job`. 공용 `GET /jobs/{jobId}`는 두지 않음([D11](review.md#결정)) |
 | 21 | `POST /cards/:c/payslip/wage-salary/notifications/` | `POST /payslips:send` (Idempotency-Key) |
 | 22 | `POST /cards/:c/payslip/wage-salary/copy-payment-formulas/` | 없앰. 계산식은 엔진이 만듦 |
 | 23-24 | `GET/POST /cards/:c/copy/` | 미구현. 이전 대장 입력 복사 `POST /payroll-ledgers { copyFromLedgerId }` 안 |
