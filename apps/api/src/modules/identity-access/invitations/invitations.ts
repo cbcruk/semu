@@ -224,6 +224,7 @@ export class Invitations extends Context.Service<
               companyRoleIds: yield* companyRoleIds(record.companyId),
             },
             { membershipId: newId('membership', now), at: new Date(now).toISOString() },
+            now,
           ),
         )
         if (decision.membership !== undefined) yield* memberships.save(decision.membership)

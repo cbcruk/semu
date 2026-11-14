@@ -205,14 +205,20 @@ export interface InvitationAcceptanceFacts {
 }
 
 /**
- * 수락을 판정합니다. 비밀번호가 틀리면 `InvalidCredentials`입니다. 아직 소속이 아니면 초대한 접근 수준과 남아 있는 권한 그룹으로 소속을
+ * 수락을 판정합니다. 대기 중이 아니면 `InvitationClosed`(계획에서 이미 봤어도 판정이 다시 지킵니다), 비밀번호가 틀리면 `InvalidCredentials`입니다. 아직 소속이 아니면 초대한 접근 수준과 남아 있는 권한 그룹으로 소속을
  * 만들고, 초대를 `ACCEPTED`로 닫습니다. 세션은 서비스가 판정 뒤에 엽니다.
  */
 export function decideInvitationAcceptance(
   invitation: InvitationRecord,
   facts: InvitationAcceptanceFacts,
   input: { membershipId: Id<'membership'>; at: string },
-): Result.Result<{ invitation: InvitationRecord; membership?: Membership; audit: AuditInput[] }, InvalidCredentials> {
+  now: number,
+): Result.Result<
+  { invitation: InvitationRecord; membership?: Membership; audit: AuditInput[] },
+  InvitationClosed | InvalidCredentials
+> {
+  const pending = requirePending(invitation, now)
+  if (Result.isFailure(pending)) return Result.fail(pending.failure)
   if (!facts.passwordMatches) return Result.fail(new InvalidCredentials({}))
   const { user } = facts
   const membership: Membership | undefined = facts.isMember

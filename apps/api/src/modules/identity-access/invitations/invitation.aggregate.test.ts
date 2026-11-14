@@ -150,11 +150,27 @@ describe('planInvitationAcceptance', () => {
 describe('decideInvitationAcceptance', () => {
   const ids = { membershipId: 'mbr_01JBQ000000000000000000009' as Id<'membership'>, at: '2026-11-16T00:00:00.000Z' }
 
+  it('대기 중이 아닌 초대는 판정에서도 받지 않습니다', () => {
+    const canceled = Result.getOrThrow(decideInvitationCancel(invitation(), actor, now)).invitation
+    const result = decideInvitationAcceptance(
+      canceled,
+      { user, passwordMatches: true, isMember: false, companyRoleIds: new Set() },
+      ids,
+      now,
+    )
+
+    expect(Result.isFailure(result) && result.failure).toMatchObject({
+      _tag: 'InvitationClosed',
+      reason: 'INVITATION_CANCELED',
+    })
+  })
+
   it('비밀번호가 틀리면 아무것도 바꾸지 않고 거부합니다', () => {
     const result = decideInvitationAcceptance(
       invitation(),
       { user, passwordMatches: false, isMember: false, companyRoleIds: new Set() },
       ids,
+      now,
     )
 
     expect(Result.isFailure(result) && result.failure._tag).toBe('InvalidCredentials')
@@ -166,6 +182,7 @@ describe('decideInvitationAcceptance', () => {
         invitation(),
         { user, passwordMatches: true, isMember: false, companyRoleIds: new Set() },
         ids,
+        now,
       ),
     )
     const member = Result.getOrThrow(
@@ -173,6 +190,7 @@ describe('decideInvitationAcceptance', () => {
         invitation(),
         { user, passwordMatches: true, isMember: true, companyRoleIds: new Set() },
         ids,
+        now,
       ),
     )
 
