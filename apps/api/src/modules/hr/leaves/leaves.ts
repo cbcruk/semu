@@ -6,17 +6,22 @@ import type { VersionMismatch } from '../../../shared/problem/problem.ts'
 import { companyDate } from '../../../shared/time/company-date.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { EmployeeNotFound, type EmployeeRecord } from '../employees/employee.ts'
+import { EmployeeNotFound } from '../employees/employee.ts'
 import { InsuranceFilingRepository, pendingFiling } from '../insurance-filings/insurance-filing-repository.ts'
-import type { InsuranceFilingPayloads } from '../insurance-filings/insurance-filing.types.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
-import { summarizeLeaves, validateLeave } from './leave-rules.ts'
-import type { LeaveSummary, LeaveTerms, LeaveValidation } from './leave-rules.types.ts'
 import {
-  LeaveInvalid,
+  decideLeaveCreation,
+  decideLeaveRemoval,
+  decideLeaveReturn,
+  type LeaveFilingChange,
+} from './leave.aggregate.ts'
+import { summarizeLeaves } from './leave-rules.ts'
+import type { LeaveSummary } from './leave-rules.types.ts'
+import {
   LeaveNotFound,
-  LeaveOverlap,
   LeaveRepository,
+  type LeaveInvalid,
+  type LeaveOverlap,
   type CreateLeave,
   type Leave,
   type LeaveRecord,
@@ -75,38 +80,20 @@ export class Leaves extends Context.Service<
 
       const toView = ({ companyId: _, ...leave }: LeaveRecord): Leave => stripUndefined(leave)
 
-      const check = (
-        record: EmployeeRecord | undefined,
-        terms: LeaveTerms,
-        others: ReadonlyArray<LeaveRecord>,
-      ): Effect.Effect<LeaveValidation['normalized'], LeaveInvalid | LeaveOverlap> => {
-        const result = validateLeave(terms, {
-          joinDate: record?.joinDate,
-          leaveDate: record?.resignation?.leaveDate,
-          otherLeaves: others,
+      /** 판정이 알려 준 신고 변경을 그 순서대로 합니다. */
+      const applyFilings = (leave: LeaveRecord, changes: ReadonlyArray<LeaveFilingChange>) =>
+        Effect.gen(function* () {
+          if (changes.length === 0) return
+          const at = yield* nowIso
+          const source = { type: 'LEAVE' as const, id: leave.id }
+          const owner = { companyId: leave.companyId, employeeId: leave.employeeId }
+          for (const change of changes) {
+            if (change.action === 'WITHDRAW') yield* filings.withdraw(leave.companyId, source, change.kind, at)
+            else if (change.kind === 'LEAVE')
+              yield* filings.save(pendingFiling(owner, 'LEAVE', source, change.payload, at))
+            else yield* filings.save(pendingFiling(owner, 'RETURN', source, change.payload, at))
+          }
         })
-        if (result.violations.length > 0) return Effect.fail(new LeaveInvalid({ violations: result.violations }))
-        if (result.overlappingLeaveId !== undefined) {
-          return Effect.fail(new LeaveOverlap({ overlappingLeaveId: result.overlappingLeaveId as Id<'leave'> }))
-        }
-        return Effect.succeed(result.normalized)
-      }
-
-      const queueFiling = <K extends 'LEAVE' | 'RETURN'>(
-        leave: LeaveRecord,
-        kind: K,
-        payload: InsuranceFilingPayloads[K],
-        at: string,
-      ) =>
-        filings.save(
-          pendingFiling(
-            { companyId: leave.companyId, employeeId: leave.employeeId },
-            kind,
-            { type: 'LEAVE', id: leave.id },
-            payload,
-            at,
-          ),
-        )
 
       return Leaves.of({
         list: Effect.fn('Leaves.list')(function* (actor, employeeId) {
@@ -117,37 +104,15 @@ export class Leaves extends Context.Service<
 
         create: Effect.fn('Leaves.create')(function* (actor, employeeId, input) {
           const employee = yield* findEmployee(actor, employeeId)
-          const normalized = yield* check(employee, input, yield* leavesOf(actor, employeeId))
-          const now = yield* nowIso
-          const leave: LeaveRecord = {
-            id: newId('leave'),
-            companyId: actor.companyId,
-            employeeId,
-            reason: input.reason,
-            startDate: input.startDate,
-            endDate: input.endDate,
-            expectedReturnDate: normalized.expectedReturnDate,
-            paidAllowance: input.paid?.allowance,
-            includeInServiceYears: normalized.includeInServiceYears,
-            npsPaymentException: input.npsPaymentException ?? false,
-            nhisNoticeDeferral: input.nhisNoticeDeferral ?? false,
-            version: 1,
-          }
-          yield* leaves.save(leave)
-          if (employee.kind === 'WAGE') {
-            yield* queueFiling(
-              leave,
-              'LEAVE',
-              {
-                startDate: leave.startDate,
-                endDate: leave.endDate,
-                npsPaymentException: leave.npsPaymentException,
-                nhisNoticeDeferral: leave.nhisNoticeDeferral,
-              },
-              now,
-            )
-          }
-          return toView(leave)
+          const decision = yield* Effect.fromResult(
+            decideLeaveCreation(
+              { id: newId('leave'), companyId: actor.companyId, employeeId, terms: input },
+              { employee, otherLeaves: yield* leavesOf(actor, employeeId) },
+            ),
+          )
+          yield* leaves.save(decision.leave)
+          yield* applyFilings(decision.leave, decision.filings)
+          return toView(decision.leave)
         }),
 
         returnFromLeave: Effect.fn('Leaves.returnFromLeave')(
@@ -156,31 +121,19 @@ export class Leaves extends Context.Service<
             yield* checkVersion(leave.version, expectedVersion)
             const employee = Option.getOrUndefined(yield* employees.find(actor.companyId, leave.employeeId))
             const others = (yield* leavesOf(actor, leave.employeeId)).filter((other) => other.id !== leave.id)
-            const terms: LeaveTerms = {
-              ...leave,
-              actualReturnDate,
-              ...(leave.paidAllowance === undefined ? {} : { paid: { allowance: leave.paidAllowance } }),
-            }
-            yield* check(employee, terms, others).pipe(cannotFail('LeaveOverlap'))
-            const next: LeaveRecord = { ...leave, actualReturnDate, version: leave.version + 1 }
-            yield* leaves.save(next)
-            if (employee?.kind === 'WAGE') {
-              // 복직일을 고쳐 다시 부르면 이전 복직 신고를 닫고 새로 엽니다.
-              const at = yield* nowIso
-              yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'RETURN', at)
-              yield* queueFiling(next, 'RETURN', { leaveStartDate: leave.startDate, returnDate: actualReturnDate }, at)
-            }
-            return toView(next)
+            const decision = yield* Effect.fromResult(
+              decideLeaveReturn(leave, actualReturnDate, { employee, otherLeaves: others }),
+            ).pipe(cannotFail('LeaveOverlap'))
+            yield* leaves.save(decision.leave)
+            yield* applyFilings(decision.leave, decision.filings)
+            return toView(decision.leave)
           },
         ),
 
         remove: Effect.fn('Leaves.remove')(function* (actor, leaveId) {
           const leave = yield* findLeave(actor, leaveId)
           yield* leaves.remove(actor.companyId, leave.id)
-          // 휴직 신고와 복직 신고를 함께 닫습니다. 없는 휴직의 복직 신고가 남지 않게 합니다(현행 `removeLeave`와 같음).
-          const at = yield* nowIso
-          yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'LEAVE', at)
-          yield* filings.withdraw(actor.companyId, { type: 'LEAVE', id: leave.id }, 'RETURN', at)
+          yield* applyFilings(leave, decideLeaveRemoval().filings)
         }),
       })
     }),
