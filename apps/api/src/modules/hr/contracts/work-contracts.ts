@@ -9,10 +9,10 @@ import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { indefiniteConversion } from './indefinite-conversion.ts'
 import type { IndefiniteConversion } from './indefinite-conversion.types.ts'
 import { workContractStatus } from './work-contract-period.ts'
-import { validateWorkContract } from './work-contract-validation.ts'
+import { decideWorkContractCreation } from './work-contract.aggregate.ts'
 import {
-  WorkContractInvalid,
   WorkContractRepository,
+  type WorkContractInvalid,
   type WorkContract,
   type WorkContractInput,
   type WorkContractRecord,
@@ -67,15 +67,12 @@ export class WorkContracts extends Context.Service<
 
         create: Effect.fn('WorkContracts.create')(function* (actor, employeeId, input) {
           yield* findEmployee(actor, employeeId)
-          const violations = validateWorkContract(input)
-          if (violations.length > 0) return yield* new WorkContractInvalid({ violations })
-          const record: WorkContractRecord = {
-            id: newId('workContract'),
-            companyId: actor.companyId,
-            employeeId,
-            ...input,
-            createdAt: DateTime.formatIso(yield* DateTime.now),
-          }
+          const { workContract: record } = yield* Effect.fromResult(
+            decideWorkContractCreation(
+              { id: newId('workContract'), companyId: actor.companyId, employeeId, terms: input },
+              DateTime.formatIso(yield* DateTime.now),
+            ),
+          )
           yield* contracts.save(record)
           return toView(record, yield* today)
         }),
