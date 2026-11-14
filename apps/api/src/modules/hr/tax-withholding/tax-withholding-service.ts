@@ -2,17 +2,16 @@ import { Context, DateTime, Effect, Layer, Option } from 'effect'
 import { checkVersion } from '../../../shared/http/versioning.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { VersionMismatch } from '../../../shared/problem/problem.ts'
-import type { Violation } from '../../../shared/problem/problem.types.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
 import { EmployeeKindNotSupported, EmployeeNotFound } from '../employees/employee.ts'
 import { countDependants } from '../family/dependant-rules.ts'
 import { FamilyMemberRepository } from '../family/family-member.ts'
 import type { DependantCounts } from '../family/family-member.types.ts'
-import { validateTaxWithholding } from './deduction-validation.ts'
-import { entryInEffect, upsertEntry } from './tax-withholding-history.ts'
+import { entryInEffect } from './tax-withholding-history.ts'
+import { decideTaxWithholdingSave } from './tax-withholding.aggregate.ts'
 import {
-  TaxWithholdingInvalid,
+  type TaxWithholdingInvalid,
   TaxWithholdingNotFound,
   TaxWithholdingRepository,
   type TaxWithholding,
@@ -20,8 +19,6 @@ import {
   type TaxWithholdingInput,
   type TaxWithholdingRecord,
 } from './tax-withholding.ts'
-
-const DEFAULT_ADJUSTMENT_RATE_PPM = 1_000_000
 
 /**
  * 근로소득자의 소득세 공제 설정(간이세액표 입력, 조정비율, 직접 입력 세액, 감면, 학자금 상환)입니다.
@@ -104,38 +101,16 @@ export class TaxWithholdingSettings extends Context.Service<
             expectedVersion,
           )
 
-          const { effectiveFrom, reduction, adjustmentRatePpm = DEFAULT_ADJUSTMENT_RATE_PPM, ...rest } = input
-          const result = validateTaxWithholding({ ...rest, adjustmentRatePpm, reduction })
-          const violations: Violation[] = [...result.violations]
-          if (violations.length > 0) return yield* new TaxWithholdingInvalid({ violations })
-
-          const entry: TaxWithholdingEntry = {
-            effectiveFrom,
-            ...rest,
-            adjustmentRatePpm,
-            ...(reduction === undefined || result.reduction === undefined
-              ? {}
-              : {
-                  reduction: {
-                    type: reduction.type,
-                    reasonCode: result.reduction.reasonCode,
-                    ratePpm: result.reduction.ratePpm,
-                    // 검증을 통과했으면 적용 방식과 기간이 있습니다.
-                    application: reduction.application ?? 'PAYROLL',
-                    startDate: reduction.startDate ?? effectiveFrom,
-                    endDate: reduction.endDate ?? effectiveFrom,
-                  },
-                }),
-          }
-          const record: TaxWithholdingRecord = {
-            id: employeeId,
-            companyId: actor.companyId,
-            entries: upsertEntry(Option.match(current, { onNone: () => [], onSome: (found) => found.entries }), entry),
-            version: Option.match(current, { onNone: () => 1, onSome: (found) => found.version + 1 }),
-            updatedAt: DateTime.formatIso(yield* DateTime.now),
-          }
+          const { setting: record, entry } = yield* Effect.fromResult(
+            decideTaxWithholdingSave(
+              { companyId: actor.companyId, employeeId },
+              Option.getOrUndefined(current),
+              input,
+              DateTime.formatIso(yield* DateTime.now),
+            ),
+          )
           yield* settings.save(record)
-          return toView(record, entry, yield* countsOn(actor.companyId, employeeId, effectiveFrom))
+          return toView(record, entry, yield* countsOn(actor.companyId, employeeId, entry.effectiveFrom))
         }),
       })
     }),
