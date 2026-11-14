@@ -76,8 +76,8 @@ export interface SimpleTaxInput {
 /**
  * 원천징수 비율을 곱하기 전의 월 간이세액을 구하는 방법입니다.
  *
- * 내장 전략은 {@link EXACT_FORMULA}, {@link MIDPOINT_FORMULA}, {@link lookupSimpleTaxTable}입니다.
- * 공식 간이세액표를 넣은 전략으로 바꿔도 호출하는 쪽은 바뀌지 않습니다.
+ * 내장 전략은 공식 표 {@link OFFICIAL_TABLE}(기본)과 비교용 산식 {@link EXACT_FORMULA}, {@link MIDPOINT_FORMULA}입니다.
+ * 전략을 바꿔도 호출하는 쪽은 바뀌지 않습니다.
  */
 export interface SimpleTaxStrategy {
   name: string
@@ -283,7 +283,7 @@ export type PayrollIncomeType = PayrollRowInput['incomeType']
 
 /** {@link calculatePayrollRow}의 선택 입력입니다. */
 export interface PayrollRowOptions {
-  /** 간이세액 전략입니다. 없으면 {@link MIDPOINT_FORMULA}입니다. */
+  /** 간이세액 전략입니다. 없으면 {@link OFFICIAL_TABLE}입니다. */
   simpleTax?: SimpleTaxStrategy
 }
 

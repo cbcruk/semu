@@ -1,6 +1,6 @@
 import { applyPpm, evaluateLinear, formatPpm, formatWon, mulDiv, truncateTo } from './engine-math.ts'
 import type { SimpleTaxInput, SimpleTaxStrategy, TraceEntry, WageIncomeTaxSetting } from './engine.types.ts'
-import type { PayrollRateTable } from './rate-table.types.ts'
+import type { PayrollRateTable, SimpleTaxTable } from './rate-table.types.ts'
 
 /** 간이세액 연 산식의 중간 금액입니다. 계산식 표시와 테스트에 씁니다. */
 export interface AnnualSimpleTaxSteps {
@@ -14,16 +14,6 @@ export interface AnnualSimpleTaxSteps {
   calculatedTax: number
   earnedIncomeCredit: number
   annualTax: number
-}
-
-/** 간이세액표 한 행입니다. 월 급여 구간과 공제대상가족 수별 월 세액입니다. */
-export interface SimpleTaxTableRow {
-  /** 월 급여 하한(이상)입니다. */
-  min: number
-  /** 월 급여 상한(미만)입니다. */
-  max: number
-  /** 공제대상가족 1~11명의 월 세액입니다. 자녀세액공제와 원천징수 비율을 적용하기 전입니다. */
-  taxes: readonly number[]
 }
 
 /** {@link calculateWageIncomeTax}의 결과입니다. */
@@ -92,9 +82,9 @@ export function childTaxCredit(children: number, rates: PayrollRateTable): numbe
 }
 
 /**
- * 실제 월 급여로 산식을 계산한 간이세액입니다.
+ * 실제 월 급여로 별표 2 제1호 산식을 계산한 간이세액입니다. 공식 표와 비교하려고 둡니다.
  *
- * 공식 표는 행 중간값으로 계산하므로 행 폭 절반(2,500~10,000원)의 급여에 대한 세액만큼 다를 수 있습니다.
+ * 공식 표({@link OFFICIAL_TABLE})와 다릅니다(300만원·1명 59,080원, 공식 표 74,350원).
  */
 export const EXACT_FORMULA: SimpleTaxStrategy = {
   name: 'formula-exact',
@@ -102,10 +92,9 @@ export const EXACT_FORMULA: SimpleTaxStrategy = {
 }
 
 /**
- * 급여가 속한 간이세액표 행의 중간값으로 산식을 계산한 간이세액입니다. 기본 전략입니다.
+ * 급여가 속한 간이세액표 행의 중간값으로 별표 2 제1호 산식을 계산한 간이세액입니다. 공식 표와 비교하려고 둡니다.
  *
- * 공식 표를 만드는 방식과 같습니다. 계수는 별표 2 원문으로 확인했지만 표 금액과는 차이가 남으므로(review.md D4),
- * {@link lookupSimpleTaxTable}로 공식 표를 넣기 전까지 결과는 추정치이고 `wageIncomeTax.simpleTaxStrategy`가 미확인입니다.
+ * 공식 표를 만드는 방식을 흉내 내지만 금액은 표와 다릅니다(300만원·1명 60,380원, 공식 표 74,350원, review.md D4).
  */
 export const MIDPOINT_FORMULA: SimpleTaxStrategy = {
   name: 'formula-midpoint',
@@ -113,48 +102,29 @@ export const MIDPOINT_FORMULA: SimpleTaxStrategy = {
 }
 
 /**
- * 간이세액표 행에서 월 세액을 읽는 전략을 만듭니다.
+ * 공식 근로소득 간이세액표(기준표의 `wageIncomeTax.simpleTaxTable`)에서 월 세액을 읽습니다. 기본 전략입니다.
  *
- * 마지막 행보다 큰 급여와 행에 없는 가족 수는 `fallback`으로 계산하고, 첫 행보다 작은 급여는 0입니다.
+ * - 첫 행(770천원)보다 작은 급여는 0입니다
+ * - 10,000천원 미만은 급여가 속한 행(하한 이상, 상한 미만)의 공제대상가족 수 열입니다
+ * - 정확히 10,000천원은 10,000천원 행이고, 그보다 많으면 그 행에 별표 2 제6호 산식(`highIncomeBrackets`)을 더하고 10원 미만을 버립니다
+ * - 공제대상가족이 11명을 넘으면 11명 세액에서 (10명 세액 − 11명 세액) × 넘는 인원을 뺍니다(별표 2 제4호, 0 미만은 0)
+ * - 마지막으로 8~20세 자녀 공제액을 뺍니다(별표 2 제3호, 0 미만은 0)
  *
- * @example 공식 표 넣기
+ * @example 월 3,000,000원, 공제대상가족 1명
  * ```ts
- * const strategy = lookupSimpleTaxTable([{ min: 3_000_000, max: 3_020_000, taxes: [74_350] }], MIDPOINT_FORMULA)
+ * OFFICIAL_TABLE.monthlyTax({ monthlyTaxablePay: 3_000_000, dependants: 1, childrenAged8To20: 0 }, RATES_2026_01) // 74_350
  * ```
  */
-export function lookupSimpleTaxTable(
-  rows: readonly SimpleTaxTableRow[],
-  fallback: SimpleTaxStrategy,
-): SimpleTaxStrategy {
-  const sorted = [...rows].sort((a, b) => a.min - b.min)
-  return {
-    name: 'table-lookup',
-    monthlyTax: (input, rates): number => {
-      const 첫행 = sorted[0]
-      if (첫행 !== undefined && input.monthlyTaxablePay < 첫행.min) return 0
-      const row = sorted.find(
-        (candidate) => input.monthlyTaxablePay >= candidate.min && input.monthlyTaxablePay < candidate.max,
-      )
-      const 월세액 = row?.taxes[Math.max(1, input.dependants) - 1]
-      if (월세액 === undefined) return fallback.monthlyTax(input, rates)
-      return Math.max(0, 월세액 - childTaxCredit(input.childrenAged8To20, rates))
-    },
-  }
-}
-
-/** 산식으로 간이세액표 행을 만듭니다. 공식 표를 넣기 전까지 기준표 조회 응답에 씁니다. */
-export function generateSimpleTaxTable(rates: PayrollRateTable, maxDependants = 11): SimpleTaxTableRow[] {
-  const rows: SimpleTaxTableRow[] = []
-  for (const band of rates.wageIncomeTax.tableRowBands) {
-    for (let min = band.from; min < band.to; min += band.step) {
-      const 중간값 = min + band.step / 2
-      const taxes = Array.from({ length: maxDependants }, (_, index) =>
-        산식월세액(중간값, { monthlyTaxablePay: 중간값, dependants: index + 1, childrenAged8To20: 0 }, rates),
-      )
-      rows.push({ min, max: min + band.step, taxes })
-    }
-  }
-  return rows
+export const OFFICIAL_TABLE: SimpleTaxStrategy = {
+  name: 'official-table',
+  monthlyTax: (input, rates) => {
+    const 근로소득세기준 = rates.wageIncomeTax
+    const 표세액 = 공식표세액(input.monthlyTaxablePay, input.dependants, rates)
+    return truncateTo(
+      Math.max(0, 표세액 - childTaxCredit(input.childrenAged8To20, rates)),
+      근로소득세기준.taxRoundingUnit,
+    )
+  },
 }
 
 /**
@@ -163,14 +133,14 @@ export function generateSimpleTaxTable(rates: PayrollRateTable, maxDependants = 
  * 순서: 전략으로 간이세액(자녀세액공제 포함) → 중소기업 취업자 감면 → 원천징수 비율(80/100/120%) →
  * 10원 미만 절사. 지방소득세는 소득세의 10%를 10원 미만 절사합니다. `MANUAL`은 받은 금액을, `NONE`은 0을 씁니다.
  *
- * @example 월 3,000,000원, 공제대상가족 1명, 실제 급여 산식
+ * @example 월 3,000,000원, 공제대상가족 1명, 공식 표
  * ```ts
  * calculateWageIncomeTax(
  *   3_000_000,
  *   { method: 'TAX_TABLE', dependants: 1, childrenAged8To20: 0, withholdingRatePpm: 1_000_000 },
  *   RATES_2026_01,
- *   EXACT_FORMULA,
- * ) // { incomeTax: 59_080, localIncomeTax: 5_900, ... }
+ *   OFFICIAL_TABLE,
+ * ) // { incomeTax: 74_350, localIncomeTax: 7_430, ... }
  * ```
  */
 export function calculateWageIncomeTax(
@@ -239,6 +209,46 @@ function 산식월세액(월급여: number, input: SimpleTaxInput, rates: Payrol
     Math.max(0, truncateTo(월세액, 근로소득세기준.taxRoundingUnit) - childTaxCredit(input.childrenAged8To20, rates)),
     근로소득세기준.taxRoundingUnit,
   )
+}
+
+function 공식표세액(월급여: number, 공제대상가족수: number, rates: PayrollRateTable): number {
+  const 근로소득세기준 = rates.wageIncomeTax
+  const 표 = 근로소득세기준.simpleTaxTable
+  if (월급여 < 근로소득세기준.tableMinimumPay) return 0
+  if (월급여 >= 근로소득세기준.highIncomeThreshold) {
+    const 기준세액 = 가족수열(표.atHighIncomeThreshold, 공제대상가족수)
+    if (월급여 === 근로소득세기준.highIncomeThreshold) return 기준세액
+    return truncateTo(
+      기준세액 + evaluateLinear(근로소득세기준.highIncomeBrackets, 월급여),
+      근로소득세기준.taxRoundingUnit,
+    )
+  }
+  const 행 = 표행(표, 월급여)
+  if (행 === undefined) throw new RangeError(`간이세액표에 ${월급여}원 행이 없습니다`)
+  return 가족수열(행.taxes, 공제대상가족수)
+}
+
+function 표행(표: SimpleTaxTable, 월급여: number) {
+  let 아래 = 0
+  let 위 = 표.rows.length - 1
+  while (아래 <= 위) {
+    const 가운데 = (아래 + 위) >> 1
+    const 행 = 표.rows[가운데]
+    if (행 === undefined) return undefined
+    if (월급여 < 행.min) 위 = 가운데 - 1
+    else if (월급여 >= 행.max) 아래 = 가운데 + 1
+    else return 행
+  }
+  return undefined
+}
+
+function 가족수열(세액들: readonly number[], 공제대상가족수: number): number {
+  const 열수 = 세액들.length
+  const 인원 = Math.max(1, 공제대상가족수)
+  if (인원 <= 열수) return 세액들[인원 - 1] ?? 0
+  const 마지막 = 세액들[열수 - 1] ?? 0
+  const 그앞 = 세액들[열수 - 2] ?? 마지막
+  return Math.max(0, 마지막 - (그앞 - 마지막) * (인원 - 열수))
 }
 
 function 행중간값(월급여: number, rates: PayrollRateTable): number {

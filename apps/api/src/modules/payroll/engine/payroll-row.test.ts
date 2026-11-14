@@ -225,17 +225,17 @@ describe('calculatePayrollRow', () => {
     ...overrides,
   })
 
-  it('월급 3,000,000 + 식대 200,000, 공제대상가족 1명: 3,200,000 − 291,520 − 60,380 − 6,030 = 2,842,070원입니다', () => {
+  it('월급 3,000,000 + 식대 200,000, 공제대상가족 1명: 3,200,000 − 291,520 − 74,350 − 7,430 = 2,826,700원입니다', () => {
     const row = calculatePayrollRow(monthly(), rates)
 
     expect(row).toMatchObject({
       grossPay: 3_200_000,
       taxablePay: 3_000_000,
       nonTaxablePay: 200_000,
-      incomeTax: 60_380,
-      localIncomeTax: 6_030,
-      deductionTotal: 291_520 + 60_380 + 6_030,
-      netPay: 2_842_070,
+      incomeTax: 74_350,
+      localIncomeTax: 7_430,
+      deductionTotal: 291_520 + 74_350 + 7_430,
+      netPay: 2_826_700,
       employerInsuranceTotal: 142_500 + 107_850 + 14_170 + 34_500,
       rateTable: '2026-01',
     })

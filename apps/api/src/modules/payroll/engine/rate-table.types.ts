@@ -60,6 +60,24 @@ export interface SimpleTaxRowBand {
   step: number
 }
 
+/** 간이세액표 한 행입니다. 월 급여 구간과 공제대상가족 수별 월 세액입니다. */
+export interface SimpleTaxTableRow {
+  /** 월 급여 하한(이상)입니다. */
+  min: number
+  /** 월 급여 상한(미만)입니다. */
+  max: number
+  /** 공제대상가족 1~11명의 월 세액입니다. 자녀 공제와 원천징수 비율을 적용하기 전입니다. */
+  taxes: readonly number[]
+}
+
+/** 공식 근로소득 간이세액표(소득세법 시행령 별표 2)입니다. */
+export interface SimpleTaxTable {
+  /** 첫 행(`tableMinimumPay`)부터 `highIncomeThreshold` 미만까지 빈틈없이 이어진 행입니다. */
+  rows: readonly SimpleTaxTableRow[]
+  /** 월 급여가 정확히 `highIncomeThreshold`(10,000천원)인 행의 공제대상가족 1~11명 세액입니다. 그보다 많으면 여기에 산식을 더합니다. */
+  atHighIncomeThreshold: readonly number[]
+}
+
 /** 엔진이 아는 근로소득 비과세 유형입니다. */
 export type NonTaxableCategory =
   | 'MEAL'
@@ -131,6 +149,8 @@ export interface PayrollRateTable {
     highIncomeBrackets: readonly LinearBracket[]
     tableRowBands: readonly SimpleTaxRowBand[]
     tableMinimumPay: number
+    /** 공식 간이세액표입니다. 기본 간이세액 전략 `OFFICIAL_TABLE`(`wage-income-tax.ts`)이 읽습니다. */
+    simpleTaxTable: SimpleTaxTable
     taxRoundingUnit: RoundingUnit
   }
   localIncomeTax: { ratePpm: number; roundingUnit: RoundingUnit }

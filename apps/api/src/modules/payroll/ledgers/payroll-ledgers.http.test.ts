@@ -107,7 +107,7 @@ describe('/payroll-ledgers 급여 아웃소싱(고객 승인)', () => {
     expect(rows.body.items[0]).toMatchObject({ employeeId: EMPLOYEE_ID, incomeType: 'WAGE_MONTHLY' })
   })
 
-  it('행을 현행 서비스로 확인한 금액대로 다시 계산합니다', async () => {
+  it('행을 4대보험 요율과 공식 간이세액표대로 다시 계산합니다', async () => {
     const mealId = await addPaymentItem(app, { categoryCode: 'MEAL' })
     const response = await app.request('PATCH', `/payroll-ledgers/${ledgerId}/rows/${rowId}`, {
       headers: { 'if-match': '"1"' },
@@ -122,7 +122,7 @@ describe('/payroll-ledgers 급여 아웃소싱(고객 승인)', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('etag')).toBe('"2"')
-    expect(response.body.result).toMatchObject({ grossPay: 3_200_000, incomeTax: 60_380, netPay: 2_842_070 })
+    expect(response.body.result).toMatchObject({ grossPay: 3_200_000, incomeTax: 74_350, netPay: 2_826_700 })
   })
 
   it('같은 직원·귀속월의 두 번째 근로소득 행은 거절합니다', async () => {

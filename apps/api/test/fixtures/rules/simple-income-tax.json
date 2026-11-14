@@ -1,7 +1,8 @@
 {
   "rule": "simple-income-tax",
-  "description": "Monthly wage income tax from the simple tax table formula, scaled by the withholding ratio; local income tax is 10%.",
+  "description": "Monthly wage income tax from the official simple tax table (Income Tax Act Enforcement Decree appendix 2) with the child credit, the over-10M formula and the withholding ratio; local income tax is 10%. The formula strategies stay for comparison.",
   "sources": [
+    { "file": "apps/api/src/modules/payroll/engine/simple-tax-table-2024.ts", "lines": "1-667", "origin": "official table, Hometax xlsx 2026.03.01 cross-checked with the law.go.kr PDF" },
     { "file": "docs/reference/spec/payroll.md", "lines": "367-375", "origin": "spec 4.2" },
     { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "122-167", "origin": "legacy-verified" },
     { "file": "apps/api/legacy/src/modules/payroll/engine/wage-income-tax.ts", "lines": "1-200" }
@@ -11,9 +12,69 @@
     "dependants": "including the employee",
     "childrenAged8To20": "count",
     "withholdingRatePpm": "800000 | 1000000 | 1200000",
-    "strategy": "EXACT_FORMULA | MIDPOINT_FORMULA"
+    "strategy": "OFFICIAL_TABLE | EXACT_FORMULA | MIDPOINT_FORMULA"
   },
   "cases": [
+    {
+      "name": "official table 3,000,000 one dependant",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 74350, "localIncomeTax": 7430 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table 3,000,000 two dependants",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 2, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 56850, "localIncomeTax": 5680 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table next row 3,020,000",
+      "input": { "monthlyTaxablePay": 3020000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 76060, "localIncomeTax": 7600 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table with one child credit (2026-01: 12,500)",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 2, "childrenAged8To20": 1, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 44350, "localIncomeTax": 4430 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table withholding ratio 80%",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 800000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 59480, "localIncomeTax": 5940 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table withholding ratio 120%",
+      "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1200000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 89220, "localIncomeTax": 8920 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table exactly 10,000,000",
+      "input": { "monthlyTaxablePay": 10000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 1507400, "localIncomeTax": 150740 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table over 10,000,000: 1,507,400 + 1,397,000 + 1,000,000 x 98% x 38%",
+      "input": { "monthlyTaxablePay": 15000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 3276800, "localIncomeTax": 327680 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table thirteen dependants: 87,850 - (106,600 - 87,850) x 2",
+      "input": { "monthlyTaxablePay": 5000000, "dependants": 13, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 50350, "localIncomeTax": 5030 },
+      "derivation": "traced"
+    },
+    {
+      "name": "official table child credit larger than the tax",
+      "input": { "monthlyTaxablePay": 1500000, "dependants": 1, "childrenAged8To20": 1, "withholdingRatePpm": 1000000, "strategy": "OFFICIAL_TABLE" },
+      "expected": { "incomeTax": 0, "localIncomeTax": 0 },
+      "derivation": "traced"
+    },
     {
       "name": "exact formula 3,000,000 one dependant",
       "input": { "monthlyTaxablePay": 3000000, "dependants": 1, "childrenAged8To20": 0, "withholdingRatePpm": 1000000, "strategy": "EXACT_FORMULA" },
@@ -52,7 +113,7 @@
     }
   ],
   "openQuestions": [
-    "The official table gives 74,350 for 3,010,000 and one dependant, but the formula gives 60,380; the official table is not loaded and the gap is unexplained.",
+    "The official table gives 74,350 for 3,010,000 and one dependant, but the formula gives 60,380 (resolved 2026-11-14: the official table is loaded and is the default strategy).",
     "Whether the simple tax table changed for 2026 is unverified (spec 4.2).",
     "SME employee reduction rate and annual limit are unverified."
   ]

@@ -1,4 +1,5 @@
 import type { PayrollRateTable, RateVerification } from './rate-table.types.ts'
+import { OFFICIAL_SIMPLE_TAX_TABLE_2024 } from './simple-tax-table-2024.ts'
 
 const SPEC = 'docs/reference/spec/payroll.md'
 
@@ -135,6 +136,7 @@ export const RATES_2026_01: PayrollRateTable = {
       { from: 3_000_000, to: 10_000_000, step: 20_000 },
     ],
     tableMinimumPay: 770_000,
+    simpleTaxTable: OFFICIAL_SIMPLE_TAX_TABLE_2024,
     taxRoundingUnit: 10,
   },
   localIncomeTax: { ratePpm: 100_000, roundingUnit: 10 },
@@ -280,8 +282,8 @@ export const RATES_2026_01: PayrollRateTable = {
       `${SIMPLE_TAX_TABLE_2024} 제6호 월급여액 구간: 770~1,500천원 5천원, 1,500~3,000천원 1만원, 3,000~10,000천원 2만원`,
     ),
     'wageIncomeTax.tableMinimumPay': confirmed(`${SIMPLE_TAX_TABLE_2024} 제6호 첫 행 770천원`),
-    'wageIncomeTax.simpleTaxStrategy': unverified(
-      `docs/design/review.md D4: 간이세액은 공식 표 대신 산식(MIDPOINT_FORMULA)으로 구해 표 금액과 다를 수 있습니다(300만원·1명 공식 74,350원). 계수는 확인했지만 결과는 추정치입니다`,
+    'wageIncomeTax.simpleTaxTable': confirmed(
+      `${SIMPLE_TAX_TABLE_2024} 제6호 표 646행과 10,000천원 행(300만원·1명 74,350원). 홈택스 엑셀·법령 PDF의 공개 전사본 2종을 대조해 모두 같음, 원본 미대조(2026-11-14, #99)`,
     ),
     'wageIncomeTax.taxRoundingUnit': confirmed(
       `국고금관리법 제47조제1항: 국고금 수입의 10원 미만 끝수는 계산하지 않음. ${law('국고금관리법', '제47조')}`,
@@ -359,6 +361,9 @@ export const RATES_2026_03: PayrollRateTable = {
     'wageIncomeTax.highIncomeBrackets': confirmed(`${SIMPLE_TAX_TABLE_2026} 제6호 10,000천원 초과 구간`),
     'wageIncomeTax.tableRowBands': confirmed(`${SIMPLE_TAX_TABLE_2026} 제6호 월급여액 구간`),
     'wageIncomeTax.tableMinimumPay': confirmed(`${SIMPLE_TAX_TABLE_2026} 제6호 첫 행 770천원`),
+    'wageIncomeTax.simpleTaxTable': confirmed(
+      `${SIMPLE_TAX_TABLE_2026} 제6호: 표 금액은 2024 별표와 같음(홈택스 "근로소득 간이세액표_2026.03.01.xlsx" 전사본과 대조, 원본 미대조, #99)`,
+    ),
   },
 }
 

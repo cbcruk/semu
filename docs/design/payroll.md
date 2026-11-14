@@ -77,7 +77,7 @@
 | 규칙 | 상태 | 근거 |
 |---|---|---|
 | [social-insurance-premiums](../reference/rules/social-insurance-premiums.md) | 요율·상하한(2026-07 포함)·연금·건강·장기요양 절사와 장기요양 비율 13.14% 확인, 고용·산재 절사는 학습용 가정 | 스펙 4.1, 법령·고시 원문 |
-| [simple-income-tax](../reference/rules/simple-income-tax.md) | 산식 계수·자녀 공제액(2026-03 개정) 확인, 공식 표와 차이는 D4로 유지 | 스펙 4.2, 소득세법·별표 2 |
+| [simple-income-tax](../reference/rules/simple-income-tax.md) | 공식 간이세액표 646행을 기준표에 넣고 기본 전략으로(2026-11-14, D4 바꿈). 산식 계수·자녀 공제액(2026-03 개정) 확인 | 스펙 4.2, 소득세법·별표 2 |
 | [daily-worker-withholding](../reference/rules/daily-worker-withholding.md) | 확인 | 스펙 4.3 |
 | [business-income-withholding](../reference/rules/business-income-withholding.md) | 3.3%·예술인 0.8%·업종코드(별지 제23호서식) 확인, 역산은 추정, 예술인 필요경비는 학습용 가정(빼지 않음) | 스펙 4.4, 보험료징수법 시행령, 소득세법 시행규칙 |
 | [other-income-withholding](../reference/rules/other-income-withholding.md) | 20%·15%·과세최저한·지급사유 코드와 의제 경비율(별지 제23호서식) 확인 | 스펙 4.5, 소득세법 제129조, 소득세법 시행규칙 |
@@ -87,7 +87,7 @@
 | [minimum-wage-warning](../reference/rules/minimum-wage-warning.md) | 2026 최저시급 확인(고용노동부고시 제2025-47호), 경고만 하는 것은 추정 | 스펙 4.7 |
 | [severance-pay](../reference/rules/severance-pay.md) | 식·퇴직소득 공제표 확인 | 스펙 4.11, 소득세법 제48조 |
 
-기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 장기요양 비율은 2026-11-07에 2026. 1~10월도 보건복지부 보도자료로 확인했습니다. 남은 미확인 경로는 `employmentInsurance.premiumRoundingUnit`·`industrialAccident.premiumRoundingUnit`(10원 미만 절사는 학습용 가정), `industrialAccident.defaultEmployerRatePpm`(회사 입력), `wageIncomeTax.simpleTaxStrategy`(D4)입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
+기준표 값마다 `verification`에 법령·고시 원문 출처가 있습니다(2026-11-05 확인). 장기요양 비율은 2026-11-07에 2026. 1~10월도 보건복지부 보도자료로 확인했습니다. 남은 미확인 경로는 `employmentInsurance.premiumRoundingUnit`·`industrialAccident.premiumRoundingUnit`(10원 미만 절사는 학습용 가정), `industrialAccident.defaultEmployerRatePpm`(회사 입력)입니다. 간이세액은 2026-11-14부터 공식 표(`wageIncomeTax.simpleTaxTable`)라 확인됨입니다. 미확인 값은 기준표의 `unverifiedPaths`에 경로로 남고, 계산 결과는 그 경로를 쓴 근거 줄을 화면이 "미확인"으로 표시합니다. 결정은 [rule-decisions/payroll.md](rule-decisions/payroll.md)에 있습니다.
 
 ### 계산 결과
 
@@ -580,7 +580,7 @@ flowchart LR
 | # | 현행 | 재설계 |
 |---|---|---|
 | 31 | `POST /api/payroll/calculator/simulate` | `POST /payroll-calculator:simulate` (행 입력과 같은 스키마) |
-| 32 | `GET /api/tax-rates/simple/` | `GET /rate-tables?month=` (간이세액은 산식이라 표 대신 계산기로 확인) |
+| 32 | `GET /api/tax-rates/simple/` | `GET /rate-tables?month=` (간이세액표 646행은 응답에 싣지 않고 계산기 `POST /payroll-calculator:simulate`로 확인) |
 | 33 | `GET /api/tax-rates/necessary-expenses/` | `GET /payroll-reference-codes` (`otherIncome[].expenseRatePpm`) |
 
 ### BPO 대장 (34-45)
@@ -693,7 +693,7 @@ flowchart LR
 
 ## 열린 질문
 
-1. **간이세액표.** 공식 표(300만원·1인 74,350원)와 산식(60,380원)이 크게 다릅니다. 공식 표를 기준표 데이터로 넣고 `lookupSimpleTaxTable`로 바꿀지 확인이 필요합니다
+1. **간이세액표.** ~~공식 표(300만원·1인 74,350원)와 산식(60,380원)이 크게 다릅니다~~ **정함(2026-11-14, #79):** 공식 표(소득세법 시행령 별표 2) 646행과 10,000천원 행을 기준표 `wageIncomeTax.simpleTaxTable`에 넣고 기본 전략을 `OFFICIAL_TABLE`로 바꿨습니다. 1천만원 초과 산식, 11명 초과 가족(별표 제4호), 자녀 공제, 80·100·120%는 표 값에 적용합니다. 산식 전략(`EXACT_FORMULA`·`MIDPOINT_FORMULA`)은 비교용으로 남깁니다([simple-income-tax](../reference/rules/simple-income-tax.md))
 2. **퇴직금 지급과 원천세.** ~~퇴직금을 퇴사월 대장 행으로 넣을지, 정산만 두고 원천세 퇴직소득 줄에 언제 넘길지~~ **정함(2026-11-07):** 정산에 지급일(`paymentDate`)을 두고 지급월의 완료 정산을 A22(퇴직소득 그 외)로 셉니다. 결정 때는 A21로 적었으나 A21은 연금계좌취급자가 쓰는 줄이라 2026-11-08에 줄 코드만 고쳤습니다([퇴직금 정산](#퇴직금-정산)). 남았던 것:
    - ~~합계에 `RETIREMENT`를 더할지, 완료·다시 열기도 그 달의 이벤트를 낼지(대장이 없는 달은?)~~ **정함(2026-11-08):** `PayrollWithholdingTotals`가 완료 정산을 `RETIREMENT`로 더하고(Tax는 A22), 합계가 바뀐 지급월마다 대장이 없는 달이어도 새 이벤트 `payroll_pay_month.withholding_changed`를 냅니다. Tax는 대장 이벤트와 같은 다시 맞춤으로 받습니다([퇴직금 정산](#퇴직금-정산))
    - ~~신고된 지급월의 정산 완료·다시 열기·지급일 이동을 막을지~~ **정함(2026-11-08):** 대장처럼 `WithholdingFilingLock`으로 막습니다(409 `WITHHOLDING_FILED`). 다만 계산됨 정산이 신고된 달에서 빠져나가는 것은 받습니다([원천세 신고 잠금](#원천세-신고-잠금)). 신고 정정은 3번에서 모델링하지 않기로 했습니다
