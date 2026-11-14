@@ -186,11 +186,12 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 |---|---|
 | `<resource>.ts` | 스키마(`Schema.Struct`)와 도메인 오류(`HttpApiError.Problem`) |
 | `<rule>.ts`, `<rule>.types.ts` | 순수 규칙 함수(상태 전이표, 계산). Effect에 의존하지 않습니다 |
+| `<resource>.aggregate.ts` | 애그리거트의 판정 함수 `decide…`: 커맨드 입력, 거부, 다음 상태와 이벤트. 규칙 함수와 같이 순수합니다([domain-model.md](domain-model.md)) |
 | `<resource>-repository.ts` | 저장소 서비스(`Context.Service`). `layer(seed)`는 `TableFactory`로 표를 만들고, `layerMemory(seed)`는 그것을 메모리 표로 채운 것입니다 |
 | `<resources>.ts` | 유스케이스 서비스. 권한 확인, 규칙 호출, 저장 |
 | `<resources>.api.ts` | 엔드포인트 그룹(`HttpApiGroup`) |
 | `<resources>.http.ts` | 핸들러(`HttpApiBuilder.group`) |
-| `*.test.ts`, `*.http.test.ts`, `*.fixtures.test.ts` | 규칙 단위 테스트, HTTP 테스트, 규칙 픽스처 테스트 |
+| `*.test.ts`, `*.aggregate.test.ts`, `*.http.test.ts`, `*.fixtures.test.ts` | 규칙 단위 테스트, 판정 함수 테스트(저장소 없이 given/when/then), HTTP 테스트, 규칙 픽스처 테스트 |
 
 - **다른 컨텍스트의 저장소를 직접 읽지 않습니다.** 필요한 것은 쓰는 쪽이 포트(`Context.Service`)로 선언하고, 제공하는 쪽이 공개 서비스(`<context>.public.ts`)를 내보냅니다. 둘을 잇는 어댑터는 `apps/api/src/wiring/<consumer>-<provider>.ts`에 두고, `wiring.layer.ts`의 `WiringLive`로 묶어 `app.ts`에서 연결합니다
   - 어댑터와 핸들러는 컨텍스트마다 하나뿐인 저장소 인스턴스를 함께 씁니다. 각 컨텍스트의 `<Context>MemoryLive`에 있는 다른 컨텍스트 포트의 가짜는 그 컨텍스트 단위 테스트에서만 씁니다

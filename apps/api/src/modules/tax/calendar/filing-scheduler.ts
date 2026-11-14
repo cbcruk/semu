@@ -3,10 +3,17 @@ import { newId } from '../../../shared/ids/ids.ts'
 import { addDays } from '../../../shared/time/calendar.ts'
 import { ActionCards } from '../action-cards/action-cards.ts'
 import type { FilingRecord } from '../filings/filing.types.ts'
+import {
+  decideDeadlineRefresh,
+  decideScheduleCancel,
+  decideScheduleRestore,
+  decideScheduledFiling,
+  hasAutoLinkedRequirements,
+} from '../filings/filing.aggregate.ts'
+import type { FilingDecision } from '../filings/filing.aggregate.ts'
 import { FilingRepository } from '../filings/filing-repository.ts'
-import { filingStatusChanged } from '../filings/filing-view.ts'
 import { payrollLedgerResponse, requirementTemplate } from '../filings/filing-requirements.ts'
-import { PayrollLedgers, relinkAutoRequirements } from '../filings/payroll-ledgers.ts'
+import { PayrollLedgers } from '../filings/payroll-ledgers.ts'
 import { TaxEvents } from '../tax.public.ts'
 import { currentInstant } from '../tax-time.ts'
 import type { FilingObligation } from './filing-calendar.types.ts'
@@ -60,61 +67,30 @@ export class FilingScheduler extends Context.Service<
         const plan = planSchedule(obligations, existing.map(scheduledFactOf), window)
         const byId = new Map(existing.map((filing) => [filing.id as string, filing]))
 
+        const save = (decision: FilingDecision) =>
+          Effect.gen(function* () {
+            yield* repository.save(decision.filing)
+            if (decision.events.length > 0) yield* events.publish(decision.events)
+          })
+
         for (const obligation of plan.create) {
-          yield* repository.save(yield* newScheduledFiling(profile, obligation, now))
+          yield* save(yield* newScheduledFiling(profile, obligation, now))
         }
         for (const { filingId, obligation } of plan.refresh) {
-          const filing = byId.get(filingId)!
-          yield* repository.save({
-            ...filing,
-            statutoryDue: obligation.statutoryDue,
-            dueDate: obligation.dueDate,
-            paymentDue: obligation.paymentDue,
-            history: [
-              ...filing.history,
-              systemEntry(
-                'DEADLINES_REFRESHED',
-                null,
-                null,
-                { dueDate: obligation.dueDate ?? '', paymentDue: obligation.paymentDue },
-                now,
-              ),
-            ],
-            version: filing.version + 1,
-            updatedAt: now,
-          })
+          yield* save(decideDeadlineRefresh(byId.get(filingId)!, obligation, now))
         }
         for (const { filingId, obligation } of plan.restore) {
           const filing = byId.get(filingId)!
-          // 취소된 동안 급여대장 이벤트가 이 건을 건너뛰었으므로 자동 연계 항목만 지금 현황으로 다시 맞춥니다
-          const relinked = yield* relinkAutoRequirements(
-            payrollLedgers,
-            {
-              ...filing,
-              status: 'SCHEDULED',
-              statutoryDue: obligation.statutoryDue,
-              dueDate: obligation.dueDate,
-              paymentDue: obligation.paymentDue,
-              history: [...filing.history, systemEntry('SCHEDULE_RESTORED', 'CANCELED', 'SCHEDULED', {}, now)],
-            },
-            now,
-          )
-          const restored: FilingRecord = { ...relinked.filing, version: filing.version + 1, updatedAt: now }
-          yield* repository.save(restored)
-          yield* events.publish([filingStatusChanged(filing, restored, now)])
+          // 취소된 동안 급여대장 정책이 이 건을 건너뛰었으므로 자동 연계 항목을 지금 현황으로 다시 맞춥니다
+          const summary = hasAutoLinkedRequirements(filing)
+            ? yield* payrollLedgers.summaryFor(filing.companyId, filing.periodStart, filing.periodEnd)
+            : null
+          yield* save(decideScheduleRestore(filing, obligation, summary, now))
         }
         for (const filingId of plan.cancel) {
-          const filing = byId.get(filingId)!
-          const canceled: FilingRecord = {
-            ...filing,
-            status: 'CANCELED',
-            history: [...filing.history, systemEntry('SCHEDULE_CANCELED', filing.status, 'CANCELED', {}, now)],
-            version: filing.version + 1,
-            updatedAt: now,
-          }
-          yield* repository.save(canceled)
-          yield* cards.applyFilingTrigger(canceled, 'SCHEDULE_CANCELED', now)
-          yield* events.publish([filingStatusChanged(filing, canceled, now)])
+          const decision = decideScheduleCancel(byId.get(filingId)!, now)
+          yield* save(decision)
+          yield* cards.applyFilingTrigger(decision.filing, 'SCHEDULE_CANCELED', now)
         }
         return {
           created: plan.create.length,
@@ -130,48 +106,15 @@ export class FilingScheduler extends Context.Service<
         now: string,
       ) {
         const templates = requirementTemplate(obligation.taxType, obligation.kind, profile.plans.includes('PAYROLL'))
-        const linked = templates.some((template) => template.autoLinked)
+        const linkedResponse = templates.some((template) => template.autoLinked)
           ? payrollLedgerResponse(
               yield* payrollLedgers.summaryFor(profile.companyId, obligation.periodStart, obligation.periodEnd),
             )
           : 'PENDING'
-        const filing: FilingRecord = {
-          id: newId('filing'),
-          companyId: profile.companyId,
-          taxType: obligation.taxType,
-          kind: obligation.kind,
-          periodKey: obligation.periodKey,
-          revision: 0,
-          periodStart: obligation.periodStart,
-          periodEnd: obligation.periodEnd,
-          statutoryDue: obligation.statutoryDue,
-          dueDate: obligation.dueDate,
-          paymentDue: obligation.paymentDue,
-          submitDue: null,
-          status: 'SCHEDULED',
-          payableAmount: null,
-          settlement: null,
-          paidOn: null,
-          ledgerUploadedAt: null,
-          ledgerConfirmedAt: null,
-          ledgerDisputeCount: 0,
-          paymentSlipSentAt: null,
-          requirements: templates.map((template) => ({
-            code: template.code,
-            response: template.autoLinked ? linked : 'PENDING',
-            autoLinked: template.autoLinked,
-            note: null,
-            fileIds: [],
-            updatedBy: null,
-            updatedAt: null,
-          })),
-          documents: [],
-          history: [systemEntry('SCHEDULED', null, 'SCHEDULED', {}, now)],
-          version: 1,
-          createdAt: now,
-          updatedAt: now,
-        }
-        return filing
+        return decideScheduledFiling(
+          { id: newId('filing'), companyId: profile.companyId, obligation, templates, linkedResponse },
+          now,
+        )
       })
 
       const run = Effect.fn('FilingScheduler.run')(function* () {
@@ -206,14 +149,4 @@ function scheduledFactOf(filing: FilingRecord): ScheduledFilingFact {
     paymentDue: filing.paymentDue,
     canceledBy: filing.status !== 'CANCELED' ? null : cancelType === 'SCHEDULE_CANCELED' ? 'SCHEDULE' : 'USER',
   }
-}
-
-function systemEntry(
-  type: FilingRecord['history'][number]['type'],
-  fromStatus: FilingRecord['status'] | null,
-  toStatus: FilingRecord['status'] | null,
-  detail: Record<string, string | number>,
-  now: string,
-): FilingRecord['history'][number] {
-  return { type, actorKind: 'SYSTEM', actorId: null, fromStatus, toStatus, detail, occurredAt: now }
 }
