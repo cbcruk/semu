@@ -43,7 +43,7 @@ import { filingStatusChanged, transitionFacts } from './filing-view.ts'
  * 버전 검사(`If-Match`)는 동시성 규칙이라 서비스가 맡습니다.
  */
 
-/** 판정 함수가 받는 시각과 행위자입니다. 일정 배치처럼 사람이 없는 커맨드는 `actor`가 없습니다. */
+/** 사람이 보낸 커맨드의 판정이 받는 시각과 행위자입니다. 일정 배치처럼 사람이 없는 시스템 커맨드는 문맥 없이 시각(`at`)만 받습니다. */
 export interface FilingDecisionContext {
   /** 커맨드를 처리하는 시각입니다(RFC 3339). */
   at: string
