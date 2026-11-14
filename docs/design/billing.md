@@ -102,6 +102,12 @@
   - 본문(`retryOn`)이나 결제가 다르거나, 같은 키를 재시도와 환불에 함께 쓰면 422 `IDEMPOTENCY_KEY_REUSED`입니다. 앞 요청이 처리 중이면 409 `IDEMPOTENCY_KEY_IN_PROGRESS`(메모리 저장소)입니다
   - 실패한 요청(404·409·412·422)은 키를 남기지 않아 같은 키로 고쳐 다시 보낼 수 있습니다. 둘 다 외부 기관을 부르지 않는 저장소 변경이라 결과를 모르는 경우가 없습니다
   - 요청 기록은 `billing_idempotency_keys` 표(`BillingIdempotency`)에 두고 출금 계좌 등록과 함께 씁니다
+- 결제 예정은 출금일 전까지 구독·출금 동의에 다시 맞춥니다(`adjustScheduledPayment`, 2026-11-14 #105)
+  - 출금일에 플랜을 쓸 수 없게 되면(해지 종료일이 출금일 전, 구독이 없음, 월 이용료 0) `CANCELED`로 바꾸고 `canceledAt`을 남깁니다. 지우지 않으므로 결제 내역에 취소로 보입니다. 결제 번호는 다시 쓰지 않습니다
+  - 금액은 지금 월 이용료로, 출금 계좌(`mandateId`)는 지금 `REGISTERED` 동의로 고칩니다. 동의가 없어졌으면 계좌를 비웁니다
+  - 출금일 당일과 그 뒤에는 이미 CMS 요청이 나갔다고 보고 건드리지 않습니다
+  - 해지를 거둬 다시 자격이 생기면, 결제 예정을 만드는 기간(출금일 3일 전부터 전날)에는 새 결제 예정을 만듭니다. 취소한 결제는 되살리지 않습니다
+  - 다시 맞추는 때: 구독 시작·해지·해지 철회(`Subscriptions.start`·`change`), 출금 계좌 등록(`BillingMandates.register`)이 같은 트랜잭션에서 그 회사를 맞추고, 정기 작업이 매일 모든 회사를 맞춥니다(종료일이 지나 끝난 구독처럼 커맨드를 거치지 않은 변경)
 - 결제 1일 전 알림톡(`noticeDate`)은 알림 컨텍스트가 결제 예정을 보고 보냅니다 (미구현)
 
 ### 결제 수단 (CMS 출금 동의)
@@ -173,6 +179,7 @@ stateDiagram-v2
   [*] --> SCHEDULED: 월 작업 (출금일에 이용 가능, 월 이용료 > 0)
   SCHEDULED --> PAID: CMS 결과 성공
   SCHEDULED --> FAILED: CMS 결과 실패
+  SCHEDULED --> CANCELED: 출금일 전에 자격 없어짐 (다시 맞추기)
   FAILED --> RETRYING: 담당자 retry
   RETRYING --> PAID: CMS 결과 성공
   RETRYING --> FAILED: CMS 결과 실패
@@ -233,7 +240,8 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 
 | 작업 | 시점 | 멱등성 |
 |---|---|---|
-| `scheduleMonth(month)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 돌아, 출금일 3일 전부터 전날까지 그달로 부름(`schedulingMonthOn`, 2026-11-14 #81). 그 밖의 날은 아무것도 하지 않음. 만든 뒤에는 구독 해지·출금 계좌 변경을 결제 예정에 다시 맞추지 않으므로, 만드는 날을 출금일 가까이로 좁혀 그 틈을 사흘 안으로 둠 | 같은 구독·출금일이면 만들지 않음 |
+| `reconcile(today, companyId?)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 모든 회사로 부름(2026-11-14 #81, #105). 구독 시작·해지·해지 철회와 출금 계좌 등록이 그 회사로 같은 트랜잭션에서 부름. 출금일이 오지 않은 `SCHEDULED` 결제를 취소·갱신하고, 출금일 3일 전부터 전날까지는(`schedulingMonthOn`) 그달 빠진 결제 예정을 만듦 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음. 맞는 결제는 그대로 둠 |
+| `scheduleMonth(month)` | 그달 결제 예정 만들기만. `reconcile`이 씀 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음 |
 | `recordWithdrawal(paymentId, result)` | CMS 결과 파일 수신 (출금 다음 날 오후) | 이미 반영된 결과는 그대로 둠 |
 
 ## 오류 코드
@@ -314,7 +322,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 범위 | 상태 |
 |---|---|
 | 구독 조회·담당자 커맨드, `CompanyPlans` 구현 | 구현, HTTP 테스트 |
-| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업이 출금일 3일 전부터 만듦([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 만든 뒤의 해지·계좌 변경을 `SCHEDULED` 결제에 다시 맞추는 규칙(취소·계좌 갱신)은 없음. 출금 결과 반영은 CMS 결과 파일 수신기가 없어 부르는 곳이 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
+| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업이 출금일 3일 전부터 만듦([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 만든 뒤의 해지·계좌 변경은 커맨드와 매일 작업이 다시 맞춤(취소·금액·계좌 갱신, #105). 출금 결과 반영은 CMS 결과 파일 수신기가 없어 부르는 곳이 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
 | 결제 수단 온라인 등록·조회 | 구현. 서면 동의서 업로드 미구현 |
 | 도입 문의(로그인) | 구현. 담당자 배정·알림톡 미구현 |
 | 서비스 계약 조회 | 구현. 계약 체결 흐름(#36-42) 미구현 |

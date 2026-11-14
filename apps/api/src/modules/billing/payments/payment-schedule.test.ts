@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { allowedPaymentActions, nextBusinessDay, plannedPayments, schedulingMonthOn } from './payment-schedule.ts'
+import {
+  adjustScheduledPayment,
+  allowedPaymentActions,
+  nextBusinessDay,
+  paymentTransition,
+  plannedPayments,
+  schedulingMonthOn,
+} from './payment-schedule.ts'
 
 describe('다음 영업일', () => {
   it('평일은 그대로 두고 주말과 이어진 공휴일은 건너뜁니다', () => {
@@ -62,5 +69,57 @@ describe('그달 결제 예정', () => {
     })
 
     expect(items).toEqual([])
+  })
+})
+
+describe('결제 예정 다시 맞추기', () => {
+  const payment = { status: 'SCHEDULED' as const, scheduledOn: '2026-12-28', amount: 330000, mandateId: 'mdt_1' }
+  const subscription = {
+    subscriptionId: 'sub_1',
+    plan: 'PAYROLL' as const,
+    status: 'ACTIVE' as const,
+    startsOn: '2026-01-01',
+    monthlyFee: 330000,
+  }
+  const base = { payment, subscription, registeredMandateId: 'mdt_1', today: '2026-12-26' }
+
+  it('구독·출금 동의가 그대로면 둡니다', () => {
+    expect(adjustScheduledPayment(base)).toEqual({ kind: 'KEEP' })
+  })
+
+  it('해지 종료일이 출금일 전이거나 구독이 없으면 취소합니다', () => {
+    const cancelling = { ...subscription, status: 'CANCELLATION_SCHEDULED' as const, endsOn: '2026-12-27' }
+    expect(adjustScheduledPayment({ ...base, subscription: cancelling })).toEqual({ kind: 'CANCEL' })
+    expect(adjustScheduledPayment({ ...base, subscription: undefined })).toEqual({ kind: 'CANCEL' })
+  })
+
+  it('종료일이 출금일이면 그날까지 이용하므로 둡니다', () => {
+    const cancelling = { ...subscription, status: 'CANCELLATION_SCHEDULED' as const, endsOn: '2026-12-28' }
+    expect(adjustScheduledPayment({ ...base, subscription: cancelling })).toEqual({ kind: 'KEEP' })
+  })
+
+  it('새로 등록한 출금 동의와 지금 월 이용료로 고칩니다', () => {
+    expect(
+      adjustScheduledPayment({
+        ...base,
+        subscription: { ...subscription, monthlyFee: 440000 },
+        registeredMandateId: 'mdt_2',
+      }),
+    ).toEqual({ kind: 'UPDATE', amount: 440000, mandateId: 'mdt_2' })
+  })
+
+  it('출금일 당일이거나 이미 결과가 난 결제는 건드리지 않습니다', () => {
+    expect(adjustScheduledPayment({ ...base, subscription: undefined, today: '2026-12-28' })).toEqual({ kind: 'KEEP' })
+    expect(
+      adjustScheduledPayment({ ...base, payment: { ...payment, status: 'FAILED' }, subscription: undefined }),
+    ).toEqual({
+      kind: 'KEEP',
+    })
+  })
+
+  it('취소는 결제 예정에서만 되고 취소한 결제는 더 바뀌지 않습니다', () => {
+    expect(paymentTransition('SCHEDULED', 'CANCEL')).toBe('CANCELED')
+    expect(paymentTransition('FAILED', 'CANCEL')).toBeUndefined()
+    expect(allowedPaymentActions('CANCELED')).toEqual([])
   })
 })

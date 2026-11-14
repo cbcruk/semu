@@ -76,7 +76,7 @@ decide(state, command, context) → { state, events } | 거부
 | 애그리거트 | 키 | 불변식 | 커맨드 |
 |---|---|---|---|
 | Subscription | `subscriptionId` | 전이표. 해지일은 오늘·시작일 이후. *회사·플랜마다 끝나지 않은 구독은 하나* | 시작, 해지 예약, 해지 철회 |
-| Payment | `paymentId` | 전이표(재시도·환불·출금 결과). 재시도일은 오늘 이후 | 재시도, 환불, 출금 결과 반영, 월 예정 생성(예약 커맨드) |
+| Payment | `paymentId` | 전이표(재시도·환불·출금 결과·취소). 재시도일은 오늘 이후. 출금일 전의 예정만 다시 맞춤 | 재시도, 환불, 출금 결과 반영, 월 예정 생성·다시 맞추기(예약 커맨드) |
 | BillingMandate | `mandateId` | 기관 결과(`context`)가 거절이면 `REJECTED`로 남기고 거부. *회사에 `REGISTERED` 계좌는 하나* | 등록(이전 계좌 해지와 묶음) |
 | Consultation | `leadId` | *같은 상품으로 열린 문의는 하나, 이미 구독한 상품이면 거부* | 요청 |
 
@@ -196,13 +196,14 @@ decide(state, command, context) → { state, events } | 거부
 | 세금계산서 발급 | **TaxInvoice** | 매출 증빙 만들기 | 같은 트랜잭션 | 정책 `tax_invoice.issued`. 증빙은 이미 `externalKey`로 멱등 |
 | 명세서 발송 | **PayslipSend** | 메일 발송(건별 결과를 남김) | 요청 안에서 호출 | 사가 후보([payroll.md](payroll.md)) |
 | 지로 납부 | **묶음: Giro + 납부 시도** | 기관 납부 호출 | 요청 안에서 호출 | 결과를 `context`로 받음([M8](#결정)) |
-| 출금 계좌 등록 | **묶음: BillingMandate(새·이전)** | CMS 등록 호출 | 요청 안에서 호출 | 결과를 `context`로 받음([M8](#결정)) |
+| 출금 계좌 등록 | **묶음: BillingMandate(새·이전)** | CMS 등록 호출, 결제 예정의 출금 계좌 다시 맞춤 | 요청 안에서 호출, 다시 맞춤은 같은 트랜잭션 | 결과를 `context`로 받음([M8](#결정)). 다시 맞춤은 정책 `billing_mandate.registered` → 결제 예정 맞추기 |
+| 구독 시작·해지·해지 철회 | **Subscription** | 결제 예정 취소·갱신·만들기 | 같은 트랜잭션(#105) | 정책 `subscription.changed` → 그 회사 결제 예정 맞추기. 매일 작업이 같은 맞추기를 모든 회사에 함 |
 
 ## 이벤트
 
 이벤트 목록은 [events.md](events.md#이벤트-목록)와 각 컨텍스트 문서가 단일 출처입니다. 이 구조에서 덧붙이는 규칙만 적습니다.
 
-- 이 문서의 표에 있지만 events.md에 없는 이름(`role.deleted`, `invitation.created`, `partner.created`, `scrap.item_succeeded`, `family_member.changed`, `employee.deleted`, `employee.resignation_canceled`, `social_insurance_setting.changed`, `filing.document_viewed`)은 설계 단계 이름입니다. 그 정책을 옮기는 PR이 이름과 payload를 정해 events.md에 올립니다
+- 이 문서의 표에 있지만 events.md에 없는 이름(`role.deleted`, `invitation.created`, `partner.created`, `scrap.item_succeeded`, `family_member.changed`, `employee.deleted`, `employee.resignation_canceled`, `social_insurance_setting.changed`, `filing.document_viewed`, `subscription.changed`, `billing_mandate.registered`)은 설계 단계 이름입니다. 그 정책을 옮기는 PR이 이름과 payload를 정해 events.md에 올립니다
 
 - 이벤트는 그것을 낸 애그리거트의 `decide`가 만듭니다. 서비스가 이벤트를 직접 조립하지 않습니다
 - 정책이 판단에 쓰는 필드는 payload에 넣습니다. 개인정보는 넣지 않고, 필요하면 정책이 애그리거트를 읽습니다

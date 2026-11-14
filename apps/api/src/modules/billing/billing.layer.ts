@@ -20,7 +20,9 @@ import { SubscriptionCompanyPlansLive } from './subscriptions/subscription-compa
 import { SubscriptionsHttpLive } from './subscriptions/subscriptions.http.ts'
 import { Subscriptions } from './subscriptions/subscriptions.ts'
 
-const ServicesLive = Layer.mergeAll(Subscriptions.layer, Payments.layer, BillingMandates.layer, Consultations.layer)
+const ServicesLive = Layer.mergeAll(Subscriptions.layer, BillingMandates.layer, Consultations.layer).pipe(
+  Layer.provideMerge(Payments.layer),
+)
 
 /**
  * 정기 작업 `billing.payment-schedule`([payment-schedule-task.ts](./payments/payment-schedule-task.ts))이 쓰는 결제 서비스입니다.

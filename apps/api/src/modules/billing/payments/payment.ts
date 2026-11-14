@@ -12,7 +12,7 @@ import type { PaymentStatus } from './payment-schedule.types.ts'
 export type PaymentId = Id<'payment'>
 
 /** 결제 상태 스키마입니다. 전이는 `payment-schedule.ts`에 있습니다. */
-export const PaymentStatusSchema = Schema.Literals(['SCHEDULED', 'PAID', 'FAILED', 'RETRYING', 'REFUNDED'])
+export const PaymentStatusSchema = Schema.Literals(['SCHEDULED', 'PAID', 'FAILED', 'RETRYING', 'REFUNDED', 'CANCELED'])
 
 /** 출금 실패 사유입니다. CMS 결과 코드를 이 값으로 옮깁니다. */
 export const PaymentFailureReason = Schema.Literals([
@@ -43,6 +43,7 @@ export const Payment = Schema.Struct({
   account: Schema.optionalKey(PaymentAccount),
   settledAt: Schema.optionalKey(Schema.String),
   refundedAt: Schema.optionalKey(Schema.String),
+  canceledAt: Schema.optionalKey(Schema.String),
   /** 세무 대리인 담당자만 받습니다. 고객에게는 항상 비어 있습니다. */
   allowedActions: Schema.Array(Schema.Literals(['RETRY', 'REFUND'])),
   version: Schema.Int,
@@ -63,6 +64,8 @@ export interface PaymentRecord {
   failureReason?: PaymentFailureReason | undefined
   settledAt?: string | undefined
   refundedAt?: string | undefined
+  /** 결제 예정을 취소한 시각입니다. */
+  canceledAt?: string | undefined
   createdAt: string
   version: number
 }
