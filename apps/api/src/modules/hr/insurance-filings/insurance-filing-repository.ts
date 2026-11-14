@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
-import { OPEN_STATUSES } from './insurance-filing-rules.ts'
+import { withdrawnEmployeeFilings, withdrawnFilings } from './insurance-filing.aggregate.ts'
 import type {
   InsuranceFiling,
   InsuranceFilingKind,
@@ -38,9 +38,9 @@ export class InsuranceFilingRepository extends Context.Service<
     find(companyId: Id<'company'>, id: Id<'insuranceFiling'>): Effect.Effect<Option.Option<InsuranceFiling>>
     listByEmployee(companyId: Id<'company'>, employeeId: Id<'employee'>): Effect.Effect<ReadonlyArray<InsuranceFiling>>
     save(filing: InsuranceFiling): Effect.Effect<void>
-    /** 직원의 열린 신고(`PENDING`·`FAILED`)를 모두 `WITHDRAWN`으로 닫습니다. 직원을 지울 때 씁니다. */
+    /** 직원의 열린 신고(`PENDING`·`FAILED`)를 모두 `WITHDRAWN`으로 닫습니다. 직원을 지울 때 씁니다({@link withdrawnEmployeeFilings}). */
     withdrawEmployee(companyId: Id<'company'>, employeeId: Id<'employee'>, at: string): Effect.Effect<void>
-    /** 같은 원인·종류의 열린 신고(`PENDING`·`FAILED`)를 `WITHDRAWN`으로 닫습니다. */
+    /** 같은 원인·종류의 열린 신고(`PENDING`·`FAILED`)를 `WITHDRAWN`으로 닫습니다({@link withdrawnFilings}). */
     withdraw(
       companyId: Id<'company'>,
       source: InsuranceFilingSource,
@@ -70,25 +70,11 @@ export class InsuranceFilingRepository extends Context.Service<
           save: (filing) => table.put(filing),
           withdrawEmployee: (companyId, employeeId, at) =>
             Effect.flatMap(table.byCompany(companyId), (filings) =>
-              Effect.forEach(
-                filings.filter((filing) => filing.employeeId === employeeId && OPEN_STATUSES.includes(filing.status)),
-                (filing) => table.put({ ...filing, status: 'WITHDRAWN', processedAt: at }),
-                { discard: true },
-              ),
+              Effect.forEach(withdrawnEmployeeFilings(filings, employeeId, at), table.put, { discard: true }),
             ),
           withdraw: (companyId, source, kind, at) =>
             Effect.flatMap(table.byCompany(companyId), (filings) =>
-              Effect.forEach(
-                filings.filter(
-                  (filing) =>
-                    filing.kind === kind &&
-                    OPEN_STATUSES.includes(filing.status) &&
-                    filing.source.type === source.type &&
-                    filing.source.id === source.id,
-                ),
-                (filing) => table.put({ ...filing, status: 'WITHDRAWN', processedAt: at }),
-                { discard: true },
-              ),
+              Effect.forEach(withdrawnFilings(filings, source, kind, at), table.put, { discard: true }),
             ),
         })
       }),
