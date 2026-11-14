@@ -10,7 +10,7 @@ import { companyDate } from '../../../shared/time/company-date.ts'
 import { HrDirectory } from '../../hr/hr.public.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { CompanySealRepository } from '../seals/company-seal.ts'
-import { DocumentEvents, DocumentNotifier } from '../shared/documents-ports.ts'
+import { DocumentEvents, DocumentNotifier, type DocumentEvent } from '../shared/documents-ports.ts'
 import { stripUndefined } from '../../../shared/http/strip-undefined.ts'
 import { EsignTemplateRepository, type EsignTemplateRecord } from '../templates/esign-template.ts'
 import { allowedEsignActions, dueDateOnSend, isOverdue, transitionEsignRequest } from './esign-request-status.ts'
@@ -78,6 +78,11 @@ export class EsignRequests extends Context.Service<
       command: 'REVERT_TO_DRAFT' | 'CANCEL' | 'VOID',
       expectedVersion: number | undefined,
     ): Effect.Effect<EsignRequest, CommandError>
+    /**
+     * 시스템 커맨드입니다. 회사의 서명 대기·진행 중 요청 중 기한(`dueDate`)이 지난 것을 `EXPIRED`로 바꾸고 `esign_request.expired`를
+     * 냅니다. 바꾼 건수를 돌려줍니다. 같은 날 다시 불러도 바꿀 것이 없습니다.
+     */
+    expireOverdue(companyId: Id<'company'>): Effect.Effect<number>
   }
 >()('semu/documents/EsignRequests') {
   static readonly layer = Layer.effect(
@@ -333,7 +338,46 @@ export class EsignRequests extends Context.Service<
           }
           return toView(next, now.today)
         }),
+
+        expireOverdue: Effect.fn('EsignRequests.expireOverdue')(function* (companyId) {
+          const now = yield* clock
+          let expired = 0
+          for (const record of yield* requests.list(companyId)) {
+            const decision = decideExpire(record, now.today, now.iso)
+            if (decision === null) continue
+            yield* requests.save(decision.request)
+            for (const event of decision.events) yield* events.publish(event)
+            expired += 1
+          }
+          return expired
+        }),
       })
     }),
   )
+}
+
+/**
+ * 기한이 지난 서명 대기·진행 중 요청을 만료합니다. 바꿀 것이 없으면 `null`입니다(시스템 커맨드, [domain-model.md](../../../../../../docs/design/domain-model.md)).
+ *
+ * 링크 토큰과 서명 세션을 지워 링크를 닫습니다. 다시 보내면(`:resend`) 새 링크가 나갑니다.
+ */
+export function decideExpire(
+  record: EsignRequestRecord,
+  today: string,
+  at: string,
+): { request: EsignRequestRecord; events: DocumentEvent[] } | null {
+  if (!isOverdue(record.status, record.dueDate, today)) return null
+  const result = transitionEsignRequest(record.status, 'EXPIRE')
+  if (!result.ok || result.to === 'DELETED') return null
+  return {
+    request: {
+      ...record,
+      status: result.to,
+      linkTokenHash: undefined,
+      sessions: [],
+      version: record.version + 1,
+      updatedAt: at,
+    },
+    events: [{ type: 'esign_request.expired', companyId: record.companyId, requestId: record.id, at }],
+  }
 }

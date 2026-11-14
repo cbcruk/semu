@@ -60,8 +60,8 @@ stateDiagram-v2
   PENDING --> CANCELED: :cancel
   IN_PROGRESS --> CANCELED: :cancel
   IN_PROGRESS --> COMPLETED: 서명자 :complete
-  PENDING --> EXPIRED: 기한 다음날 00:00 (스케줄러)
-  IN_PROGRESS --> EXPIRED: 기한 다음날 00:00 (스케줄러)
+  PENDING --> EXPIRED: 기한 다음날 00:05 (정기 작업)
+  IN_PROGRESS --> EXPIRED: 기한 다음날 00:05 (정기 작업)
   COMPLETED --> VOIDED: :void
   CANCELED --> DRAFT: :revert-to-draft
   EXPIRED --> DRAFT: :revert-to-draft
@@ -89,7 +89,7 @@ stateDiagram-v2
 
 - **`PENDING`과 `IN_PROGRESS`의 경계는 본인확인 성공입니다.** 링크 열람만으로는 바뀌지 않습니다. 레거시 구현과 같습니다
 - **`IN_PROGRESS`도 취소할 수 있습니다.** 화면은 "서명 전"에만 버튼을 보였지만, 서명 중인 사람이 끝내지 않는 경우를 정리할 길이 필요합니다
-- **기한 만료는 스케줄러 작업이 처리합니다.** `dueDate` 다음날 00:00(회사 시간대)에 `EXPIRED`로 바꾸고 `esign_request.expired`를 냅니다(스케줄러와 이벤트 모두 미구현). 조회는 상태를 바꾸지 않지만, 스케줄러가 늦어도 링크는 `dueDate`가 지났으면 닫힌 것으로 답합니다
+- **기한 만료는 정기 작업이 처리합니다(2026-11-14, #81).** `documents.esign-expiry`가 매일 00:05(회사 시간대)에 `dueDate`가 지난 서명 대기·진행 중 요청을 `EXPIRED`로 바꾸고, 링크 토큰·서명 세션을 지우고, `esign_request.expired`를 냅니다(시스템 커맨드 `expireOverdue`, 판정 `decideExpire`, [esign-expiry-task.ts](../../apps/api/src/modules/documents/esign/esign-expiry-task.ts)). 기한은 `dueDate` 당일까지라 다음날 00:00부터 만료이고 몇 분은 여유입니다. 조회는 상태를 바꾸지 않지만, 작업이 늦어도 조회와 링크는 `dueDate`가 지났으면 만료로 답합니다(`effectiveStatus`)
 - 기본 서명 기한은 발송일 + 16일입니다(매뉴얼 스크린샷 2026.06.23 → 07.09). 발송 시 과거 날짜는 422 `ESIGN_DUE_DATE_PAST`입니다
 
 ### 발송 검증
@@ -255,7 +255,7 @@ GET /document-forms/{documentFormCode}/file
 |---|---|---|---|
 | `esign_request.sent` | `:send`, `:resend`에서 발송 성공 | 단말 | 구현(메모리), 소비자 없음 |
 | `esign_request.completed` | 서명자 `:complete` | HR(계약·보관함·신규 직원·사직 사유) | 구현(메모리), HR 소비 미구현 |
-| `esign_request.expired` | 스케줄러 만료 | 단말 | 미구현 |
+| `esign_request.expired` | 정기 작업 만료 | 단말 | 구현(메모리), 소비자 없음 |
 | `esign_request.canceled`, `esign_request.voided` | `:cancel`, `:void` | HR(무효화된 계약 표시는 [열린 질문](#열린-질문)) | 미구현 |
 | `certificate.issued` | 발급 | HR(보관함) | 구현(메모리), HR 소비 미구현 |
 | `certificate.sent` | 발송 성공 | | 미구현 |
@@ -352,8 +352,8 @@ GET /document-forms/{documentFormCode}/file
 | 제증명 (`GET/POST /certificate-issuances`, `GET /{id}`, `:send`, `:void`) | 구현, HTTP 테스트 |
 | 템플릿 조회 (`GET /esign-templates`, `GET /esign-templates/{id}`) | 구현(기본 템플릿 5종) |
 | 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만). 도장은 `GET/POST /company-seals`, `DELETE /company-seals/{id}`(회사 범위, 5개 한도, 소프트 삭제)만 구현했고 이미지 내려받기·발송 시점 스냅샷은 미구현입니다. 데모 법인에 도장 하나가 들어 있습니다 |
-| 기한 만료 스케줄러 | 미구현. 저장 상태는 바꾸지 않고 읽을 때 만료를 반영합니다 |
-| 이벤트 outbox | `esign_request.completed`·`esign_request.voided`만 outbox 채널 `esign_request->hr`로 HR에 갑니다([documents-hr.ts](../../apps/api/src/wiring/documents-hr.ts)). `esign_request.sent`·`certificate.issued`는 받는 곳이 없어 버립니다 |
+| 기한 만료 정기 작업 | 구현(`documents.esign-expiry`, 매일 00:05). 작업 전에도 읽을 때 만료를 반영합니다 |
+| 이벤트 outbox | `esign_request.completed`·`esign_request.voided`만 outbox 채널 `esign_request->hr`로 HR에 갑니다([documents-hr.ts](../../apps/api/src/wiring/documents-hr.ts)). `esign_request.sent`·`esign_request.expired`·`certificate.issued`는 받는 곳이 없어 버립니다 |
 | 멱등성 키 재응답 | 미구현 |
 
 ## 열린 질문
