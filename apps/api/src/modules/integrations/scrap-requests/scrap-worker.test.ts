@@ -110,6 +110,55 @@ describe('수집 작업자', () => {
     expect(failing.allowedActions).toContain('RETRY')
   })
 
+  it('정기 수집은 재시도할 수 없게 실패한 연동을 건너뛰고, 모두 그렇다면 요청을 만들지 않습니다', async () => {
+    const { received, run } = setup()
+
+    const result = await run(
+      Effect.gen(function* () {
+        const integrations = yield* Integrations
+        const repository = yield* IntegrationRepository
+        const requests = yield* ScrapRequests
+        const worker = yield* ScrapWorker
+        const second = yield* integrations.register(actor, {
+          type: 'BANK',
+          authMethod: 'ID_PASSWORD',
+          institutionCodes: ['088'],
+          accountId: 'second',
+          password: 'secret-1',
+          itemKeys: ['088-1'],
+        })
+        const pause = (integrationId: Id<'integration'>) =>
+          Effect.gen(function* () {
+            const found = yield* repository.find(actor.companyId, integrationId)
+            if (found._tag === 'None') return
+            yield* repository.save({
+              ...found.value,
+              lastScrap: {
+                status: 'FAILED',
+                code: 'INVALID_CREDENTIAL',
+                isRetryable: false,
+                finishedAt: '2026-11-13T22:00:00.000Z',
+              },
+            })
+          })
+        yield* pause(DEMO_INTEGRATION_IDS.bank)
+        const scheduled = yield* requests.requestScheduled(actor.companyId, 'BANK', '2026-11-14T07:00')
+        const [job] = yield* requests.list(actor, 'BANK')
+        if (job !== undefined) yield* worker.run(actor.companyId, job.id)
+        const done = job === undefined ? undefined : yield* requests.get(actor, job.id)
+        yield* pause(second.id)
+        const paused = yield* requests.requestScheduled(actor.companyId, 'BANK', '2026-11-15T07:00')
+        return { scheduled, done, paused, secondId: second.id }
+      }),
+    )
+
+    expect(result.scheduled).toBe('CREATED')
+    expect(result.done?.status).toBe('SUCCEEDED')
+    expect(result.done?.result?.items.map((item) => item.integrationId)).toEqual([result.secondId])
+    expect(received.map((batch) => batch.integrationId)).toEqual([result.secondId])
+    expect(result.paused).toBe('PAUSED')
+  })
+
   it('비밀번호를 평문으로 저장하지 않습니다', async () => {
     const { run } = setup()
 

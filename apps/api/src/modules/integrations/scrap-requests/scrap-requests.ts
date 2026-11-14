@@ -7,6 +7,7 @@ import { INSTITUTION_TYPES } from '../institutions/institution.ts'
 import type { InstitutionType } from '../institutions/institution.ts'
 import { IntegrationRepository } from '../integrations/integration-repository.ts'
 import { IntegrationItemNotFound, IntegrationNotFound } from '../integrations/integration.ts'
+import { isPausedForSchedule } from '../integrations/scrap-retry.ts'
 import {
   effectiveJobStatus,
   SCRAP_COOLDOWN_SECONDS,
@@ -114,6 +115,8 @@ export class ScrapRequests extends Context.Service<
      *
      * - 그 기관 종류의 연동이 없으면 `NOT_CONNECTED`
      * - 홈택스인데 동의한 수임동의가 없으면 `DELEGATION_REQUIRED`
+     * - 그 종류의 연동이 모두 재시도할 수 없게 실패해 있으면 `PAUSED`({@link isPausedForSchedule}). 일부만 그렇다면 요청을 만들고
+     *   워커가 그 연동을 건너뜁니다
      * - 같은 슬롯의 요청이 이미 있으면 그것을 두고 `REPLAYED`(키 `schedule:<슬롯>#<기관 종류>`)
      * - 앞 요청이 아직 진행 중(타임아웃 전)이면 `RUNNING`. 사용자 쿨다운은 정기 수집을 막지 않습니다
      * - 아니면 요청을 만들어 큐에 넣고 `CREATED`
@@ -122,7 +125,7 @@ export class ScrapRequests extends Context.Service<
       companyId: Id<'company'>,
       institutionType: InstitutionType,
       slotKey: string,
-    ): Effect.Effect<'CREATED' | 'REPLAYED' | 'RUNNING' | 'NOT_CONNECTED' | 'DELEGATION_REQUIRED'>
+    ): Effect.Effect<'CREATED' | 'REPLAYED' | 'RUNNING' | 'NOT_CONNECTED' | 'DELEGATION_REQUIRED' | 'PAUSED'>
   }
 >()('semu/integrations/ScrapRequests') {
   /** 저장소와 큐 포트로 만듭니다. */
@@ -256,6 +259,8 @@ export class ScrapRequests extends Context.Service<
           const connected = yield* integrations.listByCompany(companyId, institutionType)
           if (connected.length === 0) return 'NOT_CONNECTED' as const
           if (yield* delegationMissing(companyId, institutionType, 'SYSTEM')) return 'DELEGATION_REQUIRED' as const
+          const active = connected.filter((integration) => !isPausedForSchedule(integration.lastScrap))
+          if (active.length === 0) return 'PAUSED' as const
           const key = `schedule:${slotKey}#${institutionType}`
           if (Option.isSome(yield* repository.findByIdempotencyKey(companyId, key))) return 'REPLAYED' as const
           const latest = Option.getOrUndefined(yield* repository.latest(companyId, institutionType))
@@ -268,7 +273,7 @@ export class ScrapRequests extends Context.Service<
             { companyId, kind: 'SYSTEM' },
             { institutionType },
             key,
-            connected.every((integration) => integration.lastScrap === undefined),
+            active.every((integration) => integration.lastScrap === undefined),
           )
           return 'CREATED' as const
         }),
