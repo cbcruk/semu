@@ -5,7 +5,6 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import { AccessTokens, hashAccessToken } from '../access-tokens.ts'
 import type { AccessibleCompany } from '../access/actor-directory.ts'
 import { ActorDirectory } from '../access/actor-directory.ts'
-import { isAgentKind } from '../access/agent-directory.ts'
 import { verifyPassword } from '../accounts/password-hash.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
 import {
@@ -20,6 +19,26 @@ import type { UserRecord } from '../accounts/user.ts'
 import { AuditLog } from '../audit/audit-log.ts'
 import { CompanyNotFound } from '../companies/company.ts'
 import { randomSecret, sha256, splitRefreshToken } from './refresh-cookie.ts'
+import {
+  accessInvalidations,
+  agencyScopeAudit,
+  bindAgency,
+  bindCompany,
+  bindOnboarding,
+  chooseCompany,
+  companySwitchAudit,
+  consumeOnboarding,
+  decideRefreshTokenUse,
+  decideSignOut,
+  onboardingUserOf,
+  openSession,
+  planAgencyScope,
+  requireActiveUser,
+  revokeSession,
+  rotateSession,
+  userWithLastCompany,
+  type SessionChange,
+} from './session.aggregate.ts'
 import { SessionRepository } from './session-repository.ts'
 import { AgencyScopeNotAllowed, SessionInvalid } from './session.ts'
 import type { SessionGrant, SessionRecord, SessionRevocation } from './session.ts'
@@ -27,16 +46,13 @@ import type { SessionGrant, SessionRecord, SessionRevocation } from './session.t
 /** access token 수명(초)입니다. `AccessTokens.layerExpiring`에 같은 값을 넣습니다. */
 export const ACCESS_TOKEN_TTL_SECONDS = 600
 
-/** onboarding token(회사 등록용) 수명(초)입니다. 세션이 먼저 끝나면 그때 끝납니다. refresh하면 새로 받습니다. */
-export const ONBOARDING_TOKEN_TTL_SECONDS = 3600
-
-/** `staySignedIn` 없이 로그인한 세션의 수명(초)입니다. */
-export const SHORT_SESSION_SECONDS = 86_400
-
-/** `staySignedIn`으로 로그인한 세션의 수명(초)입니다. */
-export const LONG_SESSION_SECONDS = 14 * 86_400
-
 export { MAX_FAILED_SIGN_INS } from '../accounts/user.aggregate.ts'
+export {
+  chooseCompany,
+  LONG_SESSION_SECONDS,
+  ONBOARDING_TOKEN_TTL_SECONDS,
+  SHORT_SESSION_SECONDS,
+} from './session.aggregate.ts'
 
 /** 공개 데모 계정의 로그인 ID입니다. 데모 계정은 읽기만 합니다. */
 export const DEMO_EMAIL = 'demo@semu.example'
@@ -108,6 +124,12 @@ export class Sessions extends Context.Service<
 
       const nowIso = Clock.currentTimeMillis.pipe(Effect.map((now) => new Date(now).toISOString()))
 
+      /** 판정이 정한 세션을 저장합니다. 쥐고 있던 access token을 먼저 폐기합니다. */
+      const saveSession = Effect.fn('Sessions.saveSession')(function* (change: SessionChange) {
+        if (change.revokedAccessTokenHash !== undefined) yield* tokens.revokeHash(change.revokedAccessTokenHash)
+        yield* sessions.save(change.session)
+      })
+
       /** 세션에 회사를 묶고 access token(회사가 없으면 onboarding token)을 발급합니다. */
       const bind = Effect.fn('Sessions.bind')(function* (
         session: SessionRecord,
@@ -117,21 +139,11 @@ export class Sessions extends Context.Service<
         const companies = yield* directory.companiesOf(user.id)
         const chosen = chooseCompany(companies, requested, user.lastCompanyId)
         if (chosen === 'NOT_FOUND') return yield* new CompanyNotFound({})
-        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
 
         const summaries = companies.map(toCompanySummary)
         if (chosen === undefined) {
-          const { accessTokenHash: _, companyId: __, scope: ___, ...rest } = session
           const onboardingToken = randomSecret()
-          const expiresAt = Math.min(
-            (yield* Clock.currentTimeMillis) + ONBOARDING_TOKEN_TTL_SECONDS * 1000,
-            Date.parse(session.expiresAt),
-          )
-          yield* sessions.save({
-            ...rest,
-            onboardingTokenHash: sha256(onboardingToken),
-            onboardingTokenExpiresAt: new Date(expiresAt).toISOString(),
-          })
+          yield* saveSession(bindOnboarding(session, sha256(onboardingToken), yield* Clock.currentTimeMillis))
           const grant: SessionGrant = { onboardingToken, user: toUserProfile(user), companies: summaries }
           return { grant }
         }
@@ -139,14 +151,9 @@ export class Sessions extends Context.Service<
         const resolved = yield* directory.resolve(user.id, chosen.company.id)
         if (Option.isNone(resolved)) return yield* new CompanyNotFound({})
         const accessToken = yield* tokens.issue(resolved.value.actor)
-        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, scope: ___, ...rest } = session
-        const next: SessionRecord = {
-          ...rest,
-          companyId: chosen.company.id,
-          accessTokenHash: hashAccessToken(accessToken),
-        }
-        yield* sessions.save(next)
-        if (user.lastCompanyId !== chosen.company.id) yield* users.save({ ...user, lastCompanyId: chosen.company.id })
+        yield* saveSession(bindCompany(session, chosen.company.id, hashAccessToken(accessToken)))
+        const lastCompany = userWithLastCompany(user, chosen.company.id)
+        if (lastCompany !== undefined) yield* users.save(lastCompany)
         const grant: SessionGrant = {
           accessToken,
           tokenType: 'Bearer',
@@ -160,13 +167,13 @@ export class Sessions extends Context.Service<
       })
 
       /** 세션을 대리인 범위로 바꾸고 대리인 범위 access token을 발급합니다. 담당 회사는 토큰에 넣지 않습니다. */
-      const bindAgency = Effect.fn('Sessions.bindAgency')(function* (session: SessionRecord, user: UserRecord) {
-        const userKind = user.kind
-        if (!isAgentKind(userKind)) return yield* new AgencyScopeNotAllowed({})
-        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
+      const bindAgencyScope = Effect.fn('Sessions.bindAgencyScope')(function* (
+        session: SessionRecord,
+        user: UserRecord,
+      ) {
+        const userKind = yield* Effect.fromResult(planAgencyScope(user))
         const accessToken = yield* tokens.issueAgency({ scope: 'AGENCY', userId: user.id, userKind })
-        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, companyId: ___, ...rest } = session
-        yield* sessions.save({ ...rest, scope: 'AGENCY', accessTokenHash: hashAccessToken(accessToken) })
+        yield* saveSession(bindAgency(session, hashAccessToken(accessToken)))
         const companies = yield* directory.companiesOf(user.id)
         const grant: SessionGrant = {
           accessToken,
@@ -185,19 +192,16 @@ export class Sessions extends Context.Service<
       ) {
         const user = yield* users.findById(userId).pipe(Effect.flatMap(Effect.fromOption), Effect.orDie)
         const now = yield* Clock.currentTimeMillis
-        const lifetime = options.staySignedIn ? LONG_SESSION_SECONDS : SHORT_SESSION_SECONDS
         const secret = randomSecret()
-        const session: SessionRecord = {
+        const { session, lifetimeSeconds } = openSession({
           id: newId('session', now),
           userId,
-          refreshSecretHash: sha256(secret),
-          rotatedSecretHashes: [],
+          secretHash: sha256(secret),
           staySignedIn: options.staySignedIn,
-          createdAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + lifetime * 1000).toISOString(),
-        }
+          now,
+        })
         const bound = yield* bind(session, user, options.companyId)
-        return { grant: bound.grant, refreshToken: `${session.id}.${secret}`, refreshMaxAge: lifetime }
+        return { grant: bound.grant, refreshToken: `${session.id}.${secret}`, refreshMaxAge: lifetimeSeconds }
       })
 
       /** 판정이 남기라는 사용자 변경과 감사 기록을 저장합니다. */
@@ -235,39 +239,35 @@ export class Sessions extends Context.Service<
 
       const findLive = Effect.fn('Sessions.findLive')(function* (refreshToken: string | undefined) {
         const parts = refreshToken === undefined ? undefined : splitRefreshToken(refreshToken)
-        if (parts === undefined) return yield* new SessionInvalid({})
-        const found = yield* sessions.findById(parts.sessionId as Id<'session'>)
-        if (Option.isNone(found)) return yield* new SessionInvalid({})
-        const session = found.value
-        const now = yield* nowIso
-        if (session.revokedAt !== undefined || session.expiresAt <= now) return yield* new SessionInvalid({})
-        const hash = sha256(parts.secret)
-        if (session.rotatedSecretHashes.includes(hash)) {
-          yield* revoke(session, 'REFRESH_REUSED')
-          yield* audit.record({ action: 'SESSION_REUSE_DETECTED', actorUserId: session.userId, targetId: session.id })
+        const found =
+          parts === undefined
+            ? undefined
+            : Option.getOrUndefined(yield* sessions.findById(parts.sessionId as Id<'session'>))
+        const decided = decideRefreshTokenUse(
+          found,
+          parts === undefined || found === undefined ? undefined : sha256(parts.secret),
+          yield* nowIso,
+        )
+        if (Result.isSuccess(decided)) return decided.success
+        const { error, keep } = decided.failure
+        if (keep !== undefined) {
+          // 회전된 secret의 재사용은 실패 응답과 함께 세션 폐기를 남깁니다(M1).
+          yield* saveSession(keep)
+          for (const entry of keep.audit) yield* audit.record(entry)
           yield* keepChanges
-          return yield* new SessionInvalid({})
         }
-        if (hash !== session.refreshSecretHash) return yield* new SessionInvalid({})
-        return session
+        return yield* Effect.fail(error)
       })
 
       /** 살아 있는 세션의 refresh token을 회전한 값과 그 사용자입니다. 저장은 범위를 묶을 때 합니다. */
       const rotate = Effect.fn('Sessions.rotate')(function* (refreshToken: string | undefined) {
         const session = yield* findLive(refreshToken)
-        const user = yield* users.findById(session.userId)
-        if (Option.isNone(user) || user.value.status !== 'ACTIVE') return yield* new SessionInvalid({})
-        const secret = randomSecret()
-        const rotated: SessionRecord = {
-          ...session,
-          refreshSecretHash: sha256(secret),
-          rotatedSecretHashes: [...session.rotatedSecretHashes, session.refreshSecretHash],
-        }
-        const remaining = Math.max(
-          0,
-          Math.floor((Date.parse(session.expiresAt) - (yield* Clock.currentTimeMillis)) / 1000),
+        const user = yield* Effect.fromResult(
+          requireActiveUser(Option.getOrUndefined(yield* users.findById(session.userId))),
         )
-        return { session, rotated, user: user.value, refreshToken: `${session.id}.${secret}`, refreshMaxAge: remaining }
+        const secret = randomSecret()
+        const { rotated, refreshMaxAge } = rotateSession(session, sha256(secret), yield* Clock.currentTimeMillis)
+        return { session, rotated, user, refreshToken: `${session.id}.${secret}`, refreshMaxAge }
       })
 
       const refresh = Effect.fn('Sessions.refresh')(function* (
@@ -276,63 +276,46 @@ export class Sessions extends Context.Service<
       ) {
         const { session, rotated, user, ...cookie } = yield* rotate(refreshToken)
         if (companyId === undefined && session.scope === 'AGENCY') {
-          const bound = yield* bindAgency(rotated, user).pipe(
+          const bound = yield* bindAgencyScope(rotated, user).pipe(
             Effect.catchTag('AgencyScopeNotAllowed', () => bind(rotated, user, undefined)),
           )
           return { grant: bound.grant, ...cookie }
         }
         const bound = yield* bind(rotated, user, companyId ?? session.companyId)
-        if (companyId !== undefined && companyId !== session.companyId) {
-          yield* audit.record({
-            action: 'COMPANY_SWITCHED',
-            actorUserId: session.userId,
-            companyId,
-            actorKind: bound.grant.company?.actorKind,
-          })
+        for (const entry of companySwitchAudit(session, companyId, bound.grant.company?.actorKind)) {
+          yield* audit.record(entry)
         }
         return { grant: bound.grant, ...cookie }
       })
 
       const switchToAgency = Effect.fn('Sessions.switchToAgency')(function* (refreshToken: string | undefined) {
         const { session, rotated, user, ...cookie } = yield* rotate(refreshToken)
-        const bound = yield* bindAgency(rotated, user)
-        if (session.scope !== 'AGENCY') {
-          yield* audit.record({ action: 'AGENCY_SCOPE_ENTERED', actorUserId: session.userId, actorKind: 'AGENCY' })
-        }
+        const bound = yield* bindAgencyScope(rotated, user)
+        for (const entry of agencyScopeAudit(session)) yield* audit.record(entry)
         return { grant: bound.grant, ...cookie }
-      })
-
-      const revoke = Effect.fn('Sessions.revoke')(function* (session: SessionRecord, reason: SessionRevocation) {
-        if (session.accessTokenHash !== undefined) yield* tokens.revokeHash(session.accessTokenHash)
-        const { accessTokenHash: _, onboardingTokenHash: __, onboardingTokenExpiresAt: ___, ...rest } = session
-        yield* sessions.save({ ...rest, revokedAt: yield* nowIso, revokedReason: reason })
       })
 
       const signOut = Effect.fn('Sessions.signOut')(function* (refreshToken: string | undefined) {
         const session = yield* findLive(refreshToken).pipe(Effect.option)
         if (Option.isNone(session)) return
-        yield* revoke(session.value, 'SIGNED_OUT')
-        yield* audit.record({
-          action: 'SIGNED_OUT',
-          actorUserId: session.value.userId,
-          companyId: session.value.companyId,
-        })
+        const decision = decideSignOut(session.value, yield* nowIso)
+        yield* saveSession(decision)
+        for (const entry of decision.audit) yield* audit.record(entry)
       })
 
       const revokeAll = Effect.fn('Sessions.revokeAll')(function* (userId: Id<'user'>, reason: SessionRevocation) {
-        for (const session of yield* sessions.listActiveByUser(userId)) yield* revoke(session, reason)
+        const at = yield* nowIso
+        for (const session of yield* sessions.listActiveByUser(userId)) {
+          yield* saveSession(revokeSession(session, reason, at))
+        }
       })
 
       const invalidateAccess = Effect.fn('Sessions.invalidateAccess')(function* (
         userId: Id<'user'>,
         companyId?: Id<'company'>,
       ) {
-        for (const session of yield* sessions.listActiveByUser(userId)) {
-          if (session.accessTokenHash === undefined) continue
-          if (companyId !== undefined && session.companyId !== companyId) continue
-          yield* tokens.revokeHash(session.accessTokenHash)
-          const { accessTokenHash: _, ...rest } = session
-          yield* sessions.save(rest)
+        for (const change of accessInvalidations(yield* sessions.listActiveByUser(userId), companyId)) {
+          yield* saveSession(change)
         }
       })
 
@@ -340,20 +323,13 @@ export class Sessions extends Context.Service<
       const onboardingUser = Effect.fn('Sessions.onboardingUser')(function* (token: string) {
         const found = yield* sessions.findByOnboardingTokenHash(sha256(token))
         if (Option.isNone(found)) return Option.none<Id<'user'>>()
-        const now = yield* nowIso
-        const session = found.value
-        const expired =
-          session.expiresAt <= now ||
-          session.onboardingTokenExpiresAt === undefined ||
-          session.onboardingTokenExpiresAt <= now
-        return expired ? Option.none<Id<'user'>>() : Option.some(session.userId)
+        return Option.fromUndefinedOr(onboardingUserOf(found.value, yield* nowIso))
       })
 
       const consumeOnboardingToken = Effect.fn('Sessions.consumeOnboardingToken')(function* (token: string) {
         const found = yield* sessions.findByOnboardingTokenHash(sha256(token))
         if (Option.isNone(found)) return
-        const { onboardingTokenHash: _, onboardingTokenExpiresAt: __, ...rest } = found.value
-        yield* sessions.save(rest)
+        yield* sessions.save(consumeOnboarding(found.value))
       })
 
       return Sessions.of({
@@ -370,20 +346,6 @@ export class Sessions extends Context.Service<
       })
     }),
   )
-}
-
-/**
- * 세션을 묶을 회사를 고릅니다. 요청한 회사가 접근 목록에 없으면 `NOT_FOUND`, 다룰 회사가 없으면 `undefined`입니다.
- *
- * 현행은 쿼리(sf ID) → 쿼리(nexus ID) → 쿠키 → 마지막 회사 순이었습니다. 재설계는 요청 → 마지막으로 쓴 회사 → 가장 먼저 소속된 회사입니다.
- */
-export function chooseCompany(
-  companies: ReadonlyArray<AccessibleCompany>,
-  requested: Id<'company'> | undefined,
-  lastCompanyId: Id<'company'> | undefined,
-): AccessibleCompany | 'NOT_FOUND' | undefined {
-  if (requested !== undefined) return companies.find((entry) => entry.company.id === requested) ?? 'NOT_FOUND'
-  return companies.find((entry) => entry.company.id === lastCompanyId) ?? companies[0]
 }
 
 function toCompanySummary(entry: AccessibleCompany): SessionGrant['companies'][number] {
