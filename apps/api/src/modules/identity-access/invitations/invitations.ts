@@ -1,43 +1,40 @@
 import { Clock, Context, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
-import { ValidationFailed } from '../../../shared/problem/problem.ts'
+import type { ValidationFailed } from '../../../shared/problem/problem.ts'
 import { hashPassword, verifyPassword } from '../accounts/password-hash.ts'
-import { passwordViolations } from '../accounts/password-policy.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
-import { InvalidCredentials, normalizeEmail, PasswordPolicyViolated } from '../accounts/user.ts'
+import { normalizeEmail, type InvalidCredentials, type PasswordPolicyViolated } from '../accounts/user.ts'
 import type { UserRecord } from '../accounts/user.ts'
 import type { Actor } from '../actor.types.ts'
-import { AuditLog } from '../audit/audit-log.ts'
+import { AuditLog, type AuditInput } from '../audit/audit-log.ts'
 import { CompanyRepository } from '../companies/company-repository.ts'
 import { MembershipRepository } from '../members/membership-repository.ts'
 import { Mailer } from '../notifications/mailer.ts'
 import { RoleRepository } from '../roles/role-repository.ts'
-import { RoleNotFound } from '../roles/role.ts'
+import type { RoleNotFound } from '../roles/role.ts'
 import { randomSecret, sha256 } from '../sessions/refresh-cookie.ts'
 import { Sessions } from '../sessions/sessions.ts'
 import type { IssuedSession } from '../sessions/sessions.ts'
 import type { RequiredTermsMissing, TermVersionOutdated } from '../terms/term.ts'
 import { Terms } from '../terms/terms.ts'
 import {
-  allowedInvitationActions,
-  INVITATION_TTL_DAYS,
-  invitationClosedReason,
-  invitationConflict,
-  invitationStatus,
-  remainingDays,
-} from './invitation-status.ts'
+  decideInvitationAcceptance,
+  decideInvitationCancel,
+  decideInvitationCreation,
+  inviteeUser,
+  planInvitationAcceptance,
+} from './invitation.aggregate.ts'
+import { allowedInvitationActions, invitationStatus, remainingDays } from './invitation-status.ts'
 import { InvitationRepository } from './invitation-repository.ts'
 import {
-  InvitationAccountMismatch,
-  InvitationAlreadyPending,
-  InvitationClosed,
   InvitationNotFound,
-  InviteeAlreadyMember,
+  type InvitationAccountMismatch,
+  type InvitationAlreadyPending,
+  type InvitationClosed,
+  type InviteeAlreadyMember,
 } from './invitation.ts'
 import type { Invitation, InvitationAcceptance, InvitationInput, InvitationRecord } from './invitation.ts'
-
-const DAY_MS = 86_400_000
 
 /** 초대 미리보기입니다. 수락 화면이 로그인할지 가입할지 정합니다. */
 export interface InvitationPreviewView {
@@ -126,6 +123,12 @@ export class Invitations extends Context.Service<
         return (yield* invitations.listByCompany(actor.companyId)).map((record) => view(record, now))
       })
 
+      const recordAll = (entries: ReadonlyArray<AuditInput>) =>
+        Effect.forEach(entries, (entry) => audit.record(entry), { discard: true })
+
+      const companyRoleIds = (companyId: Id<'company'>) =>
+        Effect.map(roles.listByCompany(companyId), (all) => new Set<string>(all.map((role) => role.id)))
+
       const create = Effect.fn('Invitations.create')(function* (actor: Actor, input: InvitationInput) {
         const now = yield* Clock.currentTimeMillis
         const email = normalizeEmail(input.email)
@@ -134,62 +137,32 @@ export class Invitations extends Context.Service<
           ? Option.isSome(yield* memberships.find(actor.companyId, existing.value.id))
           : false
         const sameEmail = (yield* invitations.listByCompany(actor.companyId)).filter((i) => i.email === email)
-        const conflict = invitationConflict({
-          isMember,
-          statuses: sameEmail.map((i) => invitationStatus(i.status, i.expiresAt, now)),
-        })
-        if (conflict === 'INVITEE_ALREADY_MEMBER') return yield* new InviteeAlreadyMember({})
-        const pending = sameEmail.find((i) => invitationStatus(i.status, i.expiresAt, now) === 'PENDING')
-        if (conflict === 'INVITATION_ALREADY_PENDING' && pending !== undefined) {
-          return yield* new InvitationAlreadyPending({ invitationId: pending.id })
-        }
-        const roleIds = input.access === 'ADMIN' ? [] : [...new Set(input.roleIds)]
-        for (const roleId of roleIds) {
-          if (Option.isNone(yield* roles.find(actor.companyId, roleId))) return yield* new RoleNotFound({})
-        }
         const token = randomSecret()
-        const record: InvitationRecord = {
-          id: newId('invitation', now),
-          companyId: actor.companyId,
-          email,
-          ...(input.name === undefined ? {} : { name: input.name }),
-          access: input.access,
-          roleIds,
-          status: 'PENDING',
-          tokenHash: sha256(token),
-          invitedBy: actor.userId,
-          createdAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + INVITATION_TTL_DAYS * DAY_MS).toISOString(),
-        }
-        yield* invitations.save(record)
+        const decision = yield* Effect.fromResult(
+          decideInvitationCreation(
+            { id: newId('invitation', now), tokenHash: sha256(token) },
+            input,
+            email,
+            { isMember, sameEmail, companyRoleIds: yield* companyRoleIds(actor.companyId) },
+            actor,
+            now,
+          ),
+        )
+        yield* invitations.save(decision.invitation)
         const company = yield* companies.findById(actor.companyId).pipe(Effect.flatMap(Effect.fromOption), Effect.orDie)
         yield* mailer.send({ to: email, template: 'INVITATION', token, data: { companyName: company.name } })
-        yield* audit.record({
-          action: 'INVITATION_CREATED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: record.id,
-        })
-        return view(record, now)
+        yield* recordAll(decision.audit)
+        return view(decision.invitation, now)
       })
 
       const cancel = Effect.fn('Invitations.cancel')(function* (actor: Actor, invitationId: Id<'invitation'>) {
         const now = yield* Clock.currentTimeMillis
         const found = yield* invitations.find(actor.companyId, invitationId)
         if (Option.isNone(found)) return yield* new InvitationNotFound({})
-        const reason = invitationClosedReason(invitationStatus(found.value.status, found.value.expiresAt, now))
-        if (reason !== undefined) return yield* new InvitationClosed({ reason })
-        const next: InvitationRecord = { ...found.value, status: 'CANCELED', canceledAt: new Date(now).toISOString() }
-        yield* invitations.save(next)
-        yield* audit.record({
-          action: 'INVITATION_CANCELED',
-          companyId: actor.companyId,
-          actorUserId: actor.userId,
-          actorKind: actor.kind,
-          targetId: invitationId,
-        })
-        return view(next, now)
+        const decision = yield* Effect.fromResult(decideInvitationCancel(found.value, actor, now))
+        yield* invitations.save(decision.invitation)
+        yield* recordAll(decision.audit)
+        return view(decision.invitation, now)
       })
 
       const byToken = Effect.fn(function* (token: string) {
@@ -216,83 +189,47 @@ export class Invitations extends Context.Service<
         return preview
       })
 
-      const signUp = Effect.fn(function* (record: InvitationRecord, acceptance: InvitationAcceptance, now: number) {
-        if (acceptance.name === undefined || acceptance.password === undefined) {
-          const violations = [
-            ...(acceptance.name === undefined ? [{ field: 'name', code: 'REQUIRED' }] : []),
-            ...(acceptance.password === undefined ? [{ field: 'password', code: 'REQUIRED' }] : []),
-          ]
-          return yield* new ValidationFailed({ violations })
-        }
-        const violations = passwordViolations(acceptance.password)
-        if (violations.length > 0) {
-          return yield* new PasswordPolicyViolated({
-            violations: violations.map((code) => ({ field: 'password', code })),
-          })
-        }
-        const user: UserRecord = {
-          id: newId('user', now),
-          email: record.email,
-          name: acceptance.name,
-          kind: 'CLIENT',
-          isDemo: false,
-          passwordHash: hashPassword(acceptance.password),
-          status: 'ACTIVE',
-          failedSignInCount: 0,
-          createdAt: new Date(now).toISOString(),
-        }
-        yield* users.save(user)
-        yield* terms.recordSignup(user.id, acceptance.agreedTermIds ?? [])
-        return user
-      })
-
       const accept = Effect.fn('Invitations.accept')(function* (
         acceptance: InvitationAcceptance,
         signedInUserId: Id<'user'> | undefined,
       ) {
         const now = yield* Clock.currentTimeMillis
         const record = yield* byToken(acceptance.token)
-        const reason = invitationClosedReason(invitationStatus(record.status, record.expiresAt, now))
-        if (reason !== undefined) return yield* new InvitationClosed({ reason })
-
-        const existing = yield* users.findByEmail(record.email)
+        const existing = Option.getOrUndefined(yield* users.findByEmail(record.email))
+        const plan = yield* Effect.fromResult(
+          planInvitationAcceptance(record, existing, signedInUserId, acceptance, now),
+        )
         let user: UserRecord
-        if (Option.isSome(existing)) {
-          user = existing.value
-          if (signedInUserId !== undefined) {
-            if (signedInUserId !== user.id) return yield* new InvitationAccountMismatch({})
-          } else if (acceptance.password === undefined || !verifyPassword(acceptance.password, user.passwordHash)) {
-            return yield* new InvalidCredentials({})
-          }
+        let passwordMatches = true
+        if (plan.kind === 'EXISTING') {
+          user = plan.user
+          if (plan.passwordToVerify !== undefined)
+            passwordMatches = verifyPassword(plan.passwordToVerify, user.passwordHash)
         } else {
-          if (signedInUserId !== undefined) return yield* new InvitationAccountMismatch({})
-          user = yield* signUp(record, acceptance, now)
-        }
-
-        const nowIso = new Date(now).toISOString()
-        if (Option.isNone(yield* memberships.find(record.companyId, user.id))) {
-          const remaining = yield* roles.listByCompany(record.companyId)
-          const roleIds = record.roleIds.filter((roleId) => remaining.some((role) => role.id === roleId))
-          yield* memberships.save({
-            id: newId('membership', now),
-            companyId: record.companyId,
-            userId: user.id,
-            access: record.access,
-            roleIds,
-            isOwner: false,
-            joinedAt: nowIso,
-            invitedBy: record.invitedBy,
-            version: 1,
+          user = inviteeUser(record, plan, {
+            id: newId('user', now),
+            passwordHash: hashPassword(plan.password),
+            createdAt: new Date(now).toISOString(),
           })
+          yield* users.save(user)
+          yield* terms.recordSignup(user.id, acceptance.agreedTermIds ?? [])
         }
-        yield* invitations.save({ ...record, status: 'ACCEPTED', acceptedAt: nowIso, acceptedUserId: user.id })
-        yield* audit.record({
-          action: 'INVITATION_ACCEPTED',
-          companyId: record.companyId,
-          actorUserId: user.id,
-          actorKind: 'CLIENT',
-          targetId: record.id,
-        })
+        const decision = yield* Effect.fromResult(
+          decideInvitationAcceptance(
+            record,
+            {
+              user,
+              passwordMatches,
+              isMember: Option.isSome(yield* memberships.find(record.companyId, user.id)),
+              companyRoleIds: yield* companyRoleIds(record.companyId),
+            },
+            { membershipId: newId('membership', now), at: new Date(now).toISOString() },
+            now,
+          ),
+        )
+        if (decision.membership !== undefined) yield* memberships.save(decision.membership)
+        yield* invitations.save(decision.invitation)
+        yield* recordAll(decision.audit)
         yield* sessions.invalidateAccess(user.id)
         return yield* sessions.open(user.id, { staySignedIn: false, companyId: record.companyId }).pipe(Effect.orDie)
       })
