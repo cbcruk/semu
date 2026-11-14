@@ -40,6 +40,19 @@ export function wagePeriodOf(attributionMonth: string, startDay: number): { star
   return { start, end: addDays(다음시작일, -1) }
 }
 
+/**
+ * `today`가 든 임금산정 기간의 귀속월입니다. 정기 대장 자동 생성이 이 귀속월의 대장을 만듭니다.
+ *
+ * @example 매월 16일 시작이면 11월 10일은 10월 귀속(10-16~11-15), 11월 16일은 11월 귀속입니다
+ * ```ts
+ * attributionMonthOn('2026-11-10', 16) // '2026-10'
+ * ```
+ */
+export function attributionMonthOn(today: string, startDay: number): string {
+  const 이번달 = today.slice(0, 7)
+  return wagePeriodOf(이번달, startDay).start <= today ? 이번달 : addMonths(이번달, -1)
+}
+
 /** 지급일의 지급월(`YYYY-MM`)입니다. 원천세는 지급월 기준입니다. */
 export function paymentMonthOf(paymentDate: string): string {
   return paymentDate.slice(0, 7)

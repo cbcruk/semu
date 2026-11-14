@@ -25,6 +25,7 @@ export {
   type PayrollEmployee,
 } from './ports/payroll-employee-directory.ts'
 export { WithholdingFilingLock } from './ports/withholding-filing-lock.ts'
+export { PayrollPlanCheck } from './ports/payroll-plan-check.ts'
 export { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
 export type { SeveranceStatus } from './severance/severance-settlement.types.ts'
 export { PayslipMailer, type PayslipMailResult } from './ports/payslip-mailer.ts'

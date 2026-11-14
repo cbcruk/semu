@@ -13,6 +13,7 @@ import { IntegrationsRecordSinkFromBookkeeping } from './integrations-bookkeepin
 import { IntegrationsCompanyProfilesFromIdentityAccess } from './integrations-identity-access.ts'
 import { HrCompanyWorkforceSizeFromPayroll, HrSeveranceSettlementLookupFromPayroll } from './hr-payroll.ts'
 import { PayrollEmployeeDirectoryFromHr } from './payroll-hr.ts'
+import { PayrollPlanCheckFromIdentityAccess } from './payroll-identity-access.ts'
 import { PayrollEventsToTax, PayrollWithholdingFilingLockFromTax } from './payroll-tax.ts'
 import { TaxVatEvidenceFromBookkeeping } from './tax-bookkeeping.ts'
 import { TaxCompaniesFromIdentityAccess } from './tax-identity-access.ts'
@@ -22,6 +23,7 @@ import { TaxPublicHolidaysFromCalendar } from './tax-public-holidays.ts'
 /** 컨텍스트 저장소와 공유 참조데이터만 있으면 만들 수 있는 어댑터입니다. */
 const StoreBackedAdapters = Layer.mergeAll(
   PayrollEmployeeDirectoryFromHr,
+  PayrollPlanCheckFromIdentityAccess,
   TaxVatEvidenceFromBookkeeping,
   TaxCompaniesFromIdentityAccess,
   TaxPublicHolidaysFromCalendar,
@@ -56,6 +58,7 @@ const TaxBackedAdapters = Layer.mergeAll(
  * | 쓰는 쪽 포트 | 제공하는 쪽 | 어댑터 |
  * |---|---|---|
  * | Payroll `PayrollEmployeeDirectory` | HR `HrDirectory` | `payroll-hr.ts` |
+ * | Payroll `PayrollPlanCheck` | Billing `CompanyPlans` | `payroll-identity-access.ts` |
  * | HR `SeveranceSettlementLookup` | Payroll `SeveranceSettlementQuery` | `hr-payroll.ts` |
  * | Payroll `WithholdingFilingLock`, `PayrollEventPublisher` | Tax `WithholdingFilingLock`, `PayrollLedgerSync` | `payroll-tax.ts` |
  * | Tax `PayrollLedgers`, `WithholdingTotals` | Payroll `PayrollLedgerSummary`, `PayrollWithholdingTotals` | `tax-payroll.ts` |

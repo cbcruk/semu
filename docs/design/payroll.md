@@ -143,11 +143,17 @@ PATCH /payroll-settings    If-Match(선택)
 | `multipliers` | 연장·야간·휴일·휴일연장 배수(ppm) | 5인 이상 기본값 |
 | `deductionMethods` | 국민연금·건강보험·고용보험(`RATE`·`NOTICE`), 소득세(`TAX_TABLE`·`MANUAL`·`NONE`) | `NOTICE`, `NOTICE`, `RATE`, `TAX_TABLE` |
 | `workflow` | 대장 운영 방식 | `DIRECT_CLOSE` |
+| `autoCreateRegularLedger` | 정기 대장 자동 생성 | `false` |
 
 - `underFiveEmployees`를 바꾸면서 `multipliers`를 보내지 않으면 새 규모의 기본 배수로 바꿉니다(매뉴얼 FAQ)
 - HR은 `PayrollSettingQuery.isUnderFiveEmployees`(`payroll.public.ts`, 플랜·권한 확인 없음, HTTP 미공개)로 규모를 읽어 급여계약 고정수당에 `MULTIPLIERS_FIVE_OR_MORE`·`MULTIPLIERS_UNDER_FIVE`를 씁니다. 회사가 바꾼 `multipliers`는 HR에 넘기지 않습니다([hr.md 열린 질문 3](hr.md#열린-질문))
 - `workflow` 변경은 `payroll-workflow:update` 권한이 더 필요합니다. 급여 아웃소싱 계약은 Billing의 일이라 보통 운영자만 바꿉니다
 - 설정은 **새 대장에만** 적용됩니다. 대장은 만들 때 운영 방식과 지급일을 복사합니다
+- **정기 대장 자동 생성.** `autoCreateRegularLedger`를 켜면 정기 작업 `payroll.regular-ledger`(매일 04:00, [regular-ledger-task.ts](../../apps/api/src/modules/payroll/ledgers/regular-ledger-task.ts))가 그날이 든 임금산정 기간의 귀속월(`attributionMonthOn`)에 대장이 없으면 정기 대장을 만듭니다. 현행의 "기본 급여카드 자동 생성 배치"입니다(2026-11-14, #81)
+  - 임금산정 기간 시작일 새벽에 만들고, 그날 서버가 꺼져 있었으면 기간 안의 다음 실행에서 만듭니다. 그 귀속월에 대장이 하나라도 있으면 만들지 않습니다
+  - 행위자가 없는 시스템 커맨드(`createScheduledRegularLedger`)라 권한·약관 검사는 없고, 급여대장 플랜(급여·세무)은 포트 `PayrollPlanCheck`(Billing `CompanyPlans`, [payroll-identity-access.ts](../../apps/api/src/wiring/payroll-identity-access.ts))로 봅니다. 플랜이 없으면 만들지 않습니다
+  - 기본 지급일의 지급월에 원천세가 신고됐으면 만들지 않습니다. 만든 대장은 사람이 만든 정기 대장과 같고 `DRAFT`입니다
+  - 기본은 끔입니다. 켜지 않은 회사는 지금처럼 `POST /payroll-ledgers`로 만듭니다
 - 지급·공제 항목은 [아래 카탈로그](#지급공제-항목)에 있습니다. 근무 일정 정책, 근로조건은 아직 없습니다([구현 상태](#구현-상태))
 
 ### 지급·공제 항목
@@ -734,6 +740,7 @@ flowchart LR
 | 계산 엔진 (근로 3종·일용·사업·기타, 4대보험, 간이세액, 비과세, 가산수당, 일할, 최저임금, 퇴직금) | 구현 ([engine/](../../apps/api/src/modules/payroll/engine/)) |
 | 기준표 2026-01·2026-03·2026-07·2026-11, 참조 코드, 계산기 | 구현 (메모리, [rate-tables-2026.ts](../../apps/api/src/modules/payroll/engine/rate-tables-2026.ts)) |
 | 급여 설정 | 구현 (메모리) |
+| 정기 대장 자동 생성(설정 `autoCreateRegularLedger`, 정기 작업 `payroll.regular-ledger`) | 구현(2026-11-14) |
 | 소득자 명부(신원번호 암호화·원문 열람 기록) | 구현 ([earners/](../../apps/api/src/modules/payroll/earners/), `payroll_earners` 표) |
 | 급여대장·행·재계산·전이 8개·신고 잠금·추가 대장·중복 근로소득 | 구현 (메모리, [payroll-ledgers.ts](../../apps/api/src/modules/payroll/ledgers/payroll-ledgers.ts)) |
 | 지급월 마감 이벤트 | 구현(outbox). 앱은 `PayrollEventsToTax`가 outbox 채널로 Tax에 넘김([payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). `PayrollEventPublisher.layerMemory`는 Payroll 단독 시험·`PayrollMemoryLive`용. 원천세 금액은 싣지 않음 |
@@ -787,3 +794,4 @@ flowchart LR
     - 이벤트를 쓰지 않은 이유: HR이 필요한 것은 커맨드 순간의 판정 하나뿐이라 조회로 충분하고, 이벤트로 받으면 outbox 재전달·순서와 한 직원의 여러 정산(제외 후 새 정산)을 필드 하나로 줄이는 매핑을 따로 정해야 합니다
     - ~~남은 것: 퇴사 취소가 계산됨 정산을 남기고(마지막 근무일이 더는 퇴직일이 아님), 계산됨 정산이 있는 직원을 삭제하면 직원 없는 정산이 남습니다. 정산을 자동으로 제외할지, 완료 때 HR 퇴직일과 다시 맞출지는 정하지 않았습니다~~ **정함(2026-11-08):** 완료 때 HR 퇴직일과 대조합니다. `:complete`가 `PayrollEmployeeDirectory`로 퇴직일을 다시 읽어 직원이 없거나 퇴직일이 정산의 마지막 근무일과 다르면 409 `SEVERANCE_RETIREMENT_MISMATCH`이고, 목록·상세는 `retirementMismatch`로 어긋남을 보입니다([퇴직금 정산](#퇴직금-정산)). 자동 제외처럼 HR이 Payroll에 쓰는 명령은 두지 않습니다. 정산의 주인은 Payroll이고, 퇴사 취소가 실수였다면 다시 같은 날로 퇴사시켜 정산을 살릴 수 있어서입니다
 17. **결과 줄의 비과세 분류 보존.** 지급 줄은 항목 ID·이름·과세·비과세 금액만 남기고 비과세 유형은 남기지 않습니다(2026-11-11, [지급·공제 항목](#지급공제-항목)). 지급명세서의 비과세 코드처럼 마감 때의 분류가 필요해지면 결과 줄에 `nonTaxableCategory`를 스냅숏으로 둘지, 마감한 대장이 쓰는 항목의 속성 변경을 막을지 정해야 합니다
+18. **자동 생성한 대장을 지운 경우.** 입력 중인 자동 생성 대장을 지우면 그 임금산정 기간 안의 다음 날 04:00에 다시 만듭니다. 그달만 쓰지 않으려면 설정을 꺼야 합니다. 귀속월마다 "자동 생성을 이미 했음"을 기록해 다시 만들지 않을지 정해야 합니다

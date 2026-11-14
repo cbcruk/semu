@@ -5,6 +5,7 @@ import {
   defaultPaymentDate,
   duplicatedWageIncome,
   wagePeriodOf,
+  attributionMonthOn,
   withholdingDeadlineOf,
 } from './ledger-rules.ts'
 
@@ -82,6 +83,15 @@ describe('급여대장 날짜', () => {
     expect(wagePeriodOf('2026-10', 1)).toEqual({ start: '2026-10-01', end: '2026-10-31' })
     expect(wagePeriodOf('2026-10', 16)).toEqual({ start: '2026-10-16', end: '2026-11-15' })
     expect(withholdingDeadlineOf('2026-12')).toBe('2027-01-10')
+  })
+
+  it('오늘이 든 임금산정 기간의 귀속월을 구합니다', () => {
+    expect(attributionMonthOn('2026-11-01', 1)).toBe('2026-11')
+    expect(attributionMonthOn('2026-11-15', 16)).toBe('2026-10')
+    expect(attributionMonthOn('2026-11-16', 16)).toBe('2026-11')
+    expect(attributionMonthOn('2027-01-05', 16)).toBe('2026-12')
+    expect(attributionMonthOn('2026-02-28', 31)).toBe('2026-02')
+    expect(attributionMonthOn('2026-03-30', 31)).toBe('2026-02')
   })
 })
 

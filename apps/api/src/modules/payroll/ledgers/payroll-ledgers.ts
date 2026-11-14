@@ -38,8 +38,11 @@ import { resolveOrFail } from '../rate-tables/rate-tables.ts'
 import type { EmployeeSnapshot, PayrollRowInputValue } from '../rows/payroll-row-input.ts'
 import { calculateRow } from '../rows/row-calculation.ts'
 import { PayrollSettingRepository } from '../settings/payroll-setting-repository.ts'
+import type { PayrollSettingRecord } from '../settings/payroll-setting.types.ts'
+import { PayrollPlanCheck } from '../ports/payroll-plan-check.ts'
 import {
   additionalLedgerBlocker,
+  attributionMonthOn,
   defaultPaymentDate,
   duplicatedWageIncome,
   paymentMonthOf,
@@ -171,43 +174,56 @@ export const createLedger = (payload: typeof CreatePayrollLedger.Type): Run<Ledg
     } else if (filed) {
       return yield* new WithholdingFiled({ paymentMonth })
     }
-    const wagePeriod = wagePeriodOf(payload.attributionMonth, setting.wagePeriodStartDay)
-    const employees =
-      kind === 'REGULAR' ? yield* (yield* PayrollEmployeeDirectory).listWageEarners(actor.companyId, wagePeriod) : []
-    const catalog = yield* (yield* PayrollItemRepository).catalog(actor.companyId)
-    const [year, month] = payload.attributionMonth.split('-')
-    const draft: PayrollLedgerRecord = {
-      id: newId('payrollLedger'),
-      companyId: actor.companyId,
+    const draft = yield* draftLedger(actor.companyId, {
       kind,
-      workflow: setting.workflow,
-      status: 'DRAFT',
-      title: payload.title ?? `${year}년 ${Number(month)}월 ${kind === 'REGULAR' ? '급여' : '추가 급여'}`,
       attributionMonth: payload.attributionMonth,
       paymentDate,
-      wagePeriod,
-      rows: employees.map((employee) => ({
-        id: newId('payrollRow'),
-        employeeId: employee.id,
-        earnerId: null,
-        payeeName: employee.name,
-        earner: earnerOf(employee),
-        input: initialWageInput(employee, wagePeriod, catalog),
-        snapshot: snapshotOf(employee),
-        result: null,
-        updatedAt: now,
-      })),
-      rejection: null,
-      reopenReason: null,
-      calculatedAt: null,
-      closedAt: null,
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
-    }
+      title: payload.title,
+      setting,
+      now,
+    })
     const ledger = yield* calculateAll(draft, now)
     yield* saveWithEvents(actor.companyId, before, ledger)
     return yield* respond(actor, ledger)
+  })
+
+/** 정기 대장 자동 생성의 회사별 결과입니다. */
+export type ScheduledLedgerOutcome = 'CREATED' | 'EXISTS' | 'DISABLED' | 'NO_PLAN' | 'WITHHOLDING_FILED'
+
+/**
+ * 정기 작업이 부르는 시스템 커맨드입니다. 설정(`autoCreateRegularLedger`)을 켠 회사에 `today`가 든 임금산정 기간의 귀속월
+ * 정기 대장을 만듭니다. 행위자가 없어 권한·약관 검사는 하지 않고, 플랜은 {@link PayrollPlanCheck}로 봅니다.
+ *
+ * - 설정을 껐으면 `DISABLED`, 급여대장 플랜이 없으면 `NO_PLAN`
+ * - 그 귀속월에 대장이 하나라도 있으면(사람이 먼저 만들었거나 이미 만든 슬롯) `EXISTS`. 그래서 같은 날 다시 돌려도 결과가 같습니다
+ * - 기본 지급일의 지급월에 원천세가 신고됐으면 `WITHHOLDING_FILED`(만들지 않음)
+ */
+export const createScheduledRegularLedger = (
+  companyId: Id<'company'>,
+  today: string,
+): Effect.Effect<ScheduledLedgerOutcome, RateTableNotFound, LedgerDeps | PayrollPlanCheck> =>
+  Effect.gen(function* () {
+    const setting = yield* (yield* PayrollSettingRepository).get(companyId)
+    if (!setting.autoCreateRegularLedger) return 'DISABLED'
+    const plans = yield* (yield* PayrollPlanCheck).plansOf(companyId)
+    if (!LEDGER_PLANS.some((plan) => plans.has(plan))) return 'NO_PLAN'
+    const attributionMonth = attributionMonthOn(today, setting.wagePeriodStartDay)
+    const before = yield* (yield* PayrollLedgerRepository).list(companyId)
+    if (before.some((ledger) => ledger.attributionMonth === attributionMonth)) return 'EXISTS'
+    const paymentDate = defaultPaymentDate(attributionMonth, setting)
+    if (yield* (yield* WithholdingFilingLock).isFiled(companyId, paymentMonthOf(paymentDate)))
+      return 'WITHHOLDING_FILED'
+    const now = yield* nowIso
+    const draft = yield* draftLedger(companyId, {
+      kind: 'REGULAR',
+      attributionMonth,
+      paymentDate,
+      title: undefined,
+      setting,
+      now,
+    })
+    yield* saveWithEvents(companyId, before, yield* calculateAll(draft, now))
+    return 'CREATED'
   })
 
 /**
@@ -585,6 +601,56 @@ function checkRowItems(
     const catalog = yield* (yield* PayrollItemRepository).catalog(companyId)
     const violations = rowItemViolations(input, previous, catalog)
     if (violations.length > 0) return yield* new PayrollRowItemInvalid({ violations })
+  })
+}
+
+/** 새 대장 레코드(계산 전)입니다. 정기 대장이면 임금산정 기간에 재직한 근로소득자로 행을 채웁니다. */
+function draftLedger(
+  companyId: Id<'company'>,
+  input: {
+    kind: 'REGULAR' | 'ADDITIONAL'
+    attributionMonth: string
+    paymentDate: string
+    title: string | undefined
+    setting: PayrollSettingRecord
+    now: string
+  },
+): Effect.Effect<PayrollLedgerRecord, never, PayrollEmployeeDirectory | PayrollItemRepository> {
+  return Effect.gen(function* () {
+    const wagePeriod = wagePeriodOf(input.attributionMonth, input.setting.wagePeriodStartDay)
+    const employees =
+      input.kind === 'REGULAR' ? yield* (yield* PayrollEmployeeDirectory).listWageEarners(companyId, wagePeriod) : []
+    const catalog = yield* (yield* PayrollItemRepository).catalog(companyId)
+    const [year, month] = input.attributionMonth.split('-')
+    return {
+      id: newId('payrollLedger'),
+      companyId: companyId,
+      kind: input.kind,
+      workflow: input.setting.workflow,
+      status: 'DRAFT',
+      title: input.title ?? `${year}년 ${Number(month)}월 ${input.kind === 'REGULAR' ? '급여' : '추가 급여'}`,
+      attributionMonth: input.attributionMonth,
+      paymentDate: input.paymentDate,
+      wagePeriod,
+      rows: employees.map((employee) => ({
+        id: newId('payrollRow'),
+        employeeId: employee.id,
+        earnerId: null,
+        payeeName: employee.name,
+        earner: earnerOf(employee),
+        input: initialWageInput(employee, wagePeriod, catalog),
+        snapshot: snapshotOf(employee),
+        result: null,
+        updatedAt: input.now,
+      })),
+      rejection: null,
+      reopenReason: null,
+      calculatedAt: null,
+      closedAt: null,
+      version: 1,
+      createdAt: input.now,
+      updatedAt: input.now,
+    } satisfies PayrollLedgerRecord
   })
 }
 
