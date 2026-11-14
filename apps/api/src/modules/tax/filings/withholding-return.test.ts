@@ -21,7 +21,9 @@ function total(
 describe('withholdingLineCodeOf', () => {
   it.each([
     ['WAGE', null, 'A01', 'A10'],
+    ['WAGE_MID_YEAR_SETTLEMENT', null, 'A02', 'A10'],
     ['DAILY', null, 'A03', 'A10'],
+    ['WAGE_ANNUAL_SETTLEMENT', null, 'A04', 'A10'],
     ['RETIREMENT', null, 'A22', 'A20'],
     ['BUSINESS', null, 'A25', 'A30'],
     ['OTHER', 'PERSONAL_SERVICE', 'A59', 'A40'],
@@ -52,6 +54,22 @@ describe('withholdingReturnLines', () => {
       ['A25', 'BUSINESS', 30_000],
       ['A59', 'OTHER', 8_000],
       ['A42', 'OTHER', 4_000],
+    ])
+  })
+
+  it('근로소득 정산 줄은 간이세액(A01)과 일용근로(A03) 사이·뒤에 두고 환급(음수) 세액도 그대로 옮깁니다', () => {
+    const lines = withholdingReturnLines([
+      total('WAGE_ANNUAL_SETTLEMENT', -50_000),
+      total('DAILY', 1_200),
+      total('WAGE_MID_YEAR_SETTLEMENT', -220_000),
+      total('WAGE', 60_000),
+    ])
+
+    expect(lines.map((line) => [line.lineCode, line.incomeKind, line.incomeTax])).toEqual([
+      ['A01', 'WAGE', 60_000],
+      ['A02', 'WAGE_MID_YEAR_SETTLEMENT', -220_000],
+      ['A03', 'DAILY', 1_200],
+      ['A04', 'WAGE_ANNUAL_SETTLEMENT', -50_000],
     ])
   })
 

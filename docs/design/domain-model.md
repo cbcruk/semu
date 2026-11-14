@@ -128,6 +128,7 @@ decide(state, command, context) → { state, events } | 거부
 |---|---|---|---|
 | PayrollLedger (+행) | `ledgerId` | 전이표와 워크플로·행위자 권한. 입력은 편집 가능한 상태에서만. 행은 저장할 때 계산. 행의 소득 구분은 바꾸지 않음. `DRAFT`일 때만 삭제. 신고된 달은 잠금(`context`). *귀속월마다 정기 대장 하나, 근로소득 중복 금지* | 생성, 머리 수정, 삭제, 행 추가·수정·삭제, 다시 계산, 전이 |
 | SeveranceSettlement | `settlementId` | `CALCULATED`일 때만 수정. 완료하면 지급일을 채움. 퇴직일이 HR과 같음(`context`). 신고된 달은 잠금(`context`) | 생성, 수정, 완료, 다시 열기, 제외, 제외 취소 |
+| WageTaxSettlement | `settlementId` | `CALCULATED`일 때만 수정·삭제. 직원·연도·종류마다 하나. 확정하면 마감된 대장으로 다시 계산하고 지급일을 채움. 신고된 달은 잠금(`context`) | 생성, 수정, 확정, 다시 열기, 삭제 |
 | PaymentItem·DeductionItem | `itemId` | 필드 규칙. 삭제는 보관 | 생성, 수정, 보관 |
 | Earner | `earnerId` | 신원번호 정규화. *신원번호가 겹치지 않음* | 생성, 수정, 삭제 |
 | PayrollSetting | 회사 | 패치 규칙 | 수정 |
@@ -177,7 +178,7 @@ decide(state, command, context) → { state, events } | 거부
 |---|---|---|---|---|
 | 신고 건 전이 `filings/:id:{command}` | **Filing** | 할 일 카드 열고 닫기 | 같은 트랜잭션 | 정책 `filing.status_changed` → 카드 맞추기([M4](#결정)) |
 | 신고 문서 열람 | **Filing** | 결과 확인 카드 닫기 | 같은 트랜잭션 | 정책 `filing.document_viewed` → 카드 닫기 |
-| 급여대장 저장·전이, 퇴직금 정산 완료·다시 열기 | **PayrollLedger**, **SeveranceSettlement** | 원천세 신고의 급여대장 항목 다시 맞춤 | 정책(outbox `payroll_pay_month->tax`) | 그대로 |
+| 급여대장 저장·전이, 퇴직금 정산 완료·다시 열기, 근로소득 정산 확정·다시 열기 | **PayrollLedger**, **SeveranceSettlement**, **WageTaxSettlement** | 원천세 신고의 급여대장 항목 다시 맞춤 | 정책(outbox `payroll_pay_month->tax`) | 그대로 |
 | 직원 등록·수정 | **묶음: Employee + OrganizationUnit(`everAssigned`)** | 4대보험 취득 신고 열기(등록) | 같은 트랜잭션 | 정책 `employee.joined` → 신고 맞추기([M6](#결정)). 배치 표시는 묶음 유지 |
 | 직원 퇴직·퇴직 취소 | **Employee** | 상실 신고 열기·철회 | 같은 트랜잭션 | 정책 `employee.resigned`·`resignation_canceled` |
 | 직원 삭제 | **묶음: Employee + FamilyMember** | 열린 신고 철회 | 같은 트랜잭션 | 정책 `employee.deleted` → 철회 |

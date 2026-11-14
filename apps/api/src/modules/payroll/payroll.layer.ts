@@ -27,6 +27,8 @@ import { PayrollSettingsHttpLive } from './settings/payroll-settings.http.ts'
 import { SeveranceSettlementQuery } from './severance/severance-settlement-query.ts'
 import { SeveranceSettlementRepository } from './severance/severance-settlement-repository.ts'
 import { SeveranceSettlementsHttpLive } from './severance/severance-settlements.http.ts'
+import { WageTaxSettlementRepository } from './wage-settlements/wage-tax-settlement-repository.ts'
+import { WageTaxSettlementsHttpLive } from './wage-settlements/wage-tax-settlements.http.ts'
 
 /**
  * 급여 계산 엔진·기준표·급여 설정·지급·공제 항목·소득자 명부·급여대장·명세서·퇴직금·인건비 컨텍스트의 핸들러 전체입니다.
@@ -45,6 +47,7 @@ export const PayrollHttpLive = Layer.mergeAll(
   EarnersHttpLive,
   PayslipsHttpLive,
   SeveranceSettlementsHttpLive,
+  WageTaxSettlementsHttpLive,
   LaborCostReportsHttpLive.pipe(Layer.provide(PayrollLaborCost.layer)),
 )
 
@@ -65,7 +68,7 @@ export const PayrollPublicLive = Layer.fresh(
 )
 
 /**
- * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·지급·공제 항목·소득자 명부·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산은
+ * 급여 컨텍스트가 소유한 저장소입니다. 급여 설정·지급·공제 항목·소득자 명부·급여대장(행 포함)·명세서·명세서 멱등 응답·퇴직금 정산·근로소득 정산은
  * `TableFactory`(메모리 또는 SQLite)의 `payroll_*` 표에 둡니다.
  *
  * 기준표는 코드에 컴파일된 참조 데이터라 표에 두지 않습니다. 명세서 메일(`PayslipMailer`)은 Integrations에 메일 연동이
@@ -79,6 +82,7 @@ export const PayrollStoreLive = Layer.mergeAll(
   PayrollLedgerRepository.layer(),
   PayslipRepository.layer(),
   SeveranceSettlementRepository.layer(),
+  WageTaxSettlementRepository.layer(),
   PayslipMailer.layerFake,
 )
 

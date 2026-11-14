@@ -322,3 +322,49 @@ export class SeveranceLaterSettlementCompleted extends HttpApiError.Problem<Seve
   },
   { code: Schema.tag('SEVERANCE_LATER_SETTLEMENT_COMPLETED'), settlementId: Schema.String },
 ) {}
+
+/** 없는 근로소득 정산입니다. */
+export class WageSettlementNotFound extends HttpApiError.Problem<WageSettlementNotFound>()(
+  'WageSettlementNotFound',
+  { type: problemType('WAGE_SETTLEMENT_NOT_FOUND'), status: 404, title: 'Wage tax settlement not found' },
+  { code: Schema.tag('WAGE_SETTLEMENT_NOT_FOUND') },
+) {}
+
+/** 근로소득 정산(중도퇴사·연말정산)을 만들 수 없는 직원·연도입니다. */
+export class WageSettlementNotApplicable extends HttpApiError.Problem<WageSettlementNotApplicable>()(
+  'WageSettlementNotApplicable',
+  { type: problemType('WAGE_SETTLEMENT_NOT_APPLICABLE'), status: 422, title: 'Wage tax settlement does not apply' },
+  {
+    code: Schema.tag('WAGE_SETTLEMENT_NOT_APPLICABLE'),
+    reason: Schema.Literals(['NOT_LEFT_IN_YEAR', 'YEAR_NOT_ENDED', 'NOT_EMPLOYED_AT_YEAR_END', 'NO_WAGE_IN_YEAR']),
+  },
+) {}
+
+/** 같은 직원·연도·종류의 근로소득 정산이 이미 있습니다. */
+export class WageSettlementExists extends HttpApiError.Problem<WageSettlementExists>()(
+  'WageSettlementExists',
+  { type: problemType('WAGE_SETTLEMENT_EXISTS'), status: 409, title: 'Wage tax settlement already exists' },
+  { code: Schema.tag('WAGE_SETTLEMENT_EXISTS'), settlementId: Schema.String },
+) {}
+
+/** 지금 상태에서 할 수 없는 근로소득 정산 커맨드·수정·삭제입니다. */
+export class WageSettlementTransitionInvalid extends HttpApiError.Problem<WageSettlementTransitionInvalid>()(
+  'WageSettlementTransitionInvalid',
+  {
+    type: problemType('WAGE_SETTLEMENT_TRANSITION_INVALID'),
+    status: 409,
+    title: 'Wage tax settlement cannot do this now',
+  },
+  { code: Schema.tag('WAGE_SETTLEMENT_TRANSITION_INVALID'), settlementStatus: Schema.String, action: Schema.String },
+) {}
+
+/** 정산 지급일이 너무 이릅니다. 중도퇴사는 그해 1월 1일, 연말정산은 다음 해 1월 1일부터입니다. */
+export class WageSettlementPaymentDateInvalid extends HttpApiError.Problem<WageSettlementPaymentDateInvalid>()(
+  'WageSettlementPaymentDateInvalid',
+  {
+    type: problemType('WAGE_SETTLEMENT_PAYMENT_DATE_INVALID'),
+    status: 422,
+    title: 'Wage tax settlement payment date is too early',
+  },
+  { code: Schema.tag('WAGE_SETTLEMENT_PAYMENT_DATE_INVALID'), earliestDate: Schema.String },
+) {}

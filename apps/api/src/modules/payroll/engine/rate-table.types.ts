@@ -149,6 +149,8 @@ export interface PayrollRateTable {
     highIncomeBrackets: readonly LinearBracket[]
     tableRowBands: readonly SimpleTaxRowBand[]
     tableMinimumPay: number
+    /** 표준세액공제(연)입니다. 특별소득공제·특별세액공제를 신청하지 않은 근로소득자가 받습니다. 연말정산에 씁니다. */
+    standardTaxCredit: number
     /** 공식 간이세액표입니다. 기본 간이세액 전략 `OFFICIAL_TABLE`(`wage-income-tax.ts`)이 읽습니다. */
     simpleTaxTable: SimpleTaxTable
     taxRoundingUnit: RoundingUnit

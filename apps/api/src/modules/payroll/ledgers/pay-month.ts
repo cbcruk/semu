@@ -75,12 +75,13 @@ export function withholdingTotalsPaidIn(
   ledgers: readonly PayrollLedgerRecord[],
   paymentMonth: string,
   settlements: readonly SeveranceSettlementRecord[] = [],
+  wageSettlementLines: readonly WithholdingSummaryLine[] = [],
 ): WithholdingSummaryLine[] {
   const 마감된지급월대장 = ledgers.filter(
     (ledger) => ledger.status === 'CLOSED' && paymentMonthOf(ledger.paymentDate) === paymentMonth,
   )
   const 퇴직소득 = severanceWithholdingPaidIn(settlements, paymentMonth)
-  return withholdingSummary(마감된지급월대장, 퇴직소득 === null ? [] : [퇴직소득])
+  return withholdingSummary(마감된지급월대장, [...wageSettlementLines, ...(퇴직소득 === null ? [] : [퇴직소득])])
 }
 
 /**
@@ -103,7 +104,9 @@ function withholdingSummary(
 ): WithholdingSummaryLine[] {
   const 집계순서: ReadonlyArray<[WithholdingIncomeKind, OtherIncomeCategory | null]> = [
     ['WAGE', null],
+    ['WAGE_MID_YEAR_SETTLEMENT', null],
     ['DAILY', null],
+    ['WAGE_ANNUAL_SETTLEMENT', null],
     ['RETIREMENT', null],
     ['BUSINESS', null],
     ['OTHER', 'PERSONAL_SERVICE'],

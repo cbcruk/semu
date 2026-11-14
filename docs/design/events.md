@@ -27,7 +27,7 @@
 
 - **이름은 `<resource>.<event>`이고 둘 다 snake_case입니다.** 예: `filing.status_changed`, `esign_request.completed`
 - `data`에는 소비자가 바로 반응하는 데 필요한 최소 필드만 넣습니다. 전체 리소스는 넣지 않고, 소비자가 ID로 다시 조회합니다
-- **같은 리소스의 다른 변화는 다른 이벤트로 냅니다.** 예: 지급월(`payroll_pay_month`)은 대장이 모두 마감된 `closed`, 그것이 풀린 `reopened`와 별도로, 퇴직금 정산의 완료·다시 열기로 원천세 합계만 바뀐 `withholding_changed`를 냅니다(2026-11-08, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 대장이 없는 달에도 낼 수 있어 `closed`·`reopened`의 뜻("대장이 모두 마감")을 넓히지 않았고, 정산 리소스 이벤트(`severance_settlement.completed`)로 내면 Tax가 정산을 알아야 하므로 Tax가 관심 있는 지급월을 리소스로 두었습니다. 소비자는 셋을 같은 채널(`payroll_pay_month->tax`)로 받아 같은 다시 맞춤을 합니다
+- **같은 리소스의 다른 변화는 다른 이벤트로 냅니다.** 예: 지급월(`payroll_pay_month`)은 대장이 모두 마감된 `closed`, 그것이 풀린 `reopened`와 별도로, 퇴직금 정산의 완료·다시 열기로 원천세 합계만 바뀐 `withholding_changed`를 냅니다(2026-11-08, [payroll.md 퇴직금 정산](payroll.md#퇴직금-정산)). 근로소득 정산(A02·A04)의 확정·다시 열기도 같은 이벤트입니다(2026-11-14, [payroll.md 근로소득 정산](payroll.md#근로소득-정산)). 대장이 없는 달에도 낼 수 있어 `closed`·`reopened`의 뜻("대장이 모두 마감")을 넓히지 않았고, 정산 리소스 이벤트(`severance_settlement.completed`)로 내면 Tax가 정산을 알아야 하므로 Tax가 관심 있는 지급월을 리소스로 두었습니다. 소비자는 셋을 같은 채널(`payroll_pay_month->tax`)로 받아 같은 다시 맞춤을 합니다
 - 주민등록번호·계좌번호·개인별 급여 금액은 이벤트에 넣지 않습니다 ([compliance.md](compliance.md#개인정보-최소-노출)). 회사 단위 합계는 넣을 수 있지만, 소비자가 언제 받아도 지금 값이 필요하면 조회로 줍니다. 예: 지급월 마감 이벤트는 원천세 합계를 싣지 않고 Tax가 `WithholdingTotals`로 묻습니다(2026-11-08, [payroll.md 열린 질문 15](payroll.md#열린-질문))
 
 ## 전달

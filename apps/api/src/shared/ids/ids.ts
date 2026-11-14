@@ -56,6 +56,7 @@ export const ID_PREFIXES = {
   deductionItem: 'dit',
   workSchedulePolicy: 'wsp',
   severanceSettlement: 'sev',
+  wageTaxSettlement: 'wts',
   rateTable: 'rtb',
   evidence: 'evd',
   accountTitle: 'acc',

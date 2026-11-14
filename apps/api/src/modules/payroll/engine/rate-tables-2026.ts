@@ -137,6 +137,7 @@ export const RATES_2026_01: PayrollRateTable = {
     ],
     tableMinimumPay: 770_000,
     simpleTaxTable: OFFICIAL_SIMPLE_TAX_TABLE_2024,
+    standardTaxCredit: 130_000,
     taxRoundingUnit: 10,
   },
   localIncomeTax: { ratePpm: 100_000, roundingUnit: 10 },
@@ -282,6 +283,9 @@ export const RATES_2026_01: PayrollRateTable = {
       `${SIMPLE_TAX_TABLE_2024} 제6호 월급여액 구간: 770~1,500천원 5천원, 1,500~3,000천원 1만원, 3,000~10,000천원 2만원`,
     ),
     'wageIncomeTax.tableMinimumPay': confirmed(`${SIMPLE_TAX_TABLE_2024} 제6호 첫 행 770천원`),
+    'wageIncomeTax.standardTaxCredit': unverified(
+      `소득세법 제59조의4제9항제1호: 특별소득공제·특별세액공제를 신청하지 않은 근로소득자 연 13만원. 국가법령정보센터 점검으로 원문 미대조(2026-11-14)`,
+    ),
     'wageIncomeTax.simpleTaxTable': confirmed(
       `${SIMPLE_TAX_TABLE_2024} 제6호 표 646행과 10,000천원 행(300만원·1명 74,350원). 홈택스 엑셀·법령 PDF의 공개 전사본 2종을 대조해 모두 같음, 원본 미대조(2026-11-14, #99)`,
     ),
