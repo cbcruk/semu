@@ -1,4 +1,4 @@
-import { addDays, weekdayIndex } from '../../../shared/time/calendar.ts'
+import { addDays, addMonths, weekdayIndex } from '../../../shared/time/calendar.ts'
 import type { Plan } from '../../identity-access/actor.types.ts'
 import { isEntitledOn } from '../subscriptions/subscription-entitlement.ts'
 import type {
@@ -28,6 +28,15 @@ export function nextBusinessDay(date: string, holidays: ReadonlySet<string>): st
 /** 그달(`YYYY-MM`)의 출금일입니다. {@link BILLING_DAY}에서 시작해 영업일로 미룹니다. */
 export function billingDate(month: string, holidays: ReadonlySet<string>): string {
   return nextBusinessDay(`${month}-${String(BILLING_DAY).padStart(2, '0')}`, holidays)
+}
+
+/**
+ * `today`(회사 시간대) 뒤에 오는 첫 출금일의 달입니다. 이번 달 출금일이 오늘보다 뒤면 이번 달, 오늘이거나 지났으면 다음 달입니다.
+ * 정기 작업이 매일 이 달의 결제 예정을 맞춥니다. 출금일 당일에는 이미 CMS 요청이 나갔다고 보고 새로 만들지 않습니다.
+ */
+export function upcomingBillingMonth(today: string, holidays: ReadonlySet<string>): string {
+  const 이번달 = today.slice(0, 7)
+  return billingDate(이번달, holidays) > today ? 이번달 : addMonths(이번달, 1)
 }
 
 /** 출금 결과가 반영되는 날입니다. CMS 결과 파일이 출금 다음 날 오후에 옵니다. */

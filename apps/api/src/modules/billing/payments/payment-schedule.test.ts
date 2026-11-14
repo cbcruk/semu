@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { allowedPaymentActions, nextBusinessDay, plannedPayments } from './payment-schedule.ts'
+import { allowedPaymentActions, nextBusinessDay, plannedPayments, upcomingBillingMonth } from './payment-schedule.ts'
 
 describe('다음 영업일', () => {
   it('평일은 그대로 두고 주말과 이어진 공휴일은 건너뜁니다', () => {
     expect(nextBusinessDay('2026-11-25', new Set())).toBe('2026-11-25')
     expect(nextBusinessDay('2026-10-03', new Set(['2026-10-05']))).toBe('2026-10-06')
+  })
+})
+
+describe('다가오는 출금일의 달', () => {
+  const christmas = new Set(['2026-12-25'])
+
+  it('이번 달 출금일이 오늘보다 뒤면 이번 달, 출금일 당일부터는 다음 달입니다', () => {
+    // 2026-12-25(공휴일)·26·27(주말)을 건너 출금일은 28일입니다.
+    expect(upcomingBillingMonth('2026-12-01', christmas)).toBe('2026-12')
+    expect(upcomingBillingMonth('2026-12-27', christmas)).toBe('2026-12')
+    expect(upcomingBillingMonth('2026-12-28', christmas)).toBe('2027-01')
   })
 })
 

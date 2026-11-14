@@ -4,7 +4,8 @@ import { HttpRouter, HttpServerError, HttpServerRespondable } from 'effect/http'
 import { HttpApiBuilder } from 'effect/http-api'
 import { Api } from './api.ts'
 import { AssistantHttpLive, AssistantStoreLive } from './modules/assistant/assistant.layer.ts'
-import { BillingHttpLive, BillingStoreLive } from './modules/billing/billing.layer.ts'
+import { BillingHttpLive, BillingStoreLive, PaymentsLive } from './modules/billing/billing.layer.ts'
+import { paymentScheduleTask } from './modules/billing/payments/payment-schedule-task.ts'
 import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
 import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
@@ -173,13 +174,14 @@ export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
  * | 작업 | 시각(회사 시간대) | 하는 일 |
  * |---|---|---|
  * | `tax.filing-schedule` | 매일 03:00 | 세무 기장 회사의 신고 건 만들기·기한 고치기·취소 |
+ * | `billing.payment-schedule` | 매일 06:00 | 다가오는 출금일의 월 이용료 결제 예정 만들기 |
  */
-export const SCHEDULED_TASKS = [filingScheduleTask] as const
+export const SCHEDULED_TASKS = [filingScheduleTask, paymentScheduleTask] as const
 
 /** 정기 작업 실행기입니다. 시작할 때와 1분마다 지난 슬롯을 봅니다. 저장소·어댑터 위에 얹습니다. */
 const SchedulerLive = SchedulerRunnerLive().pipe(
   Layer.provide(Scheduler.layer(SCHEDULED_TASKS)),
-  Layer.provide(FilingSchedulerLive),
+  Layer.provide(Layer.merge(FilingSchedulerLive, PaymentsLive)),
 )
 
 /** 서버가 정하는 실행 설정입니다. 테스트 앱은 정기 작업을 돌리지 않습니다. */
