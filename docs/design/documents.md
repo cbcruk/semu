@@ -147,15 +147,18 @@ sequenceDiagram
   Note over D: PENDING → IN_PROGRESS
   W->>D: POST :complete
   D->>D: PDF 렌더(감사 추적 포함), COMPLETED
-  D-)H: esign_request.completed (HR 소비는 미구현)
-  H->>H: 근로·급여계약, 보관함, 신규 직원, 사직 사유 초안
+  D-)H: esign_request.completed (outbox)
+  H->>H: 보관함에 완료본, 확정한 근로·급여계약에 서명 문서 연결
 ```
 
 - **본인확인은 이름 + 생년월일 대조입니다** ([esign-identity-verification](../reference/rules/esign-identity-verification.md)). 기대 생년월일은 수신자 입력값, 없으면 직원 기록입니다. 5번 틀리면 링크가 잠기고 429 `IDENTITY_VERIFICATION_LOCKED`입니다. 잠금은 `:resend`(새 토큰)로만 풉니다
 - 틀릴 때마다 403 `IDENTITY_VERIFICATION_FAILED`(`remainingAttempts`)입니다
 - 닫힌 링크(`DRAFT`, `CANCELED`, `VOIDED`, `EXPIRED`, `SEND_FAILED`, 기한 경과)는 410 `ESIGN_LINK_CLOSED`(`status`)이고, 화면은 `status`로 취소·만료 화면을 고릅니다. 모르는 토큰은 404 `ESIGN_LINK_NOT_FOUND`입니다
 - 세션은 30분이고 서버는 토큰·세션의 SHA-256 해시만 저장합니다
-- **완료 처리는 한 트랜잭션입니다.** 모든 문서에 서명 이미지가 있는지, 사직서면 퇴직 사유가 유효한지 확인하고, PDF(감사 추적: 이벤트·IP·UA·문서 해시)를 만들어 저장하고 `COMPLETED`로 바꾸고 `esign_request.completed`를 냅니다. 설계는 outbox이지만 지금은 `DocumentEvents.layerMemory`의 메모리 목록에 쌓입니다. HR 후속처리는 이벤트로 할 계획이고 HR 소비자는 미구현입니다([hr.md](hr.md#이벤트))
+- **완료 처리는 한 트랜잭션입니다.** 모든 문서에 서명 이미지가 있는지, 사직서면 퇴직 사유가 유효한지 확인하고, PDF(감사 추적: 이벤트·IP·UA·문서 해시)를 만들어 저장하고 `COMPLETED`로 바꾸고 `esign_request.completed`를 냅니다. 이벤트는 outbox 채널 `esign_request->hr`로 커밋 뒤 HR에 갑니다([documents-hr.ts](../../apps/api/src/wiring/documents-hr.ts), [hr.md](hr.md#전자서명-반영))
+- 완료 이벤트에는 문서마다 종류·제목과 계약 조건(`terms`)만 담습니다. 근로계약서는 근로개시일(`startDate`), 연봉계약서는 적용 시작일(`effectiveDate`)과 연봉(`annualSalary`)이고, 형식이 틀린 값은 버립니다([signed-terms.ts](../../apps/api/src/modules/documents/signing/signed-terms.ts)). 계약 조건은 관리자가 정한 값에서만 뽑고, 서명자가 입력한 주소 같은 값은 넘기지 않습니다
+- `:complete`의 `signerValues`는 템플릿이 서명자에게 맡긴 필드(`signer: true`)만 받고 나머지 키는 버립니다. 서명자가 관리자 값(연봉·시작일 등)을 덮어쓸 수 없습니다
+- `:void`는 `esign_request.voided`를 같은 채널로 냅니다
 - 완료·만료 알림톡은 알림 수신자(최대 3명, 없으면 대표자)에게, 완료본 사본은 수신자 이메일로 보냅니다
 
 ## 템플릿·도장·알림 설정
@@ -350,7 +353,8 @@ GET /document-forms/{documentFormCode}/file
 | 템플릿 조회 (`GET /esign-templates`, `GET /esign-templates/{id}`) | 구현(기본 템플릿 5종) |
 | 회사별 템플릿 수정, 서식 모음(document-forms), 도장·사인, 알림 수신자 설정, `:bundle`, 증명서 링크 열람 | 미구현 (도장·수신자 한도는 규칙만). 도장은 `GET/POST /company-seals`, `DELETE /company-seals/{id}`(회사 범위, 5개 한도, 소프트 삭제)만 구현했고 이미지 내려받기·발송 시점 스냅샷은 미구현입니다. 데모 법인에 도장 하나가 들어 있습니다 |
 | 기한 만료 스케줄러 | 미구현. 저장 상태는 바꾸지 않고 읽을 때 만료를 반영합니다 |
-| 이벤트 outbox, 멱등성 키 재응답 | 미구현. `DocumentEvents.layerMemory`가 이벤트를 메모리에 모읍니다 |
+| 이벤트 outbox | `esign_request.completed`·`esign_request.voided`만 outbox 채널 `esign_request->hr`로 HR에 갑니다([documents-hr.ts](../../apps/api/src/wiring/documents-hr.ts)). `esign_request.sent`·`certificate.issued`는 받는 곳이 없어 버립니다 |
+| 멱등성 키 재응답 | 미구현 |
 
 ## 열린 질문
 

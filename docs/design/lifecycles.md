@@ -94,9 +94,8 @@ flowchart TD
 flowchart TD
   esign["POST /esign-requests → :send<br/>근로계약서 PENDING"] --> verify["서명자 :verify → IN_PROGRESS"]
   verify --> complete["서명자 :complete → COMPLETED<br/>esign_request.completed 발행"]
-  complete -- "HR 소비" --> hrmake["근로·급여계약 생성, 신규 WAGE 직원,<br/>완료본 문서 보관함"]:::todo
+  complete -- "outbox esign_request->hr" --> hrmake["완료본 문서 보관함,<br/>확정한 근로·급여계약에 signedDocumentId"]
   manual["POST /employees<br/>POST work-contracts·payroll-contracts"] --> acq["4대보험 취득 신고 ACQUISITION PENDING"]
-  hrmake -.-> acq
   acq -.-> agentdo["대리인 :complete·:fail"]:::todo
   manual -.-> payroll["급여대장 근로 행 (흐름 1)"]
   payroll -.-> resign[":resign {leaveDate, 상실사유}<br/>상실 신고 LOSS PENDING"]
@@ -111,8 +110,8 @@ flowchart TD
   classDef open stroke-width: 3px
 ```
 
-- **전자서명.** 생성은 언제나 `DRAFT`이고, `PENDING`과 `IN_PROGRESS`의 경계는 본인확인 성공입니다. 완료하면 `esign_request.completed`를 메모리 이벤트로 냅니다([documents.md](documents.md#상태), [documents-ports.ts](../../apps/api/src/modules/documents/shared/documents-ports.ts))
-- **HR 반영.** 서명 완료로 근로·급여계약과 직원을 만드는 소비자는 설계만 있습니다(현행 R29). 지금은 직원과 계약을 직접 등록합니다([hr.md](hr.md#이벤트), [hr.md](hr.md#구현-상태))
+- **전자서명.** 생성은 언제나 `DRAFT`이고, `PENDING`과 `IN_PROGRESS`의 경계는 본인확인 성공입니다. 완료하면 `esign_request.completed`를, 무효로 하면 `esign_request.voided`를 outbox로 냅니다([documents.md](documents.md#상태), [documents-ports.ts](../../apps/api/src/modules/documents/shared/documents-ports.ts))
+- **HR 반영.** 직원과 계약은 직접 등록하고, 서명 완료는 완료본을 보관함에 넣고 그 문서가 확정한 계약에 서명 문서를 잇습니다. 서명으로 직원·계약을 만들지는 않습니다([hr.md](hr.md#전자서명-반영))
 - **4대보험 신고.** 직원 등록(`ACQUISITION`), 퇴사(`LOSS`), 휴직·복직이 같은 트랜잭션에서 `PENDING` 신고를 열고, 퇴사 취소·휴직 삭제는 `WITHDRAWN`으로 닫습니다. 처리 커맨드는 없습니다([employees.ts](../../apps/api/src/modules/hr/employees/employees.ts), [leaves.ts](../../apps/api/src/modules/hr/leaves/leaves.ts))
 - **퇴직금.** 정산은 Payroll이 `PayrollEmployeeDirectory`로 HR의 퇴사일을 읽어 만듭니다. 퇴직급여 제도는 HR에 없어 언제나 퇴직금으로 봅니다([payroll.md](payroll.md#퇴직금-정산), [payroll-hr.ts](../../apps/api/src/wiring/payroll-hr.ts))
 - **완료 때 퇴직일 대조(2026-11-08).** 계산됨 정산은 HR이 막지 않으므로 퇴사 취소·직원 삭제·다른 날로 다시 퇴사가 정산을 낡게 만들 수 있습니다. `:complete`가 `PayrollEmployeeDirectory`로 HR 퇴직일을 다시 읽어 어긋나면 409 `SEVERANCE_RETIREMENT_MISMATCH`이고, 목록·상세는 `retirementMismatch`로 보입니다. HR이 정산에 쓰는 명령은 없습니다([payroll.md 퇴직금 정산](payroll.md#퇴직금-정산))

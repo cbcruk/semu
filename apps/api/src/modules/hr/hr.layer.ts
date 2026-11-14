@@ -6,6 +6,9 @@ import { PayrollContractsHttpLive } from './contracts/payroll-contracts.http.ts'
 import { WorkContractRepository } from './contracts/work-contract.ts'
 import { WorkContracts } from './contracts/work-contracts.ts'
 import { WorkContractsHttpLive } from './contracts/work-contracts.http.ts'
+import { EmployeeDocumentRepository } from './documents/employee-document.ts'
+import { EmployeeDocuments } from './documents/employee-documents.ts'
+import { EmployeeDocumentsHttpLive } from './documents/employee-documents.http.ts'
 import { EmployeeRepository } from './employees/employee-repository.ts'
 import { Employees } from './employees/employees.ts'
 import { EmployeesHttpLive } from './employees/employees.http.ts'
@@ -44,7 +47,7 @@ import { TaxWithholdingHttpLive } from './tax-withholding/tax-withholding.http.t
  * 직원·조직·근로/급여계약·휴직·퇴직·4대보험 자격·소득세 공제 컨텍스트의 핸들러 전체입니다.
  *
  * 필요한 것: `EmployeeRepository`, `LeaveRepository`, `WorkContractRepository`, `PayrollContractRepository`,
- * `TaxWithholdingRepository`, `FamilyMemberRepository`, `SocialInsuranceSettingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
+ * `TaxWithholdingRepository`, `FamilyMemberRepository`, `SocialInsuranceSettingRepository`, `OrganizationRepository`, `InsuranceFilingRepository`, `EmployeeDocumentRepository`, `PersonalDataCipher`, `PersonalDataAccessLog`과
  * Payroll이 구현하는 포트 `SeveranceSettlementLookup`·`CompanyWorkforceSize`(`src/wiring/hr-payroll.ts`). 급여계약은 `CompanyWorkforceSize`로 사업장 규모를 읽습니다.
  */
 export const HrHttpLive = Layer.mergeAll(
@@ -57,6 +60,7 @@ export const HrHttpLive = Layer.mergeAll(
   SocialInsuranceHttpLive,
   OrganizationHttpLive,
   InsuranceFilingsHttpLive,
+  EmployeeDocumentsHttpLive,
 ).pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -69,6 +73,7 @@ export const HrHttpLive = Layer.mergeAll(
       SocialInsuranceSettings.layer,
       Organization.layer,
       InsuranceFilings.layer,
+      EmployeeDocuments.layer,
     ),
   ),
 )
@@ -102,6 +107,7 @@ export const HrStoreLive = Layer.mergeAll(
   SocialInsuranceSettingRepository.layer(),
   OrganizationRepository.layer(DEMO_ORGANIZATION),
   InsuranceFilingRepository.layer(),
+  EmployeeDocumentRepository.layer(),
 )
 
 /** {@link HrStoreLive}를 메모리 표와 가짜 암호화로 채우고 열람 기록을 함께 넣습니다. */

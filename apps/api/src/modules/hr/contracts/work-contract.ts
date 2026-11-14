@@ -3,7 +3,7 @@ import { HttpApiError } from 'effect/http-api'
 import { CalendarDate } from '../../../shared/time/date-schemas.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { problemType } from '../../../shared/problem/problem.ts'
-import { EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
+import { EmployeeDocumentId, EmployeeId, Violations, WorkContractId } from '../shared/hr-schemas.ts'
 import { makeTenantTable, TableFactory, type TenantTable } from '../../../shared/persistence/record-table.ts'
 import type { ContractType, TermLimitExemption as TermLimitExemptionCode } from './work-contract-period.types.ts'
 
@@ -40,6 +40,8 @@ export const WorkContract = Schema.Struct({
   id: WorkContractId,
   employeeId: EmployeeId,
   ...WorkContractInput.fields,
+  /** 이 계약을 서명한 근로계약서입니다(문서 보관함). 전자서명이 완료되면 HR이 잇고, 무효로 하면 풉니다. */
+  signedDocumentId: Schema.optionalKey(EmployeeDocumentId),
   /** 기준일(오늘)의 계약 상태입니다. */
   status: Schema.Literals(['SCHEDULED', 'ACTIVE', 'EXPIRED']),
   createdAt: Schema.String,
@@ -73,6 +75,7 @@ export interface WorkContractRecord {
   probation?: { months?: number; payRatePpm?: number } | undefined
   standardOccupationCode?: string | undefined
   termLimitExemption?: TermLimitExemptionCode | undefined
+  signedDocumentId?: Id<'document'> | undefined
   createdAt: string
 }
 

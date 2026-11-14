@@ -30,3 +30,12 @@ export const InsuranceFilingId = IdSchema('insuranceFiling')
 
 /** 인적공제 대상자(가족) ID입니다. */
 export const FamilyMemberId = IdSchema('familyMember')
+
+/** 문서 보관함 문서 ID입니다. */
+export const EmployeeDocumentId = IdSchema('document')
+
+/** 파일 ID입니다. 파일 저장소는 아직 없습니다. */
+export const FileId = IdSchema('file')
+
+/** 전자서명 요청 ID입니다. */
+export const EsignRequestId = IdSchema('esignRequest')
