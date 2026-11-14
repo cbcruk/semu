@@ -132,6 +132,8 @@ export class EsignRequestRepository extends Context.Service<
   TenantTable<EsignRequestRecord> & {
     /** 서명 링크 토큰 해시로 찾습니다. 비로그인 링크라 회사와 상관없이 찾습니다. */
     findByLinkTokenHash(hash: string): Effect.Effect<Option.Option<EsignRequestRecord>>
+    /** 서명 대기·진행 중(`PENDING`, `IN_PROGRESS`)인 요청 전체입니다. 회사와 상관없이 만료 정기 작업이 읽습니다. */
+    listAwaitingSignature(): Effect.Effect<ReadonlyArray<EsignRequestRecord>>
   }
 >()('semu/documents/EsignRequestRepository') {
   /** `documents_esign_requests` 표에 둡니다. 표가 비어 있으면 `seed`로 시작합니다. 저장 방식은 {@link TableFactory}가 정합니다. */
@@ -158,6 +160,10 @@ export class EsignRequestRepository extends Context.Service<
           findByLinkTokenHash: (hash) =>
             Effect.map(table.all(), (records) =>
               Option.fromNullishOr(records.find((record) => record.linkTokenHash === hash)),
+            ),
+          listAwaitingSignature: () =>
+            Effect.map(table.all(), (records) =>
+              records.filter((record) => record.status === 'PENDING' || record.status === 'IN_PROGRESS'),
             ),
         })
       }),

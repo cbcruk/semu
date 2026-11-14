@@ -30,6 +30,12 @@ export const DocumentsHttpLive = Layer.mergeAll(
 ).pipe(Layer.provide(Layer.mergeAll(EsignRequests.layer, Signing.layer, Certificates.layer)))
 
 /**
+ * 정기 작업 `documents.esign-expiry`([esign-expiry-task.ts](./esign/esign-expiry-task.ts))가 쓰는 전자서명 요청 서비스입니다.
+ * 필요한 저장소·포트는 {@link DocumentsHttpLive}와 같습니다.
+ */
+export const EsignRequestsLive = EsignRequests.layer
+
+/**
  * 전자서명·제증명 발급·서식 모음 컨텍스트의 저장소와 외부 연동입니다. 요청·발급 기록과 회사 도장은 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  * 데모 회사(법인)에 도장 하나가 들어 있습니다.
  *

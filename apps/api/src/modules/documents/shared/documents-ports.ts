@@ -121,6 +121,8 @@ export type DocumentEvent =
     }
   /** 완료한 요청을 `:void`로 무효로 했습니다. 완료본 파일은 남습니다. */
   | { type: 'esign_request.voided'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
+  /** 서명 기한(`dueDate`)이 지나 정기 작업이 `EXPIRED`로 바꿨습니다. */
+  | { type: 'esign_request.expired'; companyId: Id<'company'>; requestId: Id<'esignRequest'>; at: string }
   | { type: 'certificate.issued'; companyId: Id<'company'>; issuanceId: Id<'certificateIssuance'>; at: string }
 
 /**

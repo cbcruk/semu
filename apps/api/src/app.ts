@@ -8,7 +8,8 @@ import { BillingHttpLive, BillingStoreLive, PaymentsLive } from './modules/billi
 import { paymentScheduleTask } from './modules/billing/payments/payment-schedule-task.ts'
 import { BookkeepingHttpLive, BookkeepingStoreLive } from './modules/bookkeeping/bookkeeping.layer.ts'
 import { AccountNumberCipher } from './modules/bookkeeping/ports/account-number-cipher.ts'
-import { DocumentsHttpLive, DocumentsStoreLive } from './modules/documents/documents.layer.ts'
+import { DocumentsHttpLive, DocumentsStoreLive, EsignRequestsLive } from './modules/documents/documents.layer.ts'
+import { esignExpiryTask } from './modules/documents/esign/esign-expiry-task.ts'
 import { HrHttpLive, HrStoreLive } from './modules/hr/hr.layer.ts'
 import { AgencyAuthenticationLive, AuthenticationLive } from './modules/identity-access/authentication.ts'
 import { IdentityAccessHttpLive, IdentityAccessStoreLive } from './modules/identity-access/identity-access.layer.ts'
@@ -173,15 +174,16 @@ export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
  *
  * | 작업 | 시각(회사 시간대) | 하는 일 |
  * |---|---|---|
+ * | `documents.esign-expiry` | 매일 00:05 | 서명 기한이 지난 전자서명 요청 만료 |
  * | `tax.filing-schedule` | 매일 03:00 | 세무 기장 회사의 신고 건 만들기·기한 고치기·취소 |
- * | `billing.payment-schedule` | 매일 06:00 | 다가오는 출금일의 월 이용료 결제 예정 만들기 |
+ * | `billing.payment-schedule` | 매일 06:00 | 출금일 3일 전부터 전날까지 그달 월 이용료 결제 예정 만들기 |
  */
-export const SCHEDULED_TASKS = [filingScheduleTask, paymentScheduleTask] as const
+export const SCHEDULED_TASKS = [esignExpiryTask, filingScheduleTask, paymentScheduleTask] as const
 
 /** 정기 작업 실행기입니다. 시작할 때와 1분마다 지난 슬롯을 봅니다. 저장소·어댑터 위에 얹습니다. */
 const SchedulerLive = SchedulerRunnerLive().pipe(
   Layer.provide(Scheduler.layer(SCHEDULED_TASKS)),
-  Layer.provide(Layer.merge(FilingSchedulerLive, PaymentsLive)),
+  Layer.provide(Layer.mergeAll(FilingSchedulerLive, PaymentsLive, EsignRequestsLive)),
 )
 
 /** 서버가 정하는 실행 설정입니다. 테스트 앱은 정기 작업을 돌리지 않습니다. */
