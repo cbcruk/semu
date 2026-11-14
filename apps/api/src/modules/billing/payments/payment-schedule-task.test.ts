@@ -4,35 +4,65 @@ import { describe, expect, it } from 'vitest'
 import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import { UnitOfWork } from '../../../shared/persistence/unit-of-work.ts'
 import { Scheduler } from '../../../shared/scheduler/scheduler.ts'
-import { PaymentsLive, BillingMemoryStoreLive } from '../billing.layer.ts'
+import { BillingMemoryStoreLive, PaymentsLive } from '../billing.layer.ts'
+import { SubscriptionRepository } from '../subscriptions/subscription-repository.ts'
 import { PaymentRepository } from './payment-repository.ts'
 import { PublicHolidays } from './public-holidays.ts'
 import { paymentScheduleTask } from './payment-schedule-task.ts'
 
-describe('정기 작업 billing.payment-schedule', () => {
-  it('매일 06:00에 다가오는 출금일의 결제 예정을 만들고 다음 날은 새로 만들 것이 없습니다', async () => {
-    const layer = Scheduler.layer([paymentScheduleTask]).pipe(
-      Layer.provideMerge(PaymentsLive),
-      Layer.provideMerge(Layer.merge(BillingMemoryStoreLive, PublicHolidays.layerMemory())),
-      Layer.provideMerge(Layer.merge(TableFactory.layerMemory, UnitOfWork.layerNone)),
-    )
+const layer = () =>
+  Scheduler.layer([paymentScheduleTask]).pipe(
+    Layer.provideMerge(PaymentsLive),
+    Layer.provideMerge(Layer.merge(BillingMemoryStoreLive, PublicHolidays.layerMemory())),
+    Layer.provideMerge(Layer.merge(TableFactory.layerMemory, UnitOfWork.layerNone)),
+  )
 
+const at = (local: string) => TestClock.setTime(Date.parse(`${local}+09:00`))
+
+/** 12월 출금일(공휴일·주말을 건너 28일)의 결제 예정입니다. */
+const decemberPayments = Effect.gen(function* () {
+  const all = yield* (yield* PaymentRepository).listAll()
+  return all.filter((payment) => payment.scheduledOn === '2026-12-28')
+})
+
+describe('정기 작업 billing.payment-schedule', () => {
+  it('출금일 3일 전부터 결제 예정을 만들고 그 전이나 이미 만든 뒤에는 만들지 않습니다', async () => {
     const [runs, december] = await Effect.runPromise(
       Effect.gen(function* () {
         const scheduler = yield* Scheduler
-        yield* TestClock.setTime(Date.parse('2026-12-01T06:00:00+09:00'))
+        yield* at('2026-12-01T06:00:00')
         yield* scheduler.runDue()
-        yield* TestClock.setTime(Date.parse('2026-12-02T06:00:00+09:00'))
+        yield* at('2026-12-25T06:00:00')
         yield* scheduler.runDue()
-        const all = yield* (yield* PaymentRepository).listAll()
-        return [yield* scheduler.runs(), all.filter((payment) => payment.scheduledOn === '2026-12-28')] as const
-      }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+        yield* at('2026-12-26T06:00:00')
+        yield* scheduler.runDue()
+        return [yield* scheduler.runs(), yield* decemberPayments] as const
+      }).pipe(Effect.provide(layer()), Effect.provide(TestClock.layer())),
     )
 
     expect(december.length).toBeGreaterThan(0)
-    expect(runs.map((run) => [run.slot, run.status, run.result])).toEqual([
-      ['2026-12-02T06:00', 'SUCCEEDED', { month: '2026-12', created: 0 }],
-      ['2026-12-01T06:00', 'SUCCEEDED', { month: '2026-12', created: december.length }],
+    expect(runs.map((run) => [run.slot, run.result])).toEqual([
+      ['2026-12-26T06:00', { month: '2026-12', created: 0 }],
+      ['2026-12-25T06:00', { month: '2026-12', created: december.length }],
+      ['2026-12-01T06:00', { month: null, created: 0 }],
     ])
+  })
+
+  it('만들기 전에 해지한 구독은 결제 예정이 생기지 않습니다', async () => {
+    const [december, canceledId] = await Effect.runPromise(
+      Effect.gen(function* () {
+        const subscriptions = yield* SubscriptionRepository
+        const active = (yield* subscriptions.listAll()).find((row) => row.status === 'ACTIVE' && row.monthlyFee > 0)!
+        // 12월 10일에 담당자가 12월 15일 해지로 바꿨습니다.
+        yield* at('2026-12-10T10:00:00')
+        yield* subscriptions.save({ ...active, status: 'CANCELLATION_SCHEDULED', endsOn: '2026-12-15' })
+        yield* at('2026-12-25T06:00:00')
+        yield* (yield* Scheduler).runDue()
+        return [yield* decemberPayments, active.id] as const
+      }).pipe(Effect.provide(layer()), Effect.provide(TestClock.layer())),
+    )
+
+    expect(december.length).toBeGreaterThan(0)
+    expect(december.map((payment) => payment.subscriptionId)).not.toContain(canceledId)
   })
 })

@@ -233,7 +233,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 
 | 작업 | 시점 | 멱등성 |
 |---|---|---|
-| `scheduleMonth(month)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 다가오는 출금일의 달(오늘이 출금일 전이면 이번 달, 출금일 당일부터 다음 달, `upcomingBillingMonth`)로 부름(2026-11-14 #81). 달 중간에 시작한 구독도 출금일 전날까지는 그달 결제 예정이 생김 | 같은 구독·출금일이면 만들지 않음 |
+| `scheduleMonth(month)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 돌아, 출금일 3일 전부터 전날까지 그달로 부름(`schedulingMonthOn`, 2026-11-14 #81). 그 밖의 날은 아무것도 하지 않음. 만든 뒤에는 구독 해지·출금 계좌 변경을 결제 예정에 다시 맞추지 않으므로, 만드는 날을 출금일 가까이로 좁혀 그 틈을 사흘 안으로 둠 | 같은 구독·출금일이면 만들지 않음 |
 | `recordWithdrawal(paymentId, result)` | CMS 결과 파일 수신 (출금 다음 날 오후) | 이미 반영된 결과는 그대로 둠 |
 
 ## 오류 코드
@@ -314,7 +314,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 범위 | 상태 |
 |---|---|
 | 구독 조회·담당자 커맨드, `CompanyPlans` 구현 | 구현, HTTP 테스트 |
-| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업으로 매일 돎([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 출금 결과 반영은 CMS 결과 파일 수신기가 없어 부르는 곳이 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
+| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업이 출금일 3일 전부터 만듦([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 만든 뒤의 해지·계좌 변경을 `SCHEDULED` 결제에 다시 맞추는 규칙(취소·계좌 갱신)은 없음. 출금 결과 반영은 CMS 결과 파일 수신기가 없어 부르는 곳이 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
 | 결제 수단 온라인 등록·조회 | 구현. 서면 동의서 업로드 미구현 |
 | 도입 문의(로그인) | 구현. 담당자 배정·알림톡 미구현 |
 | 서비스 계약 조회 | 구현. 계약 체결 흐름(#36-42) 미구현 |

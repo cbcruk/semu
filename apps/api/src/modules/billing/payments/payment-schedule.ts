@@ -30,13 +30,23 @@ export function billingDate(month: string, holidays: ReadonlySet<string>): strin
   return nextBusinessDay(`${month}-${String(BILLING_DAY).padStart(2, '0')}`, holidays)
 }
 
+/** 결제 예정을 만드는 날은 출금일 이 날수 전부터 전날까지입니다. 출금 하루 전 알림톡보다 앞서야 합니다. */
+export const SCHEDULE_LEAD_DAYS = 3
+
 /**
- * `today`(회사 시간대) 뒤에 오는 첫 출금일의 달입니다. 이번 달 출금일이 오늘보다 뒤면 이번 달, 오늘이거나 지났으면 다음 달입니다.
- * 정기 작업이 매일 이 달의 결제 예정을 맞춥니다. 출금일 당일에는 이미 CMS 요청이 나갔다고 보고 새로 만들지 않습니다.
+ * `today`(회사 시간대)에 결제 예정을 만들 달입니다. 그달 출금일의 {@link SCHEDULE_LEAD_DAYS}일 전부터 전날까지면 그 달이고, 아니면
+ * `null`입니다. 출금일 당일에는 이미 CMS 요청이 나갔다고 보고 만들지 않습니다.
+ *
+ * 만든 뒤에는 구독 해지·출금 계좌 변경을 결제 예정에 다시 맞추지 않으므로, 만드는 날을 출금일 가까이로 좁혀 그 틈을 며칠로 둡니다.
+ * 출금일이 공휴일로 다음 달로 넘어갈 수 있어 지난달 출금일도 봅니다.
  */
-export function upcomingBillingMonth(today: string, holidays: ReadonlySet<string>): string {
+export function schedulingMonthOn(today: string, holidays: ReadonlySet<string>): string | null {
   const 이번달 = today.slice(0, 7)
-  return billingDate(이번달, holidays) > today ? 이번달 : addMonths(이번달, 1)
+  for (const 달 of [addMonths(이번달, -1), 이번달]) {
+    const 출금일 = billingDate(달, holidays)
+    if (addDays(출금일, -SCHEDULE_LEAD_DAYS) <= today && today < 출금일) return 달
+  }
+  return null
 }
 
 /** 출금 결과가 반영되는 날입니다. CMS 결과 파일이 출금 다음 날 오후에 옵니다. */
