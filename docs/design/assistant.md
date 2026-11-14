@@ -86,7 +86,9 @@ AI 비서 대화(질문·답변·도구 제안)와 정부·지자체 지원사�
   - 지역: 공고 지역이 비었거나 회사 지역이 그 코드로 시작 (`11` ⊃ `11680`). 회사 지역이 없으면 전국 공고만
   - 업종: 공고 업종이 비었거나, 회사 업종이 비었거나(불명확), 회사 업종이 공고 업종 코드로 시작 (`C` ⊃ `C10`)
   - 마감 임박순 최대 15개
-- "오늘"은 `Asia/Seoul` 날짜입니다. 추천은 조회할 때 계산합니다. 공고 수집(04:00)은 GrantFeed 작업의 몫입니다
+- "오늘"은 `Asia/Seoul` 날짜입니다. 추천은 조회할 때 계산합니다. 공고 수집은 정기 작업 `assistant.grant-feed`가 매일 04:00에 합니다([grant-feed-task.ts](../../apps/api/src/modules/assistant/grants/grant-feed-task.ts))
+  - 원천(`GrantFeedSource`)이 준 공고를 `source`·`externalId`(원천의 공고 번호)로 저장된 공고와 맞춰, 처음 본 것은 만들고 내용이 바뀐 것만 같은 ID로 고칩니다(`mergeGrantFeed`). 원천에서 빠진 공고는 지우지 않고, 신청 마감일이 지나면 조회에서 빠집니다. `externalId`는 응답에 넣지 않습니다
+  - 회사에 속하지 않는 공용 데이터라 회사별로 나누지 않고 한 트랜잭션입니다. 원천은 트랜잭션 밖에서 읽고, 읽지 못하면(`GrantFeedUnavailable`) 실패로 남겨 재시도합니다
 - 메뉴 권한 없이 모든 사용자가 봅니다(`grant:read`는 기본 권한). 약관 게이트를 걸지 않습니다
 
 ## 상태
@@ -154,7 +156,8 @@ stateDiagram-v2
 |---|---|---|
 | `AssistantModel` | `reply({tools, history, message}) → Effect<{content, toolProposals}, AssistantUnavailable>` | 운영: LLM(RAG + 도구 호출) 어댑터. 메모리: 낱말로 도구를 고르는 결정적 가짜 |
 | `CompanyGrantProfiles` | `profileOf(companyId) → Effect<{industryCodes, regionCode \| null}>` | 지역은 Identity & Access 회사 주소, 업종은 홈택스 업종 코드 보유처(현행 remittance `business_types`). 메모리: 데모 회사 표 |
-| `GrantRepository` | `find`, `list`, `save` | 공고 수집 작업(GrantFeed)이 씀 |
+| `GrantRepository` | `find`, `list`, `save` | 공고 수집 작업(`assistant.grant-feed`)이 씀 |
+| `GrantFeedSource` | `notices() → Effect<GrantNotice[], GrantFeedUnavailable>` | 운영: 기업마당(`BIZINFO`) 지원사업정보 API 어댑터(미구현). 원천 코드를 KSIC·법정동 코드 앞부분으로 바꿈. 메모리: 주어진 공고를 그대로 돌려주는 가짜(서버는 빈 목록) |
 
 - `READ` 도구가 실제 데이터를 읽는 포트(거래·계좌 요약, 직원·급여 조회)는 아직 없습니다. Bookkeeping·Payroll이 읽기 포트를 내보내면 모델 어댑터가 씁니다
 - 발행하는 이벤트는 없습니다. 소비하는 이벤트도 없습니다
@@ -181,9 +184,9 @@ stateDiagram-v2
 
 ## 구현 상태
 
-- 구현: 대화 6개 엔드포인트, 지원금 3개 엔드포인트, 도구 허용 규칙, 추천 규칙, 메모리 저장소, 가짜 모델, 데모 공고·회사 업종 시드
+- 구현: 대화 6개 엔드포인트, 지원금 3개 엔드포인트, 도구 허용 규칙, 추천 규칙, 메모리 저장소, 가짜 모델, 데모 공고·회사 업종 시드, 공고 수집 정기 작업과 원천 포트(가짜)
 - 테스트: 규칙 단위 테스트, 두 규칙의 픽스처 테스트, 서비스 테스트(모델 제안 거르기, 대화 소유, 정렬·페이지), HTTP 테스트
-- 미구현: 실제 LLM 어댑터와 RAG, `READ` 도구의 데이터 읽기 포트, 응답 스트리밍, 공고 수집 작업(04:00)과 공고 원천 연동, 추천 결과 캐시(`company_grant_recommendations`), 업종·지역 포트의 실제 구현
+- 미구현: 실제 LLM 어댑터와 RAG, `READ` 도구의 데이터 읽기 포트, 응답 스트리밍, 공고 원천의 운영 어댑터(기업마당 API), 추천 결과 캐시(`company_grant_recommendations`), 업종·지역 포트의 실제 구현
 
 ## 열린 질문
 
@@ -193,5 +196,5 @@ stateDiagram-v2
 4. 세무 대리인 직원이 고객 회사의 비서를 쓰게 할지. 레거시는 막았고 지금은 허용합니다
 5. 데모 계정이 대화를 써 볼 수 있게 할지. 지금은 쓰기 거절 규칙에 따라 막힙니다
 6. 회사 지역이 없을 때 지역 제한 공고를 뺄지. 지금은 레거시대로 뺍니다
-7. 공고 원천(기업마당 등)과 업종 코드의 출처(홈택스 업종 vs 회사 설정). 코드 체계는 KSIC·법정동 코드 앞부분 일치로 정했습니다(2026-11-07, [규칙 결정](rule-decisions/assistant.md#grant-recommendation) 5). 원천 어댑터가 자기 코드를 이 체계로 바꿉니다
+7. ~~공고 원천~~ 기업마당(`BIZINFO`) 지원사업정보 API를 첫 원천으로 정함(2026-11-14, #109). 원천은 포트(`GrantFeedSource`) 뒤에 두어 K-Startup 등을 더할 때 `source`로 구분합니다. 운영 어댑터는 아직 없습니다. 업종 코드의 출처(홈택스 업종 vs 회사 설정)는 열려 있습니다. 코드 체계는 KSIC·법정동 코드 앞부분 일치로 정했습니다(2026-11-07, [규칙 결정](rule-decisions/assistant.md#grant-recommendation) 5). 원천 어댑터가 자기 코드를 이 체계로 바꿉니다
 8. 대화 보존 기간과 개인정보(대화에 주민등록번호 등이 들어올 때) 처리 ([compliance.md](compliance.md))
