@@ -5,6 +5,7 @@ import { Authentication } from '../../identity-access/authentication.ts'
 import { InstitutionTypeSchema } from '../institutions/institution.ts'
 import { IntegrationItemNotFound, IntegrationNotFound } from '../integrations/integration.ts'
 import {
+  HometaxDelegationRequired,
   InstitutionNotConnected,
   ScrapAllResult,
   ScrapAvailabilityItem,
@@ -36,6 +37,7 @@ export class ScrapRequestsApi extends HttpApiGroup.make('scrapRequests')
         ScrapRequestTooSoon,
         IntegrationNotFound,
         IntegrationItemNotFound,
+        HometaxDelegationRequired,
       ],
     }),
     HttpApiEndpoint.post('requestAll', '/scrap-requests::request-all', {

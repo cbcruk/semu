@@ -6,7 +6,9 @@ import { TableFactory } from '../../../shared/persistence/record-table.ts'
 import { UnitOfWork } from '../../../shared/persistence/unit-of-work.ts'
 import { Scheduler } from '../../../shared/scheduler/scheduler.ts'
 import { TEST_COMPANY_ID, testActor } from '../../identity-access/testing.ts'
-import { demoIntegrations } from '../demo-seed.ts'
+import { demoDelegations, demoIntegrations } from '../demo-seed.ts'
+import { DelegationRepository } from '../hometax-delegations/hometax-delegation.ts'
+import type { DelegationRecord } from '../hometax-delegations/hometax-delegation.ts'
 import { IntegrationRepository } from '../integrations/integration-repository.ts'
 import { scheduledScrapTask } from './scheduled-scrap-task.ts'
 import { ScrapRequestRepository } from './scrap-request-repository.ts'
@@ -16,11 +18,12 @@ import { ScrapQueue } from './scrap-worker.ts'
 
 const OTHER_COMPANY = 'cmp_01JBQ00000000000000000000Z' as Id<'company'>
 
-function layerWith(enqueued: Array<Id<'scrapRequest'>>) {
+function layerWith(enqueued: Array<Id<'scrapRequest'>>, delegations: DelegationRecord[] = demoDelegations()) {
   return ScrapRequests.layer.pipe(
     Layer.provideMerge(
       Layer.mergeAll(
         IntegrationRepository.layerMemory(demoIntegrations()),
+        DelegationRepository.layerMemory(delegations),
         ScrapRequestRepository.layerMemory(),
         ScrapQueue.layerManual(enqueued),
       ),
@@ -29,8 +32,9 @@ function layerWith(enqueued: Array<Id<'scrapRequest'>>) {
 }
 
 describe('정기 수집 시각표', () => {
-  it('은행은 7시, 카드는 7시 반, PG는 10시·22시, 배달은 10시, 올라는 6시에 돌고 홈택스·지로는 정기 수집이 없습니다', () => {
+  it('은행은 7시, 카드는 7시 반, 홈택스는 8시, PG는 10시·22시, 배달은 10시, 올라는 6시에 돌고 지로는 정기 수집이 없습니다', () => {
     expect(scheduledScraps()).toEqual([
+      { name: 'integrations.scrap.hometax-0800', institutionType: 'HOMETAX', at: '08:00' },
       { name: 'integrations.scrap.card-sales-0730', institutionType: 'CARD_SALES', at: '07:30' },
       { name: 'integrations.scrap.credit-card-0730', institutionType: 'CREDIT_CARD', at: '07:30' },
       { name: 'integrations.scrap.bank-0700', institutionType: 'BANK', at: '07:00' },
@@ -93,6 +97,28 @@ describe('ScrapRequests.requestScheduled', () => {
 
     expect(outcome).toEqual({ blocked: 'ScrapRequestTooSoon', scheduled: 'CREATED' })
     expect(enqueued).toHaveLength(2)
+  })
+
+  it('홈택스는 동의한 수임동의가 있는 회사만 정기 수집하고, 동의 대기·해지뿐이면 건너뜁니다', async () => {
+    const enqueued: Array<Id<'scrapRequest'>> = []
+    const agreed = demoDelegations().filter((delegation) => delegation.companyId === TEST_COMPANY_ID)
+    const run = (delegations: DelegationRecord[]) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* (yield* ScrapRequests).requestScheduled(TEST_COMPANY_ID, 'HOMETAX', '2026-11-14T08:00')
+        }).pipe(Effect.provide(layerWith(enqueued, delegations))),
+      )
+
+    const outcomes = [
+      await run(agreed.map((delegation) => ({ ...delegation, status: 'REQUESTED' as const }))),
+      await run(agreed.map((delegation) => ({ ...delegation, status: 'REVOKED' as const }))),
+      await run([]),
+      await run(agreed),
+    ]
+
+    expect(agreed).toHaveLength(1)
+    expect(outcomes).toEqual(['DELEGATION_REQUIRED', 'DELEGATION_REQUIRED', 'DELEGATION_REQUIRED', 'CREATED'])
+    expect(enqueued).toHaveLength(1)
   })
 })
 

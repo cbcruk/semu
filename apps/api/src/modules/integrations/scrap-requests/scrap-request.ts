@@ -106,20 +106,26 @@ export const ScrapAvailabilityItem = Schema.Struct({
   institutionType: InstitutionTypeSchema,
   isConnected: Schema.Boolean,
   canRequest: Schema.Boolean,
-  /** `RUNNING`이면 화면은 남은 시간 대신 "수집 중"을 보입니다. */
-  reason: Schema.optionalKey(Schema.Literals(['RUNNING', 'COOLDOWN', 'NOT_CONNECTED'])),
+  /**
+   * `RUNNING`이면 화면은 남은 시간 대신 "수집 중"을 보입니다. `DELEGATION_REQUIRED`는 세무대리인이 수임동의 없는 회사의 홈택스를
+   * 수집하려 할 때입니다.
+   */
+  reason: Schema.optionalKey(Schema.Literals(['RUNNING', 'COOLDOWN', 'NOT_CONNECTED', 'DELEGATION_REQUIRED'])),
   retryAfterSeconds: Schema.optionalKey(Schema.Int),
   latestRequestId: Schema.optionalKey(ScrapRequestId),
 })
 
-/** 전체 수집 응답입니다. 연동은 있지만 진행 중·쿨다운이라 넣지 않은 기관은 `skipped`에 있습니다. */
+/**
+ * 전체 수집 응답입니다. 연동은 있지만 진행 중·쿨다운이거나 수임동의가 없어 넣지 않은 기관은 `skipped`에 있습니다.
+ * `retryAfterSeconds`는 진행 중·쿨다운일 때만 있습니다.
+ */
 export const ScrapAllResult = Schema.Struct({
   items: Schema.Array(ScrapRequest),
   skipped: Schema.Array(
     Schema.Struct({
       institutionType: InstitutionTypeSchema,
-      reason: Schema.Literals(['RUNNING', 'COOLDOWN']),
-      retryAfterSeconds: Schema.Int,
+      reason: Schema.Literals(['RUNNING', 'COOLDOWN', 'DELEGATION_REQUIRED']),
+      retryAfterSeconds: Schema.optionalKey(Schema.Int),
     }),
   ),
 })
@@ -148,4 +154,11 @@ export class InstitutionNotConnected extends HttpApiError.Problem<InstitutionNot
   'InstitutionNotConnected',
   { type: problemType('INSTITUTION_NOT_CONNECTED'), status: 422, title: 'Institution is not connected' },
   { code: Schema.tag('INSTITUTION_NOT_CONNECTED'), institutionType: InstitutionTypeSchema },
+) {}
+
+/** 세무대리인이 홈택스를 수집하려 했지만 이 회사에 동의한 홈택스 수임동의가 없습니다. */
+export class HometaxDelegationRequired extends HttpApiError.Problem<HometaxDelegationRequired>()(
+  'HometaxDelegationRequired',
+  { type: problemType('HOMETAX_DELEGATION_REQUIRED'), status: 422, title: 'Hometax delegation is not agreed' },
+  { code: Schema.tag('HOMETAX_DELEGATION_REQUIRED') },
 ) {}

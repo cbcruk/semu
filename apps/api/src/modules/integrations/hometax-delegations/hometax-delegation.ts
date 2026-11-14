@@ -106,6 +106,14 @@ export class DelegationRepository extends Context.Service<
     DelegationRepository.layer(seed).pipe(Layer.provide(TableFactory.layerMemory))
 }
 
+/**
+ * 세무대리인이 이 회사의 홈택스 자료를 수집해도 되는지 판정합니다. 동의한(`AGREED`) 수임이 하나라도 있으면 참입니다.
+ * 동의를 기다리거나(`REQUESTED`) 해지한(`REVOKED`) 수임은 세지 않습니다(docs/design/compliance.md).
+ */
+export function hasAgreedDelegation(delegations: ReadonlyArray<Pick<DelegationRecord, 'status'>>): boolean {
+  return delegations.some((delegation) => delegation.status === 'AGREED')
+}
+
 /** 저장한 수임동의를 응답 형태로 바꿉니다. */
 export function delegationView(record: DelegationRecord): HometaxDelegation {
   return {
