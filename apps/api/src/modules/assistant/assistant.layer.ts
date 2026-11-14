@@ -6,6 +6,7 @@ import { ConversationRepository } from './conversations/conversation-repository.
 import { ConversationsHttpLive } from './conversations/conversations.http.ts'
 import { Conversations } from './conversations/conversations.ts'
 import { CompanyGrantProfiles } from './grants/grant-profiles.ts'
+import { GrantFeedSource } from './grants/grant-feed-source.ts'
 import { GrantRepository } from './grants/grant-repository.ts'
 import { GrantsHttpLive } from './grants/grants.http.ts'
 import { Grants } from './grants/grants.ts'
@@ -22,13 +23,15 @@ export const AssistantHttpLive = Layer.mergeAll(ConversationsHttpLive, GrantsHtt
 /**
  * AI 비서·지원사업 추천 컨텍스트의 저장소와 외부 연동입니다. 저장소 표는 `TableFactory`(메모리 또는 SQLite)에 둡니다.
  *
- * 언어 모델은 낱말로 도구를 고르는 가짜이고, 회사 업종·지역은 데모 회사 값으로 채웁니다.
+ * 언어 모델은 낱말로 도구를 고르는 가짜이고, 회사 업종·지역은 데모 회사 값으로 채웁니다. 공고 원천은 운영 어댑터(기업마당)가 생기기
+ * 전까지 빈 목록을 주는 가짜라, 정기 작업 `assistant.grant-feed`가 돌아도 데모 공고만 남습니다.
  */
 export const AssistantStoreLive = Layer.mergeAll(
   ConversationRepository.layer(),
   GrantRepository.layer(demoGrants()),
   AssistantModel.layerFake,
   CompanyGrantProfiles.layerMemory(demoGrantProfiles()),
+  GrantFeedSource.layerMemory(),
 )
 
 /** {@link AssistantStoreLive}를 메모리 표로 채웁니다. 로컬 개발과 테스트에 씁니다. */
