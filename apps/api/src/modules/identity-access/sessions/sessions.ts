@@ -8,7 +8,13 @@ import { ActorDirectory } from '../access/actor-directory.ts'
 import { isAgentKind } from '../access/agent-directory.ts'
 import { verifyPassword } from '../accounts/password-hash.ts'
 import { UserRepository } from '../accounts/user-repository.ts'
-import { decideSignIn, planSignIn, type UserChange, type UserRejection } from '../accounts/user.aggregate.ts'
+import {
+  decideSignIn,
+  decideSignInSucceeded,
+  planSignIn,
+  type UserChange,
+  type UserRejection,
+} from '../accounts/user.aggregate.ts'
 import { AccountLocked, InvalidCredentials, normalizeEmail, toUserProfile } from '../accounts/user.ts'
 import type { UserRecord } from '../accounts/user.ts'
 import { AuditLog } from '../audit/audit-log.ts'
@@ -218,7 +224,7 @@ export class Sessions extends Context.Service<
         if (Result.isFailure(decided)) return yield* reject(decided.failure)
         yield* applyUserChange(decided.success)
         const issued = yield* open(user.id, { staySignedIn: input.staySignedIn ?? false, companyId: input.companyId })
-        yield* audit.record({ action: 'SIGN_IN_SUCCEEDED', actorUserId: user.id, companyId: issued.grant.company?.id })
+        for (const entry of decideSignInSucceeded(user, issued.grant.company?.id)) yield* audit.record(entry)
         return issued
       })
 

@@ -4,6 +4,7 @@ import type { Id } from '../../../shared/ids/ids.types.ts'
 import {
   decidePasswordChange,
   decideSignIn,
+  decideSignInSucceeded,
   MAX_FAILED_SIGN_INS,
   planPasswordChange,
   planSignIn,
@@ -61,6 +62,19 @@ describe('decideSignIn', () => {
   it('맞으면 실패 횟수를 비우고, 이미 0이면 사용자를 바꾸지 않습니다', () => {
     expect(Result.getOrThrow(decideSignIn({ ...user, failedSignInCount: 2 }, true)).user?.failedSignInCount).toBe(0)
     expect(Result.getOrThrow(decideSignIn(user, true))).toEqual({ audit: [] })
+  })
+})
+
+describe('decideSignInSucceeded', () => {
+  it('세션이 묶은 회사로 로그인 성공을 남기고, 회사가 없으면 회사 없이 남깁니다', () => {
+    const company = 'cmp_01JBQ00000000000000000000A' as Id<'company'>
+
+    expect(decideSignInSucceeded(user, company)).toEqual([
+      { action: 'SIGN_IN_SUCCEEDED', actorUserId: user.id, companyId: company },
+    ])
+    expect(decideSignInSucceeded(user, undefined)).toEqual([
+      { action: 'SIGN_IN_SUCCEEDED', actorUserId: user.id, companyId: undefined },
+    ])
   })
 })
 

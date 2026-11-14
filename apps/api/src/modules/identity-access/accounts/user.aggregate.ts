@@ -46,7 +46,7 @@ export function planSignIn(
 
 /**
  * 로그인을 판정합니다. 틀리면 실패 횟수를 1 올려 남기며 거부하고, 다섯 번째로 틀리면 잠금(`ACCOUNT_LOCKED`)입니다. 맞으면 실패 횟수를
- * 비웁니다(이미 0이면 바꾸지 않음). 로그인 성공 감사 기록은 세션이 묶은 회사가 필요해 서비스가 세션을 연 뒤 남깁니다.
+ * 비웁니다(이미 0이면 바꾸지 않음). 로그인 성공 감사 기록은 세션이 묶은 회사가 필요해 세션을 연 뒤 {@link decideSignInSucceeded}로 고릅니다.
  */
 export function decideSignIn(
   user: UserRecord,
@@ -66,6 +66,11 @@ export function decideSignIn(
   return Result.succeed(
     user.failedSignInCount > 0 ? { user: { ...user, failedSignInCount: 0 }, audit: [] } : { audit: [] },
   )
+}
+
+/** 로그인 성공 감사 기록입니다. 세션을 열어 묶은 회사가 정해진 뒤 서비스가 부릅니다. 회사가 없으면(가입 직후) 회사 없이 남깁니다. */
+export function decideSignInSucceeded(user: UserRecord, companyId: Id<'company'> | undefined): AuditInput[] {
+  return [{ action: 'SIGN_IN_SUCCEEDED', actorUserId: user.id, companyId }]
 }
 
 /**
