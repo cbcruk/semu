@@ -2,11 +2,11 @@ import { Context, DateTime, Effect, Layer, Option } from 'effect'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import type { Actor } from '../../identity-access/actor.types.ts'
 import { EmployeeRepository } from '../employees/employee-repository.ts'
-import { applyInsuranceFilingCommand } from './insurance-filing-rules.ts'
+import { decideInsuranceFilingProcess } from './insurance-filing.aggregate.ts'
 import { InsuranceFilingRepository } from './insurance-filing-repository.ts'
 import {
   InsuranceFilingNotFound,
-  InsuranceFilingTransitionInvalid,
+  type InsuranceFilingTransitionInvalid,
   type InsuranceFilingView,
 } from './insurance-filing.ts'
 import type {
@@ -84,8 +84,9 @@ export class InsuranceFilings extends Context.Service<
 
         process: Effect.fn('InsuranceFilings.process')(function* (actor, id, command) {
           const filing = yield* find(actor, id)
-          const next = applyInsuranceFilingCommand(filing, command, DateTime.formatIso(yield* DateTime.now))
-          if (next === undefined) return yield* new InsuranceFilingTransitionInvalid({ currentStatus: filing.status })
+          const { filing: next } = yield* Effect.fromResult(
+            decideInsuranceFilingProcess(filing, command, DateTime.formatIso(yield* DateTime.now)),
+          )
           yield* filings.save(next)
           return toView(next, yield* namesOf(actor.companyId))
         }),
