@@ -18,7 +18,8 @@ import {
   ScrapQueueInlineLive,
 } from './modules/integrations/integrations.layer.ts'
 import { PayrollHttpLive, PayrollStoreLive } from './modules/payroll/payroll.layer.ts'
-import { TaxHttpLive, TaxStoreLive } from './modules/tax/tax.layer.ts'
+import { filingScheduleTask } from './modules/tax/calendar/filing-schedule-task.ts'
+import { FilingSchedulerLive, TaxHttpLive, TaxStoreLive } from './modules/tax/tax.layer.ts'
 import {
   OutboxRelayLive,
   PersistenceMemoryLive,
@@ -32,6 +33,7 @@ import { PersonalDataCipher } from './shared/personal-data/personal-data-cipher.
 import { describeDefect } from './shared/problem/defect-log.ts'
 import { Internal, NotFound } from './shared/problem/problem.ts'
 import { RequestValidationLive } from './shared/problem/request-validation.ts'
+import { Scheduler, SchedulerRunnerLive } from './shared/scheduler/scheduler.ts'
 import { PublicHolidayCalendar } from './shared/time/public-holidays.ts'
 import { WiringLive } from './wiring/wiring.layer.ts'
 import type { Outbox } from './shared/persistence/outbox.ts'
@@ -165,17 +167,46 @@ const ciphersWithKey = (key: Uint8Array) => CiphersLive.pipe(Layer.provide(DataK
  */
 export const MemoryLive = storesOn(PersistenceMemoryLive, CiphersFakeLive)
 
+/**
+ * 정기 작업 목록입니다. 작업마다 이름·시각·재시도 규칙이 있고, 실행 기록은 `platform_scheduled_runs` 표에 남습니다(D11).
+ *
+ * | 작업 | 시각(회사 시간대) | 하는 일 |
+ * |---|---|---|
+ * | `tax.filing-schedule` | 매일 03:00 | 세무 기장 회사의 신고 건 만들기·기한 고치기·취소 |
+ */
+export const SCHEDULED_TASKS = [filingScheduleTask] as const
+
+/** 정기 작업 실행기입니다. 시작할 때와 1분마다 지난 슬롯을 봅니다. 저장소·어댑터 위에 얹습니다. */
+const SchedulerLive = SchedulerRunnerLive().pipe(
+  Layer.provide(Scheduler.layer(SCHEDULED_TASKS)),
+  Layer.provide(FilingSchedulerLive),
+)
+
+/** 서버가 정하는 실행 설정입니다. 테스트 앱은 정기 작업을 돌리지 않습니다. */
+export interface RuntimeOptions {
+  /** 정기 작업 실행기를 띄웁니다. 기본값은 끔입니다. */
+  readonly scheduler?: boolean
+}
+
+const withScheduler = <A, E, R>(base: Layer.Layer<A, E, R>, options: RuntimeOptions) =>
+  options.scheduler === true ? SchedulerLive.pipe(Layer.provideMerge(base)) : base
+
 /** 모든 저장소를 프로세스 메모리에 두되 실제 암호화({@link CiphersLive})를 `key`로 씁니다. `SEMU_DATABASE=memory` 서버가 씁니다. */
-export const EncryptedMemoryLive = (key: Uint8Array) => storesOn(PersistenceMemoryLive, ciphersWithKey(key))
+export const EncryptedMemoryLive = (key: Uint8Array, options: RuntimeOptions = {}) =>
+  withScheduler(storesOn(PersistenceMemoryLive, ciphersWithKey(key)), options)
 
 /**
  * `filename`의 SQLite에 저장하고 실제 암호화({@link CiphersLive})를 데이터 키 `key`(32바이트)로 씁니다.
  * 요청마다 한 트랜잭션이고, 컨텍스트 사이 이벤트는 outbox를 거쳐 커밋 뒤에 전달됩니다. 시작할 때와 30초마다 밀린 이벤트를 다시 넘깁니다.
+ * `options.scheduler`면 정기 작업({@link SCHEDULED_TASKS})도 돌립니다.
  *
  * 키를 잃거나 바꾸면 이미 저장한 암호문을 열 수 없습니다.
  */
-export const SqliteLive = (filename: string, key: Uint8Array) =>
-  OutboxRelayLive().pipe(Layer.provideMerge(storesOn(PersistenceSqliteLive(filename), ciphersWithKey(key))))
+export const SqliteLive = (filename: string, key: Uint8Array, options: RuntimeOptions = {}) =>
+  withScheduler(
+    OutboxRelayLive().pipe(Layer.provideMerge(storesOn(PersistenceSqliteLive(filename), ciphersWithKey(key)))),
+    options,
+  )
 
 /**
  * 테스트 앱의 저장소입니다. 기본은 {@link MemoryLive}이고, `SEMU_TEST_STORE=sqlite`면 테스트 앱마다 새 메모리 SQLite({@link SqliteLive})입니다.

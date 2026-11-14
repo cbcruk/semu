@@ -66,12 +66,12 @@ export const TaxHttpLive = Layer.mergeAll(
 )
 
 /**
- * 일정 배치입니다. 매일 배치와 공휴일표가 바뀐 뒤에 `run`을 부릅니다. 세무 설정을 고쳐도 바로 돌리지 않고 다음 `run`이 새 설정을 씁니다.
- * 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다.
+ * 일정 배치와 그것이 읽는 세무 프로필입니다. 정기 작업 `tax.filing-schedule`([filing-schedule-task.ts](./calendar/filing-schedule-task.ts))이
+ * 매일 부릅니다. 세무 설정을 고쳐도 바로 돌리지 않고 다음 실행이 새 설정을 씁니다. 필요한 저장소·포트는 {@link TaxHttpLive}와 같습니다.
  */
 export const FilingSchedulerLive = FilingScheduler.layer.pipe(
   Layer.provide(ActionCardsLive),
-  Layer.provide(TaxProfilesLive),
+  Layer.provideMerge(TaxProfilesLive),
 )
 
 /** Payroll이 급여대장 잠금에 쓰는 원천세 신고 여부 조회입니다. `FilingRepository`가 필요합니다. */

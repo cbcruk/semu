@@ -156,9 +156,11 @@ POST /v1/esign-requests/esr_01J...:send
 오래 걸리거나 외부 기관에 의존하는 일은 `Job` 리소스로 만듭니다.
 
 ```
-POST /v1/scrap-requests                  → 202 { "jobId": "job_01J..." }
-GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 0.4 }
+POST /v1/scrap-requests                  → 202 { "id": "scr_01J...", "status": "QUEUED" }
+GET  /v1/scrap-requests/scr_01J...       → { "status": "RUNNING", "progress": 0.4 }
 ```
+
+- 작업 상태는 그 리소스가 자기 경로로 보여 줍니다. 공용 `GET /jobs/{id}`는 두지 않습니다([D11](review.md#결정))
 
 | `status` | 의미 |
 |---|---|
@@ -171,6 +173,18 @@ GET  /v1/jobs/job_01J...                 → { "status": "RUNNING", "progress": 
 
 - 끝나면 `job.completed` 이벤트를 보냅니다 ([events.md](events.md)). 클라이언트는 폴링 대신 이벤트를 받습니다
 - 현행 수집 폴링(`PROGRESS|SUCCESS|FAIL`), 분류 규칙 일괄 적용(`rule_apply_jobs`), 엑셀 업로드, 내보내기가 모두 이 형태가 됩니다
+
+## 정기 작업
+
+시각이 되면 서버가 스스로 하는 일(예약 커맨드, [domain-model.md](domain-model.md))은 공용 실행기 `Scheduler`([scheduler.ts](../../apps/api/src/shared/scheduler/scheduler.ts), [D11](review.md#결정))에 작업으로 등록합니다.
+
+- **작업:** `ScheduledTask { name, spec, retry?, run(slot) }`. 이름은 `<context>.<작업>`이고 그 컨텍스트 폴더에 둡니다(예: [filing-schedule-task.ts](../../apps/api/src/modules/tax/calendar/filing-schedule-task.ts)). 목록은 `app.ts`의 `SCHEDULED_TASKS`입니다
+- **시각:** `DAILY { at }` 또는 `MONTHLY { day, at }`이고 회사 시간대(`Asia/Seoul`)의 벽시계입니다. 실행기는 1분마다 작업마다 지금 시각의 마지막 슬롯을 봅니다. 서버가 꺼져 있던 동안 지나간 더 앞선 슬롯은 따로 돌리지 않습니다
+- **같은 슬롯은 한 번:** 슬롯을 잡는 일(`platform_scheduled_runs` 읽기·쓰기)이 한 트랜잭션입니다. 잡은 실행기는 임대 시각(기본 30분)까지 슬롯을 가지고, 그 안에 끝나지 않으면 죽은 실행으로 보고 다시 잡습니다
+- **재시도:** 오류 채널로 실패하거나 결함이 나면 5분, 10분 뒤에 다시 시도하고 세 번째 실패에서 포기합니다(`RetryPolicy`). 실패 요약에는 오류 태그·회사 ID·결함 위치만 남기고 메시지는 남기지 않습니다
+- **작업은 다시 돌려도 결과가 같아야 합니다.** 실패한 슬롯은 처음부터 다시 돌기 때문입니다. 오늘 기준으로 상태를 맞추는 모양(일정 배치, 이미 만든 결제 예정은 건너뜀)으로 씁니다
+- **회사별 작업:** `eachCompany(items, companyIdOf, work)`가 회사 하나를 한 트랜잭션으로 돌리고, 한 회사가 실패해도 나머지를 끝낸 뒤 실패한 회사를 모아 `CompaniesFailed`로 실패합니다. 행위자가 없으므로 권한 검사 없이 서비스의 시스템 커맨드를 부릅니다
+- **켜기:** 서버(`server.ts`)만 실행기를 띄웁니다. `SEMU_SCHEDULER=off`면 끕니다. 테스트 앱은 띄우지 않고, 작업 테스트는 `TestClock`으로 `Scheduler.runDue`를 부릅니다
 
 ## 파일
 

@@ -42,7 +42,7 @@
 | HR | 근로계약·급여계약 | `SCHEDULED` `ACTIVE` `EXPIRED` | [hr.md](hr.md#근로계약) | [work-contract-period.ts](../../apps/api/src/modules/hr/contracts/work-contract-period.ts) | 파생(계약 기간) |
 | HR | 휴직 `Leave` | `SCHEDULED` `ONGOING` `ENDED` | [hr.md](hr.md#휴직) | 없음 | 미구현. 응답에 `status`가 없고 파생 함수도 없음. 직원의 `LEAVE`는 직원 상태 파생이 따로 계산 |
 | Bookkeeping | 세금계산서 발급 건 `TaxInvoice` | `ISSUING` `ISSUED` `FAILED` | [bookkeeping.md](bookkeeping.md#거래명세서와-세금계산서-발급) | [sales-transaction-service.ts](../../apps/api/src/modules/bookkeeping/sales-transactions/sales-transaction-service.ts) | 결과를 모르면 `ISSUING`으로 남아 명세서를 잠금 |
-| 공통 | 작업 `Job`(명세서 발송, 수집, 분류 적용) | `QUEUED` `RUNNING` `SUCCEEDED` `PARTIALLY_SUCCEEDED` `FAILED` `CANCELED` | [conventions.md](conventions.md#비동기-작업) | [job.types.ts](../../apps/api/src/shared/jobs/job.types.ts) | 공용 `GET /jobs/{id}`는 아직 없음 |
+| 공통 | 작업 `Job`(명세서 발송, 수집, 분류 적용) | `QUEUED` `RUNNING` `SUCCEEDED` `PARTIALLY_SUCCEEDED` `FAILED` `CANCELED` | [conventions.md](conventions.md#비동기-작업) | [job.types.ts](../../apps/api/src/shared/jobs/job.types.ts) | 공용 `GET /jobs/{id}`는 두지 않음([D11](review.md#결정)). 리소스가 자기 경로로 보여 줌 |
 
 ## 업무 흐름
 
@@ -54,7 +54,7 @@
 
 ```mermaid
 flowchart TD
-  sched["일정 배치 FilingScheduler<br/>원천세 신고 건 SCHEDULED"]:::todo
+  sched["일정 배치 FilingScheduler (매일 03:00)<br/>원천세 신고 건 SCHEDULED"]
   hr["HR HrDirectory<br/>기간 중 재직한 근로자·계약·공제"] --> create["POST /payroll-ledgers<br/>정기 대장 DRAFT, 근로 행 자동 채움"]
   create --> rows["행 입력·저장 = 계산<br/>4대보험·간이세액·비과세·가산수당"]
   rows --> submit[":submit → SUBMITTED"]
@@ -83,7 +83,7 @@ flowchart TD
 - **확정.** 아웃소싱은 담당자가 승인을 요청하고 고객이 승인하며, 직접 운영은 `:close` 하나로 끝납니다([payroll.md](payroll.md#상태))
 - **자료 연계.** 마감·해제·생성·삭제·지급일 이동 모두가 지급월 판정을 다시 하고, 바뀐 지급월마다 `payroll_pay_month.closed`·`reopened`를 outbox에 씁니다. Tax는 회사와 지급월만 받아 `PayrollLedgers.summaryFor`로 다시 맞춥니다([withholding-ledger-closed](../reference/rules/withholding-ledger-closed.md), [payroll-tax.ts](../../apps/api/src/wiring/payroll-tax.ts)). 이 자동 연계 항목은 급여 플랜 회사의 신고 건에만 있습니다([payroll.md 열린 질문 10](payroll.md#열린-질문)). 원천세 금액은 이벤트에 싣지 않고, 신고서 줄이 필요할 때 Tax가 `WithholdingTotals`로 묻고 소득구분 코드로 바꿉니다([tax.md 원천세 신고서 줄](tax.md#원천세-신고서-줄))
 - **신고와 잠금.** 원천세는 고객 커맨드를 대리인이 대행할 수 있습니다. `FILED`가 되면 Payroll은 이벤트가 아니라 조회(`WithholdingFilingLock`)로 그 지급월의 금액 변경과 그 달로 들이는 지급일 이동을 막습니다. 마감 전 대장은 합계에 들지 않아 그 달에서 지급일을 옮겨 나갈 수 있고(2026-11-08), 그러면 지급월 판정을 다시 해 이벤트가 나갑니다. 수정신고는 모델링하지 않습니다([tax.md](tax.md#커맨드), [payroll.md](payroll.md#원천세-신고-잠금))
-- **구현되지 않은 것.** 일정 배치는 서비스만 있고 매일 돌리는 실행기가 없습니다([tax.md](tax.md#구현-상태)). 원천세 신고서 줄은 읽기 전용 조회뿐이고 신고서 초안을 만들거나 저장하지 않습니다. 지급명세서는 모델링하지 않았습니다. 엑셀 가져오기도 설계만 있습니다([payroll.md](payroll.md#엑셀-가져오기))
+- **구현되지 않은 것.** 원천세 신고서 줄은 읽기 전용 조회뿐이고 신고서 초안을 만들거나 저장하지 않습니다. 지급명세서는 모델링하지 않았습니다. 엑셀 가져오기도 설계만 있습니다([payroll.md](payroll.md#엑셀-가져오기))
 - 통합 테스트: [payroll-tax.test.ts](../../apps/api/test/integration/payroll-tax.test.ts)
 
 ### 2. 입사부터 퇴직금 원천세까지
@@ -135,7 +135,7 @@ flowchart TD
   classify --> reports["실시간 손익·자금 현황"]
   evidence --> vatq["VatEvidenceQuery.forPeriod"]
   vatq --> estimate["GET /vat-estimates/current<br/>매출세액 − 공제 매입세액"]
-  sched["일정 배치 → 부가세 신고 건 SCHEDULED"]:::todo -.-> request["대리인 :request<br/>제출 자료 6개"]
+  sched["일정 배치 → 부가세 신고 건 SCHEDULED"] -.-> request["대리인 :request<br/>제출 자료 6개"]
   request -.-> submit["고객 자료 첨부 → :submit"]
   submit -.-> review["대리인 :start-review"]
   review -.-> ledger[":upload-ledger 매입매출장 → LEDGER_PENDING"]
@@ -152,5 +152,5 @@ flowchart TD
 - **반영.** 레코드마다 거절 이유를 돌려주고 나머지는 반영합니다. 다시 와도 사람이 고친 분류·거래처·메모는 지킵니다([bookkeeping.md](bookkeeping.md#수집-반영-integrations--bookkeeping), [scraped-record-ingestion](../reference/rules/scraped-record-ingestion.md))
 - **예상 부가세.** Tax가 Bookkeeping의 공개 조회로 증빙을 받아 법인은 분기, 개인은 반기로 계산합니다. 홈 카드의 기한은 Tax 세무 일정에서 받습니다([tax.md](tax.md#예상-부가세), [estimated-vat](../reference/rules/estimated-vat.md))
 - **신고.** 부가세 신고 건만 매입매출장 확인 단계(`LEDGER_PENDING`)를 거칩니다. 예정고지 건은 자료 요청 없이 고지서로 끝납니다([tax.md](tax.md#상태))
-- **구현되지 않은 것.** 정기 수집 스케줄러, 일정 배치 실행기, `evidence.ingested`·`job.completed` 이벤트가 없습니다([integrations.md](integrations.md#구현-상태), [events.md](events.md#이벤트-목록)). 홈택스 수임동의가 없는 회사의 홈택스 수집을 거절하는 규칙은 [compliance.md](compliance.md#권한-범위와-대리인)에만 있습니다
+- **구현되지 않은 것.** 정기 수집 스케줄러, `evidence.ingested`·`job.completed` 이벤트가 없습니다([integrations.md](integrations.md#구현-상태), [events.md](events.md#이벤트-목록)). 홈택스 수임동의가 없는 회사의 홈택스 수집을 거절하는 규칙은 [compliance.md](compliance.md#권한-범위와-대리인)에만 있습니다
 - 통합 테스트: [scraping-bookkeeping-tax.test.ts](../../apps/api/test/integration/scraping-bookkeeping-tax.test.ts)

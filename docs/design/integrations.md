@@ -162,7 +162,7 @@ GET  /scrap-requests/{scrapRequestId}
 - 수집 요청은 외부 기관을 부르므로 `Idempotency-Key`가 필수입니다. 같은 키는 처음 만든 요청을 돌려줍니다
 - 큐는 `ScrapQueue` 포트입니다. 메모리 구현은 같은 프로세스의 `ScrapWorker`가 바로 처리합니다
 - 워커는 자격 증명을 열어 `ScrapingGateway.scrape`를 부르고, 성공한 항목의 레코드를 `ScrapedRecordSink`로 넘기고, 연동·항목의 `lastScrap`을 갱신합니다
-- 공통 작업 조회 `GET /jobs/{jobId}`는 여러 컨텍스트가 쓰는 공용 인프라라 이 컨텍스트에 두지 않았습니다. 지금은 `/scrap-requests/{id}`가 그 역할을 합니다
+- 공용 작업 조회 `GET /jobs/{jobId}`는 두지 않습니다([D11](review.md#결정)). `/scrap-requests/{id}`가 그 역할을 합니다
 - 정기 수집 주기(은행 등록 후 1일, PG 10시·22시, 배달 10시 5일치, 올라 익일 6시, 지원금 4시)는 스케줄러 정책으로 둡니다 (구현 전)
 
 ## 홈택스 수임동의
@@ -334,7 +334,7 @@ GET  /messenger-channels
 | 수임동의·사업자 상태·상담 채널 | [hometax-delegations/](../../apps/api/src/modules/integrations/hometax-delegations/), [business-statuses/](../../apps/api/src/modules/integrations/business-statuses/), [messenger-channels/](../../apps/api/src/modules/integrations/messenger-channels/) | [messenger-channels.http.test.ts](../../apps/api/src/modules/integrations/messenger-channels/messenger-channels.http.test.ts), [channel-token.fixtures.test.ts](../../apps/api/src/modules/integrations/messenger-channels/channel-token.fixtures.test.ts) |
 | 자격 증명 금고 | [credential-vault.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.ts) (메모리 키) | [credential-vault.test.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.test.ts) |
 
-구현하지 않은 것: 정기 수집 스케줄러, 인증서 만료 알림, `INACTIVE` 감지, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), `GET /jobs/{id}` 공용 조회, 이벤트 발행, 감사 로그 기록, `If-Match`.
+구현하지 않은 것: 정기 수집 스케줄러, 인증서 만료 알림, `INACTIVE` 감지, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), 이벤트 발행, 감사 로그 기록, `If-Match`.
 
 ## 열린 질문
 
@@ -344,4 +344,4 @@ GET  /messenger-channels
 4. 인증서 OID 표를 참조데이터로 옮기고 KICA·tradesign을 채우는 일
 5. `INACTIVE`를 주기 검사로 감지할지, 수집 실패로만 갱신할지
 6. 수집 레코드를 Bookkeeping에 넘길 때 같은 `externalId`를 다시 받는 경우의 처리(멱등 보장 주체)
-7. 공용 `Job` 조회(`GET /jobs/{id}`)와 `job.completed` 이벤트를 어느 모듈이 가질지
+7. ~~공용 `Job` 조회(`GET /jobs/{id}`)를 어느 모듈이 가질지~~ 두지 않음([D11](review.md#결정), 2026-11-14). `job.completed` 이벤트는 받을 소비자가 생기면 정함

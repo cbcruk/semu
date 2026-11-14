@@ -253,7 +253,7 @@ GET /tax-calendar?year=2026    → { items: [{ taxType, kind, periodKey, periodS
 
 - 저장하지 않고 회사 세무 설정(`TaxProfile`)과 공휴일표로 그때 계산합니다([filing-obligations](../reference/rules/filing-obligations.md), [filing-deadline-rollover](../reference/rules/filing-deadline-rollover.md)). 납부 기한이 그 해 안인 의무를 기한 순으로 주고, 만들어진 신고 건(가장 큰 `revision`)을 붙입니다
 - 회사(`TaxCompanies`)를 찾지 못하면 404 `TAX_PROFILE_NOT_FOUND`입니다. 세무 설정을 저장하지 않은 회사는 기본 설정으로 계산합니다
-- **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 매일, 그리고 공휴일표가 바뀐 뒤 돕니다. 세무 설정을 고쳐도 바로 돌지 않고 다음 실행이 새 설정을 씁니다([세무 설정](#세무-설정)). 오늘부터 120일 안의 의무에 대해
+- **일정 배치**(`FilingScheduler`, 엔드포인트 없음)는 정기 작업 `tax.filing-schedule`로 매일 03:00(회사 시간대)에 돕니다([conventions.md 정기 작업](conventions.md#정기-작업), 2026-11-14 #81). 세무 기장 회사마다 한 트랜잭션이고 한 회사가 실패해도 나머지는 끝냅니다. 공휴일표가 바뀐 뒤 바로 돌리는 것은 아직 없고 다음 날 실행이 새 공휴일을 씁니다. 세무 설정을 고쳐도 바로 돌지 않고 다음 실행이 새 설정을 씁니다([세무 설정](#세무-설정)). 오늘부터 120일 안의 의무에 대해
   - 신고 건이 없으면 `SCHEDULED`로 만들고 체크리스트를 복사합니다. 급여 플랜 회사의 원천세는 `PAYROLL_LEDGER_CLOSED`를 바로 맞춥니다
   - 있으면 만들지 않고, `SCHEDULED`·`REQUESTED`면 기한만 새로 맞춥니다(이력 `DEADLINES_REFRESHED`)
   - 사람이 취소한 건은 다시 만들지 않습니다. 배치가 취소한 건(이력 `SCHEDULE_CANCELED`)은 의무가 다시 생기면 `SCHEDULED`로 되살리고 기한을 맞춥니다(이력 `SCHEDULE_RESTORED`, 이벤트)
@@ -634,7 +634,7 @@ flowchart LR
 | 신고 건 조회·커맨드 14개·제출 자료·문서·이력 | 구현 (메모리 저장소, [filings.ts](../../apps/api/src/modules/tax/filings/filings.ts)). 판정은 애그리거트 [filing.aggregate.ts](../../apps/api/src/modules/tax/filings/filing.aggregate.ts)([domain-model.md](domain-model.md#시범에서-정한-것)) |
 | 할 일 카드 | 구현 ([action-cards.ts](../../apps/api/src/modules/tax/action-cards/action-cards.ts)) |
 | 세무 일정 조회 | 구현 ([tax-calendar.ts](../../apps/api/src/modules/tax/calendar/tax-calendar.ts)) |
-| 일정 배치 | 서비스만 (`FilingSchedulerLive`). 매일 돌릴 실행기는 없음 |
+| 일정 배치 | 구현. 정기 작업 `tax.filing-schedule`(매일 03:00, [filing-schedule-task.ts](../../apps/api/src/modules/tax/calendar/filing-schedule-task.ts))이 서버에서 돎. 공휴일표 변경 직후 실행은 없음 |
 | 예상 부가세·추이 | 구현 ([vat-estimates.ts](../../apps/api/src/modules/tax/vat-estimates/vat-estimates.ts)) |
 | 공개 서비스 (`WithholdingFilingLock`, `PayrollLedgerSync`, `VatEstimateQuery`) | 구현 (`TaxPublicLive`). `src/wiring/`에서 Payroll·Bookkeeping에 연결 |
 | 원천세 신고서 줄(`GET /filings/{filingId}/withholding-lines`) | 구현. 읽기 전용, 신고서 초안 저장 없음 ([withholding-return.ts](../../apps/api/src/modules/tax/filings/withholding-return.ts)) |

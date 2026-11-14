@@ -80,7 +80,7 @@
 - 매칭·검증: [classification-rule-matching](../reference/rules/classification-rule-matching.md)
 - 적용 모드 `FILL_EMPTY`·`OVERWRITE`, 사람이 분류한 행은 건너뜀: [classification-apply-mode](../reference/rules/classification-apply-mode.md)
 - 입출금 규칙의 결과 계정은 `DEPOSIT` 또는 `WITHDRAWAL` 범위에서 선택 가능해야 합니다
-- Job은 지금 동기로 끝나 `SUCCEEDED { examinedCount, updatedCount }`로 바로 옵니다. `/v1/jobs/{id}` 조회는 공유 리소스가 생기면 붙입니다
+- Job은 지금 동기로 끝나 `SUCCEEDED { examinedCount, updatedCount }`로 바로 옵니다. 공용 `/v1/jobs/{id}`는 두지 않기로 해([D11](review.md#결정)) 비동기로 바꿀 때 규칙 적용 리소스의 경로로 상태를 보여 줍니다
 
 ## 계좌와 입출금
 
@@ -350,7 +350,7 @@ Payroll이 제출 이후(`DRAFT`가 아닌) 급여대장의 행을 귀속월별�
 | `DELETE /classification-rules/:id` | `DELETE /v1/classification-rules/{id}` | |
 | `PUT /classification-rules/order` | `POST /v1/classification-rules:reorder` | |
 | `POST /classification-rules/apply` | `POST /v1/classification-rules:apply`, `POST /v1/classification-rules/{id}:apply` | 202 + Job |
-| `GET /classification-rules/apply/:jobId` | 없음 | 공유 `/v1/jobs/{id}`로 옮김(공유 리소스 필요) |
+| `GET /classification-rules/apply/:jobId` | 없음 | 비동기로 바꿀 때 규칙 적용 리소스의 경로로 옮김(공용 `/v1/jobs/{id}`는 두지 않음, D11) |
 | `POST /classification-rules/preview` | 없음 | 미구현. 저장 전 규칙 미리보기는 `POST /v1/classification-rules:preview`로 붙일 예정 |
 | `GET /bank/accounts` | `GET /v1/bank-accounts`, `GET /v1/bank-accounts::summary` | |
 | `PATCH /bank/accounts/:id` | `PATCH /v1/bank-accounts/{id}` | |
@@ -403,7 +403,7 @@ Payroll이 제출 이후(`DRAFT`가 아닌) 급여대장의 행을 귀속월별�
 
 - 끝남: 위 리소스 표의 엔드포인트 전부, `ScrapedRecordIngestion`, `VatEvidenceQuery`, 포트 6개와 가짜, 메모리 저장소, 데모 시드(현행 데모 숫자 재현)
 - 규칙 14개의 픽스처가 순수 함수로 돌아갑니다(`bookkeeping-rules.fixtures.test.ts`)
-- 안 함: 규칙 미리보기, 매출·매입 현황, 기간별 자금 추이, 엑셀 내보내기, 거래처 정산 이력, 입출금 `partnerId` 필터, 출금 계좌 목록, 저장 없이 상태만 다시 조회해 거래처 `businessStatus`를 고치는 커맨드(저장할 때는 하루 캐시를 거쳐 그 거래처의 상태를 채웁니다), 같은 사업자번호의 다른 거래처 상태 갱신, 회사별 손익 정책 설정, `/v1/jobs/{id}`
+- 안 함: 규칙 미리보기, 매출·매입 현황, 기간별 자금 추이, 엑셀 내보내기, 거래처 정산 이력, 입출금 `partnerId` 필터, 출금 계좌 목록, 저장 없이 상태만 다시 조회해 거래처 `businessStatus`를 고치는 커맨드(저장할 때는 하루 캐시를 거쳐 그 거래처의 상태를 채웁니다), 같은 사업자번호의 다른 거래처 상태 갱신, 회사별 손익 정책 설정, 비동기 규칙 적용
 - 저장소는 메모리와 SQLite 둘 다 `TableFactory`로 돕니다([common/table.ts](../../apps/api/src/modules/bookkeeping/common/table.ts)). `pnpm test:sqlite`가 SQLite로 같은 테스트를 돌립니다
 
 ## 열린 질문

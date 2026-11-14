@@ -58,9 +58,12 @@ function startupKey(): Uint8Array {
 
 const key = startupKey()
 
+/** 정기 작업 실행기입니다. `SEMU_SCHEDULER=off`면 띄우지 않습니다(같은 데이터베이스로 프로세스를 여럿 띄울 때 하나만 켜도 됨). */
+const runtime = { scheduler: process.env['SEMU_SCHEDULER'] !== 'off' }
+
 HttpRouter.serve(AppLive).pipe(
   Layer.provide([
-    database === 'memory' ? EncryptedMemoryLive(key) : SqliteLive(database, key),
+    database === 'memory' ? EncryptedMemoryLive(key, runtime) : SqliteLive(database, key, runtime),
     AccessTokens.layerExpiring({ ttlSeconds: ACCESS_TOKEN_TTL_SECONDS }),
     NodeHttpServer.layer(createServer, { port }),
   ]),
