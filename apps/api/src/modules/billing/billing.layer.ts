@@ -23,6 +23,12 @@ import { Subscriptions } from './subscriptions/subscriptions.ts'
 const ServicesLive = Layer.mergeAll(Subscriptions.layer, Payments.layer, BillingMandates.layer, Consultations.layer)
 
 /**
+ * 정기 작업 `billing.payment-schedule`([payment-schedule-task.ts](./payments/payment-schedule-task.ts))이 쓰는 결제 서비스입니다.
+ * 필요한 저장소·포트는 {@link BillingHttpLive}와 같습니다.
+ */
+export const PaymentsLive = Payments.layer
+
+/**
  * 구독·결제·기장 서비스 계약·상담 리드·파트너 컨텍스트의 핸들러 전체입니다. 저장소와 외부 연동 포트는 호출하는 쪽이 넣습니다.
  *
  * 필요한 것: 저장소들, `PublicHolidays`, `CmsGateway`, 그리고 Identity & Access의 `AccessTokens`(인증 미들웨어)입니다.

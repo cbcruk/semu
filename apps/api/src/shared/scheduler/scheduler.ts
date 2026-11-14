@@ -20,6 +20,13 @@ export interface ScheduledTask<R = never> {
   run(slot: ScheduleSlot): Effect.Effect<unknown, unknown, R>
 }
 
+/** 작업 목록이 쓰는 서비스의 합입니다. */
+export type TaskRequirements<Tasks extends ReadonlyArray<ScheduledTask<any>>> = Tasks[number] extends infer Task
+  ? Task extends ScheduledTask<infer R>
+    ? R
+    : never
+  : never
+
 /** 회사별로 돈 작업에서 실패한 회사입니다. 나머지 회사는 그대로 끝냈고, 슬롯을 다시 돌리면 모든 회사를 다시 봅니다. */
 export class CompaniesFailed extends Data.TaggedError('CompaniesFailed')<{
   readonly succeeded: number
@@ -80,9 +87,9 @@ export class Scheduler extends Context.Service<
   }
 >()('semu/platform/Scheduler') {
   /** `tasks`로 만듭니다. 실행 기록은 `platform_scheduled_runs` 표입니다. 작업이 쓰는 서비스(`R`)는 이 레이어에 넣습니다. */
-  static readonly layer = <R>(
-    tasks: ReadonlyArray<ScheduledTask<R>>,
-  ): Layer.Layer<Scheduler, never, R | TableFactory | UnitOfWork> =>
+  static readonly layer = <const Tasks extends ReadonlyArray<ScheduledTask<any>>>(
+    tasks: Tasks,
+  ): Layer.Layer<Scheduler, never, TaskRequirements<Tasks> | TableFactory | UnitOfWork> =>
     Layer.effect(
       Scheduler,
       Effect.gen(function* () {
@@ -93,9 +100,9 @@ export class Scheduler extends Context.Service<
         }
         const table = yield* (yield* TableFactory).make<ScheduledRunRecord>('platform_scheduled_runs')
         const unitOfWork = yield* UnitOfWork
-        const context = yield* Effect.context<R>()
+        const context = yield* Effect.context<TaskRequirements<Tasks>>()
 
-        const runTask = (task: ScheduledTask<R>) =>
+        const runTask = (task: ScheduledTask<TaskRequirements<Tasks>>) =>
           Effect.gen(function* () {
             const policy = task.retry ?? DEFAULT_RETRY_POLICY
             const slot = latestSlot(task.spec, yield* Clock.currentTimeMillis)
