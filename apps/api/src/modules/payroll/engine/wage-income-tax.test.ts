@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { SimpleTaxStrategy } from './engine.types.ts'
-import { RATES_2026_01 } from './rate-tables-2026.ts'
+import { RATES_2026_01, RATES_2026_03 } from './rate-tables-2026.ts'
 import {
   annualSimpleTaxSteps,
   calculateWageIncomeTax,
   EXACT_FORMULA,
-  generateSimpleTaxTable,
-  lookupSimpleTaxTable,
   MIDPOINT_FORMULA,
+  OFFICIAL_TABLE,
 } from './wage-income-tax.ts'
 
 const rates = RATES_2026_01
@@ -157,36 +156,75 @@ describe('calculateWageIncomeTax', () => {
   })
 })
 
-describe('간이세액표', () => {
-  it('공식 간이세액표가 있으면 산식 대신 씁니다', () => {
-    const strategy = lookupSimpleTaxTable(
-      [{ min: 3_000_000, max: 3_020_000, taxes: [74_350, 56_850] }],
-      MIDPOINT_FORMULA,
-    )
+describe('공식 간이세액표(OFFICIAL_TABLE)', () => {
+  const tax = (monthlyTaxablePay: number, dependants = 1, childrenAged8To20 = 0, table = rates) =>
+    OFFICIAL_TABLE.monthlyTax({ monthlyTaxablePay, dependants, childrenAged8To20 }, table)
 
-    expect(strategy.monthlyTax({ monthlyTaxablePay: 3_010_000, dependants: 1, childrenAged8To20: 0 }, rates)).toBe(
-      74_350,
-    )
-    expect(strategy.monthlyTax({ monthlyTaxablePay: 3_010_000, dependants: 2, childrenAged8To20: 1 }, rates)).toBe(
-      56_850 - 12_500,
-    )
-    expect(strategy.monthlyTax({ monthlyTaxablePay: 2_000_000, dependants: 1, childrenAged8To20: 0 }, rates)).toBe(0)
-    expect(strategy.monthlyTax({ monthlyTaxablePay: 5_000_000, dependants: 1, childrenAged8To20: 0 }, rates)).toBe(
-      MIDPOINT_FORMULA.monthlyTax({ monthlyTaxablePay: 5_000_000, dependants: 1, childrenAged8To20: 0 }, rates),
+  it('표는 770천원부터 10,000천원 전까지 빈틈없이 이어지고 행 폭은 별표 제6호와 같습니다', () => {
+    const { rows, atHighIncomeThreshold } = rates.wageIncomeTax.simpleTaxTable
+    expect(rows).toHaveLength(146 + 150 + 350)
+    expect(rows[0]?.min).toBe(rates.wageIncomeTax.tableMinimumPay)
+    expect(rows.at(-1)?.max).toBe(rates.wageIncomeTax.highIncomeThreshold)
+    expect(atHighIncomeThreshold).toHaveLength(11)
+    rows.forEach((row, index) => {
+      const band = rates.wageIncomeTax.tableRowBands.find(
+        (candidate) => row.min >= candidate.from && row.min < candidate.to,
+      )
+      expect(row.max - row.min).toBe(band?.step)
+      if (index > 0) expect(row.min).toBe(rows[index - 1]?.max)
+      expect(row.taxes).toHaveLength(11)
+      row.taxes.forEach((value, column) => {
+        if (column > 0) expect(value).toBeLessThanOrEqual(row.taxes[column - 1] ?? 0)
+        if (index > 0) expect(value).toBeGreaterThanOrEqual(rows[index - 1]?.taxes[column] ?? 0)
+      })
+    })
+  })
+
+  it('월 300만원은 공식 표 값이고 산식과 다릅니다', () => {
+    expect(tax(3_000_000)).toBe(74_350)
+    expect(tax(3_000_000, 2)).toBe(56_850)
+    expect(tax(3_019_999)).toBe(74_350)
+    expect(tax(3_020_000)).toBe(76_060)
+    expect(EXACT_FORMULA.monthlyTax({ monthlyTaxablePay: 3_000_000, dependants: 1, childrenAged8To20: 0 }, rates)).toBe(
+      59_080,
     )
   })
 
-  it('공식 구간 너비로 행을 만들고 공제대상가족이 늘면 세액이 늘지 않습니다', () => {
-    const rows = generateSimpleTaxTable(rates)
-    const row = rows.find((candidate) => candidate.min === 3_000_000)
+  it('첫 행보다 작은 급여는 0입니다', () => {
+    expect(tax(769_999)).toBe(0)
+    expect(tax(770_000)).toBe(0)
+    expect(tax(1_500_000)).toBe(8_920)
+  })
 
-    expect(rows).toHaveLength(146 + 150 + 350)
-    expect(row?.max).toBe(3_020_000)
-    expect(row?.taxes[0]).toBe(60_380)
-    for (const candidate of rows) {
-      for (let index = 1; index < candidate.taxes.length; index += 1) {
-        expect(candidate.taxes[index]).toBeLessThanOrEqual(candidate.taxes[index - 1] ?? 0)
-      }
-    }
+  it('자녀 공제는 지급월 기준표의 금액을 빼고 0 아래로 내려가지 않습니다', () => {
+    expect(tax(3_000_000, 2, 1, RATES_2026_01)).toBe(56_850 - 12_500)
+    expect(tax(3_000_000, 2, 1, RATES_2026_03)).toBe(56_850 - 20_830)
+    expect(tax(3_000_000, 3, 3, RATES_2026_03)).toBe(Math.max(0, 31_940 - (45_830 + 33_330)))
+    expect(tax(1_500_000, 1, 1)).toBe(0)
+  })
+
+  it('정확히 1천만원은 10,000천원 행이고 넘으면 별표 제6호 산식을 더합니다', () => {
+    expect(tax(9_999_999)).toBe(1_503_990)
+    expect(tax(10_000_000)).toBe(1_507_400)
+    expect(tax(10_000_000, 2)).toBe(1_431_570)
+    expect(tax(12_000_000, 2)).toBe(1_431_570 + 25_000 + 686_000)
+    expect(tax(15_000_000)).toBe(1_507_400 + 1_397_000 + 372_400)
+    expect(tax(50_000_000)).toBe(1_507_400 + 13_394_600 + 2_100_000)
+    expect(tax(10_000_001)).toBe(1_507_400 + 25_000)
+  })
+
+  it('공제대상가족이 11명을 넘으면 11명 세액에서 (10명 − 11명) × 넘는 인원을 뺍니다', () => {
+    expect(tax(5_000_000, 11)).toBe(87_850)
+    expect(tax(5_000_000, 13)).toBe(87_850 - (106_600 - 87_850) * 2)
+    expect(tax(5_000_000, 30)).toBe(0)
+    expect(tax(10_000_000, 12)).toBe(960_840 - (990_840 - 960_840))
+  })
+
+  it('원천징수 비율과 지방소득세는 표 값에 적용합니다', () => {
+    const at = (withholdingRatePpm: number) =>
+      calculateWageIncomeTax(3_000_000, { ...ONE_DEPENDANT, withholdingRatePpm }, rates, OFFICIAL_TABLE)
+    expect(at(1_000_000)).toMatchObject({ incomeTax: 74_350, localIncomeTax: 7_430 })
+    expect(at(800_000)).toMatchObject({ incomeTax: 59_480, localIncomeTax: 5_940 })
+    expect(at(1_200_000)).toMatchObject({ incomeTax: 89_220, localIncomeTax: 8_920 })
   })
 })

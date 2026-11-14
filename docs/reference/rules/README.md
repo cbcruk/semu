@@ -7,7 +7,7 @@
 - **원본 위치:** 번들 줄 번호는 spec 문서의 표기(`B:73510`)를 그대로 씁니다. 번들 자체는 이 저장소에 없으므로, 판단에 필요한 근거는 각 문서의 "근거" 절에 발췌해 두었습니다
 - **검사:** `pnpm test`가 픽스처 형식, `sources[].file` 경로(지운 이전 구현 `apps/api/legacy/...`는 커밋 `f115042`, 이전 설계 `docs/reference/legacy-design/...`는 커밋 `3c6f890`에 있어 작업 트리에서 확인하지 않음), 문서 짝을 확인합니다 (`apps/api/test/rule-fixtures.test.ts`)
 
-규칙 68개, 케이스 765건 (모두 추적), 열린 질문 233개.
+규칙 68개, 케이스 775건 (모두 추적), 열린 질문 233개.
 
 | 영역 | 규칙 | 내용 | 케이스 | 열린 질문 |
 |---|---|---|---:|---:|
@@ -52,7 +52,7 @@
 | 전자서명·제증명 | [certificate-issuance](certificate-issuance.md) | Certificate issue numbers YYYY-NNNN per company and year, and send/resend transitions; retirement certificates need a leave date. | 9 | 3 |
 | 전자서명·제증명 | [esign-settings-limits](esign-settings-limits.md) | A company keeps at most five active seals and three e-sign notification recipients; with none configured the representative is notified. | 6 | 2 |
 | 급여 | [social-insurance-premiums](social-insurance-premiums.md) | Employee social insurance premiums by rate: pension on a capped base truncated to 1,000 won, premiums truncated to 10 won. | 4 | 3 |
-| 급여 | [simple-income-tax](simple-income-tax.md) | Monthly wage income tax from the simple tax table formula, scaled by the withholding ratio; local income tax is 10%. | 6 | 3 |
+| 급여 | [simple-income-tax](simple-income-tax.md) | Monthly wage income tax from the official simple tax table (Income Tax Act Enforcement Decree appendix 2) with the child credit, the over-10M formula and the withholding ratio; local income tax is 10%. The formula strategies stay for comparison. | 16 | 3 |
 | 급여 | [daily-worker-withholding](daily-worker-withholding.md) | Daily worker tax: (daily pay - 150,000) x 6% less a 55% credit, exempt under 1,000 won; employment insurance only. | 3 | 3 |
 | 급여 | [business-income-withholding](business-income-withholding.md) | Business income withholds 3% plus 10% local tax, grosses up after-tax amounts, and adds artist employment insurance. | 4 | 3 |
 | 급여 | [other-income-withholding](other-income-withholding.md) | Other income tax: 20% of pay less necessary expenses, nothing when income is 50,000 won or less, plus 10% local tax. | 3 | 2 |

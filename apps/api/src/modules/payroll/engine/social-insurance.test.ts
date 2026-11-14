@@ -41,7 +41,7 @@ describe('기준표', () => {
     const unverified = unverifiedRatePaths(rates)
     expect(unverified).not.toContain('longTermCare.ratioOfHealthPpm')
     expect(unverified).toContain('employmentInsurance.premiumRoundingUnit')
-    expect(unverified).toContain('wageIncomeTax.simpleTaxStrategy')
+    expect(unverified).not.toContain('wageIncomeTax.simpleTaxTable')
     expect(unverified).not.toContain('nationalPension.baseMax')
     expect(unverified).not.toContain('nationalPension.employeeRatePpm')
     expect(unverified).not.toContain('minimumWage.hourly')

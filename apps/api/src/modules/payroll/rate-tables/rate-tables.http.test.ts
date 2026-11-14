@@ -63,7 +63,7 @@ describe('/rate-tables', () => {
 })
 
 describe('/payroll-calculator:simulate', () => {
-  it('월급제 근로소득 행을 현행 서비스로 확인한 금액대로 계산합니다', async () => {
+  it('월급제 근로소득 행을 4대보험 요율과 공식 간이세액표대로 계산합니다', async () => {
     const mealId = await addPaymentItem(app, { categoryCode: 'MEAL' })
     const response = await app.request('POST', '/payroll-calculator:simulate', {
       body: {
@@ -86,9 +86,9 @@ describe('/payroll-calculator:simulate', () => {
         longTermCare: 14_170,
         employmentInsurance: 27_000,
       },
-      incomeTax: 60_380,
-      localIncomeTax: 6_030,
-      netPay: 2_842_070,
+      incomeTax: 74_350,
+      localIncomeTax: 7_430,
+      netPay: 2_826_700,
     })
   })
 

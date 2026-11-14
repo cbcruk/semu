@@ -23,7 +23,7 @@ import type {
 import { splitNonTaxable } from './non-taxable.ts'
 import type { PayrollRateTable, YearMonth } from './rate-table.types.ts'
 import { calculateSocialInsurance } from './social-insurance.ts'
-import { calculateWageIncomeTax, MIDPOINT_FORMULA } from './wage-income-tax.ts'
+import { calculateWageIncomeTax, OFFICIAL_TABLE } from './wage-income-tax.ts'
 import type { WithholdingResult } from './withholding.ts'
 import { grossUpFromNet, withholdBusinessIncome, withholdDailyWorker, withholdOtherIncome } from './withholding.ts'
 import type { WageRate } from './working-time.ts'
@@ -85,7 +85,7 @@ const 기본하루주휴분 = 8 * 60
  *   },
  *   RATES_2026_01,
  * )
- * row.netPay // 3,200,000 − 291,520 − 60,380 − 6,030 = 2,842,070
+ * row.netPay // 3,200,000 − 291,520 − 74,350 − 7,430 = 2,826,700
  * ```
  */
 export function calculatePayrollRow(
@@ -214,7 +214,7 @@ export function calculateWageRow(
 
   // 4대보험료 계산 결과(금액이 아닌 결과 객체). 식별자는 숫자로 시작할 수 없어 사회보험료로 씁니다
   const 사회보험료 = calculateSocialInsurance({ ...input.insurance, insurablePay: 과세급여 }, rates)
-  const 근로소득세계산 = calculateWageIncomeTax(과세급여, input.incomeTax, rates, options.simpleTax ?? MIDPOINT_FORMULA)
+  const 근로소득세계산 = calculateWageIncomeTax(과세급여, input.incomeTax, rates, options.simpleTax ?? OFFICIAL_TABLE)
   return 결과조립({
     incomeType: input.incomeType,
     attributionMonth: input.attributionMonth,

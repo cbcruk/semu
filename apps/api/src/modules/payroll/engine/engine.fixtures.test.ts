@@ -7,7 +7,7 @@ import { calculatePayrollRow } from './payroll-row.ts'
 import { RATES_2026_01 } from './rate-tables-2026.ts'
 import { calculateSeverancePay } from './severance-pay.ts'
 import { calculateSocialInsurance } from './social-insurance.ts'
-import { calculateWageIncomeTax, EXACT_FORMULA, MIDPOINT_FORMULA } from './wage-income-tax.ts'
+import { calculateWageIncomeTax, EXACT_FORMULA, MIDPOINT_FORMULA, OFFICIAL_TABLE } from './wage-income-tax.ts'
 import { MULTIPLIERS_FIVE_OR_MORE, MULTIPLIERS_UNDER_FIVE, prorate } from './working-time.ts'
 
 const rates = RATES_2026_01
@@ -38,13 +38,15 @@ describe('규칙 픽스처: social-insurance-premiums', () => {
   )
 })
 
+const SIMPLE_TAX_STRATEGIES = { OFFICIAL_TABLE, EXACT_FORMULA, MIDPOINT_FORMULA }
+
 describe('규칙 픽스처: simple-income-tax', () => {
   type Input = {
     monthlyTaxablePay: number
     dependants: number
     childrenAged8To20: number
     withholdingRatePpm: number
-    strategy: 'EXACT_FORMULA' | 'MIDPOINT_FORMULA'
+    strategy: keyof typeof SIMPLE_TAX_STRATEGIES
   }
   it.each(loadRuleCases<Input, { incomeTax: number; localIncomeTax: number }>('simple-income-tax'))(
     '$name',
@@ -58,7 +60,7 @@ describe('규칙 픽스처: simple-income-tax', () => {
           withholdingRatePpm: input.withholdingRatePpm,
         },
         rates,
-        input.strategy === 'EXACT_FORMULA' ? EXACT_FORMULA : MIDPOINT_FORMULA,
+        SIMPLE_TAX_STRATEGIES[input.strategy],
       )
       expect({ incomeTax: result.incomeTax, localIncomeTax: result.localIncomeTax }).toEqual(expected)
     },
