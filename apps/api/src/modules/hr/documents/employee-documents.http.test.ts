@@ -364,6 +364,80 @@ describe('문서 내려받기·직접 올리기·지우기', () => {
     expect(response.body).toMatchObject({ code: 'FILE_SIZE_INVALID' })
   })
 
+  it('10MB를 넘는 파일은 413 FILE_SIZE_INVALID이고 저장하지 않습니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json(
+      'POST',
+      `/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.png`,
+      { raw: { bytes: new Uint8Array(10 * 1024 * 1024 + 1), contentType: 'image/png' } },
+    )
+    expect(response.status).toBe(413)
+    expect(response.body).toMatchObject({ code: 'FILE_SIZE_INVALID', maxBytes: 10 * 1024 * 1024 })
+    expect((await app.json('GET', `/employees/${employeeId}/documents`)).body.items).toEqual([])
+  })
+
+  it('Content-Length가 10MB를 넘으면 본문을 읽기 전에 413입니다', async () => {
+    const employeeId = await hire()
+    let pulled = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1
+        controller.enqueue(new Uint8Array(1024))
+        if (pulled === 4) controller.close()
+      },
+    })
+    const response = await app.handler(
+      new Request(`http://localhost/v1/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.png`, {
+        method: 'POST',
+        body,
+        duplex: 'half',
+        headers: {
+          authorization: 'Bearer admin',
+          'content-type': 'image/png',
+          'content-length': String(10 * 1024 * 1024 + 1),
+        },
+      } as RequestInit),
+    )
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ code: 'FILE_SIZE_INVALID' })
+    expect(pulled).toBeLessThanOrEqual(1)
+  })
+
+  it('길이를 밝히지 않은 본문도 10MB에서 끊습니다', async () => {
+    const employeeId = await hire()
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        sent += 1024 * 1024
+        controller.enqueue(new Uint8Array(1024 * 1024))
+        if (sent >= 20 * 1024 * 1024) controller.close()
+      },
+    })
+    const response = await app.handler(
+      new Request(`http://localhost/v1/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.png`, {
+        method: 'POST',
+        body,
+        duplex: 'half',
+        headers: { authorization: 'Bearer admin', 'content-type': 'image/png' },
+      } as RequestInit),
+    )
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ code: 'FILE_SIZE_INVALID' })
+    expect(sent).toBeLessThan(20 * 1024 * 1024)
+  })
+
+  it('계약에 없는 Content-Type은 Problem Details 415 UNSUPPORTED_MEDIA_TYPE입니다', async () => {
+    const employeeId = await hire()
+    const response = await app.json(
+      'POST',
+      `/employees/${employeeId}/documents?title=a&category=OTHER&fileName=a.exe`,
+      { raw: { bytes: new Uint8Array([1, 2, 3]), contentType: 'application/x-msdownload' } },
+    )
+    expect(response.status).toBe(415)
+    expect(response.headers.get('content-type')).toBe('application/problem+json')
+    expect(response.body).toMatchObject({ code: 'UNSUPPORTED_MEDIA_TYPE' })
+  })
+
   it('읽기 권한만 있으면 올리거나 지울 수 없습니다', async () => {
     const employeeId = await hire()
     expect((await upload(employeeId, undefined, 'viewer')).status).toBe(403)

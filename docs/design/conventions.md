@@ -90,6 +90,7 @@ envelope 없이 리소스 자체를 돌려줍니다. 현행 DRF 봉투 `{count, 
   - `field`는 JSON 경로(`rows[1].basePay`)입니다. 값 전체가 잘못됐으면 요청 부분 이름(`path`, `query`, `headers`, `body`)을 씁니다
   - `code`는 `REQUIRED`(빠짐), `INVALID_TYPE`(타입이 다름), `INVALID_VALUE`(형식·범위·허용값이 아님), `UNKNOWN_FIELD`(정의되지 않은 필드) 중 하나입니다. 지금은 정의되지 않은 필드를 무시하므로 `UNKNOWN_FIELD`는 나오지 않습니다
   - 형식은 맞지만 업무 규칙에 어긋나는 요청은 409/422와 도메인 `code`로 구분합니다. 409는 현재 상태와 충돌(`*_TRANSITION_INVALID`, 중복), 422는 입력 값 자체가 규칙에 어긋남(기간 겹침, 한도 초과)입니다
+- **요청 본문 오류**: 413 `FILE_SIZE_INVALID`(`maxBytes`), 415 `UNSUPPORTED_MEDIA_TYPE`. 모든 경로의 본문은 10MB(`MAX_BODY_BYTES`, 파일 하나의 상한과 같음)까지이고, 넘으면 핸들러에 닿기 전에 공통 미들웨어(`BodyLimit`)가 끊습니다. 계약에 없는 `Content-Type`은 HttpApi가 평문으로 응답하는 것을 같은 미들웨어가 Problem Details로 바꿉니다
 - **인증·인가 오류**: 401 `UNAUTHENTICATED`, 403 `TOKEN_SCOPE_MISMATCH`(`requiredScope`), 403 `PERMISSION_DENIED`(`permission`), 403 `ENTITLEMENT_REQUIRED`(`requiredPlans`), 403 `TERMS_REAGREEMENT_REQUIRED`(`termCodes`)
 - **검증 전용 엔드포인트를 두지 않습니다.** 현행 `/pre-signup/check-email-duplicate`, `/pre-signup/check/business_number`는 생성 요청의 409/422로 대체합니다
   - 입력 중 즉시 피드백이 필요한 곳(이메일 중복)은 `?dryRun=true`로 같은 생성 엔드포인트를 부릅니다. 검증 로직이 한 곳에만 있게 됩니다
@@ -191,7 +192,7 @@ GET  /v1/scrap-requests/scr_01J...       → { "status": "RUNNING", "progress": 
 파일은 공통 파일 저장소(`FileStore`, [D7](review.md#결정))에 둡니다. 파일 ID는 `fle_`입니다.
 
 - **파일에는 따로 권한이 없습니다.** 파일 ID만 받아 내려주는 엔드포인트를 두지 않습니다. 파일을 붙인 리소스가 자기 경로로 내려줍니다. 예: `GET /employee-documents/{id}/file`(직원 읽기 권한)
-- **올리기는 붙일 리소스의 쓰기 엔드포인트가 본문을 받습니다.** 본문은 요청 바디 그대로이고(`Content-Type`이 파일 형식), 이름 같은 값은 쿼리로 받습니다. 예: `POST /employees/{id}/documents?title=&category=&fileName=`. 받는 형식마다 계약에 적어, 다른 `Content-Type`은 415입니다. 형식은 다시 내용(앞 바이트)으로 판정해 보낸 `Content-Type`을 믿지 않습니다(`FILE_TYPE_NOT_ALLOWED`). 한 파일은 10MB까지입니다(`FILE_SIZE_INVALID`)
+- **올리기는 붙일 리소스의 쓰기 엔드포인트가 본문을 받습니다.** 본문은 요청 바디 그대로이고(`Content-Type`이 파일 형식), 이름 같은 값은 쿼리로 받습니다. 예: `POST /employees/{id}/documents?title=&category=&fileName=`. 받는 형식마다 계약에 적어, 다른 `Content-Type`은 415 `UNSUPPORTED_MEDIA_TYPE`입니다. 형식은 다시 내용(앞 바이트)으로 판정해 보낸 `Content-Type`을 믿지 않습니다(`FILE_TYPE_NOT_ALLOWED`). 한 파일은 10MB까지입니다(`FILE_SIZE_INVALID`). 넘는 본문은 `Content-Length`를 먼저 보고, 길이를 밝히지 않은 본문은 읽는 동안 상한에서 끊어 끝까지 읽지 않습니다. 앞으로 파일을 받는 엔드포인트도 같은 상한을 따로 설정하지 않고 받습니다
 - **내려받기 응답**은 본문 그대로이고 `Content-Type`은 저장한 형식, `Content-Disposition`은 `attachment; filename*=UTF-8''<이름>`입니다. 개인정보가 든 문서는 열람 사유(`X-Access-Reason`)를 받아 열람 기록에 남깁니다
 - **다른 회사의 파일은 없는 것과 같습니다.** `FileStore.find`·`read`가 회사를 함께 받습니다
 - **본문은 지우지 않습니다.** 붙인 리소스(직접 올린 문서)를 지워도 감사·분쟁을 위해 본문은 남깁니다

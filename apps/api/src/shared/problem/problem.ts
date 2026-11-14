@@ -30,6 +30,13 @@ export class ValidationFailed extends HttpApiError.Problem<ValidationFailed>()(
   },
 ) {}
 
+/** 본문의 `Content-Type`이 그 경로의 계약에 없습니다. 받는 형식은 OpenAPI 문서의 요청 본문에 있습니다. */
+export class UnsupportedMediaType extends HttpApiError.Problem<UnsupportedMediaType>()(
+  'UnsupportedMediaType',
+  { type: problemType('UNSUPPORTED_MEDIA_TYPE'), status: 415, title: 'Unsupported content type' },
+  { code: Schema.tag('UNSUPPORTED_MEDIA_TYPE') },
+) {}
+
 /** `If-Match`로 보낸 버전이 저장된 버전과 다릅니다. 다른 사람이 먼저 고쳤습니다. */
 export class VersionMismatch extends HttpApiError.Problem<VersionMismatch>()(
   'VersionMismatch',
