@@ -32,6 +32,7 @@ import {
   UnitOfWorkMiddleware,
 } from './shared/persistence/persistence.layer.ts'
 import { DataKey } from './shared/crypto/data-key.ts'
+import { BodyLimit } from './shared/http/body-limit.ts'
 import { FileStore } from './shared/files/file-store.ts'
 import { PersonalDataAccessLog } from './shared/personal-data/personal-data-access-log.ts'
 import { PersonalDataCipher } from './shared/personal-data/personal-data-cipher.ts'
@@ -101,6 +102,7 @@ export const AppLive = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(AgencyAuthenticationLive),
   Layer.provide(RequestValidationLive),
   Layer.merge(ProblemFallback),
+  Layer.merge(BodyLimit),
   Layer.merge(UnitOfWorkMiddleware),
 )
 

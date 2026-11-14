@@ -1,3 +1,4 @@
+import { FileSizeInvalid } from '../../../shared/files/file-errors.ts'
 import { Context, DateTime, Effect, Layer, Option } from 'effect'
 import { FileStore, MAX_FILE_BYTES, sniffContentType } from '../../../shared/files/file-store.ts'
 import { PersonalDataAccessLog } from '../../../shared/personal-data/personal-data-access-log.ts'
@@ -10,7 +11,6 @@ import { EmployeeNotFound } from '../employees/employee.ts'
 import {
   ARCHIVE_CONTENT_TYPES,
   DocumentFileMissing,
-  DocumentFileSizeInvalid,
   DocumentFileTypeNotAllowed,
   DocumentLocked,
   EmployeeDocumentNotFound,
@@ -55,7 +55,7 @@ export class EmployeeDocuments extends Context.Service<
       actor: Actor,
       employeeId: Id<'employee'>,
       upload: EmployeeDocumentUpload,
-    ): Effect.Effect<EmployeeDocument, EmployeeNotFound | DocumentFileTypeNotAllowed | DocumentFileSizeInvalid>
+    ): Effect.Effect<EmployeeDocument, EmployeeNotFound | DocumentFileTypeNotAllowed | FileSizeInvalid>
     /**
      * 문서 본문입니다. 무효가 된 서명 문서도 기록이라 내려받을 수 있습니다. 계약서·증명서에 개인정보가 있어 열람 기록
      * (`employee-document:<id>:file`)에 사유와 함께 남깁니다.
@@ -107,7 +107,7 @@ export class EmployeeDocuments extends Context.Service<
         upload: Effect.fn('EmployeeDocuments.upload')(function* (actor, employeeId, upload) {
           if (Option.isNone(yield* employees.find(actor.companyId, employeeId))) return yield* new EmployeeNotFound({})
           if (upload.bytes.byteLength === 0 || upload.bytes.byteLength > MAX_FILE_BYTES) {
-            return yield* new DocumentFileSizeInvalid({ maxBytes: MAX_FILE_BYTES })
+            return yield* new FileSizeInvalid({ maxBytes: MAX_FILE_BYTES })
           }
           // 형식은 보낸 `Content-Type`이 아니라 내용으로 정합니다.
           const contentType = sniffContentType(upload.bytes)

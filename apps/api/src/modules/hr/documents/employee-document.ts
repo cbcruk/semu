@@ -166,13 +166,6 @@ export class DocumentFileTypeNotAllowed extends HttpApiError.Problem<DocumentFil
   { code: Schema.tag('FILE_TYPE_NOT_ALLOWED'), allowedContentTypes: Schema.Array(Schema.String) },
 ) {}
 
-/** 파일이 크기 한도를 넘거나 비어 있습니다. */
-export class DocumentFileSizeInvalid extends HttpApiError.Problem<DocumentFileSizeInvalid>()(
-  'DocumentFileSizeInvalid',
-  { type: problemType('FILE_SIZE_INVALID'), status: 413, title: 'File is empty or too large' },
-  { code: Schema.tag('FILE_SIZE_INVALID'), maxBytes: Schema.Number },
-) {}
-
 /** 보관함 문서의 파일 본문이 저장소에 없습니다. 저장소가 깨졌을 때만 생깁니다. */
 export class DocumentFileMissing extends HttpApiError.Problem<DocumentFileMissing>()(
   'DocumentFileMissing',

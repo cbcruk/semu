@@ -357,7 +357,7 @@ GET    /reference/document-categories
 ```
 
 - 카테고리는 `CONTRACT` / `CERTIFICATE` / `CONSENT` / `RESIGNATION` / `OTHER`, 출처는 `UPLOAD` / `ESIGN` / `CERTIFICATE`입니다. 전자서명 완료본과 발급 증명서는 Documents 이벤트로 서버가 넣습니다
-- 파일은 PDF·JPEG·PNG, 10MB 이하이고 형식은 서버가 내용(앞 바이트)으로 판정합니다. 클라이언트가 보낸 `Content-Type`을 믿지 않습니다(415 `FILE_TYPE_NOT_ALLOWED`). 계약에 없는 `Content-Type`은 계약 단계에서 415입니다
+- 파일은 PDF·JPEG·PNG, 10MB 이하이고 형식은 서버가 내용(앞 바이트)으로 판정합니다. 클라이언트가 보낸 `Content-Type`을 믿지 않습니다(415 `FILE_TYPE_NOT_ALLOWED`). 계약에 없는 `Content-Type`은 계약 단계에서 415 `UNSUPPORTED_MEDIA_TYPE`입니다. 10MB를 넘는 본문은 끝까지 읽지 않고 413입니다([conventions.md](conventions.md#오류))
 - 올리기는 멀티파트가 아니라 요청 바디가 파일 본문이고 제목·카테고리·파일 이름은 쿼리로 받습니다(2026-11-14). 파일은 공통 파일 저장소에 둡니다([conventions.md](conventions.md#파일), D7)
 - 내려받기(`…/file`)는 직원 읽기 권한(`employee:read`)으로 확인하고, 계약서·증명서에 개인정보가 있어 `X-Access-Reason`을 받아 열람 기록(`employee-document:<id>:file`)에 남깁니다. 무효가 된 서명 문서도 기록이라 내려받을 수 있습니다
 - 올리기·지우기는 `employee:update`입니다. 지운 직원에게는 올릴 수 없습니다(404 `EMPLOYEE_NOT_FOUND`)
@@ -439,7 +439,8 @@ Documents가 outbox 채널 `esign_request->hr`로 넘기고 `SignedDocumentIntak
 | `FAMILY_MEMBER_DEPENDANT_REGISTERED` | 409 | 공단에 등록된 피부양자 가족 삭제 |
 | `DOCUMENT_LOCKED` | 409 | 서명·발급에서 온 문서 삭제 |
 | `FILE_TYPE_NOT_ALLOWED` | 415 | 문서 보관함에 올린 파일이 내용으로 보아 PDF·PNG·JPEG가 아님 |
-| `FILE_SIZE_INVALID` | 413 | 빈 파일이거나 10MB 초과 |
+| `FILE_SIZE_INVALID` | 413 | 빈 파일이거나 10MB 초과. 초과는 본문을 읽기 전에 공통 미들웨어가 끊음 |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 | 올리기 본문의 `Content-Type`이 계약(PDF·PNG·JPEG)에 없음 |
 | `DOCUMENT_FILE_MISSING` | 404 | 문서의 파일 본문이 저장소에 없음(저장소가 깨졌을 때만) |
 | `EMPLOYEE_KIND_NOT_SUPPORTED` | 422 | `WAGE`가 아닌 직원에 하위 리소스 |
 | `LEAVE_DATE_BEFORE_INTERIM`, `LEAVE_DATE_BEFORE_JOIN` | 422 | 퇴직일 검증 |

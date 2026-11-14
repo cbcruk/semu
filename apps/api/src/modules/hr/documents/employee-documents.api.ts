@@ -1,3 +1,4 @@
+import { FileSizeInvalid } from '../../../shared/files/file-errors.ts'
 import { Schema } from 'effect'
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema } from 'effect/http-api'
 import { AccessReasonHeaders } from '../../../shared/personal-data/access-reason.ts'
@@ -8,7 +9,6 @@ import { EmployeeDocumentId, EmployeeId } from '../shared/hr-schemas.ts'
 import {
   ARCHIVE_CONTENT_TYPES,
   DocumentFileMissing,
-  DocumentFileSizeInvalid,
   DocumentFileTypeNotAllowed,
   DocumentLocked,
   EmployeeDocument,
@@ -52,7 +52,7 @@ export class EmployeeDocumentsApi extends HttpApiGroup.make('hrEmployeeDocuments
       query: { title: Name, category: EmployeeDocumentCategorySchema, fileName: Name },
       payload: UploadBody,
       success: EmployeeDocument.pipe(HttpApiSchema.status(201)),
-      error: [...ACCESS_ERRORS, EmployeeNotFound, DocumentFileTypeNotAllowed, DocumentFileSizeInvalid],
+      error: [...ACCESS_ERRORS, EmployeeNotFound, DocumentFileTypeNotAllowed, FileSizeInvalid],
     }),
     HttpApiEndpoint.get('get', '/employee-documents/:documentId', {
       params: { documentId: EmployeeDocumentId },
