@@ -165,10 +165,12 @@ GET  /scrap-requests/{scrapRequestId}
 - 공용 작업 조회 `GET /jobs/{jobId}`는 두지 않습니다([D11](review.md#결정)). `/scrap-requests/{id}`가 그 역할을 합니다
 - **정기 수집**은 공용 실행기([conventions.md 정기 작업](conventions.md#정기-작업))의 작업 `integrations.scrap.<기관>-<HHMM>`이 합니다. 시각표는 정책값 `SCHEDULED_SCRAP_TIMES`([scrap-schedule.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-schedule.ts))입니다
   - 은행·빠른조회 매일 07:00, 카드사·여신금융협회 매일 07:30, 홈택스 매일 08:00, PG 매일 10:00·22:00, 배달 플랫폼 매일 10:00, 올라 매일 06:00. 지로는 납부 경로라 정기 수집이 없습니다
-  - 은행·카드는 현행 매뉴얼의 "은행 등록 후 1일 뒤 확인"을 매일 한 번(전날분)으로 정했습니다(2026-11-14, #109, 열린 질문 8). 카드는 은행과 같은 공동인증서로 붙는 일이 많아 30분 띄웁니다. 시각은 정책값이라 바꿔도 다른 규칙에 영향이 없습니다
+  - 은행·카드는 현행 매뉴얼의 "은행 등록 후 1일 뒤 확인"을 매일 한 번(전날분)으로 정했습니다(2026-11-14, #109, 열린 질문 8). 이 문구는 등록 다음날부터 내역이 보인다는 안내로 읽었습니다(#119). 카드는 은행과 같은 공동인증서로 붙는 일이 많아 30분 띄웁니다. 시각은 정책값이라 바꿔도 다른 규칙에 영향이 없습니다
   - 홈택스는 동의한(`AGREED`) 수임동의가 있는 회사만 정기 수집합니다. 없으면 그 회사는 `DELEGATION_REQUIRED`로 건너뜁니다(아래 [수임동의 확인](#수임동의-확인))
   - 그 기관 종류의 연동이 있는 회사마다 한 트랜잭션으로 `requester: SYSTEM` 요청을 만듭니다. 멱등 키는 `schedule:<슬롯>#<기관 종류>`라 재시도해도 같은 슬롯의 요청은 하나입니다
   - 시스템 요청은 쿨다운(`nextAvailableAt`)을 남기지 않고 사용자 쿨다운에 막히지도 않습니다. 앞 요청이 진행 중(타임아웃 전)이면 그 슬롯은 건너뜁니다
+  - 마지막 수집이 재시도할 수 없게 실패한(`status: ERROR`, 비밀번호 오류·계정 잠김·인증서 없음) 연동은 건너뜁니다. 그 종류의 연동이 모두 그렇다면 요청을 만들지 않습니다(`PAUSED`). 같은 자격 증명으로 매일 로그인해 기관 계정이 잠기는 일을 막습니다. 자격 증명을 바꾸거나 수동 수집이 성공하면 다시 돕니다([rule-decisions/integrations.md](rule-decisions/integrations.md#scrap-retryable) 질문 6)
+  - 인증서 서명 비밀번호는 인증서와 함께 봉해 보관하므로([compliance.md](compliance.md)) 정기 수집이 사람 없이 자격 증명을 엽니다
   - 수집 기간은 기관 어댑터가 정합니다. 배달의 "5일치" 같은 기간을 요청 옵션으로 넘기지 않습니다
 
 ## 홈택스 수임동의
@@ -349,11 +351,11 @@ GET  /messenger-channels
 |---|---|---|
 | 기관 연동 | [integrations/](../../apps/api/src/modules/integrations/integrations/) 등록·후보·조회·자격 증명 교체·항목·삭제 | [integrations.http.test.ts](../../apps/api/src/modules/integrations/integrations/integrations.http.test.ts), [registration-limits.fixtures.test.ts](../../apps/api/src/modules/integrations/integrations/registration-limits.fixtures.test.ts), [scrap-retry.fixtures.test.ts](../../apps/api/src/modules/integrations/integrations/scrap-retry.fixtures.test.ts) |
 | 공동인증서 | [certificates/](../../apps/api/src/modules/integrations/certificates/) | [certificate-eligibility.fixtures.test.ts](../../apps/api/src/modules/integrations/certificates/certificate-eligibility.fixtures.test.ts), HTTP 테스트 |
-| 수집 요청·워커·정기 수집 | [scrap-requests/](../../apps/api/src/modules/integrations/scrap-requests/) (정기 수집 시각표 [scrap-schedule.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-schedule.ts)) | [scrap-requests.http.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-requests.http.test.ts), [scrap-worker.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-worker.test.ts), [scrap-cooldown.fixtures.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-cooldown.fixtures.test.ts), [scheduled-scrap-task.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scheduled-scrap-task.test.ts) |
+| 수집 요청·워커·정기 수집(홈택스 수임동의 확인, 재시도 불가 실패 연동 건너뜀 `PAUSED`) | [scrap-requests/](../../apps/api/src/modules/integrations/scrap-requests/) (정기 수집 시각표 [scrap-schedule.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-schedule.ts), 건너뜀 판정 [scrap-retry.ts](../../apps/api/src/modules/integrations/integrations/scrap-retry.ts)의 `isPausedForSchedule`) | [scrap-requests.http.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-requests.http.test.ts), [scrap-worker.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-worker.test.ts), [scrap-cooldown.fixtures.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scrap-cooldown.fixtures.test.ts), [scheduled-scrap-task.test.ts](../../apps/api/src/modules/integrations/scrap-requests/scheduled-scrap-task.test.ts), [hometax-delegation-check.test.ts](../../apps/api/src/modules/integrations/scrap-requests/hometax-delegation-check.test.ts) |
 | 수임동의·사업자 상태·상담 채널 | [hometax-delegations/](../../apps/api/src/modules/integrations/hometax-delegations/), [business-statuses/](../../apps/api/src/modules/integrations/business-statuses/), [messenger-channels/](../../apps/api/src/modules/integrations/messenger-channels/) | [messenger-channels.http.test.ts](../../apps/api/src/modules/integrations/messenger-channels/messenger-channels.http.test.ts), [channel-token.fixtures.test.ts](../../apps/api/src/modules/integrations/messenger-channels/channel-token.fixtures.test.ts) |
 | 자격 증명 금고 | [credential-vault.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.ts) (메모리 키) | [credential-vault.test.ts](../../apps/api/src/modules/integrations/credentials/credential-vault.test.ts) |
 
-구현하지 않은 것: 인증서 만료 알림, `INACTIVE` 감지, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), 이벤트 발행, 감사 로그 기록, `If-Match`.
+구현하지 않은 것: 인증서 만료 알림, 인증서 `INACTIVE` 저장(연동은 수집 실패로만 봄, 열린 질문 5), 정기 수집 건너뜀(`PAUSED`) 알림, 업종 코드 수집, 올라 OAuth 콜백, 수임 등록(데스크), 상담 채널 토큰 발급(메신저 브리지), 이벤트 발행, 감사 로그 기록, `If-Match`.
 
 ## 열린 질문
 
@@ -361,7 +363,7 @@ GET  /messenger-channels
 2. 기관 코드표(카드사 `001`–`020`, 은행 `002`–`103`)와 이름의 대응. 하나·롯데·삼성 법인카드 제약은 지금 이름 코드(`HANA`, `LOTTE`, `SAMSUNG`)로 둡니다
 3. 세무신고 기관 연동(`/integrate/tax`)의 홈택스 ID 연동과 내역 수집의 홈택스 ID 연동이 같은 레코드인지. 지금은 같은 레코드 하나이고 `usableForTaxFiling`으로 구분합니다
 4. 인증서 OID 표를 참조데이터로 옮기고 KICA·tradesign을 채우는 일
-5. `INACTIVE`를 주기 검사로 감지할지, 수집 실패로만 갱신할지
+5. ~~`INACTIVE`를 주기 검사로 감지할지, 수집 실패로만 갱신할지~~ 연동은 따로 저장하지 않고 수집 실패로만 봅니다. 재시도할 수 없는 실패는 `status: ERROR`로 보이고 정기 수집이 그 연동을 건너뜁니다(2026-11-14, #119). 인증서의 `INACTIVE` 저장은 [certificate-eligibility 질문 4](rule-decisions/integrations.md#certificate-eligibility)대로 어댑터가 폐기 오류를 줄 때입니다
 6. 수집 레코드를 Bookkeeping에 넘길 때 같은 `externalId`를 다시 받는 경우의 처리(멱등 보장 주체)
 7. ~~공용 `Job` 조회(`GET /jobs/{id}`)를 어느 모듈이 가질지~~ 두지 않음([D11](review.md#결정), 2026-11-14). `job.completed` 이벤트는 받을 소비자가 생기면 정함
-8. ~~은행·카드의 정기 수집 주기~~ 매일 한 번(은행 07:00, 카드 07:30)으로 정함(2026-11-14, #109). 홈택스는 수임동의 확인을 넣고 매일 08:00으로 정함(#119). 현행 자료의 "은행 등록 후 1일"이 등록 다음날 한 번만이라는 뜻으로 밝혀지면 은행을 시각표에서 빼고 등록 다음날 한 번 수집으로 바꿉니다. 지원금 공고 수집(4시)은 [assistant.md 열린 질문 7](assistant.md#열린-질문)
+8. ~~은행·카드의 정기 수집 주기~~ 매일 한 번(은행 07:00, 카드 07:30)으로 정함(2026-11-14, #109). 홈택스는 수임동의 확인을 넣고 매일 08:00으로 정함(#119). "은행 등록 후 1일 뒤 확인"은 등록한 다음날부터 내역이 보인다는 안내로 읽고 매일 수집을 유지합니다(#119). 매일 07:00 수집이 등록 다음날 첫 수집도 겸하고, 등록 다음날 한 번만 수집하면 그 뒤 거래가 들어오지 않습니다. 지원금 공고 수집(4시)은 [assistant.md 열린 질문 7](assistant.md#열린-질문)

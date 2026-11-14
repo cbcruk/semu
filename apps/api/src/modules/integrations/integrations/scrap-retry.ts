@@ -27,6 +27,16 @@ export function isRetryable(input: RetryInput): boolean {
   return input.lastScrap === undefined || input.lastScrap.isRetryable
 }
 
+/**
+ * 정기(시스템) 수집이 이 연동을 건너뛰는지 판정합니다. 마지막 수집이 재시도할 수 없게 실패했으면(비밀번호 오류·계정 잠김·인증서
+ * 없음) 참입니다. 같은 자격 증명으로 매일 다시 로그인하면 기관 계정이 잠길 수 있어서입니다.
+ *
+ * 자격 증명을 바꾸면 `lastScrap`이 지워지고, 사용자가 수동 수집해 성공하면 `lastScrap`이 바뀌어 다시 돕니다.
+ */
+export function isPausedForSchedule(lastScrap: LastScrapOutcome | undefined): boolean {
+  return lastScrap?.status === 'FAILED' && !lastScrap.isRetryable
+}
+
 /** 항목 하나입니다. 비활성 항목은 수집하지 않으므로 재시도 대상이 아닙니다. */
 export interface RetryItem {
   key: string

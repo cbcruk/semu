@@ -10,6 +10,7 @@ import { demoDelegations, demoIntegrations } from '../demo-seed.ts'
 import { DelegationRepository } from '../hometax-delegations/hometax-delegation.ts'
 import type { DelegationRecord } from '../hometax-delegations/hometax-delegation.ts'
 import { IntegrationRepository } from '../integrations/integration-repository.ts'
+import { isPausedForSchedule } from '../integrations/scrap-retry.ts'
 import { scheduledScrapTask } from './scheduled-scrap-task.ts'
 import { ScrapRequestRepository } from './scrap-request-repository.ts'
 import { scheduledScraps } from './scrap-schedule.ts'
@@ -119,6 +120,15 @@ describe('ScrapRequests.requestScheduled', () => {
     expect(agreed).toHaveLength(1)
     expect(outcomes).toEqual(['DELEGATION_REQUIRED', 'DELEGATION_REQUIRED', 'DELEGATION_REQUIRED', 'CREATED'])
     expect(enqueued).toHaveLength(1)
+  })
+})
+
+describe('isPausedForSchedule', () => {
+  it('마지막 수집이 재시도할 수 없게 실패했을 때만 정기 수집을 건너뜁니다', () => {
+    expect(isPausedForSchedule(undefined)).toBe(false)
+    expect(isPausedForSchedule({ status: 'SUCCEEDED', isRetryable: true })).toBe(false)
+    expect(isPausedForSchedule({ status: 'FAILED', isRetryable: true })).toBe(false)
+    expect(isPausedForSchedule({ status: 'FAILED', isRetryable: false })).toBe(true)
   })
 })
 

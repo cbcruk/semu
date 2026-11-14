@@ -12,8 +12,8 @@ import type { InstitutionType } from '../institutions/institution.ts'
  * - 배달 플랫폼: 매일 10:00
  * - 올라: 매일 06:00(전날 정산분)
  *
- * 은행·카드는 현행 매뉴얼의 "은행 등록 후 1일 뒤 확인"을 매일 한 번으로 읽었습니다(2026-11-14, #109). 지로는 수집이 아니라 납부
- * 경로라 정기 수집이 없습니다.
+ * 은행·카드는 현행 매뉴얼의 "은행 등록 후 1일 뒤 확인"을 등록 다음날부터 내역이 보인다는 안내로 읽고 매일 한 번 수집합니다
+ * (2026-11-14, #109, #119). 지로는 수집이 아니라 납부 경로라 정기 수집이 없습니다.
  */
 export const SCHEDULED_SCRAP_TIMES: Readonly<Record<InstitutionType, ReadonlyArray<WallTime>>> = {
   HOMETAX: ['08:00'],

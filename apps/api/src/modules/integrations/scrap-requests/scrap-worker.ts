@@ -4,6 +4,7 @@ import { CertificateRepository } from '../certificates/certificate-repository.ts
 import { CredentialVault } from '../credentials/credential-vault.ts'
 import { IntegrationRepository } from '../integrations/integration-repository.ts'
 import type { IntegrationRecord, LastScrap } from '../integrations/integration.ts'
+import { isPausedForSchedule } from '../integrations/scrap-retry.ts'
 import { CompanyProfiles } from '../ports/company-profiles.ts'
 import { ScrapedRecordSink } from '../ports/scraped-record-sink.ts'
 import { ScrapingGateway } from '../ports/scraping-gateway.ts'
@@ -15,7 +16,8 @@ import type { ScrapItemResult, ScrapRequestRecord } from './scrap-request.ts'
 /**
  * 수집 요청을 처리하는 워커입니다. 자격 증명을 이 경계 안에서만 열고, 가져온 레코드는 {@link ScrapedRecordSink}로 넘깁니다.
  *
- * 연동과 항목의 `lastScrap`을 갱신해 재시도 판정과 상태 화면에 씁니다.
+ * 연동과 항목의 `lastScrap`을 갱신해 재시도 판정과 상태 화면에 씁니다. 정기(시스템) 요청은 재시도할 수 없게 실패한 연동을 건너뜁니다
+ * ({@link isPausedForSchedule}).
  */
 export class ScrapWorker extends Context.Service<
   ScrapWorker,
@@ -126,8 +128,11 @@ export class ScrapWorker extends Context.Service<
           const running: ScrapRequestRecord = { ...found.value, status: 'RUNNING', startedAt }
           yield* requests.save(running)
           const scope = yield* integrations.listByCompany(companyId, running.institutionType)
-          const targets =
-            running.integrationId === undefined ? scope : scope.filter((link) => link.id === running.integrationId)
+          const targets = scope.filter(
+            (link) =>
+              (running.integrationId === undefined || link.id === running.integrationId) &&
+              (running.requester === 'USER' || !isPausedForSchedule(link.lastScrap)),
+          )
           const results = (yield* Effect.forEach(targets, (integration) => scrapeOne(running, integration))).flat()
           yield* requests.save({
             ...running,

@@ -65,4 +65,5 @@ export function isRetryable(integration: IntegrationRow, certificate: Certificat
 - `UNREGISTERED` 인증서는 막는 쪽이 맞아 보입니다. 인증서가 없으면 수집이 반드시 실패합니다
 - 홈택스 ID + 인증서 조합에서 인증서 쪽 오류가 화면에 드러나지 않습니다. 연동별로 따로 상태를 줍니다
 - 어떤 수집 오류가 재시도 불가인지(비밀번호 오류, 계정 잠김, 미가입·폐업 사업자)는 수집 어댑터가 오류 코드를 분류해 정합니다
+- 같은 판정을 정기 수집에도 씁니다. 마지막 수집이 재시도할 수 없게 실패한 연동은 정기 수집이 건너뜁니다(`isPausedForSchedule`, #119). 매일 같은 잘못된 비밀번호로 로그인하면 기관 계정이 잠깁니다
 
