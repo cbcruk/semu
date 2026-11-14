@@ -43,7 +43,7 @@ export const EmployeeDocumentsHttpLive = HttpApiBuilder.group(
               body: content.bytes,
               headers: {
                 'content-type': content.contentType,
-                'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(content.fileName)}`,
+                'content-disposition': `attachment; filename*=UTF-8''${encodeRfc8187(content.fileName)}`,
               },
             }),
           ),
@@ -52,3 +52,8 @@ export const EmployeeDocumentsHttpLive = HttpApiBuilder.group(
     })
   }),
 )
+
+/** RFC 8187 `attr-char` 밖의 문자를 `%XX`로 바꿉니다. `encodeURIComponent`가 남기는 `'()*`도 바꿉니다. */
+function encodeRfc8187(value: string): string {
+  return encodeURIComponent(value).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+}

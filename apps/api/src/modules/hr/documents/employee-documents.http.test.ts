@@ -304,6 +304,18 @@ describe('문서 내려받기·직접 올리기·지우기', () => {
     expect(list.body.items.map((item: { id: string }) => item.id)).toEqual([created.body.id])
   })
 
+  it('파일 이름의 따옴표·괄호·별표도 Content-Disposition에서 %로 바꿉니다', async () => {
+    const employeeId = await hire()
+    const query = `title=a&category=OTHER&fileName=${encodeURIComponent("계약서(최종)*'.png")}`
+    const created = await upload(employeeId, query)
+    const response = await app.request('GET', `/employee-documents/${created.body.id}/file`, {
+      headers: { 'x-access-reason': 'check' },
+    })
+    expect(response.headers.get('content-disposition')).toBe(
+      `attachment; filename*=UTF-8''${encodeURIComponent('계약서')}%28${encodeURIComponent('최종')}%29%2A%27.png`,
+    )
+  })
+
   it('허용하지 않는 형식은 415이고 아무것도 남지 않습니다', async () => {
     const employeeId = await hire()
     const response = await app.request(
