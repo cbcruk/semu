@@ -1,4 +1,4 @@
-import { Context, DateTime, Effect, Layer, Option } from 'effect'
+import { Array as Arr, Context, DateTime, Effect, Layer, Option } from 'effect'
 import { newId } from '../../../shared/ids/ids.ts'
 import type { Id } from '../../../shared/ids/ids.types.ts'
 import { PayrollContractRepository } from '../contracts/payroll-contract.ts'
@@ -80,17 +80,21 @@ export class SignedDocumentIntake extends Context.Service<
         voided: Effect.fn('SignedDocumentIntake.voided')(function* (companyId, esignRequestId, at) {
           const found = yield* documents.findByEsignRequest(companyId, esignRequestId)
           if (Option.isNone(found)) return yield* documents.markVoided(companyId, esignRequestId, at)
-          const linked = (type: 'WORK_CONTRACT' | 'PAYROLL_CONTRACT') =>
-            found.value.links.filter((link) => link.type === type).map((link) => link.id)
-          const workIds = linked('WORK_CONTRACT')
-          const payrollIds = linked('PAYROLL_CONTRACT')
+          // 연결된 계약만 ID로 읽습니다. 지워진 계약은 건너뜁니다.
+          const links = found.value.links
+          const work = yield* Effect.forEach(
+            links.flatMap((link) => (link.type === 'WORK_CONTRACT' ? [link.id] : [])),
+            (id) => workContracts.find(companyId, id),
+          )
+          const payroll = yield* Effect.forEach(
+            links.flatMap((link) => (link.type === 'PAYROLL_CONTRACT' ? [link.id] : [])),
+            (id) => payrollContracts.find(companyId, id),
+          )
           const decision = decideSignedDocumentVoid(
             found.value,
             {
-              workContracts: (yield* workContracts.list(companyId)).filter((contract) => workIds.includes(contract.id)),
-              payrollContracts: (yield* payrollContracts.list(companyId)).filter((contract) =>
-                payrollIds.includes(contract.id),
-              ),
+              workContracts: Arr.getSomes(work),
+              payrollContracts: Arr.getSomes(payroll),
             },
             at,
             yield* now,
