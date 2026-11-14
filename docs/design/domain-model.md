@@ -50,9 +50,10 @@ decide(state, command, context) → { state, events } | 거부
 1. **커맨드 하나는 일관성 경계 하나를 바꿉니다.** 기본 경계는 애그리거트 하나입니다
 2. **두 애그리거트에 걸친 불변식이 있을 때만 경계를 묶습니다.** 묶은 경계는 아래 [묶은 경계](#묶은-경계) 표에 올리고, 어떤 불변식 때문인지 적습니다. 묶은 경계의 `decide`는 그 애그리거트들을 함께 받습니다
 3. **나머지 영향은 정책으로 전합니다.** 받는 쪽 애그리거트가 자기 `decide`로 판정합니다. 받는 쪽이 거부하면 정책은 그 사실을 기록하고 멈춥니다. 보낸 쪽 커맨드를 되돌리지 않습니다
-4. **다른 컨텍스트의 애그리거트는 정책으로만 바꿉니다.** 다른 컨텍스트의 상태를 읽어 판정에 쓰는 것(`WithholdingFilingLock`, `SeveranceSettlementLookup`)은 바꾸는 것이 아니므로 `context`의 사실로 넘깁니다
+4. **감사 기록과 개인정보 열람 기록은 커맨드와 같은 트랜잭션에 남깁니다.** 정책으로 옮기지 않습니다. 열람 기록 없이 개인정보가 나가거나, 바뀐 기록이 감사 기록 없이 남는 틈을 만들지 않기 위해서입니다. 이 기록은 애그리거트가 아니라 공유 인프라(`iam_audit_log`, `personal_data_accesses`)입니다
+5. **다른 컨텍스트의 애그리거트는 정책으로만 바꿉니다.** 다른 컨텍스트의 상태를 읽어 판정에 쓰는 것(`WithholdingFilingLock`, `SeveranceSettlementLookup`)은 바꾸는 것이 아니므로 `context`의 사실로 넘깁니다
 
-설계 원칙 2("업무 하나 = 요청 하나 = 트랜잭션 하나", [README.md](README.md#설계-원칙))는 2번으로 좁아집니다. 지금 한 트랜잭션에서 하는 일 중 불변식이 요구하지 않는 것은 정책으로 옮깁니다. 옮기면 응답이나 실패했을 때의 동작이 바뀌는 것은 [결정](#결정)에 따로 적었습니다.
+설계 원칙 2("업무 하나 = 요청 하나 = 트랜잭션 하나", [README.md](README.md#설계-원칙))는 2번으로 좁아집니다. 원칙 5(바깥 기관 호출은 `Job`)는 [M8](#결정)대로 아직 일부만 따릅니다. 지금 한 트랜잭션에서 하는 일 중 불변식이 요구하지 않는 것은 정책으로 옮깁니다. 옮기면 응답이나 실패했을 때의 동작이 바뀌는 것은 [결정](#결정)에 따로 적었습니다.
 
 ## 애그리거트
 
@@ -160,8 +161,10 @@ decide(state, command, context) → { state, events } | 거부
 | 초대 수락: Invitation + Membership (+가입이면 User·TermAgreement) | `ACCEPTED`인 초대에는 소속이 있습니다 | 수락했는데 회사에 들어가지 못합니다 |
 | 권한 변경 + 토큰 폐기: Membership·Role·TermAgreement·User 비밀번호 + Session | 권한이 줄면 그 순간부터 옛 토큰으로 할 수 없습니다([M5](#결정)) | 권한을 뺀 뒤에도 정책이 돌 때까지 옛 권한으로 쓸 수 있습니다 |
 | 출금 계좌 교체: BillingMandate(새) + BillingMandate(이전) | 회사에 `REGISTERED` 계좌는 하나입니다 | 출금 계좌가 둘이 됩니다 |
+| 직원 배치: Employee + OrganizationUnit(`everAssigned`) | 한 번이라도 배치된 단위는 삭제할 수 없습니다. 표시는 한 번 켜면 끄지 않는 저장값이라 지금 배치에서 계산할 수 없습니다 | 배치한 뒤 정책이 돌기 전에 직원을 옮기면 원래 단위를 지울 수 있습니다 |
 | 직원 삭제: Employee + FamilyMember | 직원 없는 가족 개인정보를 남기지 않습니다 | 주민등록번호가 주인 없이 남습니다 |
 | 계정과목 생성·삭제: AccountTitle + Evidence·BankTransaction 분류 + ClassificationRule | 분류는 하위가 없는 계정만 가리키고, 지운 계정을 가리키지 않습니다 | 장부가 없는 계정을 가리킵니다 |
+| 서명 문서 반영: EmployeeDocument + WorkContract·PayrollContract 서명 연결 | 무효인 문서는 계약에 연결되지 않고, 계약은 그 문서가 유효할 때만 그 문서를 가리킵니다 | 무효가 된 서명이 계약에 남습니다. 정책 하나가 HR 안에서 한 트랜잭션으로 처리합니다 |
 | 지로 납부: Giro + 납부 시도 | `DONE`이면 성공한 납부가 있습니다 | 납부 기록 없는 완료가 생깁니다 |
 
 정산 연결은 입출금 거래의 하위 행, 자료 항목·문서·이력은 신고 건의 하위 행이므로 묶음이 아닙니다.
@@ -173,28 +176,32 @@ decide(state, command, context) → { state, events } | 거부
 | 커맨드 | 바꾸는 경계 | 그 밖의 영향 | 지금 | 이 설계 |
 |---|---|---|---|---|
 | 신고 건 전이 `filings/:id:{command}` | **Filing** | 할 일 카드 열고 닫기 | 같은 트랜잭션 | 정책 `filing.status_changed` → 카드 맞추기([M4](#결정)) |
-| 신고 문서 열람 | **Filing** | 결과 확인 카드 닫기 | 같은 트랜잭션 | 정책 |
-| 급여대장 저장·전이 | **PayrollLedger** | 원천세 신고의 급여대장 항목 다시 맞춤 | 정책(outbox `payroll_pay_month->tax`) | 그대로 |
-| 직원 등록 | **Employee** | 4대보험 취득 신고 열기, 조직 `everAssigned` 표시 | 같은 트랜잭션 | 정책 `employee.joined` → 신고 맞추기([M6](#결정)). 표시는 뷰 |
+| 신고 문서 열람 | **Filing** | 결과 확인 카드 닫기 | 같은 트랜잭션 | 정책 `filing.document_viewed` → 카드 닫기 |
+| 급여대장 저장·전이, 퇴직금 정산 완료·다시 열기 | **PayrollLedger**, **SeveranceSettlement** | 원천세 신고의 급여대장 항목 다시 맞춤 | 정책(outbox `payroll_pay_month->tax`) | 그대로 |
+| 직원 등록·수정 | **묶음: Employee + OrganizationUnit(`everAssigned`)** | 4대보험 취득 신고 열기(등록) | 같은 트랜잭션 | 정책 `employee.joined` → 신고 맞추기([M6](#결정)). 배치 표시는 묶음 유지 |
 | 직원 퇴직·퇴직 취소 | **Employee** | 상실 신고 열기·철회 | 같은 트랜잭션 | 정책 `employee.resigned`·`resignation_canceled` |
 | 직원 삭제 | **묶음: Employee + FamilyMember** | 열린 신고 철회 | 같은 트랜잭션 | 정책 `employee.deleted` → 철회 |
 | 휴직 등록·복직·삭제 | **Leave** | 휴직·복직 신고 | 같은 트랜잭션 | 정책 `leave.*` |
 | 가족 등록·수정·삭제 | **FamilyMember** | 피부양자 신고 | 같은 트랜잭션 | 정책 `family_member.changed` |
 | 급여계약 생성·수정·삭제 | **PayrollContract** | 보수 변경 신고(직원 단위로 다시 맞춤) | 같은 트랜잭션 | 정책 `payroll_contract.changed` → 직원 단위 다시 맞추기 |
 | 4대보험 설정 저장, 근로계약 생성 | **SocialInsuranceSetting**, **WorkContract** | 보수 변경 신고 | 하지 않음(빈틈) | 같은 정책이 받음 |
-| 전자서명 완료·무효 | **EsignRequest** | 직원 문서 보관함, 계약 서명 연결 | 정책(outbox `esign_request->hr`) | 그대로. 받는 쪽은 EmployeeDocument·계약마다 커맨드 |
+| 전자서명 완료·무효 | **EsignRequest** | 직원 문서 보관함, 계약 서명 연결 | 정책(outbox `esign_request->hr`) | 그대로. 받는 쪽은 묶음(아래) |
 | 전자서명 발송, 완료 문서 만들기 | **EsignRequest** | 링크 발송, PDF 렌더링(바깥 호출) | 요청 안에서 호출 | 결과를 `context`로 받음. 사가는 [M8](#결정) |
-| 역할 삭제 | **Role** | 소속에서 역할 떼기 | 같은 트랜잭션 | 정책 `role.deleted`. 행위자 계산은 없는 역할을 이미 무시함 |
-| 회사 선택(`bind`) | **Session** | 사용자의 마지막 회사 | 같은 트랜잭션 | 선호값이라 그대로 둠(불변식 없음, 같은 컨텍스트) |
+| 역할 삭제 | **묶음: Role + Session(토큰 폐기)** | 소속에서 역할 떼기 | 같은 트랜잭션 | 토큰 폐기는 묶음 유지([M5](#결정)). 떼기는 정책 `role.deleted`. 행위자 계산은 없는 역할을 이미 무시함 |
+| 회사 선택(`bind`) | **Session** | 사용자의 마지막 회사(User) | 같은 트랜잭션 | 규칙 1의 예외로 그대로 둠. 불변식이 없는 선호값이고 같은 컨텍스트라 정책을 둘 만큼의 이득이 없습니다 |
 | 초대 생성 | **Invitation** | 초대 메일 | 요청 안에서 호출 | 정책 `invitation.created` → 메일 |
 | 수집 요청 | **ScrapRequest** | 연동 마지막 수집, 경리 반입 | 요청 안에서 워커 실행 | 사가(`Job`) + 정책 `scrap.item_succeeded` → 반입([M7](#결정)) |
 | 거래처 생성 | **Partner** | 증빙에 거래처 연결 | 같은 트랜잭션 | 정책 `partner.created` |
 | 세금계산서 발급 | **TaxInvoice** | 매출 증빙 만들기 | 같은 트랜잭션 | 정책 `tax_invoice.issued`. 증빙은 이미 `externalKey`로 멱등 |
 | 명세서 발송 | **PayslipSend** | 메일 발송(건별 결과를 남김) | 요청 안에서 호출 | 사가 후보([payroll.md](payroll.md)) |
+| 지로 납부 | **묶음: Giro + 납부 시도** | 기관 납부 호출 | 요청 안에서 호출 | 결과를 `context`로 받음([M8](#결정)) |
+| 출금 계좌 등록 | **묶음: BillingMandate(새·이전)** | CMS 등록 호출 | 요청 안에서 호출 | 결과를 `context`로 받음([M8](#결정)) |
 
 ## 이벤트
 
 이벤트 목록은 [events.md](events.md#이벤트-목록)와 각 컨텍스트 문서가 단일 출처입니다. 이 구조에서 덧붙이는 규칙만 적습니다.
+
+- 이 문서의 표에 있지만 events.md에 없는 이름(`role.deleted`, `invitation.created`, `partner.created`, `scrap.item_succeeded`, `family_member.changed`, `employee.deleted`, `employee.resignation_canceled`, `social_insurance_setting.changed`, `filing.document_viewed`)은 설계 단계 이름입니다. 그 정책을 옮기는 PR이 이름과 payload를 정해 events.md에 올립니다
 
 - 이벤트는 그것을 낸 애그리거트의 `decide`가 만듭니다. 서비스가 이벤트를 직접 조립하지 않습니다
 - 정책이 판단에 쓰는 필드는 payload에 넣습니다. 개인정보는 넣지 않고, 필요하면 정책이 애그리거트를 읽습니다
@@ -208,7 +215,7 @@ decide(state, command, context) → { state, events } | 거부
 |---|---|---|---|---|
 | 원천세 급여대장 항목 | `payroll_pay_month.*` | 신고 건 급여대장 항목 다시 맞춤 | 없음(다시 계산이라 거부하지 않음) | outbox `payroll_pay_month->tax` |
 | 서명 완료 반영 | `esign_request.completed`·`voided` | 직원 문서 넣기·무효, 계약 서명 연결·풀기 | 기록만 합니다(직원이 없으면 문서만 남김) | outbox `esign_request->hr` |
-| 할 일 카드 | `filing.status_changed` | 카드 열기·닫기 | 기록만 합니다 | 같은 트랜잭션 |
+| 할 일 카드 | `filing.status_changed`, `filing.document_viewed` | 카드 열기·닫기 | 기록만 합니다 | 같은 트랜잭션 |
 | 4대보험 신고 맞추기 | `employee.*`, `leave.*`, `family_member.changed`, `*_contract.changed`, `social_insurance_setting.changed` | 직원 단위로 열린 신고 맞추기 | 기록만 합니다 | 같은 트랜잭션 |
 | 역할 떼기 | `role.deleted` | 소속에서 역할 제거 | 없음 | 같은 트랜잭션 |
 | 초대 메일 | `invitation.created` | 메일 발송 | 실패를 남기고 재시도 | 요청 안에서 호출 |
@@ -257,4 +264,4 @@ decide(state, command, context) → { state, events } | 거부
 | M5 | 권한 변경이 토큰 폐기를 같은 트랜잭션에서 하는가 | 묶음 유지 / 정책 | **결정: 묶음 유지.** 권한 회수는 그 순간부터 지켜야 하는 보안 불변식이고, 같은 컨텍스트 안입니다. 플랜 변경(D6)은 다른 컨텍스트라 정책입니다 |
 | M6 | HR 커맨드가 4대보험 신고를 같은 트랜잭션에서 여는가 | 묶음 유지 / 정책 | **결정: 정책.** 신고 큐는 공단에 낼 할 일이고 직원 기록의 불변식이 아닙니다. 다섯 서비스에 흩어진 맞추기 로직을 정책 하나로 모으고, 4대보험 설정·근로계약 변경 때 보수 변경 신고를 맞추지 않는 빈틈도 함께 메웁니다. 대가: 직원 등록 응답 직후 신고 큐가 늦게 채워집니다 |
 | M7 | 수집 요청이 요청 안에서 워커를 돌리는가 | 그대로 / Job + 정책 | **결정: Job + 정책.** 지금 다른 컨텍스트(Bookkeeping)에 동기로 쓰는 유일한 경로입니다. 대가: 수집 요청 응답은 `QUEUED`로 돌아오고 결과는 Job으로 봅니다 |
-| M8 | 바깥 호출(서명 링크 발송, PDF 렌더링, 명세서 메일, 세금계산서 발급)을 요청 안에서 하는가 | 그대로 / 사가 | **결정: 지금은 그대로 두고 결과를 `context`로 넘김.** 발송 실패(`SEND_FAILED`)를 응답에서 바로 보여 주는 동작이 각 문서의 계약입니다. 판정은 바깥 결과를 받아 하므로 `decide`는 순수하게 둘 수 있습니다. **다시 볼 조건:** 바깥 호출이 느려 트랜잭션이 쓰기 잠금을 오래 쥐거나, 재시도 스케줄러(#81)가 생기면 사가로 옮깁니다 |
+| M8 | 바깥 호출(서명 링크 발송, PDF 렌더링, 명세서 메일, 세금계산서 발급, 지로 납부, CMS 출금 계좌 등록)을 요청 안에서 하는가 | 그대로 / 사가 | **결정: 지금은 그대로 두고 결과를 `context`로 넘김.** 발송 실패(`SEND_FAILED`)를 응답에서 바로 보여 주는 동작이 각 문서의 계약입니다. 판정은 바깥 결과를 받아 하므로 `decide`는 순수하게 둘 수 있습니다. **다시 볼 조건:** 바깥 호출이 느려 트랜잭션이 쓰기 잠금을 오래 쥐거나, 재시도 스케줄러(#81)가 생기면 사가로 옮깁니다 |
