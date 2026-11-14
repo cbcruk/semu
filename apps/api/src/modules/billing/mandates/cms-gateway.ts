@@ -1,12 +1,32 @@
-import { Context, Effect, Layer } from 'effect'
+import { Context, Data, Effect, Layer, Option } from 'effect'
+import type { PaymentFailureReason } from '../payments/payment.ts'
 import type { MandateRejectionReason } from './billing-mandate.ts'
 
 /** 은행망 CMS에 출금 계좌를 등록한 결과입니다. */
 export type MandateRegistrationResult =
   { accepted: true; reference: string } | { accepted: false; reason: MandateRejectionReason }
 
+/** 출금 결과 파일에서 찾을 결제 하나입니다. 결제 ID가 출금 요청의 참조입니다. */
+export interface WithdrawalItem {
+  paymentId: string
+  amount: number
+  /** 출금할 계좌의 동의입니다. 없으면 출금 요청을 낼 계좌가 없습니다. */
+  mandateId?: string | undefined
+}
+
+/** 출금 결과 파일 한 줄입니다. */
+export interface WithdrawalResultLine {
+  paymentId: string
+  succeeded: boolean
+  failureReason?: PaymentFailureReason | undefined
+}
+
+/** CMS에 닿지 못했습니다. 정기 작업이 다음에 다시 시도합니다. */
+export class CmsUnavailable extends Data.TaggedError('CmsUnavailable')<{}> {}
+
 /**
- * 은행망 CMS 자동출금 게이트웨이 포트입니다. 계좌 등록만 동기로 받고, 출금 결과는 다음 날 결과 파일로 옵니다.
+ * 은행망 CMS 자동출금 게이트웨이 포트입니다. 계좌 등록은 동기로 받고, 출금 결과는 출금 다음 날 오후에 결과 파일로 끌어옵니다
+ * (`withdrawalResults`).
  *
  * 실제 구현은 금융결제원 CMS 전문을 다룹니다. 계좌번호 원문은 이 포트로만 넘기고 저장하지 않습니다.
  *
@@ -25,11 +45,21 @@ export class CmsGateway extends Context.Service<
       accountHolder: string
       payerNumber: string
     }): Effect.Effect<MandateRegistrationResult>
+    /**
+     * `withdrawnOn`에 출금한 결과 파일에서 `items`의 결과를 읽습니다. 결과 파일이 아직 없으면 `None`이고, 파일에 없는 결제는
+     * 줄을 돌려주지 않습니다(다음에 다시 봄). 같은 날을 여러 번 읽어도 같은 결과입니다.
+     */
+    withdrawalResults(
+      withdrawnOn: string,
+      items: ReadonlyArray<WithdrawalItem>,
+    ): Effect.Effect<Option.Option<ReadonlyArray<WithdrawalResultLine>>, CmsUnavailable>
   }
 >()('semu/billing/CmsGateway') {
   /**
    * 결정적인 가짜입니다. 계좌번호가 `0000`으로 끝나면 없는 계좌로 거절하고, 나머지는 받아들입니다. `requestId`마다 처음 결과를
    * 기억해, 같은 `requestId`가 다시 오면 입력이 달라도 그 결과를 돌려줍니다.
+   *
+   * 출금 결과는 늘 파일이 있고, 출금 동의가 없는 결제는 `MANDATE_NOT_REGISTERED`로 실패, 나머지는 성공입니다.
    */
   static readonly layerFake = Layer.sync(CmsGateway, () => {
     const results = new Map<string, MandateRegistrationResult>()
@@ -45,6 +75,16 @@ export class CmsGateway extends Context.Service<
           results.set(input.requestId, result)
           return result
         }),
+      withdrawalResults: (_withdrawnOn, items) =>
+        Effect.succeed(
+          Option.some(
+            items.map((item): WithdrawalResultLine =>
+              item.mandateId === undefined
+                ? { paymentId: item.paymentId, succeeded: false, failureReason: 'MANDATE_NOT_REGISTERED' }
+                : { paymentId: item.paymentId, succeeded: true },
+            ),
+          ),
+        ),
     })
   })
 }

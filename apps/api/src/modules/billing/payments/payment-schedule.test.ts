@@ -6,6 +6,7 @@ import {
   paymentTransition,
   plannedPayments,
   schedulingMonthOn,
+  withdrawalsAwaitingResult,
 } from './payment-schedule.ts'
 
 describe('다음 영업일', () => {
@@ -121,5 +122,22 @@ describe('결제 예정 다시 맞추기', () => {
     expect(paymentTransition('SCHEDULED', 'CANCEL')).toBe('CANCELED')
     expect(paymentTransition('FAILED', 'CANCEL')).toBeUndefined()
     expect(allowedPaymentActions('CANCELED')).toEqual([])
+  })
+})
+
+describe('출금 결과를 기다리는 결제', () => {
+  it('결과 반영일이 오늘이거나 지난 예정·재시도 결제를 출금일별로 묶습니다', () => {
+    const rows = [
+      { id: 'a', status: 'SCHEDULED' as const, scheduledOn: '2026-11-25' },
+      { id: 'b', status: 'RETRYING' as const, scheduledOn: '2026-11-20' },
+      { id: 'c', status: 'SCHEDULED' as const, scheduledOn: '2026-11-26' },
+      { id: 'd', status: 'PAID' as const, scheduledOn: '2026-11-25' },
+      { id: 'e', status: 'SCHEDULED' as const, scheduledOn: '2026-11-25' },
+    ]
+
+    expect(withdrawalsAwaitingResult(rows, '2026-11-26')).toEqual([
+      { withdrawnOn: '2026-11-20', payments: [rows[1]] },
+      { withdrawnOn: '2026-11-25', payments: [rows[0], rows[4]] },
+    ])
   })
 })

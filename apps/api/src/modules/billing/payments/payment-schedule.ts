@@ -132,3 +132,22 @@ export function adjustScheduledPayment(input: {
   }
   return { kind: 'UPDATE', amount: subscription.monthlyFee, mandateId: input.registeredMandateId }
 }
+
+/**
+ * 출금 결과를 기다리는 결제를 출금일별로 묶습니다. `SCHEDULED`·`RETRYING`이고 결과 반영일({@link resultExpectedOn})이 오늘이거나
+ * 지난 결제입니다. 결과 파일이 늦으면 다음 날 다시 묶이므로 놓치지 않습니다. 출금일 오름차순입니다.
+ */
+export function withdrawalsAwaitingResult<P extends { status: PaymentStatus; scheduledOn: string }>(
+  payments: ReadonlyArray<P>,
+  today: string,
+): Array<{ withdrawnOn: string; payments: P[] }> {
+  const 출금일별 = new Map<string, P[]>()
+  for (const payment of payments) {
+    if (payment.status !== 'SCHEDULED' && payment.status !== 'RETRYING') continue
+    if (resultExpectedOn(payment.scheduledOn) > today) continue
+    출금일별.set(payment.scheduledOn, [...(출금일별.get(payment.scheduledOn) ?? []), payment])
+  }
+  return [...출금일별.entries()]
+    .toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([withdrawnOn, rows]) => ({ withdrawnOn, payments: rows }))
+}

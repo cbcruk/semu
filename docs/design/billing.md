@@ -242,7 +242,8 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 |---|---|---|
 | `reconcile(today, companyId?)` | 정기 작업 `billing.payment-schedule`이 매일 06:00에 모든 회사로 부름(2026-11-14 #81, #105). 구독 시작·해지·해지 철회와 출금 계좌 등록이 그 회사로 같은 트랜잭션에서 부름. 출금일이 오지 않은 `SCHEDULED` 결제를 취소·갱신하고, 출금일 3일 전부터 전날까지는(`schedulingMonthOn`) 그달 빠진 결제 예정을 만듦 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음. 맞는 결제는 그대로 둠 |
 | `scheduleMonth(month)` | 그달 결제 예정 만들기만. `reconcile`이 씀 | 같은 구독·출금일의 취소하지 않은 결제가 있으면 만들지 않음 |
-| `recordWithdrawal(paymentId, result)` | CMS 결과 파일 수신 (출금 다음 날 오후) | 이미 반영된 결과는 그대로 둠 |
+| `recordWithdrawal(paymentId, result)` | 정기 작업 `billing.withdrawal-results`가 매일 15:00에 결과 파일의 줄마다 부름(2026-11-14, #109). 같은 결제 줄은 처음 하나만 쓰고, 닿지 못한 출금일은 건너뛰어 다른 출금일을 계속 읽은 뒤 작업을 실패로 남겨 재시도함 | 이미 반영된 결과는 그대로 둠 |
+| `awaitingResults(today)` | 같은 작업이 결과를 기다리는 결제를 출금일별로 묶음(`withdrawalsAwaitingResult`: `SCHEDULED`·`RETRYING`이고 결과 반영일이 오늘이거나 지남) | 읽기만 함 |
 
 ## 오류 코드
 
@@ -270,7 +271,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 포트 | 방향 | 모양 | 메모리 구현 |
 |---|---|---|---|
 | `CompanyPlans` (Identity & Access 선언) | Billing이 구현 | `plansOf(companyId): Effect<ReadonlySet<Plan>>` | `SubscriptionCompanyPlansLive` (구독 저장소에서 계산) |
-| `CmsGateway` | Billing 선언 | `registerAccount({requestId, bankCode, accountNumber, accountHolder, payerNumber}): Effect<{accepted: true, reference} \| {accepted: false, reason}>`. `requestId`는 멱등 참조로, 같은 값의 재요청에는 다시 등록하지 않고 처음 결과를 돌려줘야 함 | `layerFake`: 계좌번호가 `0000`으로 끝나면 `ACCOUNT_NOT_FOUND` |
+| `CmsGateway` | Billing 선언 | `registerAccount({requestId, bankCode, accountNumber, accountHolder, payerNumber}): Effect<{accepted: true, reference} \| {accepted: false, reason}>`. `requestId`는 멱등 참조로, 같은 값의 재요청에는 다시 등록하지 않고 처음 결과를 돌려줘야 함. `withdrawalResults(withdrawnOn, items): Effect<Option<줄[]>, CmsUnavailable>`: 그 출금일의 결과 파일에서 결제(`paymentId`가 출금 요청 참조)의 결과를 끌어옴. 파일이 아직 없으면 `None`, 파일에 없는 결제는 줄이 없음 | `layerFake`: 계좌번호가 `0000`으로 끝나면 `ACCOUNT_NOT_FOUND`. 출금 결과는 늘 파일이 있고 출금 동의가 없는 결제는 `MANDATE_NOT_REGISTERED` 실패, 나머지는 성공 |
 | `PublicHolidays` | Billing 선언 | `all(): Effect<ReadonlySet<string>>` | 2026년 공휴일·대체공휴일 |
 
 이벤트 (제안, 미구현):
@@ -315,14 +316,14 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 81 | GET `/api/settings/company/:sid/contract/?name=수임계약서\|4대보험대행동의약관` | `GET /service-contracts` | `type`으로 구분 |
 | – | 레거시 PUT `/api/company/:cid/perm/subscription/:code` | `POST /subscriptions`, `:cancel`, `:resume` | 담당자 전용 |
 | – | 레거시 POST `/api/company/:cid/payment/:paymentId/retry` | `POST /payments/{paymentId}:retry` | 담당자 전용, 같은 결제를 재시도 |
-| – | (없음) 레거시 `runBillingCycle`, CMS 결과 반영 | `Payments.scheduleMonth`, `recordWithdrawal` | 작업, HTTP 아님 |
+| – | (없음) 레거시 `runBillingCycle`, CMS 결과 반영 | `Payments.reconcile`, `recordWithdrawal` | 정기 작업 `billing.payment-schedule`, `billing.withdrawal-results`. HTTP 아님 |
 
 ## 구현 상태
 
 | 범위 | 상태 |
 |---|---|
 | 구독 조회·담당자 커맨드, `CompanyPlans` 구현 | 구현, HTTP 테스트 |
-| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업이 출금일 3일 전부터 만듦([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 만든 뒤의 해지·계좌 변경은 커맨드와 매일 작업이 다시 맞춤(취소·금액·계좌 갱신, #105). 출금 결과 반영은 CMS 결과 파일 수신기가 없어 부르는 곳이 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
+| 결제 조회·재시도·환불, 월 결제 예정 생성, 출금 결과 반영 | 구현. 월 결제 예정은 정기 작업이 출금일 3일 전부터 만듦([payment-schedule-task.ts](../../apps/api/src/modules/billing/payments/payment-schedule-task.ts)). 만든 뒤의 해지·계좌 변경은 커맨드와 매일 작업이 다시 맞춤(취소·금액·계좌 갱신, #105). 출금 결과는 정기 작업이 매일 15:00에 결과 파일을 끌어와 반영함([withdrawal-result-task.ts](../../apps/api/src/modules/billing/payments/withdrawal-result-task.ts), #109). 출금일에 CMS로 출금 요청 파일을 보내는 단계와 CMS 운영 어댑터는 없음. 출금 하루 전 결제 예정 알림톡 미구현 |
 | 결제 수단 온라인 등록·조회 | 구현. 서면 동의서 업로드 미구현 |
 | 도입 문의(로그인) | 구현. 담당자 배정·알림톡 미구현 |
 | 서비스 계약 조회 | 구현. 계약 체결 흐름(#36-42) 미구현 |
