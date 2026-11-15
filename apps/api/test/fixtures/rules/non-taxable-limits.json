@@ -3,7 +3,7 @@
   "description": "Non-taxable wage items are capped at the smaller of the statutory and company limits; the excess becomes taxable.",
   "sources": [
     { "file": "docs/reference/spec/payroll.md", "lines": "411-426", "origin": "spec 4.6" },
-    { "file": "alfred-manual/05-급여/01-급여-관리/02-급여-급여-관리-근로-소득-입력.md", "lines": "40-50", "origin": "manual" },
+    { "file": "manual/05-급여/01-급여-관리/02-급여-급여-관리-근로-소득-입력.md", "lines": "40-50", "origin": "manual" },
     { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "206-231", "origin": "legacy-verified" }
   ],
   "inputSchema": { "category": "NonTaxableCategory", "amount": "won", "companyNonTaxableLimit": "won, optional" },

@@ -18,7 +18,7 @@
 
 ## 근거
 
-- 매뉴얼 `alfred-manual/03-경리/05-거래처-관리.md:29`
+- 매뉴얼 `manual/03-경리/05-거래처-관리.md:29`
   > **사업자 등록번호** `*` : 사업자·개인 여부에 따라 입력. `조회하기`로 정상·휴폐업 여부를 확인할 수 있습니다.
 - 스펙 `docs/reference/spec/bookkeeping.md:945`
   > 국세청 사업자 상태 | in | `partner/scrap/business-status` 프록시와 캐시

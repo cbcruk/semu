@@ -23,7 +23,7 @@
 ## 근거
 
 - 스펙 6.1(`docs/reference/spec/payroll.md:707-730`): "`payroll_ledger_closed`는 `auto_linked = 1`이고 `linked_status` ∈ `closed|open`", "귀속월(정확히는 **지급월**, 원천세는 지급 시기 기준) 대장이 모두 `approved`(BPO) 또는 `완료`(legacy)이면 `closed`, 하나라도 미마감이면 `open`", 집계 코드 표 A01·A03·A25·A40, "코드 매핑의 정확성은 **확인 필요**"
-- 매뉴얼 `alfred-manual/06-세무/02-원천세.md`: 원천세 화면의 급여대장 마감 확인
+- 매뉴얼 `manual/06-세무/02-원천세.md`: 원천세 화면의 급여대장 마감 확인
 
 ## 서버 이전 시 주의
 

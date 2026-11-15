@@ -17,7 +17,7 @@
 | 구독 변경 `PUT perm/subscription/:code`가 상태·날짜를 통째로 덮어씀 | 어떤 전이인지 경로에 안 드러남 | `POST /subscriptions`, `:cancel`, `:resume` 커맨드 |
 | 고객 관리자도 회사 API 권한이 모두 있음 | 담당자 전용 동작(구독 변경, 결제 재시도)을 권한 문자열로 막을 수 없음 | 담당자 커맨드는 대리인 전용 권한(`subscription:manage`, `payment:retry`, `payment:refund`)으로 봄. 카탈로그의 `agentOnly`라 관리자의 `*`가 덮지 않고 대리인 기본 권한에만 있음 (D5) |
 | 결제 내역이 DRF `limit/offset` 봉투, `isScheduled` 플래그, 숫자 ID | P4 | 커서 페이지, `status` enum 하나, `pay_` ID + 화면용 `number` |
-| CMS 출금 동의가 로그인 없는 공개 API(`/public/api/alfred/withdrawal-consent`)로 사업자번호만 받아 회사에 붙음 | 남의 사업자번호로 계좌를 등록할 수 있음 (P5) | 로그인한 회사의 `POST /billing-mandates`. 비로그인 경로가 필요하면 담당자가 보낸 일회용 링크로만 (열린 질문 3) |
+| CMS 출금 동의가 로그인 없는 공개 API(`/public/api/<서비스>/withdrawal-consent`)로 사업자번호만 받아 회사에 붙음 | 남의 사업자번호로 계좌를 등록할 수 있음 (P5) | 로그인한 회사의 `POST /billing-mandates`. 비로그인 경로가 필요하면 담당자가 보낸 일회용 링크로만 (열린 질문 3) |
 | 출금 계좌번호 원문을 암호화해 저장 | 저장할 이유가 없는 민감 정보 | 원문은 CMS 게이트웨이에만 넘기고 마스킹 값과 게이트웨이 참조만 저장 |
 | 상담 신청이 회사명·사업자번호·`labelIds:[38\|27]`·동의 날짜를 클라이언트가 채움 | 숫자 라벨, 날짜 위조 가능 | 회사 정보는 토큰에서, 상품은 `products: [TAXATION]`, 동의는 `true`를 받고 날짜는 서버가 찍음 |
 | 계약서가 `settings/company/:sfId/contract?name=수임계약서`처럼 한글 이름 쿼리 | P4 | `GET /service-contracts`, `type: BOOKKEEPING \| SOCIAL_INSURANCE_AGENCY` |
@@ -294,7 +294,7 @@ HTTP로 열지 않는 작업(`Payments` 서비스):
 | 23 | POST `/api/external/attach` | `POST /partner-links` (미구현) | 파트너 API key + 로그인한 사용자. 비밀번호를 파트너가 받지 않음 |
 | 24 | POST `/api/external/join-company` | `POST /partner-links:register-company` (미구현) | 회사 생성은 Identity & Access `POST /companies`를 부름 |
 | 25 | POST `/public/api/consult` | `POST /leads` (미구현) | 비로그인 공개 리드. UTM 포함 |
-| 26 | POST `/public/api/alfred/withdrawal-consent` | `POST /billing-mandates` | 로그인 필요로 바꿈. 비로그인은 일회용 링크 (열린 질문 3) |
+| 26 | POST `/public/api/<서비스>/withdrawal-consent` | `POST /billing-mandates` | 로그인 필요로 바꿈. 비로그인은 일회용 링크 (열린 질문 3) |
 | 34 | GET `/api/join/signup-invitations/:token/existence/` | Identity & Access 초대 (`/invitations:preview`) | 가입 초대는 Identity & Access 소관 |
 | 35 | POST `/api/join/signup-invitations/` | Identity & Access 초대 | 같음 |
 | 36 | POST `/api/join/contracts/:signupSession/` | `POST /service-contracts/{id}:sign` (미구현) | 가입 초대에 붙은 기장 계약 동의 |

@@ -3,7 +3,7 @@
   "description": "Overtime, night and holiday premiums pay minutes x ordinary hourly rate x the company multiplier; under-five workplaces add no premium.",
   "sources": [
     { "file": "docs/reference/spec/payroll.md", "lines": "437-456", "origin": "spec 4.8, 4.9" },
-    { "file": "alfred-manual/08-설정/03-급여-설정.md", "lines": "146-162", "origin": "manual" },
+    { "file": "manual/08-설정/03-급여-설정.md", "lines": "146-162", "origin": "manual" },
     { "file": "apps/api/legacy/test/payroll/engine.test.ts", "lines": "297-360", "origin": "legacy-verified" }
   ],
   "inputSchema": {

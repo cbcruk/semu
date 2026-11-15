@@ -10,7 +10,7 @@
 
 - `apps/api/legacy/src/modules/hr/e-sign/e-sign-requests.service.ts:60-80, 140-245`
 - `apps/api/legacy/src/modules/hr/e-sign/e-sign-signer.service.ts:67-97`
-- `alfred-manual/04-인사/03-전자서명.md:56`
+- `manual/04-인사/03-전자서명.md:56`
 - `docs/reference/spec/hr.md:583-614, 658-659`
 - `e-sign-requests.service.ts`의 `DELETABLE`, 발송·취소·무효·되돌리기
 - `e-sign-signer.service.ts`의 첫 본인확인(`pending → in_progress`)
@@ -69,7 +69,7 @@ export function deleteESignRequest(context: HrContext, companyId: string, reques
     if (!deleteRequest(db, companyId, requestId, DELETABLE)) throw invalidState('e-sign request', request.status)
 ```
 
-`alfred-manual/04-인사/03-전자서명.md:56-56`
+`manual/04-인사/03-전자서명.md:56-56`
 
 ```md
 - 전자 서명을 발송하고 난 후에는 상태에 따라 서명 요청을 취소하거나, 문서를 삭제 또는 수정할 수 있습니다. 서명이 진행중이거나 서명이 완료된 문서는 수정 또는 삭제가 불가하니 참고해 주세요.

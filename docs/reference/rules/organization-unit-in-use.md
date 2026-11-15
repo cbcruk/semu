@@ -8,7 +8,7 @@
 ## 현행 위치
 
 - `apps/api/legacy/src/modules/hr/organization/organization.repository.ts:18-74`
-- `alfred-manual/04-인사/02-구성원-정보.md:30`
+- `manual/04-인사/02-구성원-정보.md:30`
 - `docs/reference/spec/hr.md:638`
 - `organization.repository.ts`의 `isOrganizationUnitUsed`, `replaceOrganizationUnits`
 - 매뉴얼 구성원 정보
@@ -43,7 +43,7 @@ export function isOrganizationUnitUsed(db: DatabaseSync, table: OrganizationTabl
  */
 ```
 
-`alfred-manual/04-인사/02-구성원-정보.md:30-30`
+`manual/04-인사/02-구성원-정보.md:30-30`
 
 ```md
 단, 한 번 설정하여 사용된 부서 및 직위는 삭제할 수 없습니다.

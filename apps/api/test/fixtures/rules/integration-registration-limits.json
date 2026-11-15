@@ -3,12 +3,12 @@
   "description": "Per-type constraints when registering institution links: 20-item caps for cards, bank accounts, PG MIDs and delivery stores, PG key sets per PG company, refused CF_ Toss MIDs, ID/PW-only corporate cards, speed-bank-only banks, certificate-only Giro without storing Giro credentials, and hometax ID (lookup only) vs certificate (issuing).",
   "sources": [
     { "file": "docs/reference/spec/platform.md", "lines": "91-103, 236-283", "origin": "index.pretty.js B:89170-89290, B:90244, B:89899" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/README.md", "lines": "28-96" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "25-44" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13-30, 54-61" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/07-KG이니시스.md", "lines": "27-40" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/06-나이스페이먼츠.md", "lines": "14, 32-46" },
-    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "82-120, 143-149" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/README.md", "lines": "28-96" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "25-44" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13-30, 54-61" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/07-KG이니시스.md", "lines": "27-40" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/05-PG연동-사전-준비-연동키-확인/06-나이스페이먼츠.md", "lines": "14, 32-46" },
+    { "file": "manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "82-120, 143-149" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.utils.ts", "lines": "8-31" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.service.ts", "lines": "57-200, 489-494" }
   ],

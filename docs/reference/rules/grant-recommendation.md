@@ -32,7 +32,7 @@
 
 > - **지원금 추천**(`/recommend/grant`, `requiresMenuAccess:false`): 좌 `전체 지원금`(현재 신청 가능), 우 `맞춤 추천`(회사 **업종·지역** 매칭, 최대 15개, 업종 불명확하면 업종 무제한). 노출 = 신청 시작 ≤ 오늘 ≤ 마감 또는 상시모집. **매일 04:00 갱신**. 업종 데이터: remittance `GET /api/company/:id/get-business_types`, `POST /update-business_types`(B:89485-89488) 가 후보.
 
-`alfred-manual/02-홈-Universal-Home/06-지원금-추천.md`
+`manual/02-홈-Universal-Home/06-지원금-추천.md`
 
 > 전체 지원금 중 우리 회사에 맞는 지원금만 골라 보여줍니다. 조회 중인 회사의 **업종**과 **지역** 정보에 맞는 지원금이 추천되며, 최대 15개까지 표시됩니다. 업종이 명확히 분류되지 않는 경우에는 특정 업종에 한정하지 않고 추천합니다.
 >

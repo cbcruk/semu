@@ -11,7 +11,7 @@
 - 전이표: `apps/api/legacy/src/modules/filings/filing-status.ts` (`TRANSITIONS`, `canStartFrom`)
 - 행위자·조건 검사와 저장: `apps/api/legacy/src/modules/filings/filings.service.ts` (`transition`)
 - 설계: `docs/reference/legacy-design/tax-api-design.md` 4절 "신고 건 상태 머신", 9절 API 표
-- 업무 설명: `alfred-manual/06-세무/01-부가세.md`
+- 업무 설명: `manual/06-세무/01-부가세.md`
 
 ## 로직
 

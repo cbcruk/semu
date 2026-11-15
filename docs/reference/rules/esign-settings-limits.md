@@ -8,8 +8,8 @@
 ## 현행 위치
 
 - `apps/api/legacy/src/modules/hr/e-sign/e-sign-settings.service.ts:25, 100-160`
-- `alfred-manual/04-인사/03-전자서명.md:52`
-- `alfred-manual/08-설정/05-전자서명·제증명-관리.md:43`
+- `manual/04-인사/03-전자서명.md:52`
+- `manual/08-설정/05-전자서명·제증명-관리.md:43`
 - `docs/reference/spec/hr.md:660-661`
 - `e-sign-settings.service.ts`의 `MAX_COMPANY_SEALS`, `putNotiRecipients`
 - 매뉴얼 전자서명, 설정
@@ -39,7 +39,7 @@ export async function addSeal(deps: ServiceDeps, companyId: string, upload: HrUp
 }
 ```
 
-`alfred-manual/04-인사/03-전자서명.md:52-52`
+`manual/04-인사/03-전자서명.md:52-52`
 
 ```md
   전자 서명의 완료, 기한 만료 등의 카카오톡 알림을 받을 사람을 설정하는 메뉴입니다. 별도로 설정하지 않으면 **대표자 연락처**로 기본 등록됩니다. **알림톡 수신처는 3명**까지 입력할 수 있습니다.

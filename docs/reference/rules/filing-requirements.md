@@ -11,7 +11,7 @@
 - 템플릿: `apps/api/legacy/src/modules/filings/requirement-templates.ts` (`requirementsFor`)
 - 응답·파일: `apps/api/legacy/src/modules/filings/filings.service.ts` (`setRequirementResponse`, `detachRequirementFile`, 파일 첨부 경로)
 - 급여대장 연계: `apps/api/legacy/src/modules/payroll/withholding/withholding-link.ts` (`payrollLedgerResponse`, `syncPayrollLedgerRequirement`)
-- 매뉴얼: `alfred-manual/06-세무/01-부가세.md`, `alfred-manual/06-세무/02-원천세.md`
+- 매뉴얼: `manual/06-세무/01-부가세.md`, `manual/06-세무/02-원천세.md`
 - 급여 쪽 명세: `docs/reference/spec/payroll.md`
 
 ## 로직

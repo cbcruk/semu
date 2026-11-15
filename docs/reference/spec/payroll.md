@@ -1,7 +1,7 @@
 # 급여(payroll) 백엔드 스펙 노트
 
 > 대상: Hono + SQLite 재구현에서 급여 스키마, 계산 엔진, API를 설계할 사람.
-> 근거: `alfred-manual/` (매뉴얼, 스크린샷 약 27장 판독), `app-alfred-kr/reverse/` (번들 `index.pretty.js`, 재구성 `src/payroll/**`), `docs/tax-api-design.md`.
+> 근거: `manual/` (매뉴얼, 스크린샷 약 27장 판독), `bundle/` (번들 `index.pretty.js`, 재구성 `src/payroll/**`), `docs/tax-api-design.md`.
 > 표기: **[매뉴얼]** 매뉴얼 본문, **[화면]** 스크린샷 판독, **[번들]** 클라이언트 코드에서 확인, **추정** 근거 없는 추론, **확인 필요** 숫자·규정이 불확실.
 > 응답 스키마는 페이지 lazy chunk에만 있어서 번들에서 거의 드러나지 않는다. 응답 필드는 화면 열 이름을 근거로 추정한 것이다.
 
@@ -20,7 +20,7 @@
 
 ## 1. 화면과 흐름
 
-### 1.1 메뉴 노출 [매뉴얼 09-Alfred-Business-메뉴-구조.md, 05-급여/README.md]
+### 1.1 메뉴 노출 [매뉴얼 09-메뉴-구조.md, 05-급여/README.md]
 
 | 메뉴 | 화면 경로 | 노출 조건 | API 세대 |
 | --- | --- | --- | --- |
@@ -498,7 +498,7 @@ calculateRow(input: {incomeType, attributionMonth, paymentDate, employeeSnapshot
 
 - 경로는 모두 `sf-api` 기준이다. `:id` = 회사(sfCompanyId), `:c` = 카드, `:r` = 행, `:s` = 정산, `:m` = 월.
 - 요청 키는 클라이언트에서 camelCase로 만들고 인터셉터가 snake_case로 바꾼다. **서버는 snake_case로 받는다.** 예외는 legacy raw key(`other_deductions`, `taxable_incomes`)로, 이 키 **아래**는 변환하지 않는다(`LEGACY_RAW_KEYS`). 그리고 `transformKeys` 특이점 때문에 같은 객체에서 skip 키 **뒤에 오는 키들도** 하위 변환이 꺼진다(README).
-- "번들" 열은 `app-alfred-kr/reverse/index.pretty.js`의 줄 번호다. "재구성" 열은 `src/payroll/` 아래 파일:줄이다.
+- "번들" 열은 `bundle/index.pretty.js`의 줄 번호다. "재구성" 열은 `src/payroll/` 아래 파일:줄이다.
 - 응답 열의 "—"는 번들에서 알 수 없다는 뜻이다. 화면을 근거로 한 추정은 *기울임*으로 표시했다.
 
 ### 5.1 legacy 급여카드 (30)

@@ -31,9 +31,9 @@
 > - 재설정: `POST /api/request-password-change-email/:email/` — 계정 존재 여부와 무관하게 202(열거 방지), 토큰 1회용·만료(제안 30분). `GET /api/password-change/:token` 유효성(404/410), `POST …/:token/ {password, confirm_password}`.
 > - 데모 사용자(99)는 비밀번호 변경 불가(클라이언트 `isDemoUserType` 가드 → 서버 403 `DEMO_READ_ONLY`, D:3).
 
-`alfred-manual/10-개인-설정-안내.md:28`
+`manual/10-개인-설정-안내.md:28`
 
-> 알프레드 로그인 후 비밀번호를 변경하려는 경우, 비밀번호 재설정을 클릭 후 새 비밀번호만 입력하면 됩니다.
+> 현행 서비스 로그인 후 비밀번호를 변경하려는 경우, 비밀번호 재설정을 클릭 후 새 비밀번호만 입력하면 됩니다.
 
 `apps/api/legacy/src/modules/platform/auth/password.utils.ts:37-39`
 

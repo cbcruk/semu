@@ -2,9 +2,9 @@
 
 스키마와 API를 설계할 사람을 위한 메모입니다. 근거마다 출처를 달았습니다.
 
-- **번들**: `app-alfred-kr/reverse/index.pretty.js:<line>`. 줄여서 `js:<line>`으로 씁니다.
-- **매뉴얼**: `alfred-manual/...`. 줄여서 `M:<경로>`로 씁니다.
-- **스크린샷**: `alfred-manual/images/<hash>`. 줄여서 `img:<hash>`로 씁니다.
+- **번들**: `bundle/index.pretty.js:<line>`. 줄여서 `js:<line>`으로 씁니다.
+- **매뉴얼**: `manual/...`. 줄여서 `M:<경로>`로 씁니다.
+- **스크린샷**: `manual/images/<hash>`. 줄여서 `img:<hash>`로 씁니다.
 
 표기 규칙은 다음과 같습니다.
 
@@ -20,7 +20,7 @@
 > | --- | --- | --- |
 > | **sf-api** (`getApi$2`, 쿠키+XSRF) | `accounting`, `report`, `yearEndSett` | js:74688 |
 > | **remittance-api** (`https://remittance-api.heumtax.com`, `Authorization: Bearer <회사 JWT>`, params `arrayFormat: repeat`) | `giro`, `certificate`, `transaction`, `company`, `integration`, `partner` | `getApi`, js:89513–89543 |
-> | **nexus-api** | `alfredHome.getSsbMeta`, `companyPayment.getCompanyPayments` | js:72382–72383 |
+> | **nexus-api** | `<서비스>Home.getSsbMeta`, `companyPayment.getCompanyPayments` | js:72382–72383 |
 >
 > Hono 단일 서버로 합치더라도 경로는 그대로 두어야 합니다. 그러면 클라이언트는 base URL만 바꾸면 됩니다. remittance 경로에는 **경로 끝 슬래시가 없는 것**이 많고(`/giros/summary`, `/transaction-sales/summary`), 인증은 JWT Bearer입니다. 이 점을 인증 미들웨어에서 둘 다 받도록 처리해야 합니다.
 
@@ -55,7 +55,7 @@
 
 이 값들이 메뉴 코드 체계의 실제 예시입니다. 기존 설계 3절의 "가정"을 보강합니다.
 
-### 1.2 플랜별 노출 (M:09, M:08-설정/07/01-알프레드-홈/README)
+### 1.2 플랜별 노출 (M:09, M:08-설정/07/01-홈/README)
 
 | 묶음 | 대상 | 원천 |
 | --- | --- | --- |
@@ -953,7 +953,7 @@ funds_held(m) = Σ_계정 closing_balance(m)    -- '보유자금'
 
 ## 7. 미확인 사항
 
-1. **`/home/ssb/meta`의 의미.** nexus의 `alfredHome` 모듈에 있습니다. "ssb"는 홈 경영 현황 카드의 메타(기준 시각 "매일 06:00", PG·배달 11:00 반영 등)이거나, 소상공인 지원(Small Business) 배너일 수 있습니다. 응답 형태를 실측해야 합니다.
+1. **`/home/ssb/meta`의 의미.** nexus의 `<서비스>Home` 모듈에 있습니다. "ssb"는 홈 경영 현황 카드의 메타(기준 시각 "매일 06:00", PG·배달 11:00 반영 등)이거나, 소상공인 지원(Small Business) 배너일 수 있습니다. 응답 형태를 실측해야 합니다.
 2. **`postPayGiroV2` 요청 본문.** 계좌 직접 입력 시 예금주 생년월일이나 사업자번호가 필요한지, v1과 무엇이 다른지 모릅니다.
 3. **`getGiros` 파라미터.** `status` 외에 기간이나 검색이 있는지 모르고, DRF `next/previous`를 쓰는지도 모릅니다. 데모는 `{count, results}`만 씁니다. `getGirosWithRawQuery`가 `/giros/?…`처럼 쿼리 문자열을 경로에 붙이는 용도라고 추정하지만 확인이 필요합니다.
 4. **`transaction-sales/summary/issued-status` 응답**과 `issue_invoice_type`·`invoice_type` 필터의 가능한 값을 모릅니다.

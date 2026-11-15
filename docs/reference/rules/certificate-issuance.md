@@ -10,7 +10,7 @@
 
 - `apps/api/legacy/src/modules/hr/certificates/certificates.repository.ts:19-64`
 - `apps/api/legacy/src/modules/hr/certificates/certificates.service.ts:35-65, 130-160, 185-200, 291-300`
-- `alfred-manual/08-설정/05-전자서명·제증명-관리.md:10`
+- `manual/08-설정/05-전자서명·제증명-관리.md:10`
 - `certificates.repository.ts`의 `nextIssueNumber`
 - `certificates.service.ts`의 `SENDABLE`, 삭제, 링크 만료
 - 매뉴얼 설정 전자서명·제증명

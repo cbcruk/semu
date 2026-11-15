@@ -4,7 +4,7 @@
   "sources": [
     { "file": "docs/reference/spec/payroll.md", "lines": "285-323", "origin": "spec 3.2, 3.3" },
     { "file": "docs/reference/spec/payroll.md", "lines": "728-730", "origin": "spec 6.1 lock" },
-    { "file": "alfred-manual/05-급여/02-급여-정산.md", "lines": "21-49", "origin": "manual" },
+    { "file": "manual/05-급여/02-급여-정산.md", "lines": "21-49", "origin": "manual" },
     { "file": "apps/api/legacy/src/modules/payroll/cards/card-status.ts", "lines": "14-26", "origin": "legacy CARD_TRANSITIONS" }
   ],
   "inputSchema": {

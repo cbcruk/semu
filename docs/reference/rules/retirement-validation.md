@@ -9,7 +9,7 @@
 
 - `apps/api/legacy/src/modules/hr/retirement/retirement.service.ts:94-110`
 - `apps/api/legacy/src/modules/hr/retirement/leaving-reasons.ts:9-50`
-- `alfred-manual/04-인사/02-구성원-정보.md:74-80`
+- `manual/04-인사/02-구성원-정보.md:74-80`
 - `docs/reference/spec/hr.md:651-652` (B:73855)
 - `retirement.service.ts`의 `validate`
 - `leaving-reasons.ts`
@@ -45,7 +45,7 @@ function validate(employee: EmployeeRow, input: RetirementInput): void {
 
 ```
 
-`alfred-manual/04-인사/02-구성원-정보.md:74-80`
+`manual/04-인사/02-구성원-정보.md:74-80`
 
 ```md
 > 1. 전달받은 사직서에 기재된 **퇴사 사유** 선택

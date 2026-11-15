@@ -14,7 +14,7 @@
 - 사용자 완료: `apps/api/legacy/src/modules/action-cards/action-cards.service.ts` (`completeActionCard`)
 - 문서 열람: `apps/api/legacy/src/modules/filings/filings.service.ts`
 - 설계: `docs/reference/legacy-design/tax-api-design.md` 7절
-- 매뉴얼: `alfred-manual/02-홈-Universal-Home/03-오늘의-할-일.md`, `alfred-manual/06-세무/01-부가세.md`
+- 매뉴얼: `manual/02-홈-Universal-Home/03-오늘의-할-일.md`, `manual/06-세무/01-부가세.md`
 
 ## 로직
 

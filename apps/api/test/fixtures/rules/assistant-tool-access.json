@@ -3,8 +3,8 @@
   "description": "Who may open the AI assistant and which features it offers: the bundle gates /ai-agent and the top-bar AI input to the company's system admin, the manual lists features per plan for everyone, and the legacy server picked tools by menu access and plan; the three disagree.",
   "sources": [
     { "file": "docs/reference/spec/platform.md", "lines": "36, 118-120, 330-332, 412, 418-419", "origin": "index.pretty.js B:77553, B:99952, B:104680-104830" },
-    { "file": "alfred-manual/02-홈-Universal-Home/02-AI-비서.md", "lines": "5-45, 71-107" },
-    { "file": "alfred-manual/12-알프레드-AI비서.md", "lines": "22-33, 89-121" },
+    { "file": "manual/02-홈-Universal-Home/02-AI-비서.md", "lines": "5-45, 71-107" },
+    { "file": "manual/12-AI비서.md", "lines": "22-33, 89-121" },
     { "file": "apps/api/legacy/src/modules/platform/assistant/assistant.service.ts", "lines": "40-52, 80-126" },
     { "file": "apps/api/legacy/src/modules/platform/platform.menus.ts", "lines": "45-53" }
   ],

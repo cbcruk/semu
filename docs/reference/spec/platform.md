@@ -1,6 +1,6 @@
 # 플랫폼·연동 스펙 노트 (계정·회사·권한·결제·계약 / 기관 연동·인증서·외부 서비스 / 홈 부가 기능)
 
-> 대상: 스키마·API 설계자. 근거 표기는 `M:`(매뉴얼 `alfred-manual/` 경로), `B:`(번들 `app-alfred-kr/reverse/index.pretty.js` 줄 번호), `R:`(`routes.tsv`), `D:`(`docs/tax-api-design.md` 절), `S:`(`apps/tax-api/src/db/migrations/0001-init.sql`).
+> 대상: 스키마·API 설계자. 근거 표기는 `M:`(매뉴얼 `manual/` 경로), `B:`(번들 `bundle/index.pretty.js` 줄 번호), `R:`(`routes.tsv`), `D:`(`docs/tax-api-design.md` 절), `S:`(`apps/tax-api/src/db/migrations/0001-init.sql`).
 > 표기: **확인** = 번들 코드나 매뉴얼 원문에 그대로 있음, **추정** = 데모 목업·화면·이름에서 유추, **제안** = 재구현 시 설계 제안.
 > 기존 설계(`D:1.3`, `D:1.4`, `D:3`, `D:8`)와 어긋나지 않게 확장한다. 특히 `decide()`의 판정 순서(applicable → permission → entitlement → tax terms)는 그대로 쓴다.
 
@@ -10,9 +10,9 @@
 
 | 클라이언트 팩토리 | Base URL | 인증 | 이 노트의 모듈 | 근거 |
 | --- | --- | --- | --- | --- |
-| `createApi$3` → `getApiModules$1` (`useNexusApi`) | `nexus-api.alfred.kr` | 쿠키 세션 + `X-CSRFToken`(쿠키 `nexus_csrftoken`), `withCredentials` | `signup, user, companyUser, company, companyInvitation, passwordChange, terms, external, perm, companyPerm, consult, companyPayment, alfredHome` | B:72370-72407 |
-| `createApi$1` → `getApiModules` | `nexus-api.alfred.kr` (`/public/api/*`) | **쿠키 없음**(withCredentials 미설정) | `consult`(공개 상담), `cms`(출금 동의), `termAgreements`(게스트 약관) | B:86669-86690 |
-| `createApi$2` → `getApi$2` (`useSfApi`) | `sf-api.alfred.kr` | 쿠키 세션 + XSRF(쿠키 `csrftoken`) | `user`(member/profile, demo), `company`, `companies.hometax`, `join`, `settings`, `lead`, `member.chatChannel`, `subscription`(`/nexus-api/...` 프록시) | B:74709-74740 |
+| `createApi$3` → `getApiModules$1` (`useNexusApi`) | `nexus-api` 호스트 | 쿠키 세션 + `X-CSRFToken`(쿠키 `nexus_csrftoken`), `withCredentials` | `signup, user, companyUser, company, companyInvitation, passwordChange, terms, external, perm, companyPerm, consult, companyPayment, <서비스>Home` | B:72370-72407 |
+| `createApi$1` → `getApiModules` | `nexus-api` 호스트 (`/public/api/*`) | **쿠키 없음**(withCredentials 미설정) | `consult`(공개 상담), `cms`(출금 동의), `termAgreements`(게스트 약관) | B:86669-86690 |
+| `createApi$2` → `getApi$2` (`useSfApi`) | `sf-api` 호스트 | 쿠키 세션 + XSRF(쿠키 `csrftoken`) | `user`(member/profile, demo), `company`, `companies.hometax`, `join`, `settings`, `lead`, `member.chatChannel`, `subscription`(`/nexus-api/...` 프록시) | B:74709-74740 |
 | `createApi` → `getApi` | **`remittance-api.heumtax.com`** | `Authorization: Bearer <회사 JWT>` (`getJWT(companyStore.id)`) | `giro, certificate, transaction, company, integration, partner` | B:89512-89544 |
 
 핵심 정리
@@ -55,11 +55,11 @@
 ### 1.3 세무 기장(수임) 가입 — 상담 → 초대 → 계약 (M:11-세무-수임…/01, B:72849-72895)
 
 1. 무료 고객이 상담 신청: 로그인 상태면 nexus `POST /api/company/:id/consult/`, 비로그인/공개면 `POST /public/api/consult`. body(확인, B:86406-86420, 87755-87770):
-   `{ name, phone, email, companyName?, consultingPrivacyDate, consultingThirdPartyDate (YYYY-MM-DD), labelIds:[38=TAX|27=PAYROLL], businessNumber, legalForm (35=CORP|34=SOLE), utmSource:'alfred', utmMedium:'product', utmCampaign, utmContent, memo }`. 상담 동의 약관은 `GET /api/terms/?purpose_code=consulting`.
+   `{ name, phone, email, companyName?, consultingPrivacyDate, consultingThirdPartyDate (YYYY-MM-DD), labelIds:[38=TAX|27=PAYROLL], businessNumber, legalForm (35=CORP|34=SOLE), utmSource:'<서비스>', utmMedium:'product', utmCampaign, utmContent, memo }`. 상담 동의 약관은 `GET /api/terms/?purpose_code=consulting`.
 2. 담당자가 **가입 초대 메일** 발송(desk 쪽, 범위 밖). 메일의 [계약서 작성] → `/join?token=` 또는 `/contract-of-bookkeeping`.
 3. `/join`(public): `GET /api/join/signup-invitations/:token/existence/` → `POST /api/join/signup-invitations/`(이메일 인증, body 미확인) → `POST /api/join/contracts/:signupSession/ {약관 동의 데이터}` → 이후 `/api/signup/user/invitation/:token/`, `/api/signup/company/:token/`(nexus)로 사용자·회사 생성/연결(추정 순서).
 4. 직접 계약(`/contract-of-bookkeeping`, public): `POST /api/join/direct-contract/calculate-fee/ {revenue, employeeNumber, businessType, accountingPeriod, diligentBusiness …}`(enum은 B:72802-72846; 2.12) → `GET /api/join/direct-contract/:contractId/:businessNumber/`(사업자번호 본인 확인) → `POST …/send-sms/:contractId/ {phoneNumber}` → `POST …/verify-sms/:contractId/ {phoneNumber, code}` → `POST …/request-contract-form/:contractId/ {…}` → `POST …/sign-contract/:contractId/ {…}`.
-5. 가입 후 고객 할 일: **홈택스 수임동의**(`/hometax/agreement/:agreementId` public, sf `/api/company/hometax/`), **CMS 출금 동의**(`POST /public/api/alfred/withdrawal-consent` 또는 설정 > 계약서 및 동의서에 동의서 업로드), 세무신고 기관 연동, 내역 수집 기관 연동.
+5. 가입 후 고객 할 일: **홈택스 수임동의**(`/hometax/agreement/:agreementId` public, sf `/api/company/hometax/`), **CMS 출금 동의**(`POST /public/api/<서비스>/withdrawal-consent` 또는 설정 > 계약서 및 동의서에 동의서 업로드), 세무신고 기관 연동, 내역 수집 기관 연동.
 6. 회사 `taxPlan='taxation'`이 되면 다음 로그인부터 `/tax-agree-terms` 게이트.
 
 ### 1.4 사용자 초대·권한 (M:08-설정/02, 이미지 7a1fd616, 959d0941, 4d0d6d13)
@@ -112,7 +112,7 @@
 ### 1.10 외부 서비스 (M:08-설정/09; 이미지 d104bcf7)
 
 - `/integrate/external/:serviceName(shiftee|quotabook)`. 시프티는 payroll 노트(`/api/company/:sfId/payroll/bpo/shiftee-integration` GET/POST/DELETE, sf).
-- 쿼타북: `쿼타북 바로가기` + `연동 키 등록` → "Alfred 데이터를 Quotabook에 제공". 번들 엔트리에 쿼타북 API 없음(lazy chunk). 가입 경유 토큰 `QUOTABOOK_SIGNUP_TOKEN_KEY`(B:98493). `/api/external/*`가 쿼타북 같은 파트너의 회사 연결 API일 가능성이 큼(6.4).
+- 쿼타북: `쿼타북 바로가기` + `연동 키 등록` → "현행 서비스 데이터를 Quotabook에 제공". 번들 엔트리에 쿼타북 API 없음(lazy chunk). 가입 경유 토큰 `QUOTABOOK_SIGNUP_TOKEN_KEY`(B:98493). `/api/external/*`가 쿼타북 같은 파트너의 회사 연결 API일 가능성이 큼(6.4).
 - 상담 채널 연동(카카오톡/슬랙): 채널에서 받은 링크 `?action=chat-integration&token=&channel_name=&messenger_type=slack|kakaotalk` → sf `GET /api/member/chat-channel/?token=`(검증) → 회사 선택 → `POST /api/member/chat-channel/ {token, company_id(sf)}`. 오류 `failReason`: `token is invalid | token is used | token is expired`(B:100743-100800).
 
 ### 1.11 홈 부가 기능 (AI 비서·지원금 추천)
@@ -228,7 +228,7 @@ S: `term_agreements(user_id, term_type IN ('signup','tax'), version, agreed_at)`
 - `GET /api/company/:id/payment/?limit&offset`(DRF 봉투) 행: `{ id(결제 번호), productName|code('payroll'), amount, paymentDate(출금일), isScheduled, status, account: { bankCode, maskedNumber } }`.
 - 상태 enum(매뉴얼): `scheduled(결제 예정) | paid(결제 완료) | failed(결제 실패) | retrying(결제 재시도) | refunded(환불)`.
 - 신규 테이블
-  - `billing_mandates`(CMS 출금 동의): `company_id, id, bank_code, account_number_enc, account_holder, payer_birth_or_bizno_enc, consent_file_id?, source IN ('upload','online'), status IN ('pending','registered','rejected','revoked'), registered_at`. 온라인 = `POST /public/api/alfred/withdrawal-consent`(body 미확인), 업로드 = AttachmentName `CMS동의서`.
+  - `billing_mandates`(CMS 출금 동의): `company_id, id, bank_code, account_number_enc, account_holder, payer_birth_or_bizno_enc, consent_file_id?, source IN ('upload','online'), status IN ('pending','registered','rejected','revoked'), registered_at`. 온라인 = `POST /public/api/<서비스>/withdrawal-consent`(body 미확인), 업로드 = AttachmentName `CMS동의서`.
   - `payments`: `company_id, id(INTEGER AUTOINCREMENT, 비연속 허용), subscription_code, amount, scheduled_on, attempted_on, settled_at, status, mandate_id, failure_reason, refunded_at, parent_payment_id(재시도 원건)`. 
   - `payment_events(payment_id, type, actor, created_at)`.
 - 규칙: 비영업일이면 다음 영업일(S: `public_holidays` 재사용), 결과는 출금일 익일 오후 배치로 반영, 출금 D-1 알림톡.
@@ -306,7 +306,7 @@ S: `term_agreements(user_id, term_type IN ('signup','tax'), version, agreed_at)`
 ### 2.13 상담·리드·공유
 
 - 회사 상담 `POST /api/company/:id/consult/` / 공개 상담 `POST /public/api/consult`: 1.3의 body. 신규 `consult_leads(id, company_id NULL, user_id NULL, name, phone, email, company_name, business_number, legal_form_label, label_ids JSON, memo, privacy_agreed_on, third_party_agreed_on, utm_source, utm_medium, utm_campaign, utm_content, status IN ('new','contacted','closed'), created_at)`. 접수 후 카카오 알림톡 안내(이미지 f012cdb3: "신청이 완료되면 카카오톡으로…"), 1–2영업일 내 연락.
-- 온라인 리드(sf) `POST /api/lead/online?timestamp= {…, lead_type:'biz', utm_source:'alfred', utm_medium:'web', agree_to_marketing:false, marketing_agreement_date:null}` 후 `PATCH /api/lead/online?timestamp=`로 단계별 보강 → **`timestamp`가 리드 식별 키**(같은 세션의 리드를 갱신). `online_leads(timestamp_key UNIQUE, …)`.
+- 온라인 리드(sf) `POST /api/lead/online?timestamp= {…, lead_type:'biz', utm_source:'<서비스>', utm_medium:'web', agree_to_marketing:false, marketing_agreement_date:null}` 후 `PATCH /api/lead/online?timestamp=`로 단계별 보강 → **`timestamp`가 리드 식별 키**(같은 세션의 리드를 갱신). `online_leads(timestamp_key UNIQUE, …)`.
 - 거래처 공유 `POST /partner/share-company/send {…}`(remittance): 우리 회사 정보를 거래처에게 보내기(수신 채널·body 미확인), `GET /share-histories/recent`. `GET /partner/scrap/business-status?business_number=` → 국세청 사업자 상태(계속/휴업/폐업, 과세유형) 조회 프록시.
 
 ### 2.14 메뉴·권한 그룹·즐겨찾기
@@ -464,7 +464,7 @@ any(before signed) → expired (링크 유효기간, 미확인)
 | 23 | POST | `/api/external/attach` | `external.postAttachCompany` | 기존 계정으로 파트너 연결 | `X-API-KEY`; `email, password, business_number` | 추정 연결 결과 | nexus | 66731 |
 | 24 | POST | `/api/external/join-company` | `external.postJoinCompany` | 파트너 경유 신규 등록 | `X-API-KEY`; 미확인 | 추정 company | nexus | 66737 |
 | 25 | POST | `/public/api/consult` | `consult.postConsultLead` | 공개 상담 신청 | 1.3 body | 201 | nexus-public | 86668 |
-| 26 | POST | `/public/api/alfred/withdrawal-consent` | `cms.registerBillingInfo` | CMS 출금 동의 | 미확인(계좌·예금주·생년월일/사업자번호·동의) | 201 | nexus-public | 86670 |
+| 26 | POST | `/public/api/<서비스>/withdrawal-consent` | `cms.registerBillingInfo` | CMS 출금 동의 | 미확인(계좌·예금주·생년월일/사업자번호·동의) | 201 | nexus-public | 86670 |
 | 27 | GET | `/public/api/terms/agreements` | `termAgreements.getGuestAgreements` | 게스트 동의 조회 | `?email, purpose_code` | 목록 | nexus-public | 86673 |
 | 28 | POST | `/public/api/terms/agreements` | `termAgreements.postGuestAgreements` | 게스트 동의 저장 | 미확인 | 201 | nexus-public | 86677 |
 

@@ -33,9 +33,9 @@
 
 > 판정: 필수면 `!history.isAgreed || version !== history.version`, 선택이면 `version !== history?.version`(선택 약관도 **새 버전이 나오면 다시 묻는다**). 빈 배열이면 클라이언트가 예외를 던짐 → 서버는 purpose당 최소 1개 약관 보장.
 
-`alfred-manual/10-개인-설정-안내.md:16`
+`manual/10-개인-설정-안내.md:16`
 
-> 세무 수임하지 않으신 알프레드 무료 고객은 세무법인 혜움 약관이 노출되지 않습니다.
+> 세무 수임하지 않으신 현행 서비스 무료 고객은 세무법인 혜움 약관이 노출되지 않습니다.
 
 `apps/api/legacy/src/modules/platform/terms/terms.utils.ts:9-12`
 

@@ -2,7 +2,7 @@
 
 AI 비서 대화(질문·답변·도구 제안)와 정부·지자체 지원사업 공고의 목록·맞춤 추천을 맡습니다. 코드는 [`apps/api/src/modules/assistant/`](../../apps/api/src/modules/assistant/)입니다.
 
-- **근거:** 화면과 API가 lazy chunk라 번들에서 대화 API는 확인하지 못했습니다. 진입 조건은 번들(B:77553, B:99952, B:104680), 기능 범위는 매뉴얼(`02-AI-비서.md`, `12-알프레드-AI비서.md`, `06-지원금-추천.md`), 도구 허용과 대화 저장은 레거시 서버(`legacy/src/modules/platform/assistant/`)에서 가져왔습니다
+- **근거:** 화면과 API가 lazy chunk라 번들에서 대화 API는 확인하지 못했습니다. 진입 조건은 번들(B:77553, B:99952, B:104680), 기능 범위는 매뉴얼(`02-AI-비서.md`, `12-AI비서.md`, `06-지원금-추천.md`), 도구 허용과 대화 저장은 레거시 서버(`legacy/src/modules/platform/assistant/`)에서 가져왔습니다
 - **규칙:** [assistant-tool-access](../reference/rules/assistant-tool-access.md), [grant-recommendation](../reference/rules/grant-recommendation.md). 결정은 [rule-decisions/assistant.md](rule-decisions/assistant.md)
 
 ## 현행에서 고칠 점

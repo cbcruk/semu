@@ -1,14 +1,14 @@
 # 인사(HR) 도메인 백엔드 스펙 노트
 
 > 대상: 구성원 정보(신규), 직원 관리(레거시), 전자서명, 제증명 발급, 전자서명·제증명 설정, 서식 모음, 근로자용 서명·증명서 공개 플로우.
-> 근거 표기: **M** = 매뉴얼(`alfred-manual/...`), **B:줄** = `app-alfred-kr/reverse/index.pretty.js` 줄 번호, **S** = 매뉴얼 스크린샷(`alfred-manual/images/...`), **추정** = 근거 없이 추론, **법령** = 법령·공단 규정 근거.
+> 근거 표기: **M** = 매뉴얼(`manual/...`), **B:줄** = `bundle/index.pretty.js` 줄 번호, **S** = 매뉴얼 스크린샷(`manual/images/...`), **추정** = 근거 없이 추론, **법령** = 법령·공단 규정 근거.
 > 와이어 규약은 `docs/tax-api-design.md` 1.4–1.5를 따릅니다: snake_case, 경로 끝 슬래시, DRF 페이지네이션 `{count,next,previous,results}`, `?limit=&offset=`, 회사 단위 JWT. 페이지 컴포넌트는 lazy chunk라 번들에 없으므로 **응답 형태는 대부분 추정**입니다.
 
 ---
 
 ## 0. 한눈에 보기
 
-- 백엔드는 `sf-api` 하나입니다. 예외로 서식 모음(`/nexus-api/document-form*`)도 sf 클라이언트(`getApi$2.document`, B:73201-73208)로 호출하지만 경로가 `/nexus-api/` prefix를 씁니다. 즉 `https://sf-api.alfred.kr/nexus-api/document-form` 입니다(axios 절대경로 + baseURL).
+- 백엔드는 `sf-api` 하나입니다. 예외로 서식 모음(`/nexus-api/document-form*`)도 sf 클라이언트(`getApi$2.document`, B:73201-73208)로 호출하지만 경로가 `/nexus-api/` prefix를 씁니다. 즉 `https://<sf-api 호스트>/nexus-api/document-form` 입니다(axios 절대경로 + baseURL).
 - 인사 API는 두 세대가 공존합니다.
   - **레거시** `GET /api/company/:id/employee/`(B:73229-73236): 세무 기장 고객의 "직원 관리"가 씁니다. 화면은 레거시 리포트 앱 `/employment:postUrl(.*)`(`reportEntryPoint: "new-employment"`, routes.tsv:23, B:102687)입니다. 레거시 앱이 쓰는 나머지 API는 번들 밖에 있습니다.
   - **신규** `/api/company/:id/employment/*`(B:73400-74643): 급여 구독 고객의 "구성원 정보", "전자서명", "제증명 발급", "전자서명·제증명 관리"가 씁니다.

@@ -4,7 +4,7 @@
   "sources": [
     { "file": "apps/api/legacy/src/modules/bookkeeping/partners/partners.repository.ts", "lines": "107-137" },
     { "file": "apps/api/legacy/src/modules/bookkeeping/evidence/evidence.utils.ts", "lines": "22-30" },
-    { "file": "alfred-manual/03-경리/05-거래처-관리.md", "lines": "11, 29", "origin": "manual" }
+    { "file": "manual/03-경리/05-거래처-관리.md", "lines": "11, 29", "origin": "manual" }
   ],
   "inputSchema": {
     "evidence": "[{ side: 'SALES' | 'PURCHASE', partnerId: string | null, classified: boolean, totalAmount: number | null, supplyAmount: number | null, vatAmount: number | null, settledAmount: number }]"

@@ -3,10 +3,10 @@
   "description": "Which joint certificates (공동인증서) a company may register and use per institution: owner must match the business or representative, allowed type/usage per business type and per institution (hometax, giro, bank, card), OID classification, derived status and remaining days.",
   "sources": [
     { "file": "docs/reference/spec/platform.md", "lines": "93, 105-110, 256, 293-298, 367, 428", "origin": "index.pretty.js B:89563-89768" },
-    { "file": "alfred-manual/08-설정/08-공동-인증서-관리.md", "lines": "26-60" },
-    { "file": "alfred-manual/15-공동인증서-등록-연동에-실패-가이드-FAQ.md", "lines": "9-21, 84-87, 149-156" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13, 48-52, 62-74" },
-    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "132-141" },
+    { "file": "manual/08-설정/08-공동-인증서-관리.md", "lines": "26-60" },
+    { "file": "manual/15-공동인증서-등록-연동에-실패-가이드-FAQ.md", "lines": "9-21, 84-87, 149-156" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/03-인터넷지로-연동하기.md", "lines": "13, 48-52, 62-74" },
+    { "file": "manual/08-설정/06-세무신고-기관-연동/README.md", "lines": "132-141" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/certificates.utils.ts", "lines": "17-90" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/certificates.service.ts", "lines": "38-58, 147-158" }
   ],

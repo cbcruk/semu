@@ -12,7 +12,7 @@
 - 일정 배치: `apps/api/legacy/src/jobs/schedule-filings.ts` (`scheduleFilings`)
 - 중복 방지·기한 갱신: `apps/api/legacy/src/modules/filings/filings.repository.ts` (`insertFilingIfAbsent`, `refreshDeadlines`, `listScheduledInWindow`)
 - 테스트: `apps/api/legacy/test/tax-calendar.test.ts`
-- 매뉴얼: `alfred-manual/06-세무/02-원천세.md`
+- 매뉴얼: `manual/06-세무/02-원천세.md`
 
 ## 로직
 

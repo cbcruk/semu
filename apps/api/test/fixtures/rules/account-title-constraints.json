@@ -5,7 +5,7 @@
     { "file": "apps/api/legacy/src/modules/bookkeeping/account-titles/account-titles.utils.ts", "lines": "10-40" },
     { "file": "apps/api/legacy/src/modules/bookkeeping/account-titles/account-titles.service.ts", "lines": "35-166" },
     { "file": "apps/api/legacy/src/db/migrations/0040-bookkeeping.sql", "lines": "1-200" },
-    { "file": "alfred-manual/08-설정/04-경리-설정.md", "lines": "52, 98", "origin": "manual" }
+    { "file": "manual/08-설정/04-경리-설정.md", "lines": "52, 98", "origin": "manual" }
   ],
   "inputSchema": {
     "call": "'assignability' | 'childCreation' | 'deletion'",

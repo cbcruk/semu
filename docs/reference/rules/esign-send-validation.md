@@ -8,7 +8,7 @@
 ## 현행 위치
 
 - `apps/api/legacy/src/modules/hr/e-sign/e-sign-requests.service.ts:348-385`
-- `alfred-manual/04-인사/03-전자서명.md:76`
+- `manual/04-인사/03-전자서명.md:76`
 - `docs/reference/spec/hr.md:656`
 - `e-sign-requests.service.ts`의 `validateForSend`, `assertRequiredFields`, `sourceValue`
 - 매뉴얼 전자서명(외국인)

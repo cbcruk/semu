@@ -9,7 +9,7 @@
 ## 현행 위치
 
 - `apps/api/legacy/src/modules/hr/leaves/leaves.service.ts:16, 81-136`
-- `alfred-manual/04-인사/02-구성원-정보.md:84-92`
+- `manual/04-인사/02-구성원-정보.md:84-92`
 - `docs/reference/spec/hr.md:649-650`
 - `leaves.service.ts`의 `toWrite`, `summarizeLeaves`
 - 매뉴얼 구성원 정보 휴직 절
@@ -58,7 +58,7 @@ function toWrite(deps: ServiceDeps, employee: EmployeeRow, input: LeaveInput, se
 }
 ```
 
-`alfred-manual/04-인사/02-구성원-정보.md:84-92`
+`manual/04-인사/02-구성원-정보.md:84-92`
 
 ```md
 > 1. 해당하는 **휴직 사유** 선택 (출산, 육아, 질병, 기타)

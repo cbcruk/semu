@@ -18,6 +18,7 @@ const RULE_DOC_DIR = join(REPO_ROOT, 'docs', 'reference', 'rules')
 const REMOVED_SOURCE_PREFIXES = [
   'apps/api/legacy/', // f115042
   'docs/reference/legacy-design/', // 3c6f890
+  'manual/', // 4077ad2. 지운 지원 사이트 매뉴얼이고 그 트리에서는 폴더 이름에 현행 서비스 이름이 붙어 있습니다
 ]
 
 const sourceExists = (file: string) =>

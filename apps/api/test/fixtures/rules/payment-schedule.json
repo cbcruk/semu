@@ -3,7 +3,7 @@
   "description": "CMS auto-withdrawal of service fees: billing day moved past weekends and holidays, result reflected the next afternoon, D-1 notice, payment statuses and their transitions (retry is an agency action), and the 2025-12 payroll-only payment list.",
   "sources": [
     {
-      "file": "alfred-manual/08-설정/10-서비스-및-결제.md",
+      "file": "manual/08-설정/10-서비스-및-결제.md",
       "lines": "29-88"
     },
     {

@@ -5,7 +5,7 @@
     { "file": "apps/api/legacy/src/modules/bookkeeping/classification/classification.utils.ts", "lines": "15-20, 82-102" },
     { "file": "apps/api/legacy/src/modules/bookkeeping/classification/classification.service.ts", "lines": "1-267" },
     {
-      "file": "alfred-manual/03-경리/01-매출-증빙-관리/01-경리-규칙기반-자동분류.md",
+      "file": "manual/03-경리/01-매출-증빙-관리/01-경리-규칙기반-자동분류.md",
       "lines": "35-36",
       "origin": "manual"
     }

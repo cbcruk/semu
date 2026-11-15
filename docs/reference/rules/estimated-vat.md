@@ -13,7 +13,7 @@
 - 조회·추이: `apps/api/legacy/src/modules/estimated-vat/estimated-vat.service.ts`
 - 세액 나누기·비율: `apps/api/legacy/src/lib/money.ts` (`splitVatFromTotal`, `applyBasisPoints`)
 - 설계: `docs/reference/legacy-design/tax-api-design.md` 6절
-- 매뉴얼: `alfred-manual/02-홈-Universal-Home/04-실시간-보고서/02-예상-부가세.md`
+- 매뉴얼: `manual/02-홈-Universal-Home/04-실시간-보고서/02-예상-부가세.md`
 
 ## 로직
 

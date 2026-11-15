@@ -5,10 +5,10 @@
     { "file": "docs/reference/spec/platform.md", "lines": "285-291, 359-365", "origin": "index.pretty.js B:89228, B:91137-91170" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/scrap.service.ts", "lines": "36-101, 216-238" },
     { "file": "apps/api/legacy/src/modules/platform/integrations/integrations.utils.ts", "lines": "8-16, 56-82" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "34-35" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/06-배달-매출-연동하기.md", "lines": "25-26, 48" },
-    { "file": "alfred-manual/08-설정/07-내역-수집-기관-연동/02-올라-쇼핑몰-매출-연동하기.md", "lines": "48-52" },
-    { "file": "alfred-manual/08-설정/06-세무신고-기관-연동/02-연동-은행계좌-연동하기.md", "lines": "60" }
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/04-PG사-연동하기.md", "lines": "34-35" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/06-배달-매출-연동하기.md", "lines": "25-26, 48" },
+    { "file": "manual/08-설정/07-내역-수집-기관-연동/02-올라-쇼핑몰-매출-연동하기.md", "lines": "48-52" },
+    { "file": "manual/08-설정/06-세무신고-기관-연동/02-연동-은행계좌-연동하기.md", "lines": "60" }
   ],
   "inputSchema": {
     "check": "lastStatus (GET last-scrap-request-status) | request (POST request-scrapping/:service) | requestAll (POST request-all-scrapping) | polling (GET scraping-status?id=).",

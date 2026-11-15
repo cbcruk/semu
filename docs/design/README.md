@@ -1,6 +1,6 @@
 # semu 백엔드 재설계
 
-현행 서비스의 웹 클라이언트를 정적 분석한 결과([`docs/reference/spec/`](../reference/spec/)), 지원 사이트 매뉴얼([`alfred-manual/`](../../alfred-manual/README.md)), 현행 클라이언트 규칙을 추적해 정리한 [`docs/reference/rules/`](../reference/rules/README.md)를 근거로, 같은 업무를 처리하는 백엔드 API 서버를 처음부터 다시 설계한 문서입니다. 코드는 [`apps/api/src/`](../../apps/api/src/)에 있습니다. 이 문서 묶음은 구현 전에 도메인 경계·리소스·상태 전이·규칙의 위치를 합의하는 데 씁니다.
+현행 서비스의 웹 클라이언트를 정적 분석한 결과([`docs/reference/spec/`](../reference/spec/)), 지원 사이트 매뉴얼(레포에서는 지움), 현행 클라이언트 규칙을 추적해 정리한 [`docs/reference/rules/`](../reference/rules/README.md)를 근거로, 같은 업무를 처리하는 백엔드 API 서버를 처음부터 다시 설계한 문서입니다. 코드는 [`apps/api/src/`](../../apps/api/src/)에 있습니다. 이 문서 묶음은 구현 전에 도메인 경계·리소스·상태 전이·규칙의 위치를 합의하는 데 씁니다.
 
 - **근거:** 현행 동작은 엔트리 번들과 매뉴얼로만 확인했습니다. 원본 서버(nexus-api·sf-api·remittance-api)는 호출하지 않았고, 서버 내부 구현은 클라이언트가 보내고 읽는 값으로만 추정했습니다. 화면 컴포넌트는 lazy chunk라 번들에 없어서 응답 형태 상당수가 추정입니다
 - **목표:** 현행 세 백엔드가 다루는 업무(인증·회사·구독, 연동, 세무, 인사, 급여, 경리)를 빠짐없이 덮되, 서버가 규칙과 트랜잭션을 책임지는 구조로 바꿉니다

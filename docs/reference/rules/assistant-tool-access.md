@@ -10,7 +10,7 @@
 ## 현행 위치
 
 - 번들: 라우트 가드 `checkSystemAdminGuard`(B:104680-104830), 메뉴 제외 규칙(B:77553), 상단바(B:99952). 대화 API는 lazy chunk라 번들에 없음
-- 매뉴얼: `alfred-manual/02-홈-Universal-Home/02-AI-비서.md`, `alfred-manual/12-알프레드-AI비서.md`
+- 매뉴얼: `manual/02-홈-Universal-Home/02-AI-비서.md`, `manual/12-AI비서.md`
 - 레거시 서버: `apps/api/legacy/src/modules/platform/assistant/assistant.service.ts`의 `allowedAssistantTools`, `sendAssistantMessage`, 메뉴 규칙 `platform.menus.ts`의 `ai_agent`
 
 ## 로직
@@ -52,7 +52,7 @@ if (context.hasPayrollPlan) tools.push('lookup_payroll')
 
 > - AI 비서: … (세금계산서 발행·증명서 요청 같은 쓰기 도구는 실행 전 확인 단계 + 감사 로그). 도구 허용은 `decide()`와 구독(`tax`)으로 판정.
 
-`alfred-manual/02-홈-Universal-Home/02-AI-비서.md`
+`manual/02-홈-Universal-Home/02-AI-비서.md`
 
 > **노출 대상:** 전체 (구독에 따라 이용 가능 기능이 다름)
 >
@@ -60,9 +60,9 @@ if (context.hasPayrollPlan) tools.push('lookup_payroll')
 >
 > 거래처 등록과 홈택스 인증서 연동이 완료되어야 발행할 수 있습니다.
 
-`alfred-manual/12-알프레드-AI비서.md`
+`manual/12-AI비서.md`
 
-> - **알프레드 무료고객 (기장 비 수임 고객)**
+> - **현행 서비스 무료고객 (기장 비 수임 고객)**
 >   1. 재무정보 확인 (거래 내역 & 계좌 내역 요약)
 >   1. 사업과 관련된 세무, 노무 전문지식 문의
 >   1. 세금계산서 발행
